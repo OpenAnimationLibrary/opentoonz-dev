@@ -38,7 +38,34 @@ extern "C" {
 #define P(d) tmsg_info(" - %d -\n", d)
 #define COPY_RASTER(inr, outr, border)                                         \
   tP.copy_raster(inr, outr, border, border, inr->lx - border - 1,              \
-                 inr->ly - border - 1, 0, 0)
+                  inr->ly - border - 1, 0, 0)
+
+template <class P>
+static int includeAntialiasedInkPixels(CSTColSelPic<P> &pic, const CCIL &ink) {
+  if (!pic.m_ras || pic.m_ras->type != RAS_CM32 || !pic.m_sel) return 0;
+
+  int nbAdded = 0;
+  UCHAR *pSel = pic.m_sel.get();
+  for (int y = 0; y < pic.m_lY; y++)
+    for (int x = 0; x < pic.m_lX; x++, pSel++) {
+      int xyRas = y * pic.m_ras->wrap + x;
+      UD44_CMAPINDEX32 ci32 =
+          *((UD44_CMAPINDEX32 *)(pic.m_ras->buffer) + xyRas);
+      int tone = (int)(ci32 & 0x000000ff);
+      if (tone == 0 || tone == 255 || *pSel > 0) continue;
+
+      int inkId = (int)((ci32 >> 20) & 0x00000fff);
+      for (int i = 0; i < ink.m_nb; i++)
+        if (ink.m_ci[i] == inkId) {
+          // Treat antialiased coverage as full mask membership. The Outline FX
+          // thickness, rather than source coverage, determines the circle size.
+          *pSel = 255;
+          nbAdded++;
+          break;
+        }
+    }
+  return nbAdded;
+}
 
 // ----- CALLIGRAPH for UCHAR pixels (range 0-255) --------------------------
 static void calligraphUC(
@@ -54,6 +81,7 @@ static void calligraphUC(
     ipUC.initSel();
     // Selection of pixels using CM
     int nbSel = ipUC.makeSelectionCMAP(par.m_ink, par.m_paint);
+    nbSel += includeAntialiasedInkPixels(ipUC, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
@@ -105,6 +133,7 @@ static void calligraphUS(
     ipUS.initSel();
     // Selection of pixels using CM
     int nbSel = ipUS.makeSelectionCMAP(par.m_ink, par.m_paint);
+    nbSel += includeAntialiasedInkPixels(ipUS, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
