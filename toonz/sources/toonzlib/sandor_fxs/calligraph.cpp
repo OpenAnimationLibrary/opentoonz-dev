@@ -30,16 +30,6 @@
 
 using namespace std;
 
-#ifdef __cplusplus
-
-extern "C" {
-#endif
-
-#define P(d) tmsg_info(" - %d -\n", d)
-#define COPY_RASTER(inr, outr, border)                                         \
-  tP.copy_raster(inr, outr, border, border, inr->lx - border - 1,              \
-                  inr->ly - border - 1, 0, 0)
-
 template <class P>
 static int includeAntialiasedInkPixels(CSTColSelPic<P> &pic, const CCIL &ink) {
   if (!pic.m_ras || pic.m_ras->type != RAS_CM32 || !pic.m_sel) return 0;
@@ -66,6 +56,16 @@ static int includeAntialiasedInkPixels(CSTColSelPic<P> &pic, const CCIL &ink) {
     }
   return nbAdded;
 }
+
+#ifdef __cplusplus
+
+extern "C" {
+#endif
+
+#define P(d) tmsg_info(" - %d -\n", d)
+#define COPY_RASTER(inr, outr, border)                                         \
+  tP.copy_raster(inr, outr, border, border, inr->lx - border - 1,              \
+                  inr->ly - border - 1, 0, 0)
 
 // ----- CALLIGRAPH for UCHAR pixels (range 0-255) --------------------------
 static void calligraphUC(
