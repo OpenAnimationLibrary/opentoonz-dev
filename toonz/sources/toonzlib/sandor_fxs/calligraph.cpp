@@ -30,8 +30,35 @@
 
 using namespace std;
 
+static bool isSelectedInk(const CCIL &ink, int inkId) {
+  for (int i = 0; i < ink.m_nb; i++)
+    if (ink.m_ci[i] == inkId) return true;
+  return false;
+}
+
 template <class P>
-static int includeAntialiasedInkPixels(CSTColSelPic<P> &pic, const CCIL &ink) {
+static bool hasAdjacentFullInk(const CSTColSelPic<P> &pic, int x, int y,
+                               int inkId) {
+  int x0 = std::max(0, x - 1);
+  int x1 = std::min(pic.m_lX - 1, x + 1);
+  int y0 = std::max(0, y - 1);
+  int y1 = std::min(pic.m_lY - 1, y + 1);
+
+  for (int yy = y0; yy <= y1; yy++)
+    for (int xx = x0; xx <= x1; xx++) {
+      int xyRas = yy * pic.m_ras->wrap + xx;
+      UD44_CMAPINDEX32 ci32 =
+          *((UD44_CMAPINDEX32 *)(pic.m_ras->buffer) + xyRas);
+      int tone = (int)(ci32 & 0x000000ff);
+      int nearbyInkId = (int)((ci32 >> 20) & 0x00000fff);
+      if (tone == 0 && nearbyInkId == inkId) return true;
+    }
+  return false;
+}
+
+template <class P>
+static int includeAntialiasedOnlyInkPixels(CSTColSelPic<P> &pic,
+                                           const CCIL &ink) {
   if (!pic.m_ras || pic.m_ras->type != RAS_CM32 || !pic.m_sel) return 0;
 
   int nbAdded = 0;
@@ -45,14 +72,15 @@ static int includeAntialiasedInkPixels(CSTColSelPic<P> &pic, const CCIL &ink) {
       if (tone == 0 || tone == 255 || *pSel > 0) continue;
 
       int inkId = (int)((ci32 >> 20) & 0x00000fff);
-      for (int i = 0; i < ink.m_nb; i++)
-        if (ink.m_ci[i] == inkId) {
-          // Treat antialiased coverage as full mask membership. The Outline FX
-          // thickness, rather than source coverage, determines the circle size.
-          *pSel = 255;
-          nbAdded++;
-          break;
-        }
+      if (!isSelectedInk(ink, inkId) ||
+          hasAdjacentFullInk(pic, x, y, inkId))
+        continue;
+
+      // Promote only antialiased-only portions of a selected ink. Mixed pixels
+      // beside a solid ink core retain the legacy Toonz Raster mask, while thin
+      // vector or Toonz Raster strokes with no full-ink sample stay continuous.
+      *pSel = 255;
+      nbAdded++;
     }
   return nbAdded;
 }
@@ -81,7 +109,7 @@ static void calligraphUC(
     ipUC.initSel();
     // Selection of pixels using CM
     int nbSel = ipUC.makeSelectionCMAP(par.m_ink, par.m_paint);
-    nbSel += includeAntialiasedInkPixels(ipUC, par.m_ink);
+    nbSel += includeAntialiasedOnlyInkPixels(ipUC, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
@@ -133,7 +161,7 @@ static void calligraphUS(
     ipUS.initSel();
     // Selection of pixels using CM
     int nbSel = ipUS.makeSelectionCMAP(par.m_ink, par.m_paint);
-    nbSel += includeAntialiasedInkPixels(ipUS, par.m_ink);
+    nbSel += includeAntialiasedOnlyInkPixels(ipUS, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
