@@ -16,6 +16,7 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <QImage>
 #include <QMessageBox>
@@ -122,7 +123,10 @@ std::wstring uniqueLevelName(ToonzScene *scene,
 }  // namespace
 
 OpenMode askOpenMode(QWidget *parent) {
-  if (!parent) parent = QApplication::activeWindow();
+  QApplication *application =
+      qobject_cast<QApplication *>(QCoreApplication::instance());
+  if (!application) return OpenMode::ConvertToToonzVector;
+  if (!parent) parent = application->activeWindow();
 
   QMessageBox dialog(parent);
   dialog.setIcon(QMessageBox::Question);
