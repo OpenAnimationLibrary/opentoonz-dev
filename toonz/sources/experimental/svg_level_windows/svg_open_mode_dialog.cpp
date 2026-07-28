@@ -23,6 +23,11 @@ OpenMode OpenModeDialog::ask(QWidget *parent) {
   QPushButton *cancelButton =
       dialog.addButton(QObject::tr("Cancel"), QMessageBox::RejectRole);
 
+  openSvgButton->setToolTip(QObject::tr(
+      "Preserve the SVG source and use a generated read-only raster frame."));
+  convertButton->setToolTip(QObject::tr(
+      "Use the existing SVG importer to create editable Toonz Vector artwork."));
+
   dialog.setDefaultButton(openSvgButton);
   dialog.setEscapeButton(cancelButton);
   dialog.exec();
