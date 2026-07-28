@@ -184,6 +184,7 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   const TPointD dpi = scene->getCurrentCamera()->getDpi();
   image->setDpi(dpi.x, dpi.y);
   level->setFrame(TFrameId(1), image);
+  level->setRenumberTable();
   level->setIsReadOnly(true);
   level->setDirtyFlag(false);
 
