@@ -15,6 +15,7 @@
 #include "trasterimage.h"
 
 #include <QAbstractButton>
+#include <QApplication>
 #include <QFileInfo>
 #include <QImage>
 #include <QMessageBox>
@@ -113,13 +114,16 @@ std::wstring uniqueLevelName(ToonzScene *scene,
                                                  : requestedName;
   NameModifier modifier(baseName);
   std::wstring candidate = modifier.getNext();
-  while (scene->getLevelSet()->hasLevel(candidate)) candidate = modifier.getNext();
+  while (scene->getLevelSet()->hasLevel(candidate))
+    candidate = modifier.getNext();
   return candidate;
 }
 
 }  // namespace
 
 OpenMode askOpenMode(QWidget *parent) {
+  if (!parent) parent = QApplication::activeWindow();
+
   QMessageBox dialog(parent);
   dialog.setIcon(QMessageBox::Question);
   dialog.setWindowTitle(QObject::tr("Open SVG"));
@@ -135,6 +139,11 @@ OpenMode askOpenMode(QWidget *parent) {
       QObject::tr("Convert to Toonz Vector Level"), QMessageBox::ActionRole);
   QPushButton *cancelButton =
       dialog.addButton(QObject::tr("Cancel"), QMessageBox::RejectRole);
+
+  openButton->setToolTip(QObject::tr(
+      "Preserve the SVG source and display a generated read-only raster frame."));
+  convertButton->setToolTip(QObject::tr(
+      "Use the existing SVG importer to create editable Toonz Vector artwork."));
 
   dialog.setDefaultButton(openButton);
   dialog.setEscapeButton(cancelButton);
@@ -155,7 +164,8 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   QString error;
   TRasterImageP image = rasterize(actualSvgPath, error);
   if (!image) {
-    QMessageBox::warning(nullptr, QObject::tr("SVG Level"), error);
+    QMessageBox::warning(QApplication::activeWindow(), QObject::tr("SVG Level"),
+                         error);
     return nullptr;
   }
 
@@ -166,6 +176,9 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   level->setType(SVG_XSHLEVEL);
   level->setPath(scene->codeFilePath(actualSvgPath), true);
   level->setPalette(FullColorPalette::instance()->getPalette(scene));
+
+  const TPointD dpi = scene->getCurrentCamera()->getDpi();
+  image->setDpi(dpi.x, dpi.y);
   level->setFrame(TFrameId(1), image);
   level->setIsReadOnly(true);
   level->setDirtyFlag(false);
@@ -176,9 +189,9 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   properties->setImageRes(resolution);
   properties->setBpp(32);
   properties->setDpiPolicy(LevelProperties::DP_CustomDpi);
-  const TPointD dpi = scene->getCurrentCamera()->getDpi();
   properties->setDpi(dpi);
   properties->setImageDpi(dpi);
+  properties->setDoPremultiply(false);
 
   if (!scene->getLevelSet()->insertLevel(level)) {
     delete level;
