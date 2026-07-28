@@ -60,6 +60,6 @@ After building the Windows application target:
 3. Select **Open as SVG Level (Experimental)**.
 4. Confirm that the SVG appears in the Viewer and that the two text elements render.
 5. Transform the column and composite it with another level.
-6. Load the SVG again and select **Convert to Toonz Vector Level** to verify the existing PLI route.
+6. Start a new scene, or remove the experimental level from the Scene Cast, then load the SVG and select **Convert to Toonz Vector Level** to verify the existing PLI route.
 
 See `INTEGRATION.md` for implementation details and the limitations of this milestone.
