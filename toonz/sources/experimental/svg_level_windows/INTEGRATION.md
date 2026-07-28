@@ -14,13 +14,13 @@ The branch now contains an enabled Windows-only production path for the first ex
 
 ## Loading flow
 
-1. A normal OpenToonz level-loading command calls `ToonzScene::loadLevel()`.
-2. On Windows, an SVG introduced by the user is intercepted before the established loader implementation runs.
+1. A normal OpenToonz level-loading command calls a convenience overload of `ToonzScene::loadLevel()`.
+2. On Windows, an SVG introduced by the user is intercepted before the established four-argument loader implementation runs.
 3. OpenToonz asks whether to:
    - **Open as SVG Level (Experimental)**
    - **Convert to Toonz Vector Level**
    - **Cancel**
-4. The conversion choice delegates unchanged to the existing SVG-to-PLI path.
+4. The conversion choice delegates unchanged to the existing four-argument SVG-to-PLI loader path.
 5. The experimental choice keeps the `.svg` source path and creates one read-only `SVG_XSHLEVEL` frame.
 6. Qt SVG rasterizes the complete frame to a transparent premultiplied `TRasterImage`.
 7. The existing non-PLI branch of `TLevelColumnFx` displays, transforms, caches, and composites the generated raster with other columns.
