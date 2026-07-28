@@ -25,7 +25,7 @@ The branch now contains an enabled Windows-only production path for the first ex
 6. Qt SVG rasterizes the complete frame to a transparent premultiplied `TRasterImage`.
 7. The existing non-PLI branch of `TLevelColumnFx` displays, transforms, caches, and composites the generated raster with other columns.
 
-Scene resource loading remains non-interactive. The prompt is skipped while `ToonzScene` is loading an existing scene.
+Scene resource loading remains non-interactive. The prompt is skipped while `ToonzScene` is loading an existing scene, and headless Qt applications retain the existing SVG-to-PLI behavior.
 
 ## Expected first milestone
 
