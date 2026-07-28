@@ -19,9 +19,11 @@
   </defs>
   <rect width="640" height="360" fill="url(#sky)"/>
   <g transform="translate(320 180) rotate(-8)" filter="url(#shadow)">
-    <rect x="-180" y="-70" width="360" height="140" rx="28" fill="#ffffff" fill-opacity="0.92"/>
-    <path d="M-135 15 C-80 -85, 30 85, 135 -15" fill="none" stroke="#1769aa" stroke-width="18" stroke-linecap="round"/>
-    <circle cx="-122" cy="-20" r="16" fill="#ff9f1c"/>
-    <circle cx="122" cy="20" r="16" fill="#2ec4b6"/>
+    <rect x="-210" y="-86" width="420" height="172" rx="28" fill="#ffffff" fill-opacity="0.92"/>
+    <path d="M-165 28 C-105 -78, 60 88, 165 -18" fill="none" stroke="#1769aa" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="-152" cy="-28" r="16" fill="#ff9f1c"/>
+    <circle cx="152" cy="28" r="16" fill="#2ec4b6"/>
+    <text x="0" y="-30" text-anchor="middle" font-family="Arial" font-size="30" font-weight="700" fill="#17324d">Experimental SVG Level</text>
+    <text x="0" y="8" text-anchor="middle" font-family="Arial" font-size="18" fill="#365b78">Editable text in the retained source</text>
   </g>
 </svg>
