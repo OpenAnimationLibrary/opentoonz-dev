@@ -61,3 +61,7 @@ build\svg-level-probe\Release\svg_level_probe.exe input.svg output.png 1920 1080
 5. SVG Level content remains read-only while column transforms, compositing, raster FX, preview, and rendering operate on the generated premultiplied RGBA frame.
 
 Initially the SVG Level will advertise view/transform/composite capabilities while drawing and palette-editing tools remain unavailable.
+
+## Integration status
+
+The service and decision UI are implemented and exercised by the Windows probe. They are not yet called by the production resource loader, so this branch does not alter normal OpenToonz SVG loading. That call-site should be enabled only after the probe compiles and renders correctly with the project's Windows Qt 5.15.2 toolchain.
