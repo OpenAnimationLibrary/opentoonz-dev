@@ -1,24 +1,19 @@
-#include <QCoreApplication>
-#include <QFileInfo>
-#include <QImage>
-#include <QPainter>
-#include <QSize>
-#include <QStringList>
-#include <QSvgRenderer>
+#include "svg_open_mode_dialog.h"
+#include "svg_rasterization_service.h"
 
-#include <algorithm>
+#include <QApplication>
+#include <QFileInfo>
+#include <QStringList>
+
 #include <iostream>
-#include <limits>
 
 namespace {
 
 constexpr int kMaximumDimension = 16384;
-constexpr qint64 kMaximumPixels =
-    static_cast<qint64>(kMaximumDimension) * kMaximumDimension;
 
 void printUsage(const char *programName) {
   std::cerr << "Usage: " << programName
-            << " input.svg output.png [width height]\n";
+            << " input.svg output.png [width height] [--ask]\n";
 }
 
 bool parseDimension(const QString &text, int &value) {
@@ -29,99 +24,63 @@ bool parseDimension(const QString &text, int &value) {
   return true;
 }
 
-QSize naturalSvgSize(const QSvgRenderer &renderer) {
-  QSize size = renderer.defaultSize();
-  if (size.isValid() && !size.isEmpty()) return size;
-
-  const QRectF viewBox = renderer.viewBoxF();
-  if (viewBox.isValid() && viewBox.width() > 0.0 && viewBox.height() > 0.0) {
-    const int width = std::max(1, qRound(viewBox.width()));
-    const int height = std::max(1, qRound(viewBox.height()));
-    return QSize(width, height);
-  }
-
-  return QSize();
-}
-
-bool isSafeOutputSize(const QSize &size) {
-  if (!size.isValid() || size.isEmpty()) return false;
-  if (size.width() > kMaximumDimension || size.height() > kMaximumDimension)
-    return false;
-
-  const qint64 pixels = static_cast<qint64>(size.width()) * size.height();
-  return pixels > 0 && pixels <= kMaximumPixels;
-}
-
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  QCoreApplication application(argc, argv);
+  QApplication application(argc, argv);
   const QStringList arguments = application.arguments();
 
-  if (arguments.size() != 3 && arguments.size() != 5) {
+  const bool askMode = arguments.contains(QStringLiteral("--ask"));
+  QStringList positional = arguments;
+  positional.removeAll(QStringLiteral("--ask"));
+
+  if (positional.size() != 3 && positional.size() != 5) {
     printUsage(argv[0]);
     return 2;
   }
 
-  const QString inputPath = arguments.at(1);
-  const QString outputPath = arguments.at(2);
-
-  const QFileInfo inputInfo(inputPath);
-  if (!inputInfo.exists() || !inputInfo.isFile()) {
-    std::cerr << "SVG input does not exist: "
-              << inputPath.toLocal8Bit().constData() << "\n";
-    return 3;
+  if (askMode) {
+    const ExperimentalSvg::OpenMode mode =
+        ExperimentalSvg::OpenModeDialog::ask();
+    if (mode == ExperimentalSvg::OpenMode::Cancel) return 0;
+    if (mode == ExperimentalSvg::OpenMode::ConvertToToonzVector) {
+      std::cout << "Selected existing SVG-to-PLI conversion path.\n";
+      return 0;
+    }
   }
 
-  QSvgRenderer renderer(inputPath);
-  if (!renderer.isValid()) {
-    std::cerr << "Qt could not parse the SVG document: "
-              << inputPath.toLocal8Bit().constData() << "\n";
+  ExperimentalSvg::RasterizationRequest request;
+  request.sourcePath = positional.at(1);
+  request.maximumDimension = kMaximumDimension;
+
+  if (positional.size() == 5) {
+    int width = 0;
+    int height = 0;
+    if (!parseDimension(positional.at(3), width) ||
+        !parseDimension(positional.at(4), height)) {
+      std::cerr << "Width and height must be between 1 and "
+                << kMaximumDimension << ".\n";
+      return 3;
+    }
+    request.outputSize = QSize(width, height);
+  }
+
+  const ExperimentalSvg::RasterizationResult result =
+      ExperimentalSvg::RasterizationService::rasterize(request);
+  if (!result.isValid()) {
+    std::cerr << result.error.toLocal8Bit().constData() << "\n";
     return 4;
   }
 
-  QSize outputSize = naturalSvgSize(renderer);
-
-  if (arguments.size() == 5) {
-    int width = 0;
-    int height = 0;
-    if (!parseDimension(arguments.at(3), width) ||
-        !parseDimension(arguments.at(4), height)) {
-      std::cerr << "Width and height must be between 1 and "
-                << kMaximumDimension << ".\n";
-      return 5;
-    }
-    outputSize = QSize(width, height);
-  }
-
-  if (!isSafeOutputSize(outputSize)) {
-    std::cerr << "The SVG has no usable intrinsic size. Supply explicit width "
-                 "and height values within the probe limits.\n";
-    return 6;
-  }
-
-  QImage frame(outputSize, QImage::Format_ARGB32_Premultiplied);
-  if (frame.isNull()) {
-    std::cerr << "Unable to allocate the output frame.\n";
-    return 7;
-  }
-  frame.fill(Qt::transparent);
-
-  QPainter painter(&frame);
-  painter.setRenderHint(QPainter::Antialiasing, true);
-  painter.setRenderHint(QPainter::TextAntialiasing, true);
-  painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-  renderer.render(&painter, QRectF(QPointF(0.0, 0.0), QSizeF(outputSize)));
-  painter.end();
-
-  if (!frame.save(outputPath, "PNG")) {
+  const QString outputPath = positional.at(2);
+  if (!result.image.save(outputPath, "PNG")) {
     std::cerr << "Unable to write PNG output: "
               << outputPath.toLocal8Bit().constData() << "\n";
-    return 8;
+    return 5;
   }
 
-  std::cout << "Rasterized " << inputPath.toLocal8Bit().constData() << " to "
-            << outputSize.width() << "x" << outputSize.height() << " at "
-            << outputPath.toLocal8Bit().constData() << "\n";
+  std::cout << "Rasterized " << request.sourcePath.toLocal8Bit().constData()
+            << " to " << result.image.width() << "x" << result.image.height()
+            << " at " << outputPath.toLocal8Bit().constData() << "\n";
   return 0;
 }
