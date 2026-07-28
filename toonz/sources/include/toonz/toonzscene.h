@@ -145,6 +145,15 @@ public:
       std::wstring levelName            = L"",
       const std::vector<TFrameId> &fIds = std::vector<TFrameId>());
 
+#ifdef _WIN32
+  // Internal implementation entry point used by the experimental SVG loading
+  // wrapper. Normal callers should continue to use loadLevel().
+  TXshLevel *loadLevelImpl(const TFilePath &actualPath,
+                           const LevelOptions *options,
+                           std::wstring levelName,
+                           const std::vector<TFrameId> &fIds);
+#endif
+
   /*!
 Performs a camera-stand render of the specified xsheet (or the main one in case
 none was
@@ -297,5 +306,12 @@ public:
   // remove the scene numbers("c####_") from the file name
   std::wstring getLevelNameWithoutSceneNumber(std::wstring orgName);
 };
+
+// The Windows SVG experiment wraps ToonzScene::loadLevel(). Compile the
+// original implementation as loadLevelImpl() without changing its source file.
+#if defined(_WIN32) && defined(TOONZSCENE_BUILD_LOADLEVEL_IMPL)
+#define loadLevel(actualPath, levelOptions, levelName, fIds) \
+  loadLevelImpl(actualPath, levelOptions, levelName, fIds)
+#endif
 
 #endif  // TOONZSCENE_H
