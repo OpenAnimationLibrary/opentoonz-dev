@@ -4,29 +4,52 @@
 
 #include "../toonz/svglevelloader.h"
 
-TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
-                                 const LevelOptions *levelOptions,
-                                 std::wstring levelName,
-                                 const std::vector<TFrameId> &fIds) {
+namespace {
+
+TXshLevel *loadLevelWithSvgChoice(ToonzScene *scene,
+                                  const TFilePath &actualPath,
+                                  const LevelOptions *levelOptions,
+                                  std::wstring levelName,
+                                  const std::vector<TFrameId> &fIds) {
   // Scene resource loading must remain non-interactive. This first milestone
   // only asks when a user explicitly introduces an SVG through the normal
   // level-loading commands.
-  if (!isLoading() && actualPath.getType() == "svg") {
+  if (!scene->isLoading() && actualPath.getType() == "svg") {
     switch (SvgLevel::askOpenMode()) {
     case SvgLevel::OpenMode::Cancel:
       return nullptr;
 
     case SvgLevel::OpenMode::OpenExperimentalSvgLevel:
-      return SvgLevel::loadExperimentalLevel(this, actualPath, levelName);
+      return SvgLevel::loadExperimentalLevel(scene, actualPath, levelName);
 
     case SvgLevel::OpenMode::ConvertToToonzVector:
       break;
     }
   }
 
-  // Preserve all established level loading and SVG-to-PLI conversion behavior
-  // unless the user explicitly selected the experimental retained SVG route.
-  return loadLevelImpl(actualPath, levelOptions, levelName, fIds);
+  // The established four-argument loader remains unchanged. In particular,
+  // choosing conversion continues through the existing SVG-to-PLI path.
+  return scene->loadLevel(actualPath, levelOptions, levelName, fIds);
+}
+
+}  // namespace
+
+TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath) {
+  return loadLevelWithSvgChoice(this, actualPath, nullptr, L"",
+                                std::vector<TFrameId>());
+}
+
+TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
+                                 const LevelOptions *levelOptions) {
+  return loadLevelWithSvgChoice(this, actualPath, levelOptions, L"",
+                                std::vector<TFrameId>());
+}
+
+TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
+                                 const LevelOptions *levelOptions,
+                                 std::wstring levelName) {
+  return loadLevelWithSvgChoice(this, actualPath, levelOptions, levelName,
+                                std::vector<TFrameId>());
 }
 
 #endif  // _WIN32
