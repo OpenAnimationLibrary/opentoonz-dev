@@ -1,27 +1,26 @@
 # Experimental SVG Level — Windows prototype
 
-This directory contains the first buildable investigation for native, read-only SVG Levels in OpenToonz.
+This directory contains the standalone rasterization probe used to establish native, read-only SVG Levels in OpenToonz.
 
-The prototype deliberately does **not** convert SVG artwork to PLI. It keeps the SVG file as the source and rasterizes a complete transparent RGBA frame for display and compositing experiments.
+The experiment deliberately does **not** convert SVG artwork to PLI. It retains the SVG file as the source and rasterizes a complete transparent RGBA frame for display and compositing.
 
 ## Current scope
 
 - Windows only.
 - Qt 5 Core, Gui, Svg, and Widgets.
-- `RasterizationService` is an OpenToonz-facing service boundary rather than probe-only rendering code.
 - Loads one SVG document.
 - Uses the SVG `viewBox` or intrinsic size to determine its natural frame.
-- Rasterizes to a transparent premultiplied `QImage`.
-- Supports an optional output width and height.
+- Rasterizes to transparent premultiplied RGBA.
+- Renders static SVG text using fonts available to Qt on Windows.
 - Rejects invalid SVG and unreasonable output dimensions.
-- Provides the intended handling choice:
+- Provides the handling choice:
   - **Open as SVG Level (Experimental)**
   - **Convert to Toonz Vector Level**
   - **Cancel**
 
-This remains isolated from the main OpenToonz build until it is validated with the Windows Qt toolchain. The next patch will move these files into the application target and call the handling dialog from `IoCmd::loadResources` for SVG resources.
+The production-facing loader is now included in the Windows `toonzlib` target. The standalone probe remains useful for testing Qt SVG rendering independently of the full application.
 
-## Build
+## Build the standalone probe
 
 From a Visual Studio developer command prompt with Qt 5 available:
 
@@ -32,7 +31,7 @@ cmake -S toonz\sources\experimental\svg_level_windows ^
 cmake --build build\svg-level-probe --config Release
 ```
 
-## Run
+## Run the standalone probe
 
 Rasterize directly:
 
@@ -52,16 +51,15 @@ An explicit output size can be supplied:
 build\svg-level-probe\Release\svg_level_probe.exe input.svg output.png 1920 1080
 ```
 
-## Intended OpenToonz integration
+## Test in OpenToonz
 
-1. `IoCmd::loadResources` detects an SVG resource on Windows.
-2. `OpenModeDialog::ask()` returns the user's explicit handling choice.
-3. **Convert to Toonz Vector Level** continues through the existing SVG-to-PLI path.
-4. **Open as SVG Level (Experimental)** retains the SVG source and requests display frames from `RasterizationService`.
-5. SVG Level content remains read-only while column transforms, compositing, raster FX, preview, and rendering operate on the generated premultiplied RGBA frame.
+After building the Windows application target:
 
-Initially the SVG Level will advertise view/transform/composite capabilities while drawing and palette-editing tools remain unavailable.
+1. Start a new scene.
+2. Load `testdata/basic_composite.svg`.
+3. Select **Open as SVG Level (Experimental)**.
+4. Confirm that the SVG appears in the Viewer and that the two text elements render.
+5. Transform the column and composite it with another level.
+6. Load the SVG again and select **Convert to Toonz Vector Level** to verify the existing PLI route.
 
-## Integration status
-
-The service and decision UI are implemented and exercised by the Windows probe. They are not yet called by the production resource loader, so this branch does not alter normal OpenToonz SVG loading. That call-site should be enabled only after the probe compiles and renders correctly with the project's Windows Qt 5.15.2 toolchain.
+See `INTEGRATION.md` for implementation details and the limitations of this milestone.
