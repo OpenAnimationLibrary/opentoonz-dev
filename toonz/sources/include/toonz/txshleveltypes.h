@@ -14,7 +14,6 @@ enum TXshLevelType {
   OVL_TYPE   = 0x20,
   CHILD_TYPE = 0x40,
   META_TYPE  = 0x80,
-  SVG_TYPE   = 0x100,
 
   FULLCOLOR_TYPE = TZI_TYPE | OVL_TYPE,
   RASTER_TYPE    = FULLCOLOR_TYPE | TZP_TYPE,
@@ -25,13 +24,17 @@ enum TXshLevelType {
   OVL_XSHLEVEL   = OVL_TYPE | LEVELCOLUMN_XSHLEVEL,  // Raster
   CHILD_XSHLEVEL = CHILD_TYPE | LEVELCOLUMN_XSHLEVEL,
   META_XSHLEVEL  = META_TYPE | LEVELCOLUMN_XSHLEVEL,
-  SVG_XSHLEVEL   = SVG_TYPE | LEVELCOLUMN_XSHLEVEL,  // Experimental SVG
 
   ZERARYFX_XSHLEVEL = 1 << 7,
   PLT_XSHLEVEL      = 2 << 7,
   SND_XSHLEVEL      = 3 << 7,
   SND_TXT_XSHLEVEL  = 4 << 7,
-  MESH_XSHLEVEL     = 5 << 7
+  MESH_XSHLEVEL     = 5 << 7,
+
+  // Experimental retained-source SVG level. Keep it in the high-value range
+  // used by non-legacy level kinds, while preserving level-column behavior.
+  SVG_TYPE     = 6 << 7,
+  SVG_XSHLEVEL = SVG_TYPE | LEVELCOLUMN_XSHLEVEL
 };
 
 #endif
