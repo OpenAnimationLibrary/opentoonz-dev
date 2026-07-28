@@ -337,10 +337,6 @@ if(BUILD_TARGET_WIN)
         svglevelloadintercept.cpp
         ../toonz/svglevelloader.cpp
     )
-    set_source_files_properties(
-        toonzscene.cpp
-        PROPERTIES COMPILE_DEFINITIONS TOONZSCENE_BUILD_LOADLEVEL_IMPL
-    )
 endif()
 
 qt5_wrap_cpp(SOURCES ${MOC_HEADERS})
