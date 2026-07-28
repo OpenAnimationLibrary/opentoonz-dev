@@ -138,20 +138,27 @@ public:
 
 \return   A Pointer to the loaded level.                                      */
 
+#ifdef _WIN32
+  // The Windows build uses explicit convenience overloads so normal level
+  // loading can present the experimental SVG choice without changing the
+  // established four-argument loader implementation.
+  TXshLevel *loadLevel(const TFilePath &actualPath);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options,
+                       std::wstring levelName);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options,
+                       std::wstring levelName,
+                       const std::vector<TFrameId> &fIds);
+#else
   TXshLevel *loadLevel(
       const TFilePath &actualPath,
       const LevelOptions *options =
           0,  //!< Loads a level from the specified \a decoded path.
       std::wstring levelName            = L"",
       const std::vector<TFrameId> &fIds = std::vector<TFrameId>());
-
-#ifdef _WIN32
-  // Internal implementation entry point used by the experimental SVG loading
-  // wrapper. Normal callers should continue to use loadLevel().
-  TXshLevel *loadLevelImpl(const TFilePath &actualPath,
-                           const LevelOptions *options,
-                           std::wstring levelName,
-                           const std::vector<TFrameId> &fIds);
 #endif
 
   /*!
@@ -306,12 +313,5 @@ public:
   // remove the scene numbers("c####_") from the file name
   std::wstring getLevelNameWithoutSceneNumber(std::wstring orgName);
 };
-
-// The Windows SVG experiment wraps ToonzScene::loadLevel(). Compile the
-// original implementation as loadLevelImpl() without changing its source file.
-#if defined(_WIN32) && defined(TOONZSCENE_BUILD_LOADLEVEL_IMPL)
-#define loadLevel(actualPath, levelOptions, levelName, fIds) \
-  loadLevelImpl(actualPath, levelOptions, levelName, fIds)
-#endif
 
 #endif  // TOONZSCENE_H
