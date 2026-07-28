@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#79bfff"/>
+      <stop offset="1" stop-color="#e8f5ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="8" dy="10" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.35"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <g transform="translate(320 180) rotate(-8)" filter="url(#shadow)">
+    <rect x="-180" y="-70" width="360" height="140" rx="28" fill="#ffffff" fill-opacity="0.92"/>
+    <path d="M-135 15 C-80 -85, 30 85, 135 -15" fill="none" stroke="#1769aa" stroke-width="18" stroke-linecap="round"/>
+    <circle cx="-122" cy="-20" r="16" fill="#ff9f1c"/>
+    <circle cx="122" cy="20" r="16" fill="#2ec4b6"/>
+  </g>
+</svg>
