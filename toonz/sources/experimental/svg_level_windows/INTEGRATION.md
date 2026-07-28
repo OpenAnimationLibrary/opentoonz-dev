@@ -46,7 +46,7 @@ Scene resource loading remains non-interactive. The prompt is skipped while `Too
 5. Confirm that the gradient, shapes, transparency, transform, and two text elements appear.
 6. Add a raster, Toonz Raster, or PLI level in another column and confirm mixed compositing.
 7. Animate the SVG column position, scale, and rotation.
-8. Reload the same SVG and choose **Convert to Toonz Vector Level** to confirm that the previous conversion route still works.
+8. Start a new scene, or remove the experimental level from the Scene Cast, then load the SVG and choose **Convert to Toonz Vector Level** to confirm that the previous conversion route still works.
 
 ## Known milestone limitations
 
