@@ -6,7 +6,6 @@
 
 #include <QAction>
 #include <QApplication>
-#include <QChildEvent>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QKeySequence>
@@ -18,11 +17,11 @@
 namespace SvgSourceEditor {
 
 // Installs the already registered Source Editor QAction into the actual
-// OpenToonz main window and every Windows menu.  The first experimental pass
+// OpenToonz main window and every Windows menu. The first experimental pass
 // created the command during QCoreApplication startup, but an application-wide
 // QAction does not receive shortcuts until it belongs to a widget, and room
-// menus may be created lazily long after startup.  This activator follows the
-// UI lifecycle and repairs both conditions whenever windows or menus appear.
+// menus may be created lazily long after startup. This activator follows the UI
+// lifecycle and repairs both conditions whenever windows or menus appear.
 class SourceEditorUiActivator final : public QObject {
   QAction *m_action;
   bool m_scanPending = false;
@@ -144,6 +143,7 @@ inline void activateSourceEditorUi() {
 }  // namespace SvgSourceEditor
 
 inline void activateSvgSourceEditorUiAfterApplicationStartup() {
+  if (!qApp) return;
   QTimer::singleShot(0, qApp, []() {
     SvgSourceEditor::activateSourceEditorUi();
   });
