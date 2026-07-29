@@ -1,0 +1,105 @@
+name: Apply timagecache cache fix
+
+on:
+  push:
+    branches:
+      - fix/timagecache-unsupported-image-compression
+    paths:
+      - .github/workflows/apply-timagecache-cache-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/timagecache-unsupported-image-compression
+          fetch-depth: 0
+
+      - name: Apply focused timagecache hardening
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path("toonz/sources/common/tcache/timagecache.cpp")
+          text = source.read_text(encoding="utf-8")
+
+          old_refs = '''inline TINT32 hasExternalReferences(const TImageP &img) {
+            int refCount;
+
+            {
+              TRasterImageP rimg = img;
+              if (rimg) refCount = rimg->getRaster()->getRefCount();
+            }
+
+          #ifndef TNZCORE_LIGHT
+            {
+              TToonzImageP timg = img;
+              if (timg)
+                refCount = timg->getRaster()->getRefCount() -
+                           1;  //!!! the TToonzImage::getRaster method increments raster
+                               //! refCount!(the TRasterImage::getRaster don't)
+            }
+          #endif
+
+            return std::max(refCount, img->getRefCount()) > 1;
+          }'''
+
+          new_refs = '''inline TINT32 hasExternalReferences(const TImageP &img) {
+            if (!img) return false;
+
+            int refCount = img->getRefCount();
+
+            TRasterImageP rimg = img;
+            if (rimg && rimg->getRaster())
+              refCount = std::max(refCount, rimg->getRaster()->getRefCount());
+
+          #ifndef TNZCORE_LIGHT
+            TToonzImageP timg = img;
+            if (timg) {
+              TRasterCM32P raster = timg->getRaster();
+              if (raster)
+                refCount = std::max(refCount, raster->getRefCount() - 1);
+            }
+          #endif
+
+            return refCount > 1;
+          }'''
+
+          old_compress = '''  item = new UncompressedOnMemoryCacheItem(img);
+          #ifdef TNZCORE_LIGHT
+            item->m_cantCompress = false;
+          #else
+            item->m_cantCompress =
+                (TVectorImageP(img) || TMeshImageP(img) ? true : false);
+          #endif'''
+
+          new_compress = '''  item = new UncompressedOnMemoryCacheItem(img);
+          #ifdef TNZCORE_LIGHT
+            item->m_cantCompress = !TRasterImageP(img);
+          #else
+            item->m_cantCompress = !TRasterImageP(img) && !TToonzImageP(img);
+          #endif'''
+
+          if old_refs not in text:
+              raise SystemExit("hasExternalReferences block was not found")
+          if old_compress not in text:
+              raise SystemExit("compression eligibility block was not found")
+
+          text = text.replace(old_refs, new_refs, 1)
+          text = text.replace(old_compress, new_compress, 1)
+          source.write_text(text, encoding="utf-8", newline="\n")
+
+          Path(".github/workflows/apply-timagecache-cache-fix.yml").unlink()
+
+      - name: Commit focused fix
+        run: |
+          git config user.name "OpenAnimationLibrary CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add toonz/sources/common/tcache/timagecache.cpp .github/workflows/apply-timagecache-cache-fix.yml
+          git commit -m "Fix image cache handling for unsupported image types"
+          git push origin HEAD:fix/timagecache-unsupported-image-compression
