@@ -178,7 +178,7 @@ void ScriptConsolePanel::selectNone() {
 
 #ifdef _WIN32
 // Stage the retained-source editor in an already compiled translation unit.
-// The implementation is kept in dedicated headers and can move to its own
-// source file after the experimental SVG workflow stabilizes.
-#include "sourceeditorpanel.h"
+// The activation layer attaches its command to the real OpenToonz main window
+// and to room menus created after application startup.
+#include "sourceeditoractivation.h"
 #endif
