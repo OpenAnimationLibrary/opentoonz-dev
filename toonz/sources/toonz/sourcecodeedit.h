@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include <QColor>
+#include <QEvent>
 #include <QFontDatabase>
 #include <QPaintEvent>
 #include <QPalette>
@@ -41,6 +42,12 @@ class SourceCodeEdit final : public QPlainTextEdit {
 public:
   explicit SourceCodeEdit(QWidget *parent = nullptr)
       : QPlainTextEdit(parent), m_lineNumberArea(new LineNumberArea(this)) {
+    // These names are the stable QSS customization surface for
+    // Preferences > Interface > Additional Style Sheet.
+    setObjectName(QStringLiteral("SvgSourceEditorCode"));
+    setProperty("svgSourceEditor", true);
+    viewport()->setObjectName(QStringLiteral("SvgSourceEditorViewport"));
+
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
     setTabStopDistance(
@@ -78,15 +85,16 @@ public:
 
   void lineNumberAreaPaintEvent(QPaintEvent *event) {
     QPainter painter(m_lineNumberArea);
-    const QPalette pal = palette();
-    painter.fillRect(event->rect(), pal.color(QPalette::AlternateBase));
+    const QPalette pal = m_lineNumberArea->palette();
+    painter.fillRect(event->rect(), pal.color(QPalette::Window));
 
     QTextBlock block = firstVisibleBlock();
     int blockNumber = block.blockNumber();
-    int top = qRound(blockBoundingGeometry(block).translated(contentOffset()).top());
+    int top =
+        qRound(blockBoundingGeometry(block).translated(contentOffset()).top());
     int bottom = top + qRound(blockBoundingRect(block).height());
 
-    painter.setPen(pal.color(QPalette::Disabled, QPalette::Text));
+    painter.setPen(pal.color(QPalette::WindowText));
     while (block.isValid() && top <= event->rect().bottom()) {
       if (block.isVisible() && bottom >= event->rect().top()) {
         painter.drawText(
@@ -110,6 +118,18 @@ protected:
               contents.height()));
   }
 
+  void changeEvent(QEvent *event) override {
+    QPlainTextEdit::changeEvent(event);
+    if (!event) return;
+
+    if (event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ApplicationPaletteChange ||
+        event->type() == QEvent::StyleChange) {
+      m_lineNumberArea->update();
+      highlightCurrentLine();
+    }
+  }
+
 private:
   void updateLineNumberAreaWidth() {
     setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
@@ -119,8 +139,20 @@ private:
     QList<QTextEdit::ExtraSelection> selections;
     if (!isReadOnly()) {
       QTextEdit::ExtraSelection selection;
-      QColor lineColor = palette().color(QPalette::AlternateBase);
-      lineColor.setAlpha(110);
+
+      // Blend a small amount of the selection color into the editor base.
+      // This stays legible for both the default white source canvas and a dark
+      // canvas supplied through Additional Style Sheet.
+      const QPalette pal = viewport()->palette();
+      const QColor base = pal.color(QPalette::Base);
+      const QColor accent = pal.color(QPalette::Highlight);
+      auto blendChannel = [](int baseChannel, int accentChannel) {
+        return (baseChannel * 88 + accentChannel * 12) / 100;
+      };
+      QColor lineColor(blendChannel(base.red(), accent.red()),
+                       blendChannel(base.green(), accent.green()),
+                       blendChannel(base.blue(), accent.blue()), base.alpha());
+
       selection.format.setBackground(lineColor);
       selection.format.setProperty(QTextFormat::FullWidthSelection, true);
       selection.cursor = textCursor();
@@ -132,7 +164,11 @@ private:
 };
 
 inline LineNumberArea::LineNumberArea(SourceCodeEdit *editor)
-    : QWidget(editor), m_editor(editor) {}
+    : QWidget(editor), m_editor(editor) {
+  setObjectName(QStringLiteral("SvgSourceEditorLineNumbers"));
+  setProperty("svgSourceEditorLineNumbers", true);
+  setAttribute(Qt::WA_StyledBackground, true);
+}
 
 inline QSize LineNumberArea::sizeHint() const {
   return QSize(m_editor->lineNumberAreaWidth(), 0);
@@ -141,7 +177,6 @@ inline QSize LineNumberArea::sizeHint() const {
 inline void LineNumberArea::paintEvent(QPaintEvent *event) {
   m_editor->lineNumberAreaPaintEvent(event);
 }
-
 
 }  // namespace SvgSourceEditor
 

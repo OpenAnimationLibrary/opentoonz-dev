@@ -6,22 +6,75 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QChildEvent>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QKeySequence>
 #include <QMainWindow>
 #include <QMenu>
+#include <QString>
 #include <QTimer>
 #include <QWidget>
 
 namespace SvgSourceEditor {
 
+inline QString sourceEditorDefaultStyleSheet() {
+  // Keep these defaults less specific than the public object-name selectors.
+  // A user can therefore override any of them from Preferences > Interface >
+  // Additional Style Sheet with #SvgSourceEditorCode and
+  // #SvgSourceEditorLineNumbers, even though this safety block is appended
+  // after the currently selected application theme.
+  return QStringLiteral(R"QSS(
+
+/* SVG_SOURCE_EDITOR_DEFAULT_QSS
+   Public Additional Style Sheet selectors:
+     #SvgSourceEditorCode
+     #SvgSourceEditorLineNumbers
+     #SvgSourceEditorViewport
+*/
+QPlainTextEdit[svgSourceEditor="true"] {
+  background-color: #ffffff;
+  color: #202020;
+  border: 1px solid #b8b8b8;
+  border-radius: 2px;
+  selection-background-color: rgba(79, 123, 199, 0.82);
+  selection-color: #ffffff;
+  padding: 1px 0 1px 1px;
+}
+QPlainTextEdit[svgSourceEditor="true"]:hover {
+  background-color: #ffffff;
+  color: #202020;
+  border-color: #9c9c9c;
+}
+QPlainTextEdit[svgSourceEditor="true"]:focus {
+  background-color: #ffffff;
+  color: #202020;
+  border-color: #4f7bc7;
+}
+QWidget[svgSourceEditorLineNumbers="true"] {
+  background-color: #f1f1f1;
+  color: #606060;
+}
+)QSS");
+}
+
+inline void ensureSourceEditorDefaultStyleSheet(QApplication *application) {
+  if (!application) return;
+
+  const QString marker = QStringLiteral("SVG_SOURCE_EDITOR_DEFAULT_QSS");
+  QString currentStyle = application->styleSheet();
+  if (currentStyle.contains(marker)) return;
+
+  currentStyle += sourceEditorDefaultStyleSheet();
+  application->setStyleSheet(currentStyle);
+}
+
 // Installs the already registered Source Editor QAction into the actual
 // OpenToonz main window and every Windows menu. The first experimental pass
 // created the command during QCoreApplication startup, but an application-wide
 // QAction does not receive shortcuts until it belongs to a widget, and room
-// menus may be created lazily long after startup. This activator follows the UI
-// lifecycle and repairs both conditions whenever windows or menus appear.
+// menus may be created lazily long after startup. This activator follows the
+// UI lifecycle and repairs both conditions whenever windows or menus appear.
 class SourceEditorUiActivator final : public QObject {
   QAction *m_action;
   bool m_scanPending = false;
@@ -39,6 +92,7 @@ public:
     if (m_action->shortcut().isEmpty())
       m_action->setShortcut(QKeySequence(QStringLiteral("Ctrl+Alt+E")));
 
+    ensureSourceEditorDefaultStyleSheet(application);
     scheduleScan();
     QTimer::singleShot(250, this, [this]() { scanUi(); });
     QTimer::singleShot(1500, this, [this]() { scanUi(); });
@@ -59,7 +113,9 @@ protected:
     }
 
     if (event->type() == QEvent::ChildAdded ||
-        event->type() == QEvent::ApplicationActivate)
+        event->type() == QEvent::ApplicationActivate ||
+        event->type() == QEvent::ApplicationPaletteChange ||
+        event->type() == QEvent::StyleChange)
       scheduleScan();
 
     return QObject::eventFilter(watched, event);
@@ -111,6 +167,12 @@ private:
     QApplication *application = qobject_cast<QApplication *>(qApp);
     if (!application || !m_action) return;
 
+    // Changing the selected theme or Additional Style Sheet replaces the
+    // application style sheet. Reinstall the low-specificity source-editor
+    // defaults afterward; ID selectors in the user's additional sheet remain
+    // authoritative.
+    ensureSourceEditorDefaultStyleSheet(application);
+
     const QWidgetList topLevels = application->topLevelWidgets();
     for (QWidget *topLevel : topLevels) {
       if (QMainWindow *window = qobject_cast<QMainWindow *>(topLevel))
@@ -143,7 +205,6 @@ inline void activateSourceEditorUi() {
 }  // namespace SvgSourceEditor
 
 inline void activateSvgSourceEditorUiAfterApplicationStartup() {
-  if (!qApp) return;
   QTimer::singleShot(0, qApp, []() {
     SvgSourceEditor::activateSourceEditorUi();
   });
