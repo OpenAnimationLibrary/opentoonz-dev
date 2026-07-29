@@ -1,0 +1,31 @@
+name: Squash timagecache PR
+
+on:
+  push:
+    branches:
+      - fix/timagecache-unsupported-image-compression
+    paths:
+      - .github/workflows/squash-timagecache-pr.yml
+
+permissions:
+  contents: write
+
+jobs:
+  squash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/timagecache-unsupported-image-compression
+          fetch-depth: 0
+
+      - name: Squash branch to one commit
+        run: |
+          git config user.name "RodneyBaker"
+          git config user.email "2576432+RodneyBaker@users.noreply.github.com"
+          git fetch origin master
+          git reset --soft origin/master
+          git rm .github/workflows/squash-timagecache-pr.yml
+          git commit -m "Fix image cache handling for unsupported image types" -m "Co-authored with ChatGPT (GPT-5.6 Thinking)."
+          git push --force-with-lease origin HEAD:fix/timagecache-unsupported-image-compression
