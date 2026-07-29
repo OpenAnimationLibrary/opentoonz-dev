@@ -17,6 +17,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDir>
 #include <QFileInfo>
 #include <QImage>
 #include <QMessageBox>
@@ -55,6 +56,27 @@ bool isSafeSize(const QSize &size) {
   return pixels > 0 && pixels <= maximumPixels;
 }
 
+bool isPhysicalFile(const TFilePath &path) {
+  const QFileInfo fileInfo(path.getQString());
+  return fileInfo.exists() && fileInfo.isFile();
+}
+
+// The standard level-loading path may represent a source as "name..svg" even
+// though the physical file is "name.svg". Qt's SVG renderer needs the concrete
+// filesystem path, not OpenToonz's empty-frame level placeholder.
+TFilePath resolveSourcePath(ToonzScene *scene, const TFilePath &path) {
+  TFilePath decodedPath = scene ? scene->decodeFilePath(path) : path;
+  if (isPhysicalFile(decodedPath)) return decodedPath;
+
+  const TFilePath noFramePath = decodedPath.withNoFrame();
+  if (noFramePath != decodedPath && isPhysicalFile(noFramePath))
+    return noFramePath;
+
+  // Return the most likely concrete path so any error message names the file
+  // the user expects to exist rather than the internal "..svg" placeholder.
+  return decodedPath.getFrame().isEmptyFrame() ? noFramePath : decodedPath;
+}
+
 bool prepareRenderer(const TFilePath &path, QSvgRenderer &renderer, QSize &size,
                      QString &error) {
   error.clear();
@@ -62,12 +84,14 @@ bool prepareRenderer(const TFilePath &path, QSvgRenderer &renderer, QSize &size,
   const QString fileName = path.getQString();
   const QFileInfo fileInfo(fileName);
   if (!fileInfo.exists() || !fileInfo.isFile()) {
-    error = QObject::tr("SVG source file does not exist.");
+    error = QObject::tr("SVG source file does not exist:\n%1")
+                .arg(QDir::toNativeSeparators(fileName));
     return false;
   }
 
   if (!renderer.load(fileName) || !renderer.isValid()) {
-    error = QObject::tr("The SVG document could not be parsed.");
+    error = QObject::tr("The SVG document could not be parsed:\n%1")
+                .arg(QDir::toNativeSeparators(fileName));
     return false;
   }
 
@@ -227,12 +251,12 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
                                  const std::wstring &requestedName) {
   if (!scene || actualSvgPath.getType() != "svg") return nullptr;
 
-  const std::wstring name =
-      uniqueLevelName(scene, actualSvgPath, requestedName);
+  const TFilePath sourcePath = resolveSourcePath(scene, actualSvgPath);
+  const std::wstring name = uniqueLevelName(scene, sourcePath, requestedName);
   TXshSimpleLevel *level = new TXshSimpleLevel(name);
   level->setScene(scene);
   level->setType(SVG_XSHLEVEL);
-  level->setPath(scene->codeFilePath(actualSvgPath), true);
+  level->setPath(scene->codeFilePath(sourcePath), true);
   level->setPalette(FullColorPalette::instance()->getPalette(scene));
 
   const TPointD dpi = scene->getCurrentCamera()->getDpi();
@@ -240,7 +264,7 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   const std::string imageId = level->getImageId(fid);
 
   SvgRasterImageBuilder *builder =
-      new SvgRasterImageBuilder(actualSvgPath, dpi, level->getPalette());
+      new SvgRasterImageBuilder(sourcePath, dpi, level->getPalette());
   ImageManager::instance()->bind(imageId, builder);
 
   // Insert the frame without supplying pixels. The custom builder above then
