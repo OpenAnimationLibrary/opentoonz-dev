@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include "toonz/fullcolorpalette.h"
+#include "toonz/imagemanager.h"
 #include "toonz/levelproperties.h"
 #include "toonz/levelset.h"
 #include "toonz/namebuilder.h"
@@ -10,7 +11,6 @@
 #include "toonz/toonzscene.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/txshsimplelevel.h"
-#include "tframeid.h"
 #include "tpixel.h"
 #include "trasterimage.h"
 
@@ -55,27 +55,36 @@ bool isSafeSize(const QSize &size) {
   return pixels > 0 && pixels <= maximumPixels;
 }
 
-TRasterImageP rasterize(const TFilePath &path, QString &error) {
+bool prepareRenderer(const TFilePath &path, QSvgRenderer &renderer, QSize &size,
+                     QString &error) {
   error.clear();
+
   const QString fileName = path.getQString();
   const QFileInfo fileInfo(fileName);
   if (!fileInfo.exists() || !fileInfo.isFile()) {
     error = QObject::tr("SVG source file does not exist.");
-    return TRasterImageP();
+    return false;
   }
 
-  QSvgRenderer renderer(fileName);
-  if (!renderer.isValid()) {
+  if (!renderer.load(fileName) || !renderer.isValid()) {
     error = QObject::tr("The SVG document could not be parsed.");
-    return TRasterImageP();
+    return false;
   }
 
-  const QSize size = naturalSize(renderer);
+  size = naturalSize(renderer);
   if (!isSafeSize(size)) {
     error = QObject::tr(
         "The SVG has no usable intrinsic size or exceeds the safety limit.");
-    return TRasterImageP();
+    return false;
   }
+
+  return true;
+}
+
+TRasterImageP rasterize(const TFilePath &path, QString &error) {
+  QSvgRenderer renderer;
+  QSize size;
+  if (!prepareRenderer(path, renderer, size, error)) return TRasterImageP();
 
   QImage image(size, QImage::Format_ARGB32_Premultiplied);
   if (image.isNull()) {
@@ -107,6 +116,59 @@ TRasterImageP rasterize(const TFilePath &path, QString &error) {
 
   return TRasterImageP(raster);
 }
+
+// Rebuilds the generated display raster from the retained SVG source whenever
+// the ImageManager cache is invalidated or evicted. Without this builder,
+// TXshSimpleLevel::setFrame() would bind the legacy SVG ImageLoader, which
+// converts the source to a TVectorImage on the next rebuild.
+class SvgRasterImageBuilder final : public ImageBuilder {
+  TFilePath m_path;
+  TPointD m_dpi;
+  TPalette *m_palette;
+  QString m_lastError;
+
+public:
+  SvgRasterImageBuilder(const TFilePath &path, const TPointD &dpi,
+                        TPalette *palette)
+      : m_path(path), m_dpi(dpi), m_palette(palette) {}
+
+  QString lastError() const { return m_lastError; }
+
+protected:
+  TImageP build(int imFlags, void *extData) override {
+    Q_UNUSED(extData);
+
+    TRasterImageP image = rasterize(m_path, m_lastError);
+    if (!image) return TImageP();
+
+    image->setDpi(m_dpi.x, m_dpi.y);
+    image->setPalette(m_palette);
+
+    ImageBuilder::setImageInfo(m_info, image.getPointer());
+    m_info.m_samplePerPixel = 4;
+    m_info.m_bitsPerSample  = 8;
+    m_imFlags               = imFlags & ImageManager::imageFlags;
+
+    return image;
+  }
+
+  bool getInfo(TImageInfo &info, int imFlags, void *extData) override {
+    Q_UNUSED(imFlags);
+    Q_UNUSED(extData);
+
+    QSvgRenderer renderer;
+    QSize size;
+    if (!prepareRenderer(m_path, renderer, size, m_lastError)) return false;
+
+    ImageBuilder::setImageInfo(info,
+                               TDimension(size.width(), size.height()));
+    info.m_dpix           = m_dpi.x;
+    info.m_dpiy           = m_dpi.y;
+    info.m_samplePerPixel = 4;
+    info.m_bitsPerSample  = 8;
+    return true;
+  }
+};
 
 std::wstring uniqueLevelName(ToonzScene *scene,
                              const TFilePath &actualSvgPath,
@@ -165,14 +227,6 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
                                  const std::wstring &requestedName) {
   if (!scene || actualSvgPath.getType() != "svg") return nullptr;
 
-  QString error;
-  TRasterImageP image = rasterize(actualSvgPath, error);
-  if (!image) {
-    QMessageBox::warning(QApplication::activeWindow(), QObject::tr("SVG Level"),
-                         error);
-    return nullptr;
-  }
-
   const std::wstring name =
       uniqueLevelName(scene, actualSvgPath, requestedName);
   TXshSimpleLevel *level = new TXshSimpleLevel(name);
@@ -182,8 +236,28 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   level->setPalette(FullColorPalette::instance()->getPalette(scene));
 
   const TPointD dpi = scene->getCurrentCamera()->getDpi();
-  image->setDpi(dpi.x, dpi.y);
-  level->setFrame(TFrameId(1), image);
+  const TFrameId fid(1);
+  const std::string imageId = level->getImageId(fid);
+
+  SvgRasterImageBuilder *builder =
+      new SvgRasterImageBuilder(actualSvgPath, dpi, level->getPalette());
+  ImageManager::instance()->bind(imageId, builder);
+
+  // Insert the frame without supplying pixels. The custom builder above then
+  // generates and caches the first display raster through the normal frame API.
+  level->setFrame(fid, TImageP());
+  TRasterImageP image = level->getFrame(fid, false);
+  if (!image) {
+    QString error = builder->lastError();
+    if (error.isEmpty())
+      error = QObject::tr("The SVG display frame could not be generated.");
+    level->eraseFrame(fid);
+    delete level;
+    QMessageBox::warning(QApplication::activeWindow(), QObject::tr("SVG Level"),
+                         error);
+    return nullptr;
+  }
+
   level->setRenumberTable();
   level->setIsReadOnly(true);
   level->setDirtyFlag(false);
@@ -193,12 +267,14 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
                               image->getRaster()->getLy());
   properties->setImageRes(resolution);
   properties->setBpp(32);
+  properties->setHasAlpha(true);
   properties->setDpiPolicy(LevelProperties::DP_CustomDpi);
   properties->setDpi(dpi);
   properties->setImageDpi(dpi);
   properties->setDoPremultiply(false);
 
   if (!scene->getLevelSet()->insertLevel(level)) {
+    level->eraseFrame(fid);
     delete level;
     return nullptr;
   }
