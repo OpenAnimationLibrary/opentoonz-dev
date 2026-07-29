@@ -8,6 +8,7 @@
 #include "toonz/levelset.h"
 #include "toonz/namebuilder.h"
 #include "toonz/tcamera.h"
+#include "toonz/textureutils.h"
 #include "toonz/toonzscene.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/txshsimplelevel.h"
@@ -24,6 +25,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QSvgRenderer>
+#include <QXmlStreamReader>
 
 #include <algorithm>
 
@@ -31,8 +33,9 @@ namespace SvgLevel {
 namespace {
 
 constexpr int kMaximumDimension = 16384;
+const TFrameId kSvgFrameId(1);
 
-QSize naturalSize(const QSvgRenderer &renderer) {
+QSize rendererNaturalSize(const QSvgRenderer &renderer) {
   QSize size = renderer.defaultSize();
   if (size.isValid() && !size.isEmpty()) return size;
 
@@ -95,7 +98,7 @@ bool prepareRenderer(const TFilePath &path, QSvgRenderer &renderer, QSize &size,
     return false;
   }
 
-  size = naturalSize(renderer);
+  size = rendererNaturalSize(renderer);
   if (!isSafeSize(size)) {
     error = QObject::tr(
         "The SVG has no usable intrinsic size or exceeds the safety limit.");
@@ -206,6 +209,72 @@ std::wstring uniqueLevelName(ToonzScene *scene,
   return candidate;
 }
 
+TPointD levelDpi(TXshSimpleLevel *level) {
+  TPointD dpi = level->getProperties()->getDpi();
+  if (dpi.x > 0.0 && dpi.y > 0.0) return dpi;
+
+  ToonzScene *scene = level->getScene();
+  return scene ? scene->getCurrentCamera()->getDpi() : TPointD(72.0, 72.0);
+}
+
+void updateLevelMetadata(TXshSimpleLevel *level, const TRasterImageP &image,
+                         const TPointD &dpi) {
+  LevelProperties *properties = level->getProperties();
+  const TDimension resolution(image->getRaster()->getLx(),
+                              image->getRaster()->getLy());
+  properties->setImageRes(resolution);
+  properties->setBpp(32);
+  properties->setHasAlpha(true);
+  properties->setDpiPolicy(LevelProperties::DP_CustomDpi);
+  properties->setDpi(dpi);
+  properties->setImageDpi(dpi);
+  properties->setDoPremultiply(false);
+
+  level->setType(SVG_XSHLEVEL);
+  level->setRenumberTable();
+  level->setIsReadOnly(true);
+  level->setDirtyFlag(false);
+}
+
+bool bindRenderedFrame(TXshSimpleLevel *level, const TFilePath &sourcePath,
+                       const TRasterImageP &image, QString &error) {
+  if (!level || !image) {
+    error = QObject::tr("The SVG display frame could not be generated.");
+    return false;
+  }
+
+  ToonzScene *scene = level->getScene();
+  if (!scene) {
+    error = QObject::tr("The SVG Level is not attached to a scene.");
+    return false;
+  }
+
+  if (!level->getPalette())
+    level->setPalette(FullColorPalette::instance()->getPalette(scene));
+
+  const TPointD dpi = levelDpi(level);
+  image->setDpi(dpi.x, dpi.y);
+  image->setPalette(level->getPalette());
+
+  const std::string imageId = level->getImageId(kSvgFrameId);
+  ImageManager::instance()->bind(
+      imageId,
+      new SvgRasterImageBuilder(sourcePath, dpi, level->getPalette()));
+
+  if (!level->isFid(kSvgFrameId))
+    level->setFrame(kSvgFrameId, TImageP());
+
+  if (!ImageManager::instance()->setImage(imageId, image)) {
+    error = QObject::tr("Unable to cache the SVG display frame.");
+    return false;
+  }
+
+  updateLevelMetadata(level, image, dpi);
+  texture_utils::invalidateTexture(level, kSvgFrameId);
+  error.clear();
+  return true;
+}
+
 }  // namespace
 
 OpenMode askOpenMode(QWidget *parent) {
@@ -219,7 +288,8 @@ OpenMode askOpenMode(QWidget *parent) {
   dialog.setWindowTitle(QObject::tr("Open SVG"));
   dialog.setText(QObject::tr("How should OpenToonz handle this SVG file?"));
   dialog.setInformativeText(QObject::tr(
-      "Experimental SVG Levels preserve the SVG source and are read-only. "
+      "Experimental SVG Levels preserve the SVG source and are read-only on "
+      "the canvas. Their text source can be edited in the Source Editor. "
       "Converting creates an editable Toonz Vector Level, but unsupported SVG "
       "features may be approximated or omitted."));
 
@@ -246,6 +316,134 @@ OpenMode askOpenMode(QWidget *parent) {
   return OpenMode::Cancel;
 }
 
+bool validateSource(const QByteArray &source, QString *error, int *line,
+                    int *column, QSize *naturalSize) {
+  if (error) error->clear();
+  if (line) *line = -1;
+  if (column) *column = -1;
+  if (naturalSize) *naturalSize = QSize();
+
+  QXmlStreamReader xml(source);
+  while (!xml.atEnd()) xml.readNext();
+  if (xml.hasError()) {
+    if (error) *error = xml.errorString();
+    if (line) *line = static_cast<int>(xml.lineNumber());
+    if (column) *column = static_cast<int>(xml.columnNumber());
+    return false;
+  }
+
+  QSvgRenderer renderer(source);
+  if (!renderer.isValid()) {
+    if (error)
+      *error = QObject::tr(
+          "The XML is well-formed, but the SVG renderer cannot parse it.");
+    return false;
+  }
+
+  const QSize size = rendererNaturalSize(renderer);
+  if (!isSafeSize(size)) {
+    if (error)
+      *error = QObject::tr(
+          "The SVG has no usable intrinsic size or exceeds the safety limit.");
+    return false;
+  }
+
+  if (naturalSize) *naturalSize = size;
+  return true;
+}
+
+TFilePath sourcePathForLevel(const TXshSimpleLevel *level) {
+  if (!level) return TFilePath();
+  return resolveSourcePath(level->getScene(), level->getPath());
+}
+
+bool restoreExperimentalLevel(TXshSimpleLevel *level, QString *error) {
+  QString localError;
+  if (!error) error = &localError;
+  error->clear();
+
+  if (!level || level->getType() != SVG_XSHLEVEL) {
+    *error = QObject::tr("The level is not an SVG Level.");
+    return false;
+  }
+
+  ToonzScene *scene = level->getScene();
+  if (!scene) {
+    *error = QObject::tr("The SVG Level is not attached to a scene.");
+    return false;
+  }
+
+  const TFilePath sourcePath = sourcePathForLevel(level);
+  if (!level->getPalette())
+    level->setPalette(FullColorPalette::instance()->getPalette(scene));
+
+  const TPointD dpi = levelDpi(level);
+  const std::string imageId = level->getImageId(kSvgFrameId);
+  ImageManager::instance()->bind(
+      imageId,
+      new SvgRasterImageBuilder(sourcePath, dpi, level->getPalette()));
+  if (!level->isFid(kSvgFrameId))
+    level->setFrame(kSvgFrameId, TImageP());
+
+  TRasterImageP image = rasterize(sourcePath, *error);
+  if (!image) {
+    level->setIsReadOnly(true);
+    level->setDirtyFlag(false);
+    level->setRenumberTable();
+    return false;
+  }
+
+  return bindRenderedFrame(level, sourcePath, image, *error);
+}
+
+bool reloadExperimentalLevel(TXshSimpleLevel *level, QString *error) {
+  QString localError;
+  if (!error) error = &localError;
+  error->clear();
+
+  if (!level || level->getType() != SVG_XSHLEVEL) {
+    *error = QObject::tr("The level is not an SVG Level.");
+    return false;
+  }
+
+  const TFilePath sourcePath = sourcePathForLevel(level);
+  TRasterImageP image = rasterize(sourcePath, *error);
+  if (!image) return false;
+
+  return bindRenderedFrame(level, sourcePath, image, *error);
+}
+
+bool relinkExperimentalLevel(TXshSimpleLevel *level,
+                             const TFilePath &newSourcePath, QString *error) {
+  QString localError;
+  if (!error) error = &localError;
+  error->clear();
+
+  if (!level || level->getType() != SVG_XSHLEVEL) {
+    *error = QObject::tr("The level is not an SVG Level.");
+    return false;
+  }
+
+  ToonzScene *scene = level->getScene();
+  if (!scene) {
+    *error = QObject::tr("The SVG Level is not attached to a scene.");
+    return false;
+  }
+
+  const TFilePath resolvedPath = resolveSourcePath(scene, newSourcePath);
+  TRasterImageP image = rasterize(resolvedPath, *error);
+  if (!image) return false;
+
+  const TFilePath oldPath = level->getPath();
+  level->setPath(scene->codeFilePath(resolvedPath), true);
+  if (!bindRenderedFrame(level, resolvedPath, image, *error)) {
+    level->setPath(oldPath, true);
+    return false;
+  }
+
+  return true;
+}
+
 TXshLevel *loadExperimentalLevel(ToonzScene *scene,
                                  const TFilePath &actualSvgPath,
                                  const std::wstring &requestedName) {
@@ -259,46 +457,20 @@ TXshLevel *loadExperimentalLevel(ToonzScene *scene,
   level->setPath(scene->codeFilePath(sourcePath), true);
   level->setPalette(FullColorPalette::instance()->getPalette(scene));
 
-  const TPointD dpi = scene->getCurrentCamera()->getDpi();
-  const TFrameId fid(1);
-  const std::string imageId = level->getImageId(fid);
-
-  SvgRasterImageBuilder *builder =
-      new SvgRasterImageBuilder(sourcePath, dpi, level->getPalette());
-  ImageManager::instance()->bind(imageId, builder);
-
-  // Insert the frame without supplying pixels. The custom builder above then
-  // generates and caches the first display raster through the normal frame API.
-  level->setFrame(fid, TImageP());
-  TRasterImageP image = level->getFrame(fid, false);
-  if (!image) {
-    QString error = builder->lastError();
-    if (error.isEmpty())
-      error = QObject::tr("The SVG display frame could not be generated.");
-    level->eraseFrame(fid);
+  QString error;
+  if (!restoreExperimentalLevel(level, &error)) {
+    level->eraseFrame(kSvgFrameId);
     delete level;
     QMessageBox::warning(QApplication::activeWindow(), QObject::tr("SVG Level"),
-                         error);
+                         error.isEmpty()
+                             ? QObject::tr(
+                                   "The SVG display frame could not be generated.")
+                             : error);
     return nullptr;
   }
 
-  level->setRenumberTable();
-  level->setIsReadOnly(true);
-  level->setDirtyFlag(false);
-
-  LevelProperties *properties = level->getProperties();
-  const TDimension resolution(image->getRaster()->getLx(),
-                              image->getRaster()->getLy());
-  properties->setImageRes(resolution);
-  properties->setBpp(32);
-  properties->setHasAlpha(true);
-  properties->setDpiPolicy(LevelProperties::DP_CustomDpi);
-  properties->setDpi(dpi);
-  properties->setImageDpi(dpi);
-  properties->setDoPremultiply(false);
-
   if (!scene->getLevelSet()->insertLevel(level)) {
-    level->eraseFrame(fid);
+    level->eraseFrame(kSvgFrameId);
     delete level;
     return nullptr;
   }
