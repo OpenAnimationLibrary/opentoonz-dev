@@ -60,6 +60,7 @@ public:
   }
   void group();
   void ungroup();
+  //! Remove every explicit group and subgroup from the current vector drawing.
   void ungroupAll();
   void enterGroup();
   void exitGroup();
