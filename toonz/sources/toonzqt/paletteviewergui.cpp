@@ -242,6 +242,8 @@ void PageViewer::setShowStyleIndex(bool showStyleIndex) {
 
 bool PageViewer::getShowStyleIndex() const { return ShowStyleIndex != 0; }
 
+//-----------------------------------------------------------------------------
+
 /*! Set current page to \b page and update view.
  */
 void PageViewer::setPage(TPalette::Page *page) {
@@ -893,6 +895,7 @@ void PageViewer::paintEvent(QPaintEvent *e) {
           m_viewMode != SmallChips) {
         QRect ppRect(chipRect.bottomLeft() + QPoint(offset, -14),
                      QSize(12, 15));
+        p.fillRect(ppRect, QBrush(Qt::white));
         p.drawRect(ppRect);
         QPoint markPos = ppRect.center() + QPoint(1, 0);
         p.drawEllipse(markPos, 3, 3);
