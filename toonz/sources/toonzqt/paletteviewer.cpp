@@ -43,6 +43,7 @@
 #include <QApplication>
 #include <QLabel>
 #include <QDrag>
+#include <QSignalBlocker>
 
 TEnv::IntVar ShowNewStyleButton("ShowNewStyleButton", 1);
 using namespace PaletteViewerGUI;
@@ -496,23 +497,41 @@ void PaletteViewer::createPaletteToolBar() {
   addViewAction(tr("&Large Thumbnails View"), PageViewer::LargeChips);
   addViewAction(tr("&List View"), PageViewer::List);
 
-  m_viewMode->addSeparator();
-  QAction *showStyleIndex = new QAction(tr("Show Style Index"), this);
-  showStyleIndex->setCheckable(true);
-  if (m_pageViewer)
-    showStyleIndex->setChecked(m_pageViewer->getShowStyleIndex());
-  connect(showStyleIndex, &QAction::toggled, [=](bool checked) {
-    if (m_pageViewer) m_pageViewer->toggleShowStyleIndex();
-    if (m_pageViewer) m_pageViewer->update();
-    bool setChecked              = false;
-    if (m_pageViewer) setChecked = m_pageViewer->getShowStyleIndex();
-    showStyleIndex->setChecked(setChecked);
-  });
-  m_viewMode->addAction(showStyleIndex);
+  viewMode->addSeparator();
+
+  QActionGroup *nameDisplayModeGroup = new QActionGroup(viewMode);
+  nameDisplayModeGroup->setExclusive(true);
+  connect(nameDisplayModeGroup, &QActionGroup::triggered, this,
+          &PaletteViewer::onNameDisplayMode);
+
+  auto addNameDisplayAction = [&](const QString &label,
+                                  PageViewer::NameDisplayMode mode) {
+    QAction *nameDisplayAction = new QAction(label, viewMode);
+    nameDisplayAction->setData(mode);
+    nameDisplayAction->setCheckable(true);
+    if (m_pageViewer->getNameDisplayMode() == mode)
+      nameDisplayAction->setChecked(true);
+    nameDisplayModeGroup->addAction(nameDisplayAction);
+    viewMode->addAction(nameDisplayAction);
+  };
 
   addNameDisplayAction(tr("Style Name"), PageViewer::Style);
   addNameDisplayAction(tr("StudioPalette Name"), PageViewer::Original);
   addNameDisplayAction(tr("Both Names"), PageViewer::StyleAndOriginal);
+
+  QAction *showStyleIndexesAction =
+      new QAction(tr("Show Style Indexes"), viewMode);
+  showStyleIndexesAction->setCheckable(true);
+  showStyleIndexesAction->setChecked(m_pageViewer->getShowStyleIndex());
+  connect(showStyleIndexesAction, &QAction::toggled, this,
+          [this](bool checked) { m_pageViewer->setShowStyleIndex(checked); });
+  connect(viewMode, &QMenu::aboutToShow, this,
+          [this, showStyleIndexesAction]() {
+            QSignalBlocker blocker(showStyleIndexesAction);
+            showStyleIndexesAction->setChecked(
+                m_pageViewer->getShowStyleIndex());
+          });
+  viewMode->addAction(showStyleIndexesAction);
 
   viewMode->addSeparator();
 
