@@ -1,0 +1,4 @@
+Cross-platform CI validation trigger for OpenAnimationLibrary/opentoonz-dev PR #17.
+
+Source under test: 2b7b520158ad6e52d00c691dec90c28eb333c09c
+This file contains no product code and exists only to trigger the repository's Linux and macOS pull-request workflows.
