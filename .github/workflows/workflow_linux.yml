@@ -1,19 +1,26 @@
 name: Linux Build
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: ${{ github.head_ref != '' }}
 
 on:
+  workflow_dispatch:
   push:
+    branches:
+      - master
     paths:
-      - '**/*'                   # Include all files in the repository
-      - '!appveyor.yml'          # Ignore changes in AppVeyor
-      - '!README.md'             # Exclude README
-      - '!doc/**'                # Exclude documentation
-      - '!**/.github/**'         # Exclude everything in .github folder
-      - '.github/workflows/workflow_linux.yml'  # Include Linux workflow file
+      - '**/*'
+      - '!appveyor.yml'
+      - '!README.md'
+      - '!doc/**'
+      - '!**/.github/**'
+      - '.github/workflows/workflow_linux.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -25,6 +32,7 @@ on:
 jobs:
   Ubuntu:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     strategy:
       matrix:
         compiler: [gcc, clang]
@@ -50,7 +58,7 @@ jobs:
       with:
         path: /home/runner/.ccache
         key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
-        restore-keys: | 
+        restore-keys: |
           ${{ runner.os }}-${{ matrix.compiler }}-
           ${{ runner.os }}-
 
@@ -72,6 +80,7 @@ jobs:
         ninja
 
     - name: Create Artifact
+      if: github.event_name != 'pull_request'
       run: |
         cd toonz/build
         sudo ninja install
@@ -113,6 +122,7 @@ jobs:
         tar zcf ${ARTIFACT_NAME}.tar.gz ${ARTIFACT_NAME}
 
     - uses: actions/upload-artifact@v6
+      if: github.event_name != 'pull_request'
       with:
         name: Opentoonz-${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
         path: toonz/build/Opentoonz-${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}.tar.gz
