@@ -63,6 +63,11 @@ using namespace ToolUtils;
 #define FREEHANDERASE L"Freehand"
 #define POLYLINEERASE L"Polyline"
 
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
+
 TEnv::DoubleVar EraseSize("InknpaintEraseSize", 10);
 TEnv::StringVar EraseType("InknpaintEraseType", "Normal");
 TEnv::IntVar EraseSelective("InknpaintEraseSelective", 0);
@@ -512,7 +517,7 @@ private:
   TDoubleProperty m_hardness;
   TBoolProperty m_invertOption;
   TBoolProperty m_currentStyle;
-  TBoolProperty m_multi;
+  TEnumProperty m_multi;
   TBoolProperty m_pencil;
   TEnumProperty m_colorType;
 
@@ -576,7 +581,7 @@ EraserTool::EraserTool(std::string name)
     , m_colorType("Mode:")                // W_ToolOptions_InkOrPaint
     , m_currentStyle("Selective", false)  // W_ToolOptions_Selective
     , m_invertOption("Invert", false)     // W_ToolOptions_Invert
-    , m_multi("Frame Range", false)       // W_ToolOptions_FrameRange
+    , m_multi("Frame Range:")             // W_ToolOptions_FrameRange
     , m_pencil("Pencil Mode", false)
     , m_currCell(-1, -1)
     , m_tileSaver(nullptr)
@@ -613,6 +618,11 @@ EraserTool::EraserTool(std::string name)
   m_prop.bind(m_currentStyle);
   m_prop.bind(m_invertOption);
   m_prop.bind(m_multi);
+  m_multi.addValue(L"Off");
+  m_multi.addValue(LINEAR_INTERPOLATION);
+  m_multi.addValue(EASE_IN_INTERPOLATION);
+  m_multi.addValue(EASE_OUT_INTERPOLATION);
+  m_multi.addValue(EASE_IN_OUT_INTERPOLATION);
   m_prop.bind(m_pencil);
 
   m_currentStyle.setId("Selective");
@@ -642,7 +652,12 @@ void EraserTool::updateTranslation() {
 
   m_currentStyle.setQStringName(tr("Selective"));
   m_invertOption.setQStringName(tr("Invert"));
-  m_multi.setQStringName(tr("Frame Range"));
+  m_multi.setQStringName(tr("Frame Range:"));
+  m_multi.setItemUIName(L"Off", tr("Off"));
+  m_multi.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+  m_multi.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+  m_multi.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+  m_multi.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
   m_pencil.setQStringName(tr("Pencil Mode"));
 }
 
@@ -690,10 +705,10 @@ void EraserTool::draw() {
 
   if (m_eraseType.getValue() == RECTERASE) {
     TPixel color = TPixel32::Red;
-    if (m_multi.getValue() && m_firstFrameSelected)
+    if (m_multi.getIndex() && m_firstFrameSelected)
       drawRect(m_firstRect, color, 0x3F33, true);
 
-    if (m_selecting || (m_multi.getValue() && !m_firstFrameSelected))
+    if (m_selecting || (m_multi.getIndex() && !m_firstFrameSelected))
       drawRect(m_selectingRect, color, 0xFFFF, true);
   }
   if (m_eraseType.getValue() == NORMALERASE) {
@@ -719,7 +734,7 @@ void EraserTool::draw() {
   }
   if ((m_eraseType.getValue() == FREEHANDERASE ||
        m_eraseType.getValue() == POLYLINEERASE) &&
-      m_multi.getValue()) {
+      m_multi.getIndex()) {
     TPixel color = TPixel32::Red;
     tglColor(color);
     if (m_firstStroke) drawStrokeCenterline(*m_firstStroke, 1);
@@ -814,6 +829,14 @@ void EraserTool::multiUpdate(const TXshSimpleLevelP &level, TFrameId firstFid,
   assert(m > 0);
 
   std::wstring levelName = level->getName();
+  enum TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_multi.getValue() == EASE_IN_INTERPOLATION)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_multi.getValue() == EASE_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_multi.getValue() == EASE_IN_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
 
   /*-- For each frame in the FrameRange --*/
   TUndoManager::manager()->beginBlock();
@@ -824,6 +847,7 @@ void EraserTool::multiUpdate(const TXshSimpleLevelP &level, TFrameId firstFid,
     if (!ti) continue;
     /*-- Get interpolation coefficient --*/
     double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    t        = TInbetween::interpolation(t, algorithm);
     /*-- When invert is ON, divide the outer area into 4 Rects and update --*/
     if (m_invertOption.getValue()) {
       TRect rect =
@@ -898,7 +922,7 @@ void EraserTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
   TRectD invalidateRect;
   if (TToonzImageP ti = image) {
     if (m_eraseType.getValue() == RECTERASE) {
-      if (m_multi.getValue() && m_firstRect.isEmpty()) {
+      if (m_multi.getIndex() && m_firstRect.isEmpty()) {
         invalidateRect = m_selectingRect;
         m_selectingRect.empty();
         invalidate(invalidateRect.enlarge(2));
@@ -971,7 +995,7 @@ void EraserTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 
       if (!m_enabled) return;
 
-      if (m_multi.getValue() && m_firstStroke && !m_firstFrameSelected) {
+      if (m_multi.getIndex() && m_firstStroke && !m_firstFrameSelected) {
         invalidateRect = m_firstStroke->getBBox();
         delete m_firstStroke;
         m_firstStroke = nullptr;
@@ -1116,7 +1140,7 @@ void EraserTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
 //----------------------------------------------------------------------
 
 void EraserTool::onImageChanged() {
-  if (!m_multi.getValue()) return;
+  if (!m_multi.getIndex()) return;
   TTool::Application *app = TTool::getApplication();
   TXshSimpleLevel *xshl   = 0;
   if (app->getCurrentLevel()->getLevel())
@@ -1154,7 +1178,7 @@ void EraserTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
       if (m_selectingRect.y0 > m_selectingRect.y1)
         std::swap(m_selectingRect.y1, m_selectingRect.y0);
 
-      if (m_multi.getValue()) {
+      if (m_multi.getIndex()) {
         TTool::Application *app = TTool::getApplication();
         if (m_firstFrameSelected) {
           multiUpdate(m_level, m_firstFrameId, getFrameId(), m_firstRect,
@@ -1293,7 +1317,7 @@ void EraserTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
 
       TTool::Application *app = TTool::getApplication();
       int styleId             = app->getCurrentLevelStyleIndex();
-      if (m_multi.getValue())  // stroke multi
+      if (m_multi.getIndex())  // stroke multi
       {
         if (m_firstFrameSelected) {
           TFrameId tmp = getFrameId();
@@ -1382,7 +1406,7 @@ void EraserTool::leftButtonDoubleClick(const TPointD &pos,
   assert(stroke->getPoint(0) == stroke->getPoint(1));
 
   int styleId = app->getCurrentLevelStyleIndex();
-  if (m_multi.getValue())  // stroke multi
+  if (m_multi.getIndex())  // stroke multi
   {
     if (m_firstFrameSelected) {
       TFrameId tmp = getFrameId();
@@ -1463,8 +1487,8 @@ bool EraserTool::onPropertyChanged(std::string propertyName) {
     EraseSelective = m_currentStyle.getValue();
 
   else if (propertyName == m_multi.getName()) {
-    if (m_multi.getValue()) resetMulti();
-    EraseRange = m_multi.getValue();
+    if (m_multi.getIndex()) resetMulti();
+    EraseRange = m_multi.getIndex();
   }
 
   else if (propertyName == m_pencil.getName()) {
@@ -1553,7 +1577,7 @@ void EraserTool::onEnter() {
     m_currentStyle.setValue(EraseSelective ? 1 : 0);
     m_invertOption.setValue(EraseInvert ? 1 : 0);
     m_colorType.setValue(::to_wstring(EraseColorType.getValue()));
-    m_multi.setValue(EraseRange ? 1 : 0);
+    m_multi.setIndex(EraseRange);
     m_hardness.setValue(EraseHardness);
     m_pencil.setValue(ErasePencil);
     m_firstTime = false;
@@ -1587,7 +1611,7 @@ void EraserTool::onLeave() {
 //----------------------------------------------------------------------
 
 void EraserTool::onActivate() {
-  if (m_multi.getValue()) resetMulti();
+  if (m_multi.getIndex()) resetMulti();
 
   /*-- When entering polyline from another tool, clear previous polyline
    * selection --*/
@@ -1632,11 +1656,20 @@ void EraserTool::multiAreaEraser(const TXshSimpleLevelP &sl, TFrameId &firstFid,
   int m = fids.size();
   assert(m > 0);
   TUndoManager::manager()->beginBlock();
+  enum TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_multi.getValue() == EASE_IN_INTERPOLATION)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_multi.getValue() == EASE_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_multi.getValue() == EASE_IN_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
   for (int i = 0; i < m; ++i) {
     TFrameId fid = fids[i];
     assert(firstFid <= fid && fid <= lastFid);
     TImageP img = sl->getFrame(fid, true);
-    double t    = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    t        = TInbetween::interpolation(t, algorithm);
     doMultiEraser(img, backward ? 1 - t : t, sl, fid, firstImage, lastImage);
     sl->getProperties()->setDirtyFlag(true);
     notifyImageChanged(fid);
