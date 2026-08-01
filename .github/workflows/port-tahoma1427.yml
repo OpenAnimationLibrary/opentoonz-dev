@@ -53,11 +53,26 @@ jobs:
             mkdir -p "/tmp/port-diagnostics/target/$(dirname "$file")"
             mkdir -p "/tmp/port-diagnostics/source-base/$(dirname "$file")"
             mkdir -p "/tmp/port-diagnostics/source-head/$(dirname "$file")"
-            cp "$file" "/tmp/port-diagnostics/target/$file"
-            git show 6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9:"$file" \
-              > "/tmp/port-diagnostics/source-base/$file"
-            git show 71ecdcaa9e09608e6d45dcfeb5452971c510c881:"$file" \
-              > "/tmp/port-diagnostics/source-head/$file"
+
+            if [[ -f "$file" ]]; then
+              cp "$file" "/tmp/port-diagnostics/target/$file"
+            else
+              : > "/tmp/port-diagnostics/target/$file.__missing__"
+            fi
+
+            if git cat-file -e "6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9:$file" 2>/dev/null; then
+              git show "6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9:$file" \
+                > "/tmp/port-diagnostics/source-base/$file"
+            else
+              : > "/tmp/port-diagnostics/source-base/$file.__missing__"
+            fi
+
+            if git cat-file -e "71ecdcaa9e09608e6d45dcfeb5452971c510c881:$file" 2>/dev/null; then
+              git show "71ecdcaa9e09608e6d45dcfeb5452971c510c881:$file" \
+                > "/tmp/port-diagnostics/source-head/$file"
+            else
+              : > "/tmp/port-diagnostics/source-head/$file.__missing__"
+            fi
           done
 
           if git apply --3way --index --whitespace=nowarn /tmp/tahoma2d-pr1427.patch; then
