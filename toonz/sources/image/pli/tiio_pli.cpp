@@ -173,9 +173,8 @@ pli->m_idWrittenColorsArray[i]=false;
 pli->m_idWrittenColorsArray[0]=true;
 */
 
-  // Write styles in their displayed page order. The PLI format stores the page
-// index but not the position within the page, so the reader reconstructs
-// that position from the order of the style tags.
+  // Write styles in displayed page order. PLI stores page index but not
+// position within a page. The reader reconstructs it from style tag order.
 for (int pageIndex = 0; pageIndex < vPalette->getPageCount(); pageIndex++) {
   TPalette::Page *page = vPalette->getPage(pageIndex);
   for (int styleIndex = 0; styleIndex < page->getStyleCount();
@@ -189,8 +188,8 @@ for (int pageIndex = 0; pageIndex < vPalette->getPageCount(); pageIndex++) {
     style->save(chan);  // viene riempito lo stream;
 
     assert(pageIndex >= 0 && pageIndex <= 65535);
-    StyleTag *styleTag =
-        new StyleTag(styleId, pageIndex, stream.size(), stream.data());
+    StyleTag *styleTag = new StyleTag(
+        styleId, pageIndex, stream.size(), stream.data());
     pli->m_palette_tags.push_back((PliObjectTag *)styleTag);
   }
 }
