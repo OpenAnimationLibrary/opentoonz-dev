@@ -1,0 +1,52 @@
+name: Temporary port of Tahoma2D PR 1471
+
+on:
+  push:
+    branches:
+      - agent/port-tahoma2d-pr-1471-onion-skin-opacity
+    paths:
+      - .github/workflows/temporary-port-tahoma2d-pr-1471.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cherry-pick-upstream-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/port-tahoma2d-pr-1471-onion-skin-opacity
+
+      - name: Fetch and cherry-pick Tahoma2D PR 1471
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add tahoma2d https://github.com/tahoma2d/tahoma2d.git
+          git fetch --no-tags tahoma2d pull/1471/head
+
+          source_base=9f268afac903a18a4ae715810da4434eee135df6
+          source_head=8bf7d3766e9f79a6c84c8d8e100657fa10e6bbf2
+          mapfile -t commits < <(git rev-list --reverse "${source_base}..${source_head}")
+
+          echo "Porting ${#commits[@]} upstream commits:"
+          printf '  %s\n' "${commits[@]}"
+
+          if ! git cherry-pick -x "${commits[@]}"; then
+            echo "Cherry-pick conflicts:" >&2
+            git diff --name-only --diff-filter=U >&2
+            exit 1
+          fi
+
+      - name: Remove temporary workflow and push port branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/temporary-port-tahoma2d-pr-1471.yml
+          git add -A
+          git commit -m "Remove temporary port workflow"
+          git push origin HEAD:agent/port-tahoma2d-pr-1471-onion-skin-opacity
