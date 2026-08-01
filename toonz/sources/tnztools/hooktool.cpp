@@ -9,6 +9,8 @@
 #include "tgl.h"
 #include "tstroke.h"
 #include "tvectorimage.h"
+#include "tenv.h"
+#include "tinbetween.h"
 #include "hookselection.h"
 #include "tools/toolhandle.h"
 
@@ -40,6 +42,13 @@
 #include <QPainter>
 
 using namespace ToolUtils;
+
+TEnv::IntVar HookRange("HookRange", 0);
+
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
 
 //=============================================================================
 namespace {
@@ -79,6 +88,7 @@ class HookTool final : public TTool {
 
   TPropertyGroup m_prop;
   TBoolProperty m_snappedActive;
+  TEnumProperty m_frameRange;
 
   TPointD m_snappedPos;
   std::string m_snappedReason;
@@ -88,7 +98,17 @@ class HookTool final : public TTool {
   bool m_buttonDown;
   TPointD m_pivotOffset;
 
+  bool m_firstClick;
+  TPointD m_firstPoint;
+  TFrameId m_firstFrameId;
+  int m_firstRow;
+  int m_firstColumn;
+  Hook *m_currentHook;
+
   void getOtherHooks(std::vector<OtherHook> &otherHooks);
+  Hook *addHook(const TFrameId &fid, const TPointD &pos);
+  void applyFrameRange(const TPointD &pos, bool shiftPressed);
+  void resetFrameRange();
 
 public:
   HookTool();
@@ -109,6 +129,7 @@ public:
   void onActivate() override;
   void onDeactivate() override;
   void onEnter() override;
+  bool onPropertyChanged(std::string propertyName) override;
   void onImageChanged() override {
     m_selection.selectNone();
     m_hookId = -1;
@@ -172,17 +193,35 @@ HookTool::HookTool()
     , m_snapped(false)
     , m_hookSetChanged(false)
     , m_buttonDown(false)
-    , m_pivotOffset() {
+    , m_pivotOffset()
+    , m_frameRange("Frame Range:")
+    , m_firstClick(false)
+    , m_firstRow(-1)
+    , m_firstColumn(-1)
+    , m_currentHook(0) {
   bind(TTool::CommonLevels);
   m_prop.bind(m_snappedActive);
+  m_prop.bind(m_frameRange);
 
   m_snappedActive.setId("Snap");
+  m_frameRange.setId("FrameRange");
+  m_frameRange.addValue(L"Off");
+  m_frameRange.addValue(LINEAR_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_INTERPOLATION);
+  m_frameRange.addValue(EASE_OUT_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_OUT_INTERPOLATION);
 }
 
 //-----------------------------------------------------------------------------
 
 void HookTool::updateTranslation() {
   m_snappedActive.setQStringName(tr("Snap"));
+  m_frameRange.setQStringName(tr("Frame Range:"));
+  m_frameRange.setItemUIName(L"Off", tr("Off"));
+  m_frameRange.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+  m_frameRange.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+  m_frameRange.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+  m_frameRange.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
 }
 
 //-----------------------------------------------------------------------------
@@ -263,6 +302,11 @@ void HookTool::draw() {
   const double v200 = 200.0 / 255.0;
   TImageP image     = getImage(false);
   if (!image) return;
+
+  if (m_frameRange.getIndex() && m_firstClick) {
+    tglColor(TPixel::Red);
+    drawCross(m_firstPoint, 6);
+  }
 
   TToonzImageP ti  = image;
   TVectorImageP vi = image;
@@ -424,7 +468,28 @@ void HookTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
   m_firstPos = m_lastPos = pos;
   m_hookId = -1, m_hookSide = 0;
   m_deselectArmed = false;
-  if (pick(m_hookId, m_hookSide, pos)) {
+  bool picked = pick(m_hookId, m_hookSide, pos);
+  if (m_frameRange.getIndex()) {
+    m_selection.selectNone();
+    if (!m_firstClick) {
+      m_currentHook = picked && xl ? xl->getHookSet()->getHook(m_hookId) : 0;
+      m_firstPoint = m_currentHook ? m_currentHook->getAPos(getCurrentFid()) : pos;
+      m_firstFrameId = getCurrentFid();
+      m_firstRow = getFrame();
+      m_firstColumn = getColumnIndex();
+      m_firstClick = true;
+    } else {
+      TPointD endPoint = pos;
+      if (picked)
+        endPoint = xl->getHookSet()->getHook(m_hookId)->getAPos(getCurrentFid());
+      applyFrameRange(endPoint, e.isShiftPressed());
+    }
+    m_pivotOffset = TPointD();
+    m_selection.makeCurrent();
+    invalidate();
+    return;
+  }
+  if (picked) {
     if (m_hookSide == 3)  // ho cliccato su un cerchio-croce
     {
       if (e.isAltPressed())  // con l'alt voglio dividere
@@ -502,6 +567,7 @@ void HookTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 void HookTool::leftButtonDrag(const TPointD &pp, const TMouseEvent &e) {
   TTool::Application *app = TTool::getApplication();
   if (!app) return;
+  if (m_frameRange.getIndex()) return;
 
   if (m_snapped) return;
 
@@ -761,6 +827,8 @@ void HookTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 
 void HookTool::onActivate() {
   // TODO: getApplication()->editImageOrSpline();
+  m_frameRange.setIndex(HookRange);
+  resetFrameRange();
   m_otherHooks.clear();
   getOtherHooks(m_otherHooks);
   m_selection.makeCurrent();
@@ -769,6 +837,7 @@ void HookTool::onActivate() {
 //-----------------------------------------------------------------------------
 
 void HookTool::onDeactivate() {
+  resetFrameRange();
   m_selection.selectNone();
   TSelection::setCurrent(0);
 }
@@ -776,3 +845,118 @@ void HookTool::onDeactivate() {
 //-----------------------------------------------------------------------------
 
 void HookTool::onEnter() { m_selection.makeCurrent(); }
+
+//-----------------------------------------------------------------------------
+
+bool HookTool::onPropertyChanged(std::string propertyName) {
+  if (propertyName == m_frameRange.getName()) {
+    HookRange = m_frameRange.getIndex();
+    resetFrameRange();
+  }
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+Hook *HookTool::addHook(const TFrameId &fid, const TPointD &pos) {
+  TTool::Application *app = TTool::getApplication();
+  TXshLevel *level = app ? app->getCurrentLevel()->getLevel() : 0;
+  HookSet *hookSet = getHookSet();
+  if (!level || !level->getSimpleLevel() ||
+      level->getSimpleLevel()->isReadOnly() || !hookSet)
+    return 0;
+
+  Hook *hook = hookSet->addHook();
+  if (!hook) return 0;
+  TPointD point = m_snappedReason.empty() ? pos : m_snappedPos;
+  m_snappedReason.clear();
+  hook->setAPos(fid, point);
+  hook->setBPos(fid, point);
+  m_hookSetChanged = true;
+  return hook;
+}
+
+//-----------------------------------------------------------------------------
+
+void HookTool::applyFrameRange(const TPointD &pos, bool shiftPressed) {
+  TTool::Application *app = TTool::getApplication();
+  if (!app) return;
+
+  std::vector<std::pair<int, TFrameId>> frames;
+  if (app->getCurrentFrame()->isEditingScene()) {
+    int lastRow = getFrame();
+    int step = m_firstRow <= lastRow ? 1 : -1;
+    TFrameId previousFid;
+    bool hasPrevious = false;
+    TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
+    for (int row = m_firstRow; row != lastRow + step; row += step) {
+      TXshCell cell = xsheet->getCell(row, m_firstColumn);
+      if (cell.isEmpty() || (hasPrevious && cell.getFrameId() == previousFid))
+        continue;
+      frames.push_back(std::make_pair(row, cell.getFrameId()));
+      previousFid = cell.getFrameId();
+      hasPrevious = true;
+    }
+  } else {
+    TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
+    if (!level) return;
+    int first = level->fid2index(m_firstFrameId);
+    int last = level->fid2index(getCurrentFid());
+    if (first < 0 || last < 0) return;
+    int step = first <= last ? 1 : -1;
+    for (int index = first; index != last + step; index += step)
+      frames.push_back(std::make_pair(-1, level->index2fid(index)));
+  }
+  if (frames.empty()) return;
+
+  if (!m_currentHook)
+    m_currentHook = addHook(frames.front().second, m_firstPoint);
+  if (!m_currentHook) return;
+  TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_frameRange.getIndex() == 2)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_frameRange.getIndex() == 3)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_frameRange.getIndex() == 4)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
+  int count = static_cast<int>(frames.size());
+  for (int index = 0; index < count; ++index) {
+    double t = count > 1 ? static_cast<double>(index) / (count - 1) : 0.5;
+    t = TInbetween::interpolation(t, algorithm);
+    TPointD point = m_firstPoint * (1 - t) + pos * t;
+    if (frames[index].first >= 0)
+      app->getCurrentFrame()->setFrame(frames[index].first);
+    else
+      app->getCurrentFrame()->setFid(frames[index].second);
+    m_currentHook->setAPos(frames[index].second, point);
+    m_currentHook->setBPos(frames[index].second, point);
+  }
+  m_hookSetChanged = true;
+
+  if (shiftPressed) {
+    m_firstPoint = pos;
+    m_firstFrameId = getCurrentFid();
+    m_firstRow = getFrame();
+    m_firstColumn = getColumnIndex();
+  } else {
+    if (app->getCurrentFrame()->isEditingScene()) {
+      app->getCurrentColumn()->setColumnIndex(m_firstColumn);
+      app->getCurrentFrame()->setFrame(m_firstRow);
+    } else {
+      app->getCurrentFrame()->setFid(m_firstFrameId);
+    }
+    resetFrameRange();
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void HookTool::resetFrameRange() {
+  m_firstClick = false;
+  m_firstPoint = TPointD();
+  m_firstFrameId = TFrameId();
+  m_firstRow = -1;
+  m_firstColumn = -1;
+  m_currentHook = 0;
+}
