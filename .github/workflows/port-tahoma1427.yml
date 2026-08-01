@@ -37,6 +37,29 @@ jobs:
             https://github.com/tahoma2d/tahoma2d/pull/1427.diff \
             --output /tmp/tahoma2d-pr1427.patch
 
+          mkdir -p /tmp/port-diagnostics/{target,source-base,source-head,tree}
+          cp /tmp/tahoma2d-pr1427.patch /tmp/port-diagnostics/
+
+          mapfile -t changed_files < <(
+            sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tmp/tahoma2d-pr1427.patch
+          )
+
+          git remote add tahoma https://github.com/tahoma2d/tahoma2d.git
+          git fetch --no-tags tahoma \
+            6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9 \
+            71ecdcaa9e09608e6d45dcfeb5452971c510c881
+
+          for file in "${changed_files[@]}"; do
+            mkdir -p "/tmp/port-diagnostics/target/$(dirname "$file")"
+            mkdir -p "/tmp/port-diagnostics/source-base/$(dirname "$file")"
+            mkdir -p "/tmp/port-diagnostics/source-head/$(dirname "$file")"
+            cp "$file" "/tmp/port-diagnostics/target/$file"
+            git show 6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9:"$file" \
+              > "/tmp/port-diagnostics/source-base/$file"
+            git show 71ecdcaa9e09608e6d45dcfeb5452971c510c881:"$file" \
+              > "/tmp/port-diagnostics/source-head/$file"
+          done
+
           if git apply --3way --index --whitespace=nowarn /tmp/tahoma2d-pr1427.patch; then
             echo "applied=true" >> "$GITHUB_OUTPUT"
             git rm .github/workflows/port-tahoma1427.yml
@@ -50,8 +73,6 @@ jobs:
           git clean -fd
           git apply --reject --whitespace=nowarn /tmp/tahoma2d-pr1427.patch || true
 
-          mkdir -p /tmp/port-diagnostics/tree
-          cp /tmp/tahoma2d-pr1427.patch /tmp/port-diagnostics/
           git status --short > /tmp/port-diagnostics/status.txt
           git diff --binary > /tmp/port-diagnostics/cleanly-applied.diff
           find . -name '*.rej' -print > /tmp/port-diagnostics/reject-files.txt
