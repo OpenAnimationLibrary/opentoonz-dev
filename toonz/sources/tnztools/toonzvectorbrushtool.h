@@ -156,6 +156,12 @@ public:
                            bool autoGroup = false, bool autoFill = false,
                            bool drawFirstStroke = true,
                            bool drawLastStroke = true, bool withUndo = true);
+  bool doFrameRangeStrokes(int firstFrame, TStroke *firstStroke,
+                           int lastFrame, TStroke *lastStroke,
+                           int interpolationType, bool breakAngles,
+                           bool autoGroup = false, bool autoFill = false,
+                           bool drawFirstStroke = true,
+                           bool drawLastStroke = true, bool withUndo = true);
   bool doGuidedAutoInbetween(TFrameId cFid, const TVectorImageP &cvi,
                              TStroke *cStroke, bool breakAngles,
                              bool autoGroup = false, bool autoFill = false,
