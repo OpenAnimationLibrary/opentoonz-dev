@@ -45,6 +45,11 @@ TEnv::IntVar AutocloseIgnoreAutoPaint("AutocloseIgnoreAutoPaint", 0);
 #define FREEHAND_CLOSE L"Freehand"
 #define POLYLINE_CLOSE L"Polyline"
 
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
+
 namespace {
 
 //============================================================
@@ -120,7 +125,7 @@ class RasterTapeTool final : public TTool {
   TIntProperty m_opacity;
   TPropertyGroup m_prop;
   TBoolProperty m_ignoreAP;
-  TBoolProperty m_multi;
+  TEnumProperty m_multi;
   TFrameId m_firstFrameId, m_veryFirstFrameId;
   bool m_isXsheetCell;
   std::pair<int, int> m_currCell;
@@ -143,7 +148,7 @@ public:
       , m_angle("Angle:", 1, 360, 60)           // W_ToolOptions_Angle
       , m_inkIndex("Style Index:", L"current")  // W_ToolOptions_InkIndex
       , m_opacity("Opacity:", 1, 255, 255)
-      , m_multi("Frame Range", false)  // W_ToolOptions_FrameRange
+      , m_multi("Frame Range:")  // W_ToolOptions_FrameRange
       , m_ignoreAP("Ignore AutoPaint Lines", false)
       , m_selecting(false)
       , m_selectingRect()
@@ -165,6 +170,11 @@ public:
     m_closeType.addValue(FREEHAND_CLOSE);
     m_closeType.addValue(POLYLINE_CLOSE);
     m_prop.bind(m_multi);
+    m_multi.addValue(L"Off");
+    m_multi.addValue(LINEAR_INTERPOLATION);
+    m_multi.addValue(EASE_IN_INTERPOLATION);
+    m_multi.addValue(EASE_OUT_INTERPOLATION);
+    m_multi.addValue(EASE_IN_OUT_INTERPOLATION);
     m_prop.bind(m_distance);
     m_prop.bind(m_angle);
     m_prop.bind(m_inkIndex);
@@ -188,11 +198,17 @@ public:
     m_closeType.setItemUIName(FREEHAND_CLOSE, tr("Freehand"));
     m_closeType.setItemUIName(POLYLINE_CLOSE, tr("Polyline"));
 
+    m_multi.setQStringName(tr("Frame Range:"));
+    m_multi.setItemUIName(L"Off", tr("Off"));
+    m_multi.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+    m_multi.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+    m_multi.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+    m_multi.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
+
     m_distance.setQStringName(tr("Distance:"));
     m_inkIndex.setQStringName(tr("Style Index:"));
     m_inkIndex.setValue(tr("current").toStdWString());
     m_opacity.setQStringName(tr("Opacity:"));
-    m_multi.setQStringName(tr("Frame Range"));
     m_ignoreAP.setQStringName(tr("Ignore AutoPaint Inks"));
     m_angle.setQStringName(tr("Angle:"));
   }
@@ -335,6 +351,14 @@ public:
     int m = fids.size();
     assert(m > 0);
 
+    TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+    if (m_multi.getIndex() == 2)
+      algorithm = TInbetween::EaseInInterpolation;
+    else if (m_multi.getIndex() == 3)
+      algorithm = TInbetween::EaseOutInterpolation;
+    else if (m_multi.getIndex() == 4)
+      algorithm = TInbetween::EaseInOutInterpolation;
+
     TVectorImageP firstImage;
     TVectorImageP lastImage;
     if ((m_closeType.getValue() == FREEHAND_CLOSE ||
@@ -354,6 +378,7 @@ public:
       TToonzImageP img = (TToonzImageP)m_level->getFrame(fid, true);
       if (!img) continue;
       double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+      t        = TInbetween::interpolation(t, algorithm);
       if (m_closeType.getValue() == RECT_CLOSE)
         applyAutoclose(img, fid, interpolateRect(firstRect, lastRect, t));
       else if ((m_closeType.getValue() == FREEHAND_CLOSE ||
@@ -419,7 +444,7 @@ public:
 
     m_selecting = false;
     if (m_closeType.getValue() == RECT_CLOSE) {
-      if (m_multi.getValue()) {
+      if (m_multi.getIndex()) {
         if (m_firstFrameSelected) {
           multiApplyAutoclose(m_firstFrameId, getFrameId(), m_firstRect,
                               m_selectingRect);
@@ -457,7 +482,7 @@ public:
       notifyImageChanged();
     } else if (m_closeType.getValue() == FREEHAND_CLOSE) {
       closeFreehand(pos);
-      if (m_multi.getValue())
+      if (m_multi.getIndex())
         multiAutocloseRegion(m_stroke, e);
       else
         applyAutoclose(ti, getCurrentFid(), TRectD(), m_stroke);
@@ -479,15 +504,15 @@ public:
       TPixel color = ToonzCheck::instance()->getChecks() & ToonzCheck::eBlackBg
                          ? TPixel32::White
                          : TPixel32::Black;
-      if (m_multi.getValue() && m_firstFrameSelected)
+      if (m_multi.getIndex() && m_firstFrameSelected)
         drawRect(m_firstRect, color, 0x3F33, true);
 
-      if (m_selecting || (m_multi.getValue() && !m_firstFrameSelected))
+      if (m_selecting || (m_multi.getIndex() && !m_firstFrameSelected))
         drawRect(m_selectingRect, color, 0x3F33, true);
     }
     if ((m_closeType.getValue() == FREEHAND_CLOSE ||
          m_closeType.getValue() == POLYLINE_CLOSE) &&
-        m_multi.getValue() && m_firstStroke) {
+        m_multi.getIndex() && m_firstStroke) {
       TPixel color = ToonzCheck::instance()->getChecks() & ToonzCheck::eBlackBg
                          ? TPixel32::White
                          : TPixel32::Black;
@@ -510,7 +535,7 @@ public:
                          : TPixel32::Black;
       tglColor(color);
       m_track.drawAllFragments();
-    } else if (m_multi.getValue() && m_firstFrameSelected)
+    } else if (m_multi.getIndex() && m_firstFrameSelected)
       drawCross(m_firstPoint, 5);
 
     // if (ToonzCheck::instance()->getChecks() & ToonzCheck::eAutoclose) {
@@ -547,7 +572,7 @@ public:
     } else if (propertyName == m_opacity.getName()) {
       AutocloseOpacity = m_opacity.getValue();
     } else if (propertyName == m_multi.getName()) {
-      AutocloseRange = (int)((m_multi.getValue()));
+      AutocloseRange = m_multi.getIndex();
       resetMulti();
     } else if (propertyName == m_ignoreAP.getName()) {
       AutocloseIgnoreAutoPaint = (int)(m_ignoreAP.getValue());
@@ -581,7 +606,7 @@ public:
   //----------------------------------------------------------------------
 
   void onImageChanged() override {
-    if (!m_multi.getValue()) return;
+    if (!m_multi.getIndex()) return;
     TTool::Application *app = TTool::getApplication();
     TXshSimpleLevel *xshl   = 0;
     if (app->getCurrentLevel()->getLevel())
@@ -625,7 +650,7 @@ public:
       addPointPolyline(pos);
       return;
     } else if (m_closeType.getValue() == NORMAL_CLOSE) {
-      if (m_multi.getValue()) {
+      if (m_multi.getIndex()) {
         TTool::Application *app = TTool::getApplication();
         if (m_firstFrameSelected) {
           multiApplyAutoclose(m_firstFrameId, getFrameId());
@@ -676,7 +701,7 @@ public:
       m_polyline.clear();
       m_stroke = new TStroke(strokePoints);
       assert(m_stroke->getPoint(0) == m_stroke->getPoint(1));
-      if (m_multi.getValue())
+      if (m_multi.getIndex())
         multiAutocloseRegion(m_stroke, e);
       else
         applyAutoclose(ti, getCurrentFid(), TRectD(), m_stroke);
@@ -715,7 +740,7 @@ public:
       m_distance.setValue(AutocloseDistance);
       m_angle.setValue(AutocloseAngle);
       m_opacity.setValue(AutocloseOpacity);
-      m_multi.setValue(AutocloseRange ? 1 : 0);
+      m_multi.setIndex(AutocloseRange);
       m_ignoreAP.setValue(AutocloseIgnoreAutoPaint ? 1 : 0);
       ToonzCheck::instance()->setAutocloseSettings(
           AutocloseDistance, AutocloseAngle, AutocloseOpacity,

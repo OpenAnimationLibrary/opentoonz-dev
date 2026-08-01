@@ -2398,6 +2398,7 @@ TapeToolOptionsBox::TapeToolOptionsBox(QWidget *parent, TTool *tool,
     , m_smoothMode(0)
     , m_joinStrokesMode(0)
     , m_toolMode(0)
+    , m_multiFrameMode(0)
     , m_autocloseLabel(0)
     , m_autocloseField(0) {
   TPropertyGroup *props = tool->getProperties(0);
@@ -2418,11 +2419,14 @@ TapeToolOptionsBox::TapeToolOptionsBox(QWidget *parent, TTool *tool,
       dynamic_cast<ToolOptionSlider *>(m_controls.value("Distance"));
   if (m_autocloseField)
     m_autocloseLabel = m_labels.value(m_autocloseField->propertyName());
+  m_multiFrameMode =
+      dynamic_cast<ToolOptionCombo *>(m_controls.value("Frame Range:"));
 
   bool isNormalType = m_typeMode->getProperty()->getValue() == L"Normal";
   m_toolMode->setEnabled(isNormalType);
   m_autocloseField->setEnabled(!isNormalType);
   m_autocloseLabel->setEnabled(!isNormalType);
+  m_multiFrameMode->setEnabled(!isNormalType);
 
   bool isLineToLineMode =
       m_toolMode->getProperty()->getValue() == L"Line to Line";
@@ -2456,6 +2460,7 @@ void TapeToolOptionsBox::onToolTypeChanged(int index) {
   m_toolMode->setEnabled(isNormalType);
   m_autocloseField->setEnabled(!isNormalType);
   m_autocloseLabel->setEnabled(!isNormalType);
+  m_multiFrameMode->setEnabled(!isNormalType);
 }
 
 //-----------------------------------------------------------------------------
