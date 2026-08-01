@@ -19,8 +19,14 @@ class FullColorFillTool final : public QObject, public TTool {
 
   TXshSimpleLevelP m_level;
   TDoublePairProperty m_fillDepth;
+  TEnumProperty m_frameRange;
   TPropertyGroup m_prop;
   TPointD m_clickPoint;
+  TPointD m_firstPoint;
+  TFrameId m_firstFrameId;
+  int m_firstRow;
+  int m_firstColumn;
+  bool m_firstFrameSelected;
 
 public:
   FullColorFillTool();
@@ -35,11 +41,17 @@ public:
 
   void leftButtonDown(const TPointD &pos, const TMouseEvent &e) override;
   void leftButtonDrag(const TPointD &pos, const TMouseEvent &e) override;
+  void draw() override;
 
   bool onPropertyChanged(std::string propertyName) override;
 
   void onActivate() override;
   int getCursorId() const override;
+
+private:
+  void resetFrameRange();
+  void fillFrameRange(const TPointD &pos, const TMouseEvent &e,
+                      const FillParameters &params);
 };
 
 #endif  // FULLCOLORFILLTOOL_H
