@@ -31,6 +31,8 @@ on:
 
 jobs:
   Ubuntu:
+    # Keep routine PR development on Windows. Adding the full-ci label triggers
+    # Linux immediately and keeps it enabled for later updates to that PR.
     if: >-
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'full-ci')
