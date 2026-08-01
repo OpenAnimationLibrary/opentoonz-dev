@@ -20,30 +20,12 @@ jobs:
       - name: Apply source change
         shell: python
         run: |
+          import re
           from pathlib import Path
 
           path = Path("toonz/sources/image/pli/tiio_pli.cpp")
           source = path.read_text()
-          old = """  for (i = 1; i < (unsigned)vPalette->getStyleCount(); i++) {
-            TColorStyle *style   = vPalette->getStyle(i);
-            TPalette::Page *page = vPalette->getStylePage(i);
-            if (!page) continue;
-            int pageIndex = 65535;
-            // if (page)
-            pageIndex = page->getIndex();
-
-            // TColorStyle*style = tempVecImg->getPalette()->getStyle(styleId);
-            std::vector<TStyleParam> stream;
-            PliOutputStream chan(&stream);
-            style->save(chan);  // viene riempito lo stream;
-
-            assert(pageIndex >= 0 && pageIndex <= 65535);
-            StyleTag *styleTag =
-                new StyleTag(i, pageIndex, stream.size(), stream.data());
-            pli->m_palette_tags.push_back((PliObjectTag *)styleTag);
-          }
-          """
-          new = """  // Write styles in their displayed page order. The PLI format stores the page
+          replacement = """  // Write styles in their displayed page order. The PLI format stores the page
           // index but not the position within the page, so the reader reconstructs
           // that position from the order of the style tags.
           for (int pageIndex = 0; pageIndex < vPalette->getPageCount(); pageIndex++) {
@@ -64,10 +46,16 @@ jobs:
               pli->m_palette_tags.push_back((PliObjectTag *)styleTag);
             }
           }
+
           """
-          if old not in source:
-              raise SystemExit("Expected palette serialization block not found")
-          path.write_text(source.replace(old, new, 1))
+          pattern = re.compile(
+              r"  for \(i = 1; i < \(unsigned\)vPalette->getStyleCount\(\); i\+\+\) \{.*?^  \}\n\n(?=  if \(vPalette->isAnimated\(\)\) \{)",
+              re.MULTILINE | re.DOTALL,
+          )
+          updated, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+              raise SystemExit(f"Expected one palette serialization block, found {count}")
+          path.write_text(updated)
 
       - name: Remove temporary workflow and commit
         run: |
