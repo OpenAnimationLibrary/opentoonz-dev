@@ -33,13 +33,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git remote add tahoma https://github.com/tahoma2d/tahoma2d.git
-          git fetch --no-tags tahoma \
-            6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9 \
-            71ecdcaa9e09608e6d45dcfeb5452971c510c881
-          git diff --binary \
-            6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9..71ecdcaa9e09608e6d45dcfeb5452971c510c881 \
-            > /tmp/tahoma2d-pr1427.patch
+          curl --fail --silent --show-error --location \
+            https://github.com/tahoma2d/tahoma2d/pull/1427.diff \
+            --output /tmp/tahoma2d-pr1427.patch
 
           if git apply --3way --index --whitespace=nowarn /tmp/tahoma2d-pr1427.patch; then
             echo "applied=true" >> "$GITHUB_OUTPUT"
