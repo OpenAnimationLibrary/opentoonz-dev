@@ -9,6 +9,7 @@
 #include "toonz/levelproperties.h"
 #include "toonz/preferences.h"
 #include "toonz/txsheethandle.h"
+#include "toonz/tframehandle.h"
 #include "toonz/tcolumnhandle.h"
 #include "toonz/txshcell.h"
 
