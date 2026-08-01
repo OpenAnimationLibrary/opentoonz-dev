@@ -20,7 +20,7 @@ on:
       - '!**/.github/**'
       - '.github/workflows/workflow_linux.yml'
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -31,6 +31,9 @@ on:
 
 jobs:
   Ubuntu:
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'full-ci')
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
