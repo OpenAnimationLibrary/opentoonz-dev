@@ -1,0 +1,75 @@
+name: Port Tahoma2D PR 1427
+
+on:
+  push:
+    branches:
+      - agent/port-tahoma2d-1427-frame-range
+    paths:
+      - .github/workflows/port-tahoma1427.yml
+
+permissions:
+  contents: write
+
+jobs:
+  port:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out OpenToonz-Dev port branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply Tahoma2D PR 1427
+        id: apply
+        shell: bash
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add tahoma https://github.com/tahoma2d/tahoma2d.git
+          git fetch --no-tags tahoma \
+            6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9 \
+            71ecdcaa9e09608e6d45dcfeb5452971c510c881
+          git diff --binary \
+            6e26dc8f2f1264ffb57eaa9f08422a62eaa79fc9..71ecdcaa9e09608e6d45dcfeb5452971c510c881 \
+            > /tmp/tahoma2d-pr1427.patch
+
+          if git apply --3way --index --whitespace=nowarn /tmp/tahoma2d-pr1427.patch; then
+            echo "applied=true" >> "$GITHUB_OUTPUT"
+            git rm .github/workflows/port-tahoma1427.yml
+            git commit -m "Port Tahoma2D frame range enhancements"
+            git push origin HEAD:agent/port-tahoma2d-1427-frame-range
+            exit 0
+          fi
+
+          echo "applied=false" >> "$GITHUB_OUTPUT"
+          git reset --hard HEAD
+          git clean -fd
+          git apply --reject --whitespace=nowarn /tmp/tahoma2d-pr1427.patch || true
+
+          mkdir -p /tmp/port-diagnostics/tree
+          cp /tmp/tahoma2d-pr1427.patch /tmp/port-diagnostics/
+          git status --short > /tmp/port-diagnostics/status.txt
+          git diff --binary > /tmp/port-diagnostics/cleanly-applied.diff
+          find . -name '*.rej' -print > /tmp/port-diagnostics/reject-files.txt
+          while IFS= read -r reject; do
+            mkdir -p "/tmp/port-diagnostics/tree/$(dirname "$reject")"
+            cp "$reject" "/tmp/port-diagnostics/tree/$reject"
+            original="${reject%.rej}"
+            if [[ -f "$original" ]]; then
+              cp "$original" "/tmp/port-diagnostics/tree/$original"
+            fi
+          done < /tmp/port-diagnostics/reject-files.txt
+
+      - name: Upload port diagnostics
+        if: steps.apply.outputs.applied != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tahoma2d-pr1427-port-diagnostics
+          path: /tmp/port-diagnostics
+          if-no-files-found: error
+
+      - name: Mark unresolved port conflicts
+        if: steps.apply.outputs.applied != 'true'
+        run: exit 1
