@@ -6,6 +6,11 @@ on:
       - agent/port-tahoma2d-1427-frame-range
     paths:
       - .github/workflows/port-tahoma1427.yml
+  pull_request:
+    branches:
+      - master
+    paths:
+      - .github/workflows/port-tahoma1427.yml
 
 permissions:
   contents: write
@@ -17,6 +22,7 @@ jobs:
       - name: Check out OpenToonz-Dev port branch
         uses: actions/checkout@v4
         with:
+          ref: agent/port-tahoma2d-1427-frame-range
           fetch-depth: 0
 
       - name: Apply Tahoma2D PR 1427
