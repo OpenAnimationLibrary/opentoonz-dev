@@ -34,7 +34,7 @@ public:
   enum Type { RECT, FREEHAND, POLYLINE, FREEPICK };
 
 private:
-  bool m_frameRange;
+  int m_frameRange;
   bool m_onlyUnfilled;
   Type m_type;
 
@@ -75,7 +75,7 @@ public:
   void mouseMove(const TPointD &pos, const TMouseEvent &e);
   void leftButtonUp(const TPointD &pos, const TMouseEvent &e);
   void onImageChanged();
-  bool onPropertyChanged(bool multi, bool onlyUnfilled, bool onion, Type type,
+  bool onPropertyChanged(int multi, bool onlyUnfilled, bool onion, Type type,
                          std::wstring colorType, bool autopaintLines);
   void onActivate();
   void onEnter();
@@ -96,7 +96,7 @@ class FillTool final : public QObject, public TTool {
   TEnumProperty m_colorType;  // Line, Area
   TEnumProperty m_fillType;   // Rect, Polyline etc.
   TBoolProperty m_onion;
-  TBoolProperty m_frameRange;
+  TEnumProperty m_frameRange;
   TBoolProperty m_emptyOnly;
   TDoublePairProperty m_fillDepth;
   TBoolProperty m_segment;

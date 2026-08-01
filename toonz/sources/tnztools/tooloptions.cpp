@@ -1781,7 +1781,7 @@ FillToolOptionsBox::FillToolOptionsBox(QWidget *parent, TTool *tool,
   m_onionMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Onion Skin"));
   m_multiFrameMode =
-      dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Frame Range"));
+      dynamic_cast<ToolOptionCombo *>(m_controls.value("Frame Range:"));
   m_autopaintMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Autopaint Lines"));
   m_closeGap =
@@ -1799,8 +1799,8 @@ FillToolOptionsBox::FillToolOptionsBox(QWidget *parent, TTool *tool,
                             SLOT(onToolTypeChanged(int)));
   ret      = ret && connect(m_onionMode, SIGNAL(toggled(bool)), this,
                             SLOT(onOnionModeToggled(bool)));
-  ret      = ret && connect(m_multiFrameMode, SIGNAL(toggled(bool)), this,
-                            SLOT(onMultiFrameModeToggled(bool)));
+  ret      = ret && connect(m_multiFrameMode, SIGNAL(currentIndexChanged(int)),
+                            this, SLOT(onMultiFrameModeChanged(int)));
   if (m_closeGap)
     ret = ret && connect(m_closeGap, &ToolOptionCheckbox::toggled,
                          m_gapCloseDistance, &QWidget::setEnabled);
@@ -1835,7 +1835,7 @@ void FillToolOptionsBox::onColorModeChanged(int index) {
     m_segmentMode->setEnabled(
         enabled ? m_toolType->getProperty()->getValue() == L"Normal" : false);
   }
-  enabled = range[index] != L"Lines" && !m_multiFrameMode->isChecked();
+  enabled = range[index] != L"Lines" && !m_multiFrameMode->getProperty()->getIndex();
   m_onionMode->setEnabled(enabled);
 }
 
@@ -1848,7 +1848,7 @@ void FillToolOptionsBox::onToolTypeChanged(int index) {
     m_segmentMode->setEnabled(
         enabled ? m_colorMode->getProperty()->getValue() != L"Areas" : false);
   enabled = enabled || (m_colorMode->getProperty()->getValue() != L"Lines" &&
-                        !m_multiFrameMode->isChecked());
+                        !m_multiFrameMode->getProperty()->getIndex());
   m_onionMode->setEnabled(enabled);
 }
 
@@ -1862,8 +1862,8 @@ void FillToolOptionsBox::onOnionModeToggled(bool value) {
 
 //-----------------------------------------------------------------------------
 
-void FillToolOptionsBox::onMultiFrameModeToggled(bool value) {
-  m_onionMode->setEnabled(!value);
+void FillToolOptionsBox::onMultiFrameModeChanged(int index) {
+  m_onionMode->setEnabled(index == 0);
 }
 
 //=============================================================================
