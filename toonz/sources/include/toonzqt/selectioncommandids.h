@@ -43,4 +43,7 @@
 #define MI_PasteNumbers "MI_PasteNumbers"
 #define MI_PasteCellContent "MI_PasteCellContent"
 
+#define MI_SetLinearControlPoint "MI_SetLinearControlPoint"
+#define MI_SetNonLinearControlPoint "MI_SetNonLinearControlPoint"
+
 #endif

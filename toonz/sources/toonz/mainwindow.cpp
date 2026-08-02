@@ -2407,6 +2407,10 @@ void MainWindow::defineActions() {
   createRightClickMenuAction(MI_EraseUnusedStyles,
                              QT_TR_NOOP("&Delete Unused Styles"), "",
                              "delete_unused_styles");
+  createRightClickMenuAction(MI_SetLinearControlPoint,
+                             QT_TR_NOOP("&Set Linear Control Point"), "");
+  createRightClickMenuAction(MI_SetNonLinearControlPoint,
+                             QT_TR_NOOP("&Set Nonlinear Control Point"), "");
 
   // Menu - View
 
