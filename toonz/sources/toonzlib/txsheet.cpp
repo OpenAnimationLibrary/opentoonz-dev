@@ -194,7 +194,8 @@ TXsheet::TXsheet()
     , m_soundProperties(std::make_unique<SoundProperties>())
     , m_navigationTags(std::make_unique<NavigationTags>())
     , m_cameraColumnIndex(0)
-    , m_observer(nullptr) {
+    , m_observer(nullptr)
+    , m_currentDrawingOnTop(false) {
   m_imp->m_handleManager = std::make_unique<XshHandleManager>(this);
   m_imp->m_pegTree->setHandleManager(m_imp->m_handleManager.get());
   m_imp->m_pegTree->createGrammar(this);
