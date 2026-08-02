@@ -1437,6 +1437,8 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(viewMenu, MI_NoShift);
   addMenuItem(viewMenu, MI_ResetShift);
   viewMenu->addSeparator();
+  addMenuItem(viewMenu, MI_CurrentDrawingOnTop);
+  viewMenu->addSeparator();
   addMenuItem(viewMenu, MI_VectorGuidedDrawing);
   viewMenu->addSeparator();
   addMenuItem(viewMenu, MI_RasterizePli);

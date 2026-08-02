@@ -213,6 +213,7 @@ public:
   int m_isGuidedDrawingEnabled;
   int m_guidedFrontStroke = -1;
   int m_guidedBackStroke  = -1;
+  bool m_currentDrawingOnTop;
   std::vector<TXshColumn *> m_ancestors;
 
   const ImagePainter::VisualSettings *m_vs;
@@ -292,7 +293,8 @@ StageBuilder::StageBuilder()
     , m_editingShift(false)
     , m_showShiftOrigin(false)
     , m_currentXsheetLevel(0)
-    , m_xsheetLevel(0) {
+    , m_xsheetLevel(0)
+    , m_currentDrawingOnTop(false) {
   m_placementStack.push_back(ZPlacement());
 }
 
@@ -511,6 +513,10 @@ void StageBuilder::addCell(PlayerSet &players, ToonzScene *scene, TXsheet *xsh,
         }
       }
     }
+
+    player.m_currentDrawingOnTop = m_currentDrawingOnTop;
+    if (m_currentDrawingOnTop && player.m_isCurrentColumn)
+      player.m_bingoOrder = 10;
 
     players.push_back(player);
   } else if (TXshChildLevel *cl = xl->getChildLevel()) {
@@ -860,6 +866,7 @@ void StageBuilder::addSimpleLevelFrame(PlayerSet &players,
   player.m_isEditingLevel       = true;
   player.m_ancestorColumnIndex  = -1;
   player.m_dpiAff               = getDpiAffine(level, fid);
+  player.m_currentDrawingOnTop  = m_currentDrawingOnTop;
 }
 
 //-----------------------------------------------------------------------------
@@ -959,6 +966,7 @@ void Stage::visit(Visitor &visitor, const VisitArgs &args) {
   sb.m_isGuidedDrawingEnabled = args.m_isGuidedDrawingEnabled;
   sb.m_guidedFrontStroke      = args.m_guidedFrontStroke;
   sb.m_guidedBackStroke       = args.m_guidedBackStroke;
+  sb.m_currentDrawingOnTop    = args.m_currentDrawingOnTop;
 #if defined(x64)
   if (args.m_liveViewImage) {
     sb.m_liveViewImage  = args.m_liveViewImage;

@@ -160,6 +160,7 @@ private:
   TXshColumnP m_cameraColumn;  //!< Smart pointer – ref‑counted
 
   TXsheetColumnChangeObserver *m_observer;
+  bool m_currentDrawingOnTop;
 
   DECLARE_CLASS_CODE
 
@@ -169,6 +170,9 @@ public:
 
   //! Returns a unique identifier associated with the xsheet instance.
   unsigned long id() const;
+
+  bool isCurrentDrawingOnTop() const { return m_currentDrawingOnTop; }
+  void setCurrentDrawingOnTop(bool onTop) { m_currentDrawingOnTop = onTop; }
 
   /*! Returns max frame number used in xsheet.
           \sa getMaxFrame()

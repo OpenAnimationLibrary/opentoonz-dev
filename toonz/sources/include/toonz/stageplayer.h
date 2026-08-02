@@ -113,6 +113,7 @@ public:
   static bool m_isShiftAndTraceEnabled;
 
   TPixel32 m_filterColor;
+  bool m_currentDrawingOnTop;
 
 public:
   Player();
