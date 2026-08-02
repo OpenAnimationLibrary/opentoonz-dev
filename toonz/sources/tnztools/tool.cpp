@@ -11,6 +11,7 @@
 
 // TnzQt includes
 #include "toonzqt/icongenerator.h"
+#include "toonzqt/dvdialog.h"
 
 // TnzLib includes
 #include "toonzqt/menubarcommand.h"
@@ -48,6 +49,26 @@
 #include "tundo.h"
 
 #include "toonzvectorbrushtool.h"
+
+namespace {
+bool convertSingleFileLevel(TXshSimpleLevel *level, TXsheet *xsheet) {
+  if (!level || !level->isSingleFileLevel()) return true;
+  if (!level->canConvertSingleFileToSequence()) {
+    DVGui::error(QObject::tr("Cannot add frames to a Single Frame level."));
+    return false;
+  }
+
+  const int choice = DVGui::MsgBox(
+      QObject::tr("In order to create a new frame in this Single Frame level, "
+                  "it will need to be converted and saved as a new sequenced "
+                  "file level.\nWould you like to continue?"),
+      QObject::tr("Ok"), QObject::tr("Cancel"));
+  if (choice == 0 || choice == 2) return false;
+
+  level->convertSingleFileToSequence(xsheet);
+  return true;
+}
+}  // namespace
 
 //*****************************************************************************************
 //    Local namespace
@@ -381,6 +402,9 @@ TImage *TTool::touchImage() {
       // no drawing found
       if (sl->isSubsequence() || sl->isReadOnly() || !isAutoCreateEnabled)
         return 0;
+      if (!convertSingleFileLevel(
+              sl, m_application->getCurrentXsheet()->getXsheet()))
+        return 0;
 
       // create a new drawing
       img = sl->createEmptyFrame();
@@ -411,6 +435,12 @@ TImage *TTool::touchImage() {
   TXshSimpleLevel *sl = cell.getSimpleLevel();
 
   if (sl) {
+    const bool createsFrame =
+        (isCreateInHoldCellsEnabled && row > 0 &&
+         xsh->getCell(row - 1, col) == xsh->getCell(row, col)) ||
+        !sl->isFid(cell.getFrameId());
+    if (createsFrame && !convertSingleFileLevel(sl, xsh)) return 0;
+
     // current cell is not empty
     if (isCreateInHoldCellsEnabled && row > 0 &&
         xsh->getCell(row - 1, col) == xsh->getCell(row, col)) {
@@ -503,6 +533,8 @@ TImage *TTool::touchImage() {
     } else if (b <= r1) {
       sl = xsh->getCell(b, col).getSimpleLevel();
     }
+    if (!convertSingleFileLevel(sl, xsh)) return 0;
+
     if (sl && !sl->isSubsequence() && !sl->isReadOnly()) {
       // note: sl should be always !=0 (the column is not empty)
       // if - for some reason - it is == 0 or it is not editable,

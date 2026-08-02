@@ -167,6 +167,7 @@ protected:
   bool m_firstTime;
 
   bool m_started;
+  bool m_active;
 
   bool m_propertyUpdating = false;
 };
