@@ -240,6 +240,18 @@ public:
   }
 };
 
+//-----------------------------------------------------------------------------
+
+class InbetweenFlipCommand final : public MenuItemHandler {
+public:
+  InbetweenFlipCommand() : MenuItemHandler(MI_InbetweenFlip) {}
+
+  void execute() override {
+    FlipConsole *console = FlipConsole::getCurrent();
+    if (console) console->triggerInbetweenFlip();
+  }
+};
+
 //**********************************************************************************
 //    Commands  instantiation
 //**********************************************************************************
@@ -273,3 +285,4 @@ ShortPlayCommand shortPlayCommand;
 
 NextKeyframeCommand nextKeyframeCommand;
 PrevKeyframeCommand prevKeyframeCommand;
+InbetweenFlipCommand inbetweenFlipCommand;
