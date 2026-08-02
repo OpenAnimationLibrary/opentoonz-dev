@@ -147,6 +147,8 @@
 #define MI_InsertFx "MI_InsertFx"
 #define MI_NewOutputFx "MI_NewOutputFx"
 
+#define MI_PreviewSelected "MI_PreviewSelected"
+
 #define MI_PasteNew "MI_PasteNew"
 #define MI_Autorenumber "MI_Autorenumber"
 #define MI_CreateBlankDrawing "MI_CreateBlankDrawing"
