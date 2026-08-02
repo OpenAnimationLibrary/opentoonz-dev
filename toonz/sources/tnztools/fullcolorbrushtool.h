@@ -13,6 +13,7 @@
 #include <tools/modifiers/modifiertangents.h>
 #include <tools/modifiers/modifierassistants.h>
 #include <tools/modifiers/modifiersegmentation.h>
+#include <tools/modifiers/modifiersmooth.h>
 
 #include "toonzrasterbrushtool.h"
 #include "mypainttoonzbrush.h"
@@ -129,11 +130,14 @@ protected:
   TSmartPointerT<TModifierTangents> m_modifierTangents;
   TSmartPointerT<TModifierAssistants> m_modifierAssistants;
   TSmartPointerT<TModifierSegmentation> m_modifierSegmentation;
+  TSmartPointerT<TModifierSegmentation> m_modifierSmoothSegmentation;
+  TSmartPointerT<TModifierSmooth> m_modifierSmooth[3];
   TInputModifier::List m_modifierReplicate;
 
   TPropertyGroup m_prop;
 
   TIntPairProperty m_thickness;
+  TIntProperty m_smooth;
   TBoolProperty m_pressure;
   TDoublePairProperty m_opacity;
   TDoubleProperty m_hardness;
