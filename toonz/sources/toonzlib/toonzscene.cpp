@@ -277,7 +277,11 @@ static void deleteAllUntitledScenes() {
 // ToonzScene
 
 ToonzScene::ToonzScene()
-    : m_contentHistory(0), m_isUntitled(true), m_isLoading(false) {
+    : m_contentHistory(0)
+    , m_isUntitled(true)
+    , m_isLoading(false)
+    , m_startRow(0)
+    , m_startCol(0) {
   m_childStack = new ChildStack(this);
   m_properties = new TSceneProperties();
   m_levelSet   = new TLevelSet();
@@ -485,9 +489,19 @@ void ToonzScene::loadTnzFile(const TFilePath &fp) {
               m_levelSet->insertLevel(xshLevel);
             }
           }
-        } else if (tagName == "xsheet")
+        } else if (tagName == "xsheet") {
+          bool isValidStartRow = false;
+          int startRow = QString::fromStdString(is.getTagAttribute("startRow"))
+                             .toInt(&isValidStartRow);
+          if (isValidStartRow && startRow >= 0) m_startRow = startRow;
+
+          bool isValidStartCol = false;
+          int startCol = QString::fromStdString(is.getTagAttribute("startCol"))
+                             .toInt(&isValidStartCol);
+          if (isValidStartCol && startCol >= 0) m_startCol = startCol;
+
           is >> *getXsheet();
-        else if (tagName == "history") {
+        } else if (tagName == "history") {
           std::string historyData, s;
           while (!is.eos()) {
             is >> s;
@@ -656,7 +670,10 @@ void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh) {
     std::set<TXshLevel *> emptySaveSet;
     m_levelSet->setSaveSet(emptySaveSet);
 
-    os.openChild("xsheet");
+    attr.clear();
+    attr["startRow"] = std::to_string(m_startRow);
+    attr["startCol"] = std::to_string(m_startCol);
+    os.openChild("xsheet", attr);
     os << *xsh;
     os.closeChild();
 
