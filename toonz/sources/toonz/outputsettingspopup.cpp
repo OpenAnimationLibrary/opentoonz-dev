@@ -179,6 +179,7 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
     , m_subcameraChk(nullptr)
     , m_applyShrinkChk(nullptr)
     , m_outputCameraOm(nullptr)
+    , m_syncWithPlayRange(nullptr)
     , m_isPreviewSettings(isPreview)
     , m_allowMT(Preferences::instance()->getFfmpegMultiThread())
     , m_presetCombo(nullptr)
@@ -380,6 +381,8 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     cameraParametersBox->setObjectName("OutputSettingsCameraBox");
     m_outputCameraOm->setFocusPolicy(Qt::StrongFocus);
     m_outputCameraOm->installEventFilter(this);
+    m_syncWithPlayRange =
+        new DVGui::CheckBox(tr("Sync with Play Range"), this);
   } else {
     // Subcamera checkbox
     m_subcameraChk = new DVGui::CheckBox(tr("Use Sub-Camera"));
@@ -436,6 +439,12 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
       frameShrinkLay->addWidget(new QLabel(tr("Step:"), this), 0, 6,
                                 Qt::AlignRight | Qt::AlignVCenter);
       frameShrinkLay->addWidget(m_stepFld, 0, 7);
+      if (!isPreview) {
+        frameShrinkLay->addItem(
+            new QSpacerItem(10, 1, QSizePolicy::Fixed, QSizePolicy::Fixed),
+            0, 8);
+        frameShrinkLay->addWidget(m_syncWithPlayRange, 0, 9);
+      }
 
       frameShrinkLay->addWidget(new QLabel(tr("Shrink:"), this), 1, 0,
                                 Qt::AlignRight | Qt::AlignVCenter);
@@ -445,7 +454,7 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
         frameShrinkLay->addWidget(m_applyShrinkChk, 1, 4, 1, 5,
                                   Qt::AlignRight | Qt::AlignVCenter);
     }
-    frameShrinkLay->setColumnStretch(8, 1);
+    frameShrinkLay->setColumnStretch(10, 1);
 
     lay->addLayout(frameShrinkLay);
   }
@@ -468,6 +477,8 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
   if (!isPreview) {
     ret = ret && connect(m_cameraSettings, SIGNAL(changed()), this,
                          SLOT(onCameraSettingsChanged()));
+    ret = ret && connect(m_syncWithPlayRange, SIGNAL(stateChanged(int)), this,
+                         SLOT(onSyncWithPlayRangeChanged(int)));
   } else {
     ret = ret && connect(m_applyShrinkChk, SIGNAL(stateChanged(int)),
                          SLOT(onApplyShrinkChecked(int)));
@@ -930,6 +941,7 @@ void OutputSettingsPopup::updateField() {
     m_rasterGranularityOm->setCurrentIndex(0);
 
     if (m_subcameraChk) m_subcameraChk->setCheckState(Qt::Unchecked);
+    if (m_syncWithPlayRange) m_syncWithPlayRange->setCheckState(Qt::Unchecked);
     m_linearColorSpaceChk->setCheckState(Qt::Unchecked);
     m_colorSpaceGammaFld->setText(QString());
     if (m_syncColorSettingsButton)
@@ -950,6 +962,7 @@ void OutputSettingsPopup::updateField() {
     m_fileFormat->setCurrentIndex(
         m_fileFormat->findText(QString::fromStdString(path.getType())));
     m_multimediaOm->setCurrentIndex(prop->getMultimediaRendering());
+    m_syncWithPlayRange->setChecked(prop->isSyncWithPlayRangeEnabled());
   }
 
   // Refresh format if allow-multithread was toggled
@@ -1316,6 +1329,35 @@ void OutputSettingsPopup::onSyncColorSettingsChecked(int state) {
   }
   // dirty flag will be set here
   TApp::instance()->getCurrentScene()->notifySceneChanged();
+}
+
+//----------------------------------------------
+
+void OutputSettingsPopup::onSyncWithPlayRangeChanged(int state) {
+  ToonzScene *scene = getCurrentScene();
+  if (!scene) return;
+
+  TOutputProperties *output = scene->getProperties()->getOutputProperties();
+  const bool enabled         = state == Qt::Checked;
+  bool changed = output->isSyncWithPlayRangeEnabled() != enabled;
+  output->setSyncWithPlayRangeEnabled(enabled);
+
+  if (enabled) {
+    int from, to, step;
+    TOutputProperties *preview = scene->getProperties()->getPreviewProperties();
+    if (preview->getRange(from, to, step)) {
+      int oldFrom, oldTo, oldStep;
+      output->getRange(oldFrom, oldTo, oldStep);
+      if (from != oldFrom || to != oldTo || step != oldStep) {
+        output->setRange(from, to, step);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  TApp::instance()->getCurrentScene()->notifySceneChanged();
+  if (m_presetCombo) m_presetCombo->setCurrentIndex(0);
 }
 
 //----------------------------------------------
