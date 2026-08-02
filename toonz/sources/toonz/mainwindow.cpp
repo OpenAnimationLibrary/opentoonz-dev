@@ -2841,6 +2841,17 @@ void MainWindow::defineActions() {
   createAction(MI_SelectionPolyline, QT_TR_NOOP("Selection Tool - Polyline"),
                "", ToolCommandType, "selection_polyline");
 
+  /*-- Brush tool + option shortcuts --*/
+  createAction(MI_BrushAutoFillOn, QT_TR_NOOP("Brush Tool - Auto Fill On"),
+               "", ToolCommandType);
+  createAction(MI_BrushAutoFillOff,
+               QT_TR_NOOP("Brush Tool - Auto Close/Group/Fill Off"), "",
+               ToolCommandType);
+  createAction(MI_BrushAutoCloseOn, QT_TR_NOOP("Brush Tool - Auto Close On"),
+               "", ToolCommandType);
+  createAction(MI_BrushAutoGroupOn, QT_TR_NOOP("Brush Tool - Auto Group On"),
+               "", ToolCommandType);
+
   /*-- Geometric tool + shape switching shortcuts --*/
   createAction(MI_GeometricNextShape, QT_TR_NOOP("Geometric Tool - Next Shape"),
                "", ToolCommandType);

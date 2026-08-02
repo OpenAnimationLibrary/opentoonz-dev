@@ -437,6 +437,11 @@
 #define MI_PlasticBuildSkeleton "MI_PlasticBuildSkeleton"
 #define MI_PlasticAnimate "MI_PlasticAnimate"
 
+#define MI_BrushAutoFillOn "MI_BrushAutoFillOn"
+#define MI_BrushAutoFillOff "MI_BrushAutoFillOff"
+#define MI_BrushAutoCloseOn "MI_BrushAutoCloseOn"
+#define MI_BrushAutoGroupOn "MI_BrushAutoGroupOn"
+
 #define MI_DeactivateUpperColumns "MI_DeactivateUpperColumns"
 #define MI_CompareToSnapshot "MI_CompareToSnapshot"
 #define MI_PreviewFx "MI_PreviewFx"
