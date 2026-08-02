@@ -71,6 +71,8 @@ Can set in output to all levels, only selectecd levels or only animated levels.
 
   enum MaxTileSizeValues { LargeVal = 50, MediumVal = 10, SmallVal = 2 };
 
+  enum AppendVersionFormat { None = 0, Sequence, Timestamp };
+
 private:
   TFilePath m_path;
 
@@ -103,6 +105,8 @@ private:
   bool m_syncColorSettings;
   // for restoring bpp when setting the color space back to nonlinear
   int m_nonlinearBpp;
+
+  AppendVersionFormat m_appendVersionFormat;
 
 public:
   /*!
@@ -239,6 +243,13 @@ machine's CPU).
   void syncColorSettings(bool sync) { m_syncColorSettings = sync; }
   int getNonlinearBpp() { return m_nonlinearBpp; }
   void setNonlinearBpp(int bpp) { m_nonlinearBpp = bpp; }
+
+  AppendVersionFormat getAppendVersionFormat() const {
+    return m_appendVersionFormat;
+  }
+  void setAppendVersionFormat(AppendVersionFormat format) {
+    m_appendVersionFormat = format;
+  }
 };
 
 //--------------------------------------------

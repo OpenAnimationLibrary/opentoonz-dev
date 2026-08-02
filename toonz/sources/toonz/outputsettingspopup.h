@@ -10,6 +10,7 @@
 #include <QLabel>
 // forward declaration
 class ToonzScene;
+class QButtonGroup;
 class QComboBox;
 class QScrollArea;
 class QListWidgetItem;
@@ -69,6 +70,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   DVGui::DoubleLineEdit *m_stereoShift;
   QComboBox *m_rasterGranularityOm;
   QComboBox *m_threadsComboOm;
+  QButtonGroup *m_appendVersionFormatBG;
   bool m_allowMT;
 
   DVGui::DoubleLineEdit *m_frameRateFld;
@@ -128,6 +130,7 @@ protected slots:
   void onMultimediaChanged(int mode);
   void onThreadsComboChanged(int type);
   void onRasterGranularityChanged(int type);
+  void onAppendVersionFormatChanged(int format);
   void onStereoChecked(int);
   void onStereoChanged();
   void onSyncColorSettingsChecked(int state);
