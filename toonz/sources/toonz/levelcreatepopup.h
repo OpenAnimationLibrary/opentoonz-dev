@@ -13,6 +13,7 @@
 #include <QString>
 
 class QLabel;
+class QCheckBox;
 class QComboBox;
 class QPushButton;
 class QShowEvent;
@@ -49,6 +50,7 @@ class LevelCreatePopup final : public DVGui::Dialog {
   QLabel *m_rasterFormatLabel;
   QComboBox *m_rasterFormatOm;
   QPushButton *m_frameFormatBtn;
+  QCheckBox *m_addInNewCol;
 
 public:
   explicit LevelCreatePopup();

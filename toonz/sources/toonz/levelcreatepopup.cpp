@@ -58,6 +58,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QPushButton>
 #include <QMainWindow>
 #include <QRegularExpressionValidator>
@@ -210,6 +211,7 @@ LevelCreatePopup::LevelCreatePopup()
   auto *okBtn     = new QPushButton(tr("OK"), this);
   auto *cancelBtn = new QPushButton(tr("Cancel"), this);
   auto *applyBtn  = new QPushButton(tr("Apply"), this);
+  m_addInNewCol   = new QCheckBox(tr("Create In New Column/Layer"), this);
 
   // Replace QRegExp with QRegularExpression
   // Exclude all characters which cannot fit in a filepath (Windows).
@@ -241,6 +243,7 @@ LevelCreatePopup::LevelCreatePopup()
       Preferences::instance()->getDefRasterFormat()));
 
   okBtn->setDefault(true);
+  m_addInNewCol->setChecked(true);
 
   // Layout
   m_topLayout->setContentsMargins(0, 0, 0, 0);
@@ -277,26 +280,28 @@ LevelCreatePopup::LevelCreatePopup()
                     Qt::AlignRight | Qt::AlignVCenter);
   guiLay->addWidget(m_levelTypeOm, 3, 1, 1, 3);
 
+  guiLay->addWidget(m_addInNewCol, 4, 1, 1, 3);
+
   // Save In
-  guiLay->addWidget(new QLabel(tr("Save In:")), 4, 0,
+  guiLay->addWidget(new QLabel(tr("Save In:")), 5, 0,
                     Qt::AlignRight | Qt::AlignVCenter);
-  guiLay->addWidget(m_pathFld, 4, 1, 1, 4);
+  guiLay->addWidget(m_pathFld, 5, 1, 1, 4);
 
   // Format options (for Raster/Scan levels)
-  guiLay->addWidget(m_rasterFormatLabel, 5, 0,
+  guiLay->addWidget(m_rasterFormatLabel, 6, 0,
                     Qt::AlignRight | Qt::AlignVCenter);
-  guiLay->addWidget(m_rasterFormatOm, 5, 1, Qt::AlignLeft);
-  guiLay->addWidget(m_frameFormatBtn, 5, 2, 1, 2, Qt::AlignLeft);
+  guiLay->addWidget(m_rasterFormatOm, 6, 1, Qt::AlignLeft);
+  guiLay->addWidget(m_frameFormatBtn, 6, 2, 1, 2, Qt::AlignLeft);
 
   // Width - Height
-  guiLay->addWidget(m_widthLabel, 6, 0, Qt::AlignRight | Qt::AlignVCenter);
-  guiLay->addWidget(m_widthFld, 6, 1);
-  guiLay->addWidget(m_heightLabel, 6, 2, Qt::AlignRight | Qt::AlignVCenter);
-  guiLay->addWidget(m_heightFld, 6, 3);
+  guiLay->addWidget(m_widthLabel, 7, 0, Qt::AlignRight | Qt::AlignVCenter);
+  guiLay->addWidget(m_widthFld, 7, 1);
+  guiLay->addWidget(m_heightLabel, 7, 2, Qt::AlignRight | Qt::AlignVCenter);
+  guiLay->addWidget(m_heightFld, 7, 3);
 
   // DPI
-  guiLay->addWidget(m_dpiLabel, 7, 0, Qt::AlignRight | Qt::AlignVCenter);
-  guiLay->addWidget(m_dpiFld, 7, 1);
+  guiLay->addWidget(m_dpiLabel, 8, 0, Qt::AlignRight | Qt::AlignVCenter);
+  guiLay->addWidget(m_dpiFld, 8, 1);
 
   guiLay->setColumnStretch(0, 0);
   guiLay->setColumnStretch(1, 0);
@@ -405,6 +410,16 @@ void LevelCreatePopup::showEvent(QShowEvent *event) {
     m_widthFld->setDecimals(4);
     m_heightFld->setDecimals(4);
   }
+
+  TApp *app          = TApp::instance();
+  ToonzScene *scene  = app->getCurrentScene()->getScene();
+  TXsheet *xsheet    = scene->getXsheet();
+  const int row       = app->getCurrentFrame()->getFrame();
+  const int column    = app->getCurrentColumn()->getColumnIndex();
+  TXshColumn *current = column >= 0 ? xsheet->getColumn(column) : nullptr;
+  const bool canCreateInNewColumn =
+      current && !current->isEmpty() && current->isCellEmpty(row);
+  m_addInNewCol->setEnabled(canCreateInNewColumn);
 }
 
 //-----------------------------------------------------------------------------
@@ -621,6 +636,10 @@ bool LevelCreatePopup::apply() {
   if (!validColumn) {
     isInRange = false;
   }
+
+  if (isInRange && m_addInNewCol->isEnabled() &&
+      m_addInNewCol->isChecked())
+    isInRange = false;
 
   // If the range is occupied by another level, shift the column one to the
   // right
