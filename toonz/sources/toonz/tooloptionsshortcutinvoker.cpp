@@ -600,6 +600,16 @@ void ToolOptionsShortcutInvoker::initialize() {
   setCommandHandler(MI_PlasticAnimate, this,
                     &ToolOptionsShortcutInvoker::TogglePlasticAnimate);
 
+  /*-- Brush tool + option shortcuts --*/
+  setCommandHandler(MI_BrushAutoFillOff, this,
+                    &ToolOptionsShortcutInvoker::toggleBrushAutoFillOff);
+  setCommandHandler(MI_BrushAutoFillOn, this,
+                    &ToolOptionsShortcutInvoker::toggleBrushAutoFillOn);
+  setCommandHandler(MI_BrushAutoCloseOn, this,
+                    &ToolOptionsShortcutInvoker::toggleBrushAutoCloseOn);
+  setCommandHandler(MI_BrushAutoGroupOn, this,
+                    &ToolOptionsShortcutInvoker::toggleBrushAutoGroupOn);
+
   /*-- Edit Assistants tool + type switching shortcuts --*/
   setCommandHandler(MI_AssistantNextType, this,
                     &ToolOptionsShortcutInvoker::toggleAssistantNextType);
@@ -1271,4 +1281,41 @@ void ToolOptionsShortcutInvoker::TogglePlasticAnimate() {
   CommandManager::instance()
       ->getAction("A_ToolOption_SkeletonMode:Animate")
       ->trigger();
+}
+
+//-----------------------------------------------------------------------------
+/*-- Brush tool + option shortcuts --*/
+void ToolOptionsShortcutInvoker::toggleBrushAutoFillOff() {
+  CommandManager::instance()->getAction(T_Brush)->trigger();
+
+  QAction* action =
+      CommandManager::instance()->getAction("A_ToolOption_Autofill");
+  if (action->isChecked()) action->trigger();
+
+  action = CommandManager::instance()->getAction("A_ToolOption_AutoGroup");
+  if (action->isChecked()) action->trigger();
+
+  action = CommandManager::instance()->getAction("A_ToolOption_AutoClose");
+  if (action->isChecked()) action->trigger();
+}
+
+void ToolOptionsShortcutInvoker::toggleBrushAutoFillOn() {
+  CommandManager::instance()->getAction(T_Brush)->trigger();
+  QAction* action =
+      CommandManager::instance()->getAction("A_ToolOption_Autofill");
+  if (!action->isChecked()) action->trigger();
+}
+
+void ToolOptionsShortcutInvoker::toggleBrushAutoCloseOn() {
+  CommandManager::instance()->getAction(T_Brush)->trigger();
+  QAction* action =
+      CommandManager::instance()->getAction("A_ToolOption_AutoClose");
+  if (!action->isChecked()) action->trigger();
+}
+
+void ToolOptionsShortcutInvoker::toggleBrushAutoGroupOn() {
+  CommandManager::instance()->getAction(T_Brush)->trigger();
+  QAction* action =
+      CommandManager::instance()->getAction("A_ToolOption_AutoGroup");
+  if (!action->isChecked()) action->trigger();
 }
