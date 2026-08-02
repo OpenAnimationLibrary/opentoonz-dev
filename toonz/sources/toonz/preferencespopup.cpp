@@ -1386,6 +1386,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {rewindAfterPlayback, tr("Rewind after Playback")},
       {shortPlayFrameCount,
        tr("Number of Frames to Play \nfor Short Play Command:")},
+      {inbetweenFlipDrawingCount, tr("Inbetween Flip Drawings:")},
+      {inbetweenFlipSpeed, tr("Inbetween Flip Speed (msec):")},
       {generatedMovieViewEnabled, tr("Open Flipbook after Rendering")},
       {previewAlwaysOpenNewFlip, tr("Always Open New Flipbook Window ")},
       {fitToFlipbookWhenPreview,
@@ -2284,6 +2286,8 @@ QWidget* PreferencesPopup::createPreviewPage() {
     insertUI(blanksCount, palyControlLay);
     insertUI(blankColor, palyControlLay);
     insertUI(shortPlayFrameCount, palyControlLay);
+    insertDualUIs(inbetweenFlipDrawingCount, inbetweenFlipSpeed,
+                  palyControlLay);
   }
   QGridLayout* previewLay = insertGroupBox(tr("Preview"), lay);
   {
