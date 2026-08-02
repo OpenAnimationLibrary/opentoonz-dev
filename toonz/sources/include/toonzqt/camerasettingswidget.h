@@ -91,7 +91,7 @@ class DVAPI CameraSettingsWidget final : public QFrame {
 
   QPushButton *m_fspChk;  // Force Squared Pixel => dpix == dpiy
 
-  QPushButton *m_useLevelSettingsBtn;
+  QPushButton *m_useLevelSettingsBtn, *m_useOverlaySettingsBtn;
   QComboBox *m_presetListOm;
   QPushButton *m_addPresetBtn, *m_removePresetBtn;
 
@@ -100,7 +100,7 @@ class DVAPI CameraSettingsWidget final : public QFrame {
   QString m_presetListFile;
 
   // needed by "use level settings"
-  TXshSimpleLevel *m_currentLevel;
+  TXshSimpleLevel *m_currentLevel, *m_overlayLevel;
 
   void savePresetList();
   void loadPresetList();
@@ -129,6 +129,7 @@ public:
   // Defines the level referred by the button "Use level settings".
   // Calling setCurrentLevel(nullptr) disables the button
   void setCurrentLevel(TXshLevel *xshLevel);
+  void setOverlayLevel(TXshLevel *xshLevel);
 
   // camera => widget fields (i.e. initialize widget)
   void setFields(const TCamera *camera);
@@ -179,6 +180,7 @@ protected:
   void updatePresetListOm();
 
   void setArFld(double ar);
+  bool applyLevelSettings(TXshSimpleLevel *level);
 
 protected slots:
   void onLxChanged();
@@ -194,6 +196,7 @@ protected slots:
   void addPreset();
   void removePreset();
   void useLevelSettings();
+  void useOverlaySettings();
 
 signals:
   void changed();  // some value has been changed
