@@ -38,6 +38,7 @@
 
 using namespace ToolUtils;
 
+TEnv::DoubleVar EraseVectorMinSize("InknpaintEraseVectorMinSize", 1);
 TEnv::DoubleVar EraseVectorSize("InknpaintEraseVectorSize", 10);
 TEnv::StringVar EraseVectorType("InknpaintEraseVectorType", "Normal");
 TEnv::StringVar EraseVectorInterpolation("InknpaintEraseVectorInterpolation",
@@ -45,12 +46,21 @@ TEnv::StringVar EraseVectorInterpolation("InknpaintEraseVectorInterpolation",
 TEnv::IntVar EraseVectorSelective("InknpaintEraseVectorSelective", 0);
 TEnv::IntVar EraseVectorInvert("InknpaintEraseVectorInvert", 0);
 TEnv::IntVar EraseVectorRange("InknpaintEraseVectorRange", 0);
+TEnv::IntVar EraseVectorPressure("InknpaintEraseVectorPressure", 1);
 
 //=============================================================================
 // Eraser Tool
 //=============================================================================
 
 namespace {
+
+double computeThickness(double pressure, const TDoublePairProperty &property) {
+  double t      = pressure * pressure * pressure;
+  double thick0 = property.getValue().first;
+  double thick1 = property.getValue().second;
+  if (thick1 < 0.0001) thick0 = thick1 = 0.0;
+  return thick0 + (thick1 - thick0) * t;
+}
 
 #define NORMAL_ERASE L"Normal"
 #define RECT_ERASE L"Rectangular"
@@ -267,6 +277,8 @@ public:
 
   void draw() override;
 
+  void applyPressure(double pressure, bool isTablet);
+
   void startErase(TVectorImageP vi, const TPointD &pos);
   void erase(TVectorImageP vi, const TPointD &pos);
   void erase(TVectorImageP vi, TRectD &rect);
@@ -299,7 +311,8 @@ private:
 
   TEnumProperty m_eraseType;
   TEnumProperty m_interpolation;
-  TDoubleProperty m_toolSize;
+  TDoublePairProperty m_toolSize;
+  TBoolProperty m_pressure;
   TBoolProperty m_selective;
   TBoolProperty m_invertOption;
   TBoolProperty m_multi;
@@ -372,7 +385,7 @@ EraserTool::EraserTool()
     : TTool("T_Eraser")
     , m_eraseType("Type:")  // "W_ToolOptions_Erasetype"
     , m_interpolation("interpolation:")
-    , m_toolSize("Size:", 1, 1000, 10)  // "W_ToolOptions_EraserToolSize"
+    , m_toolSize("Size:", 1, 1000, 1, 10)  // "W_ToolOptions_EraserToolSize"
     , m_selective("Selective", false)   // "W_ToolOptions_Selective"
     , m_invertOption("Invert", false)   // "W_ToolOptions_Invert"
     , m_multi("Frame Range", false)     // "W_ToolOptions_FrameRange"
@@ -383,7 +396,8 @@ EraserTool::EraserTool()
     , m_firstStroke(nullptr)
     , m_thick(5)
     , m_active(false)
-    , m_firstTime(true) {
+    , m_firstTime(true)
+    , m_pressure("Pressure", true) {
   bind(TTool::VectorImage);
 
   m_toolSize.setNonLinearSlider();
@@ -395,6 +409,7 @@ EraserTool::EraserTool()
   m_eraseType.addValue(FREEHAND_ERASE);
   m_eraseType.addValue(POLYLINE_ERASE);
   m_eraseType.addValue(SEGMENT_ERASE);
+  m_prop.bind(m_pressure);
   m_prop.bind(m_selective);
   m_prop.bind(m_invertOption);
   m_prop.bind(m_multi);
@@ -404,6 +419,7 @@ EraserTool::EraserTool()
   m_interpolation.addValue(EASE_OUT_INTERPOLATION);
   m_interpolation.addValue(EASE_IN_OUT_INTERPOLATION);
 
+  m_pressure.setId("PressureSensitivity");
   m_selective.setId("Selective");
   m_invertOption.setId("Invert");
   m_multi.setId("FrameRange");
@@ -435,6 +451,7 @@ EraserTool::~EraserTool() {
 
 void EraserTool::updateTranslation() {
   m_toolSize.setQStringName(tr("Size:"));
+  m_pressure.setQStringName(tr("Pressure"));
   m_selective.setQStringName(tr("Selective"));
   m_invertOption.setQStringName(tr("Invert"));
   m_multi.setQStringName(tr("Frame Range"));
@@ -477,7 +494,20 @@ void EraserTool::draw() {
       if (!Preferences::instance()->isCursorOutlineEnabled()) return;
 
       tglColor(TPixel32(255, 0, 255));
-      tglDrawCircle(m_brushPos, m_pointSize);
+      const double minRange = 1;
+      const double maxRange = 100;
+      const double minSize  = 2;
+      const double maxSize  = 100;
+      const double min = ((m_toolSize.getValue().first - minRange) /
+                              (maxRange - minRange) * (maxSize - minSize) +
+                          minSize) *
+                         0.5;
+      const double max = ((m_toolSize.getValue().second - minRange) /
+                              (maxRange - minRange) * (maxSize - minSize) +
+                          minSize) *
+                         0.5;
+      tglDrawCircle(m_brushPos, min);
+      tglDrawCircle(m_brushPos, max);
     }
     if ((m_eraseType.getValue() == FREEHAND_ERASE ||
          m_eraseType.getValue() == POLYLINE_ERASE ||
@@ -534,6 +564,23 @@ void EraserTool::resetMulti() {
     delete m_firstStroke;
     m_firstStroke = nullptr;
   }
+}
+
+//-----------------------------------------------------------------------------
+
+void EraserTool::applyPressure(double pressure, bool isTablet) {
+  const double maxThick = m_toolSize.getValue().second;
+  const double thickness = (m_pressure.getValue() && isTablet)
+                               ? computeThickness(pressure, m_toolSize)
+                               : maxThick;
+  const double minRange = 1;
+  const double maxRange = 100;
+  const double minSize  = 2;
+  const double maxSize  = 100;
+  m_pointSize = ((thickness - minRange) / (maxRange - minRange) *
+                     (maxSize - minSize) +
+                 minSize) *
+                0.5;
 }
 
 //-----------------------------------------------------------------------------
@@ -854,6 +901,7 @@ void EraserTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
   TImageP image(getImage(true));
   m_activeImage = image;
   if (m_eraseType.getValue() == NORMAL_ERASE) {
+    applyPressure(e.m_pressure, e.isTablet());
     if (TVectorImageP vi = image) startErase(vi, pos);
   } else if (m_eraseType.getValue() == RECT_ERASE) {
     m_selectingRect.x0 = pos.x;
@@ -884,6 +932,7 @@ void EraserTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
     return;
   } else if (m_eraseType.getValue() == NORMAL_ERASE) {
     if (!m_undo) leftButtonDown(pos, e);
+    applyPressure(e.m_pressure, e.isTablet());
     if (TVectorImageP vi = image) erase(vi, pos);
   } else if (m_eraseType.getValue() == FREEHAND_ERASE ||
              m_eraseType.getValue() == SEGMENT_ERASE) {
@@ -1000,6 +1049,7 @@ void EraserTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
   if (!vi || !application) return;
   if (m_eraseType.getValue() == NORMAL_ERASE) {
     if (!m_undo) leftButtonDown(pos, e);
+    applyPressure(e.m_pressure, e.isTablet());
     stopErase(vi);
   } else if (m_eraseType.getValue() == RECT_ERASE) {
     if (m_selectingRect.x0 > m_selectingRect.x1)
@@ -1104,16 +1154,24 @@ void EraserTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
   struct Locals {
     EraserTool *m_this;
 
-    void setValue(TDoubleProperty &prop, double value) {
+    void setValue(TDoublePairProperty &prop,
+                  const TDoublePairProperty::Value &value) {
       prop.setValue(value);
 
       m_this->onPropertyChanged(prop.getName());
       TTool::getApplication()->getCurrentTool()->notifyToolChanged();
     }
 
-    void addValue(TDoubleProperty &prop, double add) {
-      const TDoubleProperty::Range &range = prop.getRange();
-      setValue(prop, tcrop(prop.getValue() + add, range.first, range.second));
+    void addMinMaxSeparate(TDoublePairProperty &prop, double min, double max) {
+      if (min == 0.0 && max == 0.0) return;
+      const TDoublePairProperty::Range &range = prop.getRange();
+      TDoublePairProperty::Value value = prop.getValue();
+      value.first += min;
+      value.second += max;
+      if (value.first > value.second) value.first = value.second;
+      value.first  = tcrop<double>(value.first, range.first, range.second);
+      value.second = tcrop<double>(value.second, range.first, range.second);
+      setValue(prop, value);
     }
 
   } locals = {this};
@@ -1122,9 +1180,10 @@ void EraserTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
   case TMouseEvent::ALT_KEY: {
     // User wants to alter the maximum brush size
     const TPointD &diff = pos - m_mousePos;
-    double add          = (fabs(diff.x) > fabs(diff.y)) ? diff.x : diff.y;
+    double max          = diff.x / 2;
+    double min          = diff.y / 2;
 
-    locals.addValue(m_toolSize, add);
+    locals.addMinMaxSeparate(m_toolSize, min, max);
     break;
   }
 
@@ -1142,12 +1201,14 @@ void EraserTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 bool EraserTool::onPropertyChanged(std::string propertyName) {
   EraseVectorType          = ::to_string(m_eraseType.getValue());
   EraseVectorInterpolation = ::to_string(m_interpolation.getValue());
-  EraseVectorSize          = m_toolSize.getValue();
+  EraseVectorMinSize       = m_toolSize.getValue().first;
+  EraseVectorSize          = m_toolSize.getValue().second;
+  EraseVectorPressure      = m_pressure.getValue();
   EraseVectorSelective     = m_selective.getValue();
   EraseVectorInvert        = m_invertOption.getValue();
   EraseVectorRange         = m_multi.getValue();
 
-  double x = m_toolSize.getValue();
+  double x = m_toolSize.getValue().second;
 
   double minRange = 1;
   double maxRange = 100;
@@ -1167,16 +1228,18 @@ bool EraserTool::onPropertyChanged(std::string propertyName) {
 
 void EraserTool::onEnter() {
   if (m_firstTime) {
-    m_toolSize.setValue(EraseVectorSize);
+    m_toolSize.setValue(
+        TDoublePairProperty::Value(EraseVectorMinSize, EraseVectorSize));
     m_eraseType.setValue(::to_wstring(EraseVectorType.getValue()));
     m_interpolation.setValue(::to_wstring(EraseVectorInterpolation.getValue()));
+    m_pressure.setValue(EraseVectorPressure ? 1 : 0);
     m_selective.setValue(EraseVectorSelective ? 1 : 0);
     m_invertOption.setValue(EraseVectorInvert ? 1 : 0);
     m_multi.setValue(EraseVectorRange ? 1 : 0);
     m_firstTime = false;
   }
 
-  double x = m_toolSize.getValue();
+  double x = m_toolSize.getValue().second;
 
   double minRange = 1;
   double maxRange = 100;

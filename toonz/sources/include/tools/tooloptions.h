@@ -587,7 +587,8 @@ protected slots:
 class EraserToolOptionsBox final : public ToolOptionsBox {
   Q_OBJECT
 
-  ToolOptionCheckbox *m_pencilMode, *m_invertMode, *m_multiFrameMode;
+  ToolOptionCheckbox *m_pencilMode, *m_invertMode, *m_multiFrameMode,
+      *m_pressure;
   ToolOptionCombo *m_toolType, *m_colorMode;
   QLabel *m_hardnessLabel;
   ToolOptionSlider *m_hardnessField;
