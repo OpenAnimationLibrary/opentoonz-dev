@@ -33,6 +33,10 @@ class TTileSetCM32;
 class StrokesData;
 class RasterImageData;
 
+#define LINES L"Lines"
+#define AREAS L"Areas"
+#define ALL L"Lines & Areas"
+
 //=============================================================================
 // RasterSelection
 //! Selection of TToonzImage and TRasterImage.
@@ -58,6 +62,9 @@ class DVAPI RasterSelection final : public TSelection {
   bool m_createdFrame;
   bool m_createdLevel;
   bool m_renumberedLevel;
+
+  TPixelCM32 m_selectivePixelCM32;
+  std::wstring m_selectiveMode;
 
 private:
   bool pasteSelection(const RasterImageData *data);
@@ -153,6 +160,14 @@ Can be different from getSelectionBound() after a free deform transformation. */
   bool isTransformed();
 
   bool isEditable();
+
+  void setSelectivePixelCM32(const TPixelCM32 &pixel,
+                             const std::wstring &mode) {
+    m_selectivePixelCM32 = pixel;
+    m_selectiveMode      = mode;
+  }
+  TPixelCM32 getSelectivePixelCM32() const { return m_selectivePixelCM32; }
+  const std::wstring &getSelectiveMode() const { return m_selectiveMode; }
 };
 
 #endif  // RASTER_SELECTION_H
