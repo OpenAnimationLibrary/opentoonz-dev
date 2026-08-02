@@ -31,6 +31,7 @@
 
 class TGroupCommand;
 class TSceneHandle;
+enum AlignType : int;
 
 //=========================================================
 
@@ -90,11 +91,22 @@ public:
   void removeEndpoints();
   void sortWithPaletteOrder();
 
+  void alignStrokesLeft();
+  void alignStrokesRight();
+  void alignStrokesTop();
+  void alignStrokesBottom();
+  void alignStrokesCenterH();
+  void alignStrokesCenterV();
+  void distributeStrokesH();
+  void distributeStrokesV();
+
   void enableCommands() override;
 
   void selectAll();
 
 private:
+  void applyAlignment(AlignType type);
+
   TVectorImageP m_vi;          //!< Selected vector image.
   IndexesContainer m_indexes;  //!< Selected stroke indexes in m_vi.
 

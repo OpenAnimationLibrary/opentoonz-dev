@@ -562,6 +562,9 @@ transformation.
   void tweenGuideStrokeToSelected();
   void flipGuideStrokeDirection(int mode);
 
+  void setAlignMethod(int method) { m_alignMethod = method; }
+  int getAlignMethod() const { return m_alignMethod; }
+
 public:
   struct CellOps {
     int r0;
@@ -597,6 +600,8 @@ protected:
   static TApplication *m_application;
 
   static std::set<TFrameId> m_selectedFrames;
+
+  int m_alignMethod = 0;
 
 private:
   void bind(const std::string &name, int targetType);
