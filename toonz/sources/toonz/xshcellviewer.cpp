@@ -25,6 +25,7 @@
 #include "toonzqt/tselectionhandle.h"
 #include "historytypes.h"
 #include "toonzqt/menubarcommand.h"
+#include "toonzqt/icongenerator.h"
 
 // TnzLib includes
 #include "toonz/tscenehandle.h"
@@ -71,6 +72,7 @@
 #include <QToolTip>
 #include <QApplication>
 #include <QClipboard>
+#include <QBuffer>
 #include <QRegularExpression>
 
 namespace {
@@ -1182,6 +1184,7 @@ CellArea::CellArea(XsheetViewer *parent, Qt::WindowFlags flags)
     , m_isMousePressed(false)
     , m_pos(-1, -1)
     , m_tooltip(tr(""))
+    , m_tooltipTimer(nullptr)
     , m_renameCell(new RenameCellField(this, m_viewer)) {
   setAcceptDrops(true);
   setMouseTracking(true);
@@ -3477,7 +3480,8 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
   } else
     m_viewer->stopAutoPan();
 
-  m_pos = pos;
+  CellPosition previousCellPosition = m_viewer->xyToPosition(m_pos);
+  m_pos                             = pos;
   if (getDragTool()) {
     getDragTool()->onDrag(event);
     return;
@@ -3486,6 +3490,10 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
   CellPosition cellPosition = m_viewer->xyToPosition(pos);
   int row                   = cellPosition.frame();
   int col                   = cellPosition.layer();
+  if (QToolTip::isVisible() &&
+      (previousCellPosition.frame() != row ||
+       previousCellPosition.layer() != col))
+    QToolTip::hideText();
   QPoint cellTopLeft        = m_viewer->positionToXY(CellPosition(row, col));
   int x                     = m_pos.x() - cellTopLeft.x();
   int y                     = m_pos.y() - cellTopLeft.y();
@@ -3506,6 +3514,9 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
     TXshSoundTextColumn *soundTextColumn = column->getSoundTextColumn();
     isSoundTextColumn                    = (!soundTextColumn) ? false : true;
   }
+
+  m_tooltip.clear();
+  m_tooltipCell = TXshCell();
 
   TStageObject *pegbar = xsh->getStageObject(m_viewer->getObjectId(col));
   int k0, k1;
@@ -3570,6 +3581,9 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
                                           : QString::fromStdWString(levelName) +
                                                 QString(" ") + frameNumber);
     }
+    if (Preferences::instance()->isShowImagesInCellTooltipEnabled() &&
+        cell.getSimpleLevel())
+      m_tooltipCell = cell;
   } else if (isSoundColumn && o->rect(PredefinedRect::PREVIEW_TRACK)
                                   .adjusted(0, 0, -frameAdj.x(), -frameAdj.y())
                                   .contains(mouseInCell))
@@ -3792,9 +3806,24 @@ void CellArea::dropEvent(QDropEvent *e) {
 bool CellArea::event(QEvent *event) {
   QEvent::Type type = event->type();
   if (type == QEvent::ToolTip) {
-    if (!m_tooltip.isEmpty())
-      QToolTip::showText(mapToGlobal(m_pos), m_tooltip);
-    else
+    if (!m_tooltip.isEmpty()) {
+      if (!m_tooltipCell.isEmpty()) {
+        QPixmap icon = IconGenerator::instance()->getIcon(
+            m_tooltipCell.m_level.getPointer(), m_tooltipCell.m_frameId, true);
+        if (icon.isNull()) {
+          if (!m_tooltipTimer) {
+            m_tooltipTimer = new QTimer(this);
+            m_tooltipTimer->setSingleShot(true);
+            connect(m_tooltipTimer, SIGNAL(timeout()), this,
+                    SLOT(onDelayToolTip()));
+          }
+          m_tooltipTimer->start(50);
+          return true;
+        }
+        onDelayToolTip();
+      } else
+        QToolTip::showText(mapToGlobal(m_pos), m_tooltip);
+    } else
       QToolTip::hideText();
   }
   if (type == QEvent::WindowDeactivate && m_isMousePressed) {
@@ -3803,6 +3832,33 @@ bool CellArea::event(QEvent *event) {
     mouseReleaseEvent(&e);
   }
   return QWidget::event(event);
+}
+
+//-----------------------------------------------------------------------------
+
+void CellArea::onDelayToolTip() {
+  if (m_tooltipTimer) m_tooltipTimer->stop();
+  if (m_tooltip.isEmpty() || m_tooltipCell.isEmpty()) return;
+
+  QPixmap icon = IconGenerator::instance()->getIcon(
+      m_tooltipCell.m_level.getPointer(), m_tooltipCell.m_frameId, true);
+  if (icon.isNull()) {
+    QToolTip::showText(mapToGlobal(m_pos), m_tooltip);
+    return;
+  }
+
+  QByteArray pngData;
+  QBuffer buffer(&pngData);
+  if (!buffer.open(QIODevice::WriteOnly) || !icon.save(&buffer, "PNG", 100)) {
+    QToolTip::showText(mapToGlobal(m_pos), m_tooltip);
+    return;
+  }
+
+  QString html =
+      QString("<div class='imgtooltip'><img src='data:image/png;base64,%1'>"
+              "<div align='right'>%2</div></div>")
+          .arg(QString::fromLatin1(pngData.toBase64()), m_tooltip.toHtmlEscaped());
+  QToolTip::showText(mapToGlobal(m_pos), html);
 }
 //-----------------------------------------------------------------------------
 

@@ -1369,6 +1369,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {levelNameDisplayType, tr("Level Name Display:")},
       {showFrameNumberWithLetters,
        tr("Show \"ABC\" Appendix to the Frame Number in Xsheet Cell")},
+      {showImagesInCellTooltip, tr("Show Images in Cell Tooltips")},
       {linkColumnNameWithLevel, tr("Link Column Name with Level")},
 
       // Animation
@@ -2196,6 +2197,7 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(highlightLineEverySecond, xshCellAreaLay);
     insertUI(currentTimelineEnabled, xshCellAreaLay);
     insertUI(showFrameNumberWithLetters, xshCellAreaLay);
+    insertUI(showImagesInCellTooltip, xshCellAreaLay);
   }
 
   QGridLayout* showKeyLay =

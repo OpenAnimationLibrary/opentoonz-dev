@@ -452,6 +452,9 @@ public:
   bool isShowFrameNumberWithLettersEnabled() const {
     return getBoolValue(showFrameNumberWithLetters);
   }
+  bool isShowImagesInCellTooltipEnabled() const {
+    return getBoolValue(showImagesInCellTooltip);
+  }
   bool isLinkColumnNameWithLevelEnabled() const {
     return getBoolValue(linkColumnNameWithLevel);
   }
