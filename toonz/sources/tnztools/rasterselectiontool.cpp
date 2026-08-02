@@ -461,6 +461,9 @@ void DragSelectionTool::RasterScaleTool::leftButtonUp(const TPointD &pos,
 
 TEnv::IntVar ModifySavebox("ModifySavebox", 0);
 TEnv::IntVar NoAntialiasing("NoAntialiasing", 0);
+TEnv::IntVar RasterSelectionSelective("SelectionToolInknpaintTypeSelective", 0);
+TEnv::StringVar RasterSelectionSelectiveMode(
+    "SelectionToolInknpaintTypeSelectiveMode", "Lines");
 
 //=============================================================================
 // RasterSelectionTool
@@ -472,7 +475,18 @@ RasterSelectionTool::RasterSelectionTool(int targetType)
     , m_selectionFreeDeformer(0)
     , m_noAntialiasing("No Antialiasing", false)
     , m_modifySavebox("Modify Savebox", false)
+    , m_selective("Selective", false)
+    , m_selectiveMode("Mode:")
     , m_setSaveboxTool(0) {
+  if (m_targetType & ToonzImage) {
+    m_prop.bind(m_selective);
+    m_selective.setId("Selective");
+    m_selectiveMode.addValue(LINES);
+    m_selectiveMode.addValue(AREAS);
+    m_selectiveMode.addValue(ALL);
+    m_prop.bind(m_selectiveMode);
+    m_selectiveMode.setId("Mode");
+  }
   m_prop.bind(m_noAntialiasing);
   m_rasterSelection.setView(this);
   if (m_targetType & ToonzImage) {
@@ -600,6 +614,17 @@ void RasterSelectionTool::leftButtonDown(const TPointD &pos,
     m_setSaveboxTool->leftButtonDown(pos);
     return;
   }
+
+  TPixelCM32 selectivePixel;
+  std::wstring selectiveMode = ALL;
+  if (m_selective.getValue()) {
+    const int styleId =
+        TTool::getApplication()->getCurrentLevelStyleIndex();
+    selectivePixel = TPixelCM32(styleId, styleId, 0);
+    selectiveMode  = m_selectiveMode.getValue();
+  }
+  m_rasterSelection.setSelectivePixelCM32(selectivePixel, selectiveMode);
+
   SelectionTool::leftButtonDown(pos, e);
 }
 
@@ -1006,8 +1031,12 @@ void RasterSelectionTool::decreaseTransformationCount() {
 
 void RasterSelectionTool::onActivate() {
   if (m_firstTime) {
-    if (m_targetType & ToonzImage)
+    if (m_targetType & ToonzImage) {
       m_modifySavebox.setValue(ModifySavebox ? 1 : 0);
+      m_selective.setValue(RasterSelectionSelective ? 1 : 0);
+      m_selectiveMode.setValue(
+          ::to_wstring(RasterSelectionSelectiveMode.getValue()));
+    }
   }
 
   SelectionTool::onActivate();
@@ -1020,7 +1049,9 @@ bool RasterSelectionTool::onPropertyChanged(std::string propertyName) {
 
   if (SelectionTool::onPropertyChanged(propertyName)) return true;
   if (m_targetType & ToonzImage) {
-    ModifySavebox = (int)(m_modifySavebox.getValue());
+    ModifySavebox                = (int)(m_modifySavebox.getValue());
+    RasterSelectionSelective     = (int)(m_selective.getValue());
+    RasterSelectionSelectiveMode = ::to_string(m_selectiveMode.getValue());
     invalidate();
   }
   if (propertyName == m_noAntialiasing.getName()) {
@@ -1034,8 +1065,14 @@ bool RasterSelectionTool::onPropertyChanged(std::string propertyName) {
 //-----------------------------------------------------------------------------
 
 void RasterSelectionTool::updateTranslation() {
-  if (m_targetType & ToonzImage)
+  if (m_targetType & ToonzImage) {
     m_modifySavebox.setQStringName(tr("Modify Savebox"));
+    m_selective.setQStringName(tr("Selective"));
+    m_selectiveMode.setQStringName(tr("Mode:"));
+    m_selectiveMode.setItemUIName(LINES, tr("Lines"));
+    m_selectiveMode.setItemUIName(AREAS, tr("Areas"));
+    m_selectiveMode.setItemUIName(ALL, tr("Lines & Areas"));
+  }
 
   m_noAntialiasing.setQStringName(tr("No Antialiasing"));
   SelectionTool::updateTranslation();
