@@ -30,6 +30,9 @@
 #include "toonz/toonzscene.h"
 #include "toonz/sceneproperties.h"
 #include "toonz/tframehandle.h"
+#include "toonz/tcamera.h"
+
+#include "../../toonz/alignmentpane.h"
 
 // TnzCore includes
 #include "tthreadmessage.h"
@@ -42,6 +45,8 @@
 // Qt includes
 #include <QApplication>
 #include <QClipboard>
+
+#include <limits>
 
 //=============================================================================
 namespace {
@@ -138,6 +143,11 @@ bool pasteStrokesWithoutUndo(TVectorImageP image, std::set<int> &outIndexes,
                          // the notifyImageChanged could reset it!
   return true;
 }
+
+//-----------------------------------------------------------------------------
+
+
+//-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
 
@@ -370,7 +380,7 @@ public:
 
   ~OrderStrokesUndo() {}
 
-  QString getHistoryString() {
+  QString getHistoryString() override {
     return QObject::tr(
                "Sort Vector Strokes With Palette Order Level : %1 Frame : %2")
         .arg(QString::fromStdWString(m_level->getName()))
@@ -430,6 +440,92 @@ void sortStylesIds(QVector<int> &styles, TPaletteP palette) {
     }
   }
   assert(false);
+}
+
+struct StrokeSnapshot {
+  int index;
+  TStroke *before;
+  TStroke *after;
+};
+
+void copyStroke(TStroke *target, const TStroke *source) {
+  for (int point = 0; point < target->getControlPointCount(); ++point)
+    target->setControlPoint(point, source->getControlPoint(point));
+}
+
+class AlignStrokesUndo final : public TUndo {
+  TXshSimpleLevelP m_level;
+  TFrameId m_frameId;
+  std::vector<StrokeSnapshot> m_strokes;
+
+public:
+  AlignStrokesUndo(TXshSimpleLevel *level, const TFrameId &frameId,
+                   std::vector<StrokeSnapshot> strokes)
+      : m_level(level), m_frameId(frameId), m_strokes(std::move(strokes)) {}
+
+  ~AlignStrokesUndo() {
+    for (const StrokeSnapshot &stroke : m_strokes) {
+      delete stroke.before;
+      delete stroke.after;
+    }
+  }
+
+  void undo() const override { apply(false); }
+  void redo() const override { apply(true); }
+
+  int getSize() const override { return sizeof(*this); }
+  QString getHistoryString() override { return QObject::tr("Align Strokes"); }
+
+private:
+  void apply(bool after) const {
+    TVectorImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+    for (const StrokeSnapshot &stroke : m_strokes) {
+      if (stroke.index < 0 || stroke.index >= image->getStrokeCount()) continue;
+      copyStroke(image->getStroke(stroke.index),
+                 after ? stroke.after : stroke.before);
+    }
+    TTool::getApplication()->getCurrentTool()->getTool()->notifyImageChanged();
+  }
+};
+
+TRectD selectionBounds(const TVectorImageP &image,
+                       const StrokeSelection::IndexesContainer &indexes) {
+  TRectD bounds;
+  for (int index : indexes) {
+    if (index < 0 || index >= image->getStrokeCount()) continue;
+    bounds += image->getStroke(index)->getBBox();
+  }
+  return bounds;
+}
+
+TRectD referenceBounds(const TVectorImageP &image,
+                       const StrokeSelection::IndexesContainer &indexes,
+                       int method) {
+  if (method == Camera)
+    return TTool::getApplication()
+        ->getCurrentScene()
+        ->getScene()
+        ->getCurrentCamera()
+        ->getStageRect();
+
+  if (method == SelectionArea) return selectionBounds(image, indexes);
+
+  TRectD result;
+  double selectedArea = method == SmallestObject
+                            ? std::numeric_limits<double>::max()
+                            : std::numeric_limits<double>::lowest();
+  for (int index : indexes) {
+    if (index < 0 || index >= image->getStrokeCount()) continue;
+    const TRectD bounds = image->getStroke(index)->getBBox();
+    const double area   = bounds.getLx() * bounds.getLy();
+    if ((method == SmallestObject && area < selectedArea) ||
+        (method == LargestObject && area > selectedArea)) {
+      selectedArea = area;
+      result       = bounds;
+    }
+  }
+  return result;
 }
 
 }  // namespace
@@ -802,6 +898,18 @@ void StrokeSelection::enableCommands() {
 
   enableCommand(this, MI_RemoveEndpoints, &StrokeSelection::removeEndpoints);
   enableCommand(this, MI_SortWithPaletteOrder, &StrokeSelection::sortWithPaletteOrder);
+  enableCommand(this, MI_AlignLeft, &StrokeSelection::alignStrokesLeft);
+  enableCommand(this, MI_AlignRight, &StrokeSelection::alignStrokesRight);
+  enableCommand(this, MI_AlignTop, &StrokeSelection::alignStrokesTop);
+  enableCommand(this, MI_AlignBottom, &StrokeSelection::alignStrokesBottom);
+  enableCommand(this, MI_AlignCenterHorizontal,
+                &StrokeSelection::alignStrokesCenterH);
+  enableCommand(this, MI_AlignCenterVertical,
+                &StrokeSelection::alignStrokesCenterV);
+  enableCommand(this, MI_DistributeHorizontal,
+                &StrokeSelection::distributeStrokesH);
+  enableCommand(this, MI_DistributeVertical,
+                &StrokeSelection::distributeStrokesV);
   enableCommand(this, MI_SelectAll, &StrokeSelection::selectAll);
 }
 
@@ -924,3 +1032,102 @@ bool StrokeSelection::isEditable() {
 
   return true;
 }
+
+//-----------------------------------------------------------------------------
+
+void StrokeSelection::applyAlignment(AlignType type) {
+  if (!m_vi || m_indexes.empty() || !isEditable()) return;
+  TTool *tool = TTool::getApplication()->getCurrentTool()->getTool();
+  if (!tool || TTool::getApplication()->getCurrentObject()->isSpline()) return;
+
+  const int method = tool->getAlignMethod();
+  const bool distribution =
+      type == DistributeHorizontal || type == DistributeVertical;
+  if ((distribution && m_indexes.size() < 3 && method != Camera) ||
+      (!distribution && m_indexes.size() < 2 && method != Camera)) return;
+
+  const TRectD reference = referenceBounds(m_vi, m_indexes, method);
+  if (reference.isEmpty()) return;
+  std::vector<int> indexes(m_indexes.begin(), m_indexes.end());
+  indexes.erase(std::remove_if(indexes.begin(), indexes.end(), [this](int index) {
+                  return index < 0 || index >= m_vi->getStrokeCount();
+                }),
+                indexes.end());
+  if (indexes.empty()) return;
+
+  const bool horizontal = type == AlignLeft || type == AlignRight ||
+                          type == AlignCenterVertical ||
+                          type == DistributeHorizontal;
+  if (distribution) {
+    std::sort(indexes.begin(), indexes.end(), [this, horizontal](int lhs, int rhs) {
+      const TRectD left  = m_vi->getStroke(lhs)->getBBox();
+      const TRectD right = m_vi->getStroke(rhs)->getBBox();
+      const double leftCenter = horizontal ? left.x0 + left.getLx() / 2.0
+                                           : left.y0 + left.getLy() / 2.0;
+      const double rightCenter = horizontal ? right.x0 + right.getLx() / 2.0
+                                            : right.y0 + right.getLy() / 2.0;
+      return leftCenter < rightCenter;
+    });
+  }
+
+  const double start = horizontal ? reference.x0 : reference.y0;
+  const double end   = horizontal ? reference.x1 : reference.y1;
+  const double spacing = distribution && indexes.size() > 1
+                             ? (end - start) / (indexes.size() - 1)
+                             : 0.0;
+  std::vector<StrokeSnapshot> snapshots;
+  for (int ordinal = 0; ordinal < static_cast<int>(indexes.size()); ++ordinal) {
+    const int index = indexes[ordinal];
+    TStroke *stroke = m_vi->getStroke(index);
+    const TRectD bounds = stroke->getBBox();
+    double deltaX = 0.0;
+    double deltaY = 0.0;
+    switch (type) {
+    case AlignLeft: deltaX = reference.x0 - bounds.x0; break;
+    case AlignRight: deltaX = reference.x1 - bounds.x1; break;
+    case AlignTop: deltaY = reference.y1 - bounds.y1; break;
+    case AlignBottom: deltaY = reference.y0 - bounds.y0; break;
+    case AlignCenterHorizontal:
+      deltaY = (reference.y0 + reference.y1 - bounds.y0 - bounds.y1) / 2.0;
+      break;
+    case AlignCenterVertical:
+      deltaX = (reference.x0 + reference.x1 - bounds.x0 - bounds.x1) / 2.0;
+      break;
+    case DistributeHorizontal:
+      deltaX = start + spacing * ordinal - (bounds.x0 + bounds.x1) / 2.0;
+      break;
+    case DistributeVertical:
+      deltaY = start + spacing * ordinal - (bounds.y0 + bounds.y1) / 2.0;
+      break;
+    }
+    if (deltaX == 0.0 && deltaY == 0.0) continue;
+
+    StrokeSnapshot snapshot{index, new TStroke(*stroke), nullptr};
+    for (int point = 0; point < stroke->getControlPointCount(); ++point) {
+      TThickPoint controlPoint = stroke->getControlPoint(point);
+      stroke->setControlPoint(
+          point, TThickPoint(controlPoint + TPointD(deltaX, deltaY),
+                             controlPoint.thick));
+    }
+    snapshot.after = new TStroke(*stroke);
+    snapshots.push_back(snapshot);
+  }
+  if (snapshots.empty()) return;
+
+  TXshSimpleLevel *level =
+      TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
+  TUndoManager::manager()->add(
+      new AlignStrokesUndo(level, tool->getCurrentFid(), std::move(snapshots)));
+  m_updateSelectionBBox = true;
+  tool->notifyImageChanged();
+  m_updateSelectionBBox = false;
+}
+
+void StrokeSelection::alignStrokesLeft() { applyAlignment(AlignLeft); }
+void StrokeSelection::alignStrokesRight() { applyAlignment(AlignRight); }
+void StrokeSelection::alignStrokesTop() { applyAlignment(AlignTop); }
+void StrokeSelection::alignStrokesBottom() { applyAlignment(AlignBottom); }
+void StrokeSelection::alignStrokesCenterH() { applyAlignment(AlignCenterHorizontal); }
+void StrokeSelection::alignStrokesCenterV() { applyAlignment(AlignCenterVertical); }
+void StrokeSelection::distributeStrokesH() { applyAlignment(DistributeHorizontal); }
+void StrokeSelection::distributeStrokesV() { applyAlignment(DistributeVertical); }

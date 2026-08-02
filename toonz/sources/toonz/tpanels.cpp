@@ -28,6 +28,7 @@
 #include "cleanupsettingspane.h"
 
 #include "vectorguideddrawingpane.h"
+#include "alignmentpane.h"
 
 #include "expressionreferencemanager.h"
 
@@ -1701,6 +1702,28 @@ public:
 OpenFloatingPanel openVectorGuidedDrawingPanelCommand(
     MI_OpenGuidedDrawingControls, "VectorGuidedDrawingPanel",
     QObject::tr("Vector Guided Drawing"));
+
+AlignmentPanel::AlignmentPanel(QWidget *parent) : TPanel(parent) {
+  setWidget(new AlignmentPane(this));
+  setIsMaximizable(false);
+}
+
+class AlignmentPanelFactory final : public TPanelFactory {
+public:
+  AlignmentPanelFactory() : TPanelFactory("AlignmentPanel") {}
+  TPanel *createPanel(QWidget *parent) override {
+    TPanel *panel = new AlignmentPanel(parent);
+    panel->setObjectName(getPanelType());
+    panel->setWindowTitle(QObject::tr("Align and Distribute"));
+    panel->setMinimumSize(235, 198);
+    return panel;
+  }
+  void initialize(TPanel *) override {}
+} alignmentPanelFactory;
+
+OpenFloatingPanel openAlignmentPanelCommand(MI_OpenAlignmentPanel,
+                                            "AlignmentPanel",
+                                            QObject::tr("Align and Distribute"));
 
 //-----------------------------------------------------------------------------
 
