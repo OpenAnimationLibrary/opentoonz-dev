@@ -214,6 +214,12 @@ AutoLipSyncPopup::AutoLipSyncPopup()
   m_otherLabel  = new QLabel(tr("C D G K N R S Th Y Z"));
   m_startAt     = new DVGui::IntLineEdit(this, 0);
   m_restToEnd   = new QCheckBox(tr("Extend Rest Drawing to End Marker"), this);
+  m_recognizerLabel = new QLabel(tr("Recognizer:"), this);
+  m_recognizer      = new QComboBox(this);
+  m_recognizer->addItem(tr("PocketSphinx (English)"), "pocketsphinx");
+  m_recognizer->addItem(tr("Phonetic"), "phonetic");
+  m_recognizerLabel->hide();
+  m_recognizer->hide();
 
   QImage placeHolder(160, 90, QImage::Format_ARGB32);
   placeHolder.fill(Qt::white);
@@ -413,6 +419,8 @@ AutoLipSyncPopup::AutoLipSyncPopup()
   m_insertAtLabel = new QLabel(tr("Insert at Frame: "));
   insertAtLay->addWidget(m_insertAtLabel);
   insertAtLay->addWidget(m_startAt);
+  insertAtLay->addWidget(m_recognizerLabel);
+  insertAtLay->addWidget(m_recognizer);
   insertAtLay->addStretch();
   optionsLay->addLayout(insertAtLay);
   optionsLay->addWidget(m_restToEnd);
@@ -674,9 +682,13 @@ void AutoLipSyncPopup::refreshSoundLevels() {
   if (m_soundLevels->currentIndex() < m_soundLevels->count() - 1) {
     m_insertAtLabel->hide();
     m_startAt->hide();
+    m_recognizerLabel->show();
+    m_recognizer->show();
   } else {
     m_insertAtLabel->show();
     m_startAt->show();
+    m_recognizerLabel->hide();
+    m_recognizer->hide();
   }
 }
 
@@ -872,6 +884,8 @@ void AutoLipSyncPopup::runRhubarb() {
                                 ->getOutputProperties()
                                 ->getFrameRate());
   args << "--datFrameRate" << QString::number(frameRate) << "--machineReadable";
+  if (m_recognizer->currentData().toString() == "phonetic")
+    args << "-r" << "phonetic";
   args << m_audioPath;
 
   m_progressDialog->show();
@@ -944,9 +958,13 @@ void AutoLipSyncPopup::onLevelChanged(int index) {
   if (level >= 0) {
     m_insertAtLabel->hide();
     m_startAt->hide();
+    m_recognizerLabel->show();
+    m_recognizer->show();
   } else {
     m_insertAtLabel->show();
     m_startAt->show();
+    m_recognizerLabel->hide();
+    m_recognizer->hide();
   }
 
   stopAllSound();
