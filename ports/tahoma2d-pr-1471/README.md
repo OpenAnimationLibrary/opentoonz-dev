@@ -7,7 +7,8 @@ Original author: @manongjohn
 Upstream commits:
 
 - `e519635f45e36ea5ed76ebda36b56063c08ef5b0` — Onion Skin Opacity control
-- `8bf7d3766e9f79a6c84c8d8e100657fa10e6bbf2` — Prioritize higher opacity with overlapping onion-skin markers
+- `8bf7d3766e9f79a6c84c8d8e100657fa10e6bbf2` — Prioritize higher opacity
+  with overlapping onion-skin markers
 
 Target base used to start this port:
 
@@ -15,20 +16,27 @@ Target base used to start this port:
 
 ## Current status
 
-The exact upstream mail-formatted patch is retained in `upstream.patch`, including the original author and commit metadata. It has **not** been applied wholesale because the Tahoma2D files contain fork-specific code that must not be copied into OpenToonz.
+The feature is adapted to current OpenToonz source. The exact upstream
+mail-formatted patch remains in `upstream.patch`, including the original author
+and commit metadata.
 
-This draft is therefore a porting workspace, not a build-ready implementation yet.
+## OpenToonz adaptations
 
-## Required OpenToonz adaptations
-
-1. Apply the feature hunks to the current OpenToonz files rather than replacing files from Tahoma2D.
-2. Do not import Tahoma2D-only `OnionSkinMask` state such as `m_everyFrame` where it is absent from OpenToonz.
-3. Keep `isMos()` and `isFos()` const-correct. The upstream patch makes them non-const only to simplify iteration; that is not required.
-4. Correct the upstream marker-removal logic before porting. In `setMos()` and `setFos()`, removal must verify `iterator->first == requestedKey`; otherwise disabling a missing marker can erase the next marker.
-5. Initialize `OnionSkinPopup::m_initializing` explicitly.
-6. Replace deprecated Qt layout `setMargin()` calls with `setContentsMargins()` for the current OpenToonz codebase.
-7. Review the added `xshcolumnviewer.cpp` call to `onSliderReleased()`. It changes Column Transparency popup behavior and should remain only if required by this feature.
-8. Preserve existing OpenToonz rendering, light-table, Shift and Trace, and onion-skin behavior while introducing the per-marker fade value.
+1. Marker state stores true opacity in the `[0, 1]` range; `-1` selects the
+   existing automatic fade calculation.
+2. Fixed and relative markers at the same frame are de-duplicated and use the
+   larger custom opacity.
+3. Removing a marker verifies the requested position, so removing a missing
+   marker cannot erase its neighbor.
+4. `isMos()`, `isFos()`, and opacity getters remain const-correct.
+5. The popup uses OpenToonz's `contextMenuEvent()` path and supports both Xsheet
+   and Timeline orientation.
+6. Popup updates use the onion-skin handle notification and do not mark the
+   scene as modified.
+7. The unrelated Column Transparency behavior change from the upstream patch
+   is not included.
+8. Custom opacity is propagated through vector, raster, Toonz Raster, guided
+   drawing, OpenGL, and plastic-deformation rendering paths.
 
 ## Validation checklist
 
@@ -50,4 +58,5 @@ git cherry-pick -x e519635f45e36ea5ed76ebda36b56063c08ef5b0
 git cherry-pick -x 8bf7d3766e9f79a6c84c8d8e100657fa10e6bbf2
 ```
 
-Resolve conflicts by porting the individual feature hunks according to the notes above; do not accept complete Tahoma2D versions of the affected files.
+Resolve conflicts by porting the individual feature hunks according to the
+notes above; do not accept complete Tahoma2D versions of the affected files.
