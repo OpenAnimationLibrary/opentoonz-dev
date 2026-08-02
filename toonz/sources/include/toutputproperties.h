@@ -104,6 +104,8 @@ private:
   // for restoring bpp when setting the color space back to nonlinear
   int m_nonlinearBpp;
 
+  bool m_syncWithPlayRange;
+
 public:
   /*!
 Constructs TOutputProperties with default value.
@@ -239,6 +241,11 @@ machine's CPU).
   void syncColorSettings(bool sync) { m_syncColorSettings = sync; }
   int getNonlinearBpp() { return m_nonlinearBpp; }
   void setNonlinearBpp(int bpp) { m_nonlinearBpp = bpp; }
+
+  bool isSyncWithPlayRangeEnabled() const { return m_syncWithPlayRange; }
+  void setSyncWithPlayRangeEnabled(bool enabled) {
+    m_syncWithPlayRange = enabled;
+  }
 };
 
 //--------------------------------------------

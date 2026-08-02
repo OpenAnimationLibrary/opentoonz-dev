@@ -64,6 +64,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QComboBox *m_dominantFieldOm;
   DVGui::CheckBox *m_applyShrinkChk;
   DVGui::CheckBox *m_subcameraChk;
+  DVGui::CheckBox *m_syncWithPlayRange;
   DVGui::DoubleLineEdit *m_stretchFromFld, *m_stretchToFld;
   DVGui::CheckBox *m_doStereoscopy;
   DVGui::DoubleLineEdit *m_stereoShift;
@@ -116,6 +117,7 @@ protected slots:
   void openSettingsPopup();
   void onCameraChanged(const QString &str);
   void onFrameFldEditFinished();
+  void onSyncWithPlayRangeChanged(int state);
   void onResampleChanged(int type);
   void onChannelWidthChanged(int type);
   void onLinearColorSpaceClicked(bool checked);
