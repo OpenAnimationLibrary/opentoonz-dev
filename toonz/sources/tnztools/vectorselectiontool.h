@@ -319,6 +319,7 @@ public:
   bool canResetCenter() { return m_resetCenter; }
 
   bool isSelectionEditable() override { return m_strokeSelection.isEditable(); }
+  bool flipSelectedStrokeDirections();
 
 protected:
   void onActivate() override;
@@ -372,6 +373,7 @@ private:
                                     //! image, styles...).
   TBoolProperty m_includeIntersection;
   TBoolProperty m_constantThickness;
+  TBoolProperty m_showStrokeDirection;
 
   StrokeSelection m_strokeSelection;        //!< Standard selection of a set of
                                             //! strokes in current image.
@@ -383,6 +385,7 @@ private:
   TIntProperty m_miterJoinLimit;  //!< Stroke joins threshold value.
 
   TPropertyGroup m_outlineProps;
+  TPropertyGroup m_directionProps;
 
   int m_selectionCount;  //!< \deprecated  This is \a not related to stroke
                          //! selections;
