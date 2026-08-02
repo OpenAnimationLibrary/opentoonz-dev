@@ -29,6 +29,7 @@
 #include "toonz/txshpalettecolumn.h"
 #include "toonz/txshpalettelevel.h"
 #include "toonz/toonzfolders.h"
+#include "toonz/tcolumnfx.h"
 
 // TnzCore includes
 #include "timagecache.h"
@@ -277,7 +278,14 @@ static void deleteAllUntitledScenes() {
 // ToonzScene
 
 ToonzScene::ToonzScene()
-    : m_contentHistory(0), m_isUntitled(true), m_isLoading(false) {
+    : m_contentHistory(0)
+    , m_isUntitled(true)
+    , m_isLoading(false)
+    , m_overlayLoaded(false)
+    , m_overlayLevel(nullptr)
+    , m_overlayOpacity(255)
+    , m_overlayLevelColumn(nullptr)
+    , m_overlayFx(nullptr) {
   m_childStack = new ChildStack(this);
   m_properties = new TSceneProperties();
   m_levelSet   = new TLevelSet();
@@ -1623,4 +1631,66 @@ std::wstring ToonzScene::getLevelNameWithoutSceneNumber(std::wstring orgName) {
 
   return orgNameQstr.right(orgNameQstr.size() - orgNameQstr.indexOf("_") - 1)
       .toStdWString();
+}
+
+//-----------------------------------------------------------------------------
+
+void ToonzScene::loadOverlayFile(const TFilePath &overlayFile) {
+  const TFilePath decodedPath = decodeFilePath(overlayFile);
+
+  if (m_overlayLevel) {
+    if (decodedPath == decodeFilePath(m_overlayLevel->getPath())) return;
+
+    m_overlayFx->release();
+    m_overlayFx = nullptr;
+    m_overlayLevelColumn->release();
+    m_overlayLevelColumn = nullptr;
+    m_overlayLevel->release();
+    m_overlayLevel = nullptr;
+  }
+
+  m_overlayLoaded = false;
+  if (decodedPath.isEmpty() || !TFileStatus(decodedPath).doesExist()) return;
+
+  m_overlayLevel = loadLevel(decodedPath, 0, L"__Scene Overlay__");
+  if (!m_overlayLevel) return;
+
+  m_levelSet->removeLevel(m_overlayLevel, false);
+
+  m_overlayLevelColumn = new TXshLevelColumn;
+  m_overlayLevelColumn->addRef();
+  m_overlayLevelColumn->setCamstandVisible(true);
+  m_overlayLevelColumn->setOpacity(m_overlayOpacity);
+  m_overlayLevelColumn->setCell(
+      0, TXshCell(m_overlayLevel, m_overlayLevel->getSimpleLevel()->getFirstFid()));
+
+  m_overlayFx = new TLevelColumnFx;
+  m_overlayFx->addRef();
+  m_overlayFx->setColumn(m_overlayLevelColumn);
+  m_overlayLoaded = true;
+}
+
+//-----------------------------------------------------------------------------
+
+TXshLevel *ToonzScene::getOverlayLevel() {
+  if (!m_overlayLoaded) loadOverlayFile(m_properties->getOverlayFile());
+  return m_overlayLevel;
+}
+
+//-----------------------------------------------------------------------------
+
+void ToonzScene::setOverlayOpacity(int opacity) {
+  m_overlayOpacity = opacity;
+  if (m_overlayLevelColumn) m_overlayLevelColumn->setOpacity(opacity);
+}
+
+//-----------------------------------------------------------------------------
+
+TLevelColumnFx *ToonzScene::getOverlayFx(int row) {
+  if (!m_overlayLoaded) loadOverlayFile(m_properties->getOverlayFile());
+
+  if (m_overlayFx && m_overlayLevelColumn->getCell(row).isEmpty()) {
+    m_overlayLevelColumn->setCell(row, m_overlayLevelColumn->getCell(0));
+  }
+  return m_overlayFx;
 }

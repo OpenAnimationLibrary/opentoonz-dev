@@ -74,7 +74,9 @@ TSceneProperties::TSceneProperties()
     , m_fieldGuideSize(16)
     , m_fieldGuideAspectRatio(1.77778)
     , m_columnColorFilterOnRender(false)
-    , m_camCapSaveInPath() {
+    , m_camCapSaveInPath()
+    , m_overlayFile()
+    , m_overlayOpacity(255) {
   // Default color
   m_notesColor.push_back(TPixel32(255, 235, 140));
   m_notesColor.push_back(TPixel32(255, 160, 120));
@@ -131,6 +133,8 @@ void TSceneProperties::assign(const TSceneProperties *sprop) {
   m_fieldGuideSize            = sprop->m_fieldGuideSize;
   m_fieldGuideAspectRatio     = sprop->m_fieldGuideAspectRatio;
   m_columnColorFilterOnRender = sprop->m_columnColorFilterOnRender;
+  m_overlayFile               = sprop->m_overlayFile;
+  m_overlayOpacity            = sprop->m_overlayOpacity;
   int i;
   for (i = 0; i < m_notesColor.size(); i++)
     m_notesColor.replace(i, sprop->getNoteColor(i));
@@ -394,6 +398,8 @@ void TSceneProperties::saveData(TOStream &os) const {
   if (m_columnColorFilterOnRender) os.child("columnColorFilterOnRender") << 1;
   if (!m_camCapSaveInPath.isEmpty())
     os.child("cameraCaputureSaveInPath") << m_camCapSaveInPath;
+  if (!m_overlayFile.isEmpty())
+    os.child("overlayFile") << m_overlayFile << m_overlayOpacity;
 
   os.openChild("noteColors");
   for (i = 0; i < m_notesColor.size(); i++) os << m_notesColor.at(i);
@@ -827,6 +833,8 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
       assert(i == 7);
     } else if (tagName == "cameraCaputureSaveInPath") {
       is >> m_camCapSaveInPath;
+    } else if (tagName == "overlayFile") {
+      is >> m_overlayFile >> m_overlayOpacity;
     } else if (tagName == "cellMarks") {
       int i = 0;
       while (!is.eos()) {
