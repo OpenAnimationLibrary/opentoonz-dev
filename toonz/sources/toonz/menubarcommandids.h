@@ -476,6 +476,7 @@
 
 #define MI_VectorGuidedDrawing "MI_VectorGuidedDrawing"
 #define MI_OpenGuidedDrawingControls "MI_OpenGuidedDrawingControls"
+#define MI_ToggleLightTable "MI_ToggleLightTable"
 
 #define MI_SelectNextGuideStroke "MI_SelectNextGuideStroke"
 #define MI_SelectPrevGuideStroke "MI_SelectPrevGuideStroke"
