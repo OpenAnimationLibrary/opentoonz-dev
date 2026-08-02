@@ -98,6 +98,22 @@ const bool checkContainsSingleLevel(TXshColumn *column,
   return false;
 }
 
+bool getContiguousCellRange(const TXsheet *xsheet, int row, int col, int &r0,
+                            int &r1) {
+  int firstRow, lastRow;
+  if (!xsheet->getCellRange(col, firstRow, lastRow) || row < firstRow ||
+      row > lastRow || xsheet->getCell(row, col).isEmpty())
+    return false;
+
+  r0 = row;
+  while (r0 > firstRow && !xsheet->getCell(r0 - 1, col).isEmpty()) r0--;
+
+  r1 = row;
+  while (r1 < lastRow && !xsheet->getCell(r1 + 1, col).isEmpty()) r1++;
+
+  return true;
+}
+
 bool selectionContainTlvImage(TCellSelection *selection, TXsheet *xsheet,
                               bool onlyTlv = false) {
   int r0, r1, c0, c1;
@@ -3412,12 +3428,24 @@ void CellArea::mousePressEvent(QMouseEvent *event) {
 
       if (column && !m_viewer->getCellSelection()->isCellSelected(row, col)) {
         int r0, r1;
-        column->getLevelRange(row, r0, r1);
-        if (event->modifiers() & Qt::ControlModifier) {
+        const bool selectContiguousCells =
+            (event->modifiers() & Qt::ControlModifier) &&
+            (event->modifiers() & Qt::ShiftModifier);
+        if (selectContiguousCells &&
+            getContiguousCellRange(xsh, row, col, r0, r1)) {
+          m_viewer->setCurrentColumn(col);
+          if (Preferences::instance()->isMoveCurrentEnabled())
+            m_viewer->setCurrentRow(row);
+          m_viewer->getKeyframeSelection()->selectNone();
+          m_viewer->getCellSelection()->makeCurrent();
+          m_viewer->getCellSelection()->selectCells(r0, col, r1, col);
+        } else if (event->modifiers() & Qt::ControlModifier) {
+          column->getLevelRange(row, r0, r1);
           m_viewer->getCellKeyframeSelection()->makeCurrent();
           m_viewer->getCellKeyframeSelection()->selectCellsKeyframes(r0, col,
                                                                      r1, col);
         } else {
+          column->getLevelRange(row, r0, r1);
           m_viewer->getKeyframeSelection()->selectNone();
           m_viewer->getCellSelection()->makeCurrent();
           m_viewer->getCellSelection()->selectCells(r0, col, r1, col);
