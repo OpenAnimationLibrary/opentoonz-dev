@@ -56,6 +56,7 @@ public:
   void swingFrames();
   void stepFrames(int step);
   void eachFrames(int step);
+  void setDrawingMark(int markId);
   void duplicateFrames();
   void exposeFrames();
   void renumberFrames();

@@ -3374,6 +3374,16 @@ void MainWindow::defineActions() {
   // Special Modifier Keys
   createSpecialModifierAction(V_Scrub, QT_TR_NOOP("Viewer Scrub"), "#");
 
+  for (int markId = 0; markId < 12; ++markId) {
+    const std::string commandId =
+        (std::string)MI_SetDrawingMark + std::to_string(markId);
+    const std::string label =
+        QT_TR_NOOP("Set Drawing Mark ") + std::to_string(markId);
+    QAction *action = createAction(commandId.c_str(), label.c_str(), "",
+                                   DrawingMarkCommandType);
+    action->setData(markId);
+  }
+
   // create cell mark actions
   for (int markId = 0; markId < 12; markId++) {
     std::string cmdId = (std::string)MI_SetCellMark + std::to_string(markId);

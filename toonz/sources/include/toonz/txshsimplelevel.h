@@ -287,6 +287,12 @@ public:
   //! must have the same size).
   void renumber(const std::vector<TFrameId> &fids);
 
+  const std::map<TFrameId, int> &getDrawingMarks() const {
+    return m_drawingMarks;
+  }
+  int getDrawingMark(const TFrameId &fid) const;
+  void setDrawingMark(const TFrameId &fid, int markId);
+
   bool isFrameReadOnly(TFrameId fid);
 
 public:
@@ -373,6 +379,7 @@ private:
   bool m_isReadOnly;
   bool m_temporaryHookMerged;  //!< Used only during hook merge (and hence
                                //!< during saving)
+  std::map<TFrameId, int> m_drawingMarks;
 
 private:
   //! Save simple level in scene-decoded path \p decodedFp.

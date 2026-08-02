@@ -81,7 +81,7 @@ public:
   int getSize() const override { return sizeof *this; }
 
   QString getHistoryString() override {
-    return QObject::tr("Edit Cell Mark #%1").arg(QString::number(m_id));
+    return QObject::tr("Edit Cell/Drawing Mark #%1").arg(QString::number(m_id));
   }
 };
 
@@ -164,7 +164,7 @@ QImage::Format_ARGB32);
 //-----------------------------------------------------------------------------
 
 CellMarksPopup::CellMarksPopup(QWidget *parent) : QDialog(parent) {
-  setWindowTitle(tr("Cell Marks Settings"));
+  setWindowTitle(tr("Marks Settings"));
 
   QList<TSceneProperties::CellMark> marks = TApp::instance()
                                                 ->getCurrentScene()
@@ -502,7 +502,7 @@ SceneSettingsPopup::SceneSettingsPopup()
       sprop->isColumnColorFilterOnRenderEnabled());
 
   QPushButton *editCellMarksButton =
-      new QPushButton(tr("Edit Cell Marks"), this);
+      new QPushButton(tr("Edit Marks"), this);
 
   QPushButton *editColorFiltersButton =
       new QPushButton(tr("Edit Column Color Filters"), this);
@@ -553,7 +553,7 @@ SceneSettingsPopup::SceneSettingsPopup()
                           Qt::AlignRight | Qt::AlignVCenter);
 
     // cell marks
-    mainLayout->addWidget(new QLabel(tr("Cell Marks:"), this), 7, 0,
+    mainLayout->addWidget(new QLabel(tr("Cell/Drawing Marks:"), this), 7, 0,
                           Qt::AlignRight | Qt::AlignVCenter);
     mainLayout->addWidget(editCellMarksButton, 7, 1, 1, 4,
                           Qt::AlignLeft | Qt::AlignVCenter);
