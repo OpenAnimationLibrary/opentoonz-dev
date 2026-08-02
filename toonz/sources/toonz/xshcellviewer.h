@@ -5,6 +5,7 @@
 
 #include <QWidget>
 #include <QLineEdit>
+#include <QTimer>
 #include "orientation.h"
 
 #include "toonz/txshcell.h"
@@ -88,6 +89,8 @@ class CellArea final : public QWidget {
 
   QPoint m_pos;
   QString m_tooltip;
+  TXshCell m_tooltipCell;
+  QTimer *m_tooltipTimer;
 
   RenameCellField *m_renameCell;
 
@@ -188,6 +191,7 @@ protected slots:
   // Replace level with another level in the cast
   void onReplaceByCastedLevel(QAction *action);
   void onSetCellMark();
+  void onDelayToolTip();
 };
 
 }  // namespace XsheetGUI

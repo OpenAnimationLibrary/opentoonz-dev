@@ -622,6 +622,8 @@ void Preferences::definePreferenceItems() {
          0);  // default
   define(showFrameNumberWithLetters, "showFrameNumberWithLetters",
          QMetaType::Bool, false);
+  define(showImagesInCellTooltip, "showImagesInCellTooltip", QMetaType::Bool,
+         false);
   // This option will do the following:
   // - When setting a cell in the empty column, level name will be copied to the
   // column name

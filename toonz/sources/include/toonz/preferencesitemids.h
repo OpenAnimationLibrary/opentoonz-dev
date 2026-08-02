@@ -156,6 +156,7 @@ enum PreferencesItemId {
   currentColumnColor,
   levelNameDisplayType,
   showFrameNumberWithLetters,
+  showImagesInCellTooltip,
   linkColumnNameWithLevel,
 
   //----------
