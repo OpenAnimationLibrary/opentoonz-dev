@@ -18,6 +18,8 @@
 #include "toonz/mypaintbrushstyle.h"
 #include "toonz/levelset.h"
 #include "toonz/tcamera.h"
+#include "toonz/txshcell.h"
+#include "toonz/txsheet.h"
 
 // TnzBase includes
 #include "tenv.h"
@@ -2366,4 +2368,50 @@ bool TXshSimpleLevel::isFrameReadOnly(TFrameId fid) {
     return false;
 
   return m_isReadOnly;
+}
+
+//-----------------------------------------------------------------------------
+
+bool TXshSimpleLevel::isSingleFileLevel() const {
+  return m_frames.size() == 1 &&
+         (m_frames.begin()->getNumber() == TFrameId::EMPTY_FRAME ||
+          m_frames.begin()->getNumber() == TFrameId::NO_FRAME);
+}
+
+//-----------------------------------------------------------------------------
+
+bool TXshSimpleLevel::canConvertSingleFileToSequence() const {
+  return m_type == OVL_XSHLEVEL && isSingleFileLevel() &&
+         !m_path.isUneditable();
+}
+
+//-----------------------------------------------------------------------------
+
+void TXshSimpleLevel::convertSingleFileToSequence(TXsheet *xsheet) {
+  if (!isSingleFileLevel()) return;
+
+  const TFrameId oldFid = *m_frames.begin();
+  TFrameId newFid       = oldFid;
+  TImageP image         = getFrame(oldFid, false);
+  if (!image) return;
+
+  eraseFrame(oldFid);
+  newFid.convertToSequence();
+  setFrame(newFid, image->cloneImage());
+  m_path = m_path.withFrame();
+
+  if (!xsheet) return;
+
+  const TXshCell replacement(this, newFid);
+  for (int column = 0; column < xsheet->getColumnCount(); ++column) {
+    int firstRow = 0;
+    int lastRow  = -1;
+    xsheet->getCellRange(column, firstRow, lastRow);
+    for (int row = firstRow; row <= lastRow; ++row) {
+      const TXshCell cell = xsheet->getCell(row, column);
+      if (!cell.isEmpty() && cell.m_level == this &&
+          cell.getFrameId() == oldFid)
+        xsheet->setCell(row, column, replacement);
+    }
+  }
 }

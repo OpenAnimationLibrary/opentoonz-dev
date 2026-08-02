@@ -17,6 +17,7 @@
 #include "toonzqt/trepetitionguard.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/tselectionhandle.h"
+#include "toonzqt/dvdialog.h"
 
 // TnzLib includes
 #include "toonz/txshlevelhandle.h"
@@ -1145,6 +1146,25 @@ void FilmstripFrames::keyPressEvent(QKeyEvent *event) {
   std::vector<TFrameId> fids;
   level->getFids(fids);
   if (fids.empty()) return;
+
+  if (level->isSingleFileLevel() &&
+      (event->key() == Qt::Key_Down || event->key() == Qt::Key_Right)) {
+    if (!level->canConvertSingleFileToSequence()) {
+      DVGui::error(tr("Cannot add frames to a Single Frame level."));
+      return;
+    }
+
+    const int choice = DVGui::MsgBox(
+        tr("In order to create a new frame in this Single Frame level, it "
+           "will need to be converted and saved as a new sequenced file "
+           "level.\nWould you like to continue?"),
+        tr("Ok"), tr("Cancel"));
+    if (choice == 0 || choice == 2) return;
+
+    level->convertSingleFileToSequence(
+        TApp::instance()->getCurrentXsheet()->getXsheet());
+    level->getFids(fids);
+  }
 
   // If on a level frame pass the frame id after the last frame to allow
   // creating a new frame with the down arrow key

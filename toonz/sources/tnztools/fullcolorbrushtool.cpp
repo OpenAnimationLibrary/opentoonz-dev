@@ -137,7 +137,8 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
     , m_notifier(0)
     , m_presetsLoaded(false)
     , m_firstTime(true)
-    , m_started(false) {
+    , m_started(false)
+    , m_active(false) {
   bind(TTool::RasterImage | TTool::EmptyTarget);
   m_thickness.setNonLinearSlider();
 
@@ -345,7 +346,8 @@ void FullColorBrushTool::updateModifiers() {
 
 bool FullColorBrushTool::preLeftButtonDown() {
   updateModifiers();
-  touchImage();
+  m_active = touchImage();
+  if (!m_active) return false;
 
   if (m_isFrameCreated) {
     setWorkAndBackupImages();
@@ -407,14 +409,17 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
 
 void FullColorBrushTool::leftButtonDown(const TPointD &pos,
                                         const TMouseEvent &e) {
+  if (!m_active) return;
   handleMouseEvent(ME_DOWN, pos, e);
 }
 void FullColorBrushTool::leftButtonDrag(const TPointD &pos,
                                         const TMouseEvent &e) {
+  if (!m_active) return;
   handleMouseEvent(ME_DRAG, pos, e);
 }
 void FullColorBrushTool::leftButtonUp(const TPointD &pos,
                                       const TMouseEvent &e) {
+  if (!m_active) return;
   handleMouseEvent(ME_UP, pos, e);
 }
 void FullColorBrushTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
