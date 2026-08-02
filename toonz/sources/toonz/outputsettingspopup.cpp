@@ -52,6 +52,9 @@
 #include <QPropertyAnimation>
 #include <QSpacerItem>
 #include <QEvent>
+#include <QAbstractButton>
+#include <QButtonGroup>
+#include <QRadioButton>
 //-----------------------------------------------------------------------------
 namespace {
 
@@ -179,6 +182,7 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
     , m_subcameraChk(nullptr)
     , m_applyShrinkChk(nullptr)
     , m_outputCameraOm(nullptr)
+    , m_appendVersionFormatBG(nullptr)
     , m_isPreviewSettings(isPreview)
     , m_allowMT(Preferences::instance()->getFfmpegMultiThread())
     , m_presetCombo(nullptr)
@@ -604,6 +608,22 @@ QFrame *OutputSettingsPopup::createFileSettingsBox(bool isPreview) {
     m_channelWidthOm->installEventFilter(this);
     m_threadsComboOm->installEventFilter(this);
     m_rasterGranularityOm->installEventFilter(this);
+
+    m_appendVersionFormatBG = new QButtonGroup(this);
+    const auto addFormatButton = [this](const QString &text,
+                                        TOutputProperties::AppendVersionFormat
+                                            format) {
+      QRadioButton *button = new QRadioButton(text, this);
+      m_appendVersionFormatBG->addButton(button, static_cast<int>(format));
+      return button;
+    };
+
+    addFormatButton(tr("None"), TOutputProperties::None);
+    addFormatButton(tr("Sequence"), TOutputProperties::Sequence);
+    addFormatButton(tr("Timestamp"), TOutputProperties::Timestamp);
+    const int format = static_cast<int>(getProperties()->getAppendVersionFormat());
+    if (QAbstractButton *button = m_appendVersionFormatBG->button(format))
+      button->setChecked(true);
   }
 
   //-----
@@ -633,6 +653,20 @@ QFrame *OutputSettingsPopup::createFileSettingsBox(bool isPreview) {
       upperGridLay->setColumnStretch(1, 1);
 
       lay->addLayout(upperGridLay);
+
+      QGridLayout *versionGridLay = new QGridLayout();
+      versionGridLay->setContentsMargins(0, 0, 0, 0);
+      versionGridLay->setHorizontalSpacing(5);
+      versionGridLay->setVerticalSpacing(10);
+      versionGridLay->addWidget(new QLabel(tr("Append to Name:"), this), 0, 0,
+                                Qt::AlignRight | Qt::AlignVCenter);
+      for (int format = TOutputProperties::None;
+           format <= TOutputProperties::Timestamp; ++format) {
+        versionGridLay->addWidget(m_appendVersionFormatBG->button(format), 0,
+                                  format + 1);
+      }
+      versionGridLay->setColumnStretch(4, 1);
+      lay->addLayout(versionGridLay);
     }
 
     QGridLayout *bottomGridLay = new QGridLayout();
@@ -677,6 +711,8 @@ QFrame *OutputSettingsPopup::createFileSettingsBox(bool isPreview) {
                   SLOT(onFormatChanged(const QString &)));
     ret = ret && connect(m_fileFormatButton, SIGNAL(pressed()), this,
                          SLOT(openSettingsPopup()));
+    ret = ret && connect(m_appendVersionFormatBG, SIGNAL(idClicked(int)), this,
+                         SLOT(onAppendVersionFormatChanged(int)));
   }
   ret = ret && connect(m_resampleBalanceOm, SIGNAL(currentIndexChanged(int)),
                        SLOT(onResampleChanged(int)));
@@ -950,6 +986,9 @@ void OutputSettingsPopup::updateField() {
     m_fileFormat->setCurrentIndex(
         m_fileFormat->findText(QString::fromStdString(path.getType())));
     m_multimediaOm->setCurrentIndex(prop->getMultimediaRendering());
+    if (QAbstractButton *button = m_appendVersionFormatBG->button(
+            static_cast<int>(prop->getAppendVersionFormat())))
+      button->setChecked(true);
   }
 
   // Refresh format if allow-multithread was toggled
@@ -1098,6 +1137,24 @@ void OutputSettingsPopup::onPathChanged() {
   prop->setPath(fp);
   TApp::instance()->getCurrentScene()->setDirtyFlag(true);
 
+  if (m_presetCombo) m_presetCombo->setCurrentIndex(0);
+}
+
+//-----------------------------------------------------------------------------
+/*! Set the current scene output name suffix format.
+ */
+void OutputSettingsPopup::onAppendVersionFormatChanged(int format) {
+  if (!getCurrentScene() || format < TOutputProperties::None ||
+      format > TOutputProperties::Timestamp)
+    return;
+
+  TOutputProperties *prop = getProperties();
+  const auto newFormat =
+      static_cast<TOutputProperties::AppendVersionFormat>(format);
+  if (prop->getAppendVersionFormat() == newFormat) return;
+
+  prop->setAppendVersionFormat(newFormat);
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
   if (m_presetCombo) m_presetCombo->setCurrentIndex(0);
 }
 

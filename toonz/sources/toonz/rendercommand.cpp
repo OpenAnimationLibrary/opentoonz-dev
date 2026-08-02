@@ -52,6 +52,8 @@
 // Qt includes
 #include <QObject>
 #include <QDesktopServices>
+#include <QDateTime>
+#include <QDir>
 #include <QUrl>
 #include <QRegularExpression>  // Added to replace QRegExp
 
@@ -60,6 +62,40 @@
 namespace {
 
 #include "bravomark.h"
+
+TFilePath appendVersionSequence(const TFilePath &fp) {
+  int sequence = 0;
+  TFilePathSet fileList;
+  const TFileType::Type type = TFileType::getInfo(fp);
+  const QString pattern =
+      ((type == TFileType::RASTER_IMAGE || type == TFileType::RASTER_LEVEL) &&
+       !fp.isFfmpegType()
+           ? "*.*.*."
+           : "*.*.") +
+      QString::fromStdString(fp.getType());
+  QDir directory(fp.getParentDir().getQString());
+  directory.setNameFilters(QStringList(pattern));
+  TSystem::readDirectory(fileList, directory, false);
+
+  for (const TFilePath &file : fileList) {
+    bool isNumber = false;
+    const int currentSequence =
+        QString::fromStdString(file.getName()).section('.', 1, 1).toInt(
+            &isNumber);
+    if (isNumber && currentSequence > sequence) sequence = currentSequence;
+  }
+
+  const QString suffix = QString("%1").arg(sequence + 1, 4, 10, QChar('0'));
+  return fp.withName((QString::fromStdString(fp.getName()) + "." + suffix)
+                         .toStdWString());
+}
+
+TFilePath appendVersionTimestamp(const TFilePath &fp) {
+  const QString suffix =
+      QDateTime::currentDateTime().toString("yyyyMMddThhmmss");
+  return fp.withName((QString::fromStdString(fp.getName()) + "." + suffix)
+                         .toStdWString());
+}
 
 TRaster32P loadLight() {
   static TRaster32P ras(137, 48);
@@ -301,6 +337,16 @@ sprop->getOutputProperties()->setRenderSettings(rso);*/
                                // settings) but consists of multiple frames
     fp = fp.withFrame(TFrameId::EMPTY_FRAME);
   fp = scene->decodeFilePath(fp);
+  switch (outputSettings.getAppendVersionFormat()) {
+  case TOutputProperties::Sequence:
+    fp = appendVersionSequence(fp);
+    break;
+  case TOutputProperties::Timestamp:
+    fp = appendVersionTimestamp(fp);
+    break;
+  case TOutputProperties::None:
+    break;
+  }
   if (!TFileStatus(fp.getParentDir()).doesExist()) {
     try {
       TFilePath parent = fp.getParentDir();
