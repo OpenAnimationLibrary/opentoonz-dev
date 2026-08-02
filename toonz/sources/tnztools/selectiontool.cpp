@@ -10,6 +10,7 @@
 #include "tools/cursors.h"
 #include "toonz/stage2.h"
 #include "toonz/tobjecthandle.h"
+#include "toonz/preferences.h"
 
 #include <QKeyEvent>
 
@@ -953,7 +954,8 @@ void SelectionTool::updateAction(TPointD pos, const TMouseEvent &e) {
 
   FourPoints bbox = getBBox();
 
-  double pixelSize = getPixelSize();
+  const double toolScale = Preferences::instance()->isToolScaled() ? 2.0 : 1.0;
+  double pixelSize       = getPixelSize() * toolScale;
   if (!bbox.isEmpty()) {
     double maxDist  = 17 * pixelSize;
     double maxDist2 = maxDist * maxDist;
@@ -1249,7 +1251,8 @@ void SelectionTool::drawCommandHandle(const TImage *image) {
 
   if (!isSelectionEditable()) return;
 
-  double pixelSize = getPixelSize();
+  const double toolScale = Preferences::instance()->isToolScaled() ? 2.0 : 1.0;
+  double pixelSize       = getPixelSize() * toolScale;
   if (!isLevelType() && !isSelectedFramesType()) {
     TPointD c = getCenter() + TPointD(-pixelSize, +pixelSize);
 
