@@ -111,6 +111,7 @@ public:
   static double m_lastBackVisibleSkin;
 
   static bool m_isShiftAndTraceEnabled;
+  static bool m_isLightTableEnabled;
 
   TPixel32 m_filterColor;
 
