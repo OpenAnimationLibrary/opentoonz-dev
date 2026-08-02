@@ -265,6 +265,12 @@ If \b scene is in +scenes/name.tnz return name,
   bool isLoading() { return m_isLoading; }
   void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
 
+  int getStartRow() const { return m_startRow; }
+  void setStartRow(int startRow) { m_startRow = startRow; }
+
+  int getStartCol() const { return m_startCol; }
+  void setStartCol(int startCol) { m_startCol = startCol; }
+
 private:
   TFilePath m_scenePath;  //!< Full path to the scene file (.tnz).
 
@@ -286,6 +292,9 @@ private:
                      // is used when loading PSD levels, for defining whether to
                      // convert a layerId in the path to the layer name. See
                      // TXshSimpleLevel::load().
+
+  int m_startRow;
+  int m_startCol;
 
 private:
   // noncopyable
