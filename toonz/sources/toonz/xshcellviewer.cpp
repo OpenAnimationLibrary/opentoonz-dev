@@ -73,6 +73,8 @@
 #include <QClipboard>
 #include <QRegularExpression>
 
+#include <algorithm>
+
 namespace {
 
 const bool checkContainsSingleLevel(TXshColumn *column,
@@ -614,6 +616,46 @@ QString SetCellMarkUndo::getHistoryString() {
       .arg(markName);
 }
 int SetCellMarkUndo::getHistoryType() { return HistoryType::Xsheet; }
+
+//=============================================================================
+// SetDrawingMarkUndo
+//-----------------------------------------------------------------------------
+
+SetDrawingMarkUndo::SetDrawingMarkUndo(std::vector<TXshCell> cells, int markId)
+    : m_cells(std::move(cells)), m_newMark(markId) {
+  m_oldMarks.reserve(m_cells.size());
+  for (const TXshCell &cell : m_cells)
+    m_oldMarks.push_back(cell.getSimpleLevel()->getDrawingMark(cell.getFrameId()));
+}
+
+void SetDrawingMarkUndo::undo() const {
+  for (size_t i = 0; i < m_cells.size(); ++i)
+    m_cells[i].getSimpleLevel()->setDrawingMark(m_cells[i].getFrameId(),
+                                                m_oldMarks[i]);
+  TApp::instance()->getCurrentLevel()->notifyLevelChange();
+  TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+}
+
+void SetDrawingMarkUndo::redo() const {
+  for (const TXshCell &cell : m_cells)
+    cell.getSimpleLevel()->setDrawingMark(cell.getFrameId(), m_newMark);
+  TApp::instance()->getCurrentLevel()->notifyLevelChange();
+  TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+}
+
+int SetDrawingMarkUndo::getSize() const { return sizeof(*this); }
+
+QString SetDrawingMarkUndo::getHistoryString() {
+  const QString markName =
+      m_newMark < 0
+          ? QObject::tr("None", "Drawing Mark")
+          : TApp::instance()->getCurrentScene()->getScene()->getProperties()
+                ->getCellMark(m_newMark)
+                .name;
+  return QObject::tr("Set Drawing Mark to %1").arg(markName);
+}
+
+int SetDrawingMarkUndo::getHistoryType() { return HistoryType::Xsheet; }
 
 //=============================================================================
 // RenameCellField
@@ -1871,6 +1913,35 @@ void CellArea::drawFrameMarker(QPainter &p, const QPoint &xy, QColor color,
 
 //-----------------------------------------------------------------------------
 
+void CellArea::drawDrawingMarker(QPainter &p, int markId, const QRect &rect) {
+  if (markId < 0) return;
+
+  const TPixel32 color = TApp::instance()
+                             ->getCurrentScene()
+                             ->getScene()
+                             ->getProperties()
+                             ->getCellMark(markId)
+                             .color;
+  const QColor markerColor(color.r, color.g, color.b);
+  const QColor borderColor(std::min(255, color.r + 50),
+                           std::min(255, color.g + 50),
+                           std::min(255, color.b + 50));
+  const int size = std::min(rect.width(), rect.height());
+  const QPoint topLeft = rect.topLeft();
+  const QPolygon marker({topLeft, QPoint(topLeft.x() + size, topLeft.y()),
+                         QPoint(topLeft.x(), topLeft.y() + rect.height())});
+
+  const QBrush oldBrush = p.brush();
+  const QPen oldPen     = p.pen();
+  p.setBrush(markerColor);
+  p.setPen(borderColor);
+  p.drawPolygon(marker);
+  p.setBrush(oldBrush);
+  p.setPen(oldPen);
+}
+
+//-----------------------------------------------------------------------------
+
 void CellArea::drawFocusCellBorder(QPainter &p) {
   QColor color = m_viewer->getCellFocusColor();
   if (color.alpha() == 0) return;
@@ -2078,6 +2149,19 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
   drawLockedDottedLine(p, xsh->getColumn(col)->isLocked(), xy, cellColor);
 
   drawFrameSeparator(p, row, col, false, heldFrame);
+
+  const bool isStart = row == 0 || prevCell.isEmpty() ||
+                       prevCell.m_level.getPointer() != cell.m_level.getPointer() ||
+                       prevCell.m_frameId != cell.m_frameId;
+  if (isStart) {
+    if (TXshSimpleLevel *level = cell.getSimpleLevel()) {
+      QRect drawingMarkRect = rect.adjusted(1, 1, 1, 0);
+      if (!o->isVerticalTimeline())
+        drawingMarkRect.adjust(0, 0, nextCell.isEmpty() ? -2 : -4, 0);
+      drawDrawingMarker(p, level->getDrawingMark(cell.m_frameId),
+                        drawingMarkRect);
+    }
+  }
 
   QRect nameRect = o->rect(PredefinedRect::CELL_NAME).translated(QPoint(x, y));
 
@@ -4086,6 +4170,33 @@ void CellArea::createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell,
 
     menu.addMenu(marksMenu);
   }
+
+  TXshSimpleLevel *level = cell.getSimpleLevel();
+  if (level) {
+    QMenu *marksMenu = new QMenu(tr("Drawing Mark"), this);
+    const int markId = level->getDrawingMark(cell.getFrameId());
+    QAction *markAction = marksMenu->addAction(tr("None"));
+    markAction->setCheckable(true);
+    markAction->setChecked(markId == -1);
+    markAction->setEnabled(markId != -1);
+    markAction->setData(QList<QVariant>{row, col, -1});
+    connect(markAction, &QAction::triggered, this,
+            &CellArea::onSetDrawingMark);
+    const auto marks = TApp::instance()->getCurrentScene()->getScene()
+                           ->getProperties()
+                           ->getCellMarks();
+    for (int id = 0; id < marks.size(); ++id) {
+      markAction = marksMenu->addAction(getColorChipIcon(marks[id].color),
+                                        QString("%1: %2").arg(id).arg(marks[id].name));
+      markAction->setCheckable(true);
+      markAction->setChecked(markId == id);
+      markAction->setEnabled(markId != id);
+      markAction->setData(QList<QVariant>{row, col, id});
+      connect(markAction, &QAction::triggered, this,
+              &CellArea::onSetDrawingMark);
+    }
+    menu.addMenu(marksMenu);
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -4347,6 +4458,41 @@ void CellArea::onSetCellMark() {
   int col               = params[1].toInt();
   int id                = params[2].toInt();
   SetCellMarkUndo *undo = new SetCellMarkUndo(row, col, id);
+  undo->redo();
+  TUndoManager::manager()->add(undo);
+}
+
+//-----------------------------------------------------------------------------
+
+void CellArea::onSetDrawingMark() {
+  const QAction *action = qobject_cast<QAction *>(sender());
+  if (!action) return;
+  const QList<QVariant> params = action->data().toList();
+  if (params.size() != 3) return;
+
+  TCellSelection *selection = m_viewer->getCellSelection();
+  TXsheet *xsheet            = m_viewer->getXsheet();
+  std::vector<TXshCell> cells;
+  if (selection && !selection->isEmpty()) {
+    int r0, c0, r1, c1;
+    selection->getSelectedCells(r0, c0, r1, c1);
+    for (int col = std::max(0, c0); col <= c1; ++col) {
+      for (int row = r0; row <= r1; ++row) {
+        const TXshCell cell = xsheet->getCell(row, col);
+        if (cell.isEmpty() || !cell.getSimpleLevel() ||
+            std::find(cells.begin(), cells.end(), cell) != cells.end())
+          continue;
+        cells.push_back(cell);
+      }
+    }
+  }
+  if (cells.empty()) {
+    const TXshCell cell = xsheet->getCell(params[0].toInt(), params[1].toInt());
+    if (cell.isEmpty() || !cell.getSimpleLevel()) return;
+    cells.push_back(cell);
+  }
+
+  auto *undo = new SetDrawingMarkUndo(std::move(cells), params[2].toInt());
   undo->redo();
   TUndoManager::manager()->add(undo);
 }

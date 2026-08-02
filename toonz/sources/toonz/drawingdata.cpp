@@ -162,11 +162,13 @@ DrawingData *DrawingData::clone() const { return new DrawingData(this); }
 //-----------------------------------------------------------------------------
 
 void DrawingData::setLevelFrames(TXshSimpleLevel *sl,
-                                 std::set<TFrameId> &frames) {
+                                 std::set<TFrameId> &frames,
+                                 bool copyDrawingMarks) {
   if (!sl || frames.empty()) return;
 
   m_level = sl;
   m_imageSet.clear();
+  m_drawingMarks.clear();
 
   std::set<TFrameId>::iterator it;
 
@@ -202,6 +204,9 @@ void DrawingData::setLevelFrames(TXshSimpleLevel *sl,
       copiedHook->setAPos(frameId, levelHook->getAPos(frameId));
       copiedHook->setBPos(frameId, levelHook->getBPos(frameId));
     }
+
+    if (copyDrawingMarks)
+      m_drawingMarks[frameId] = sl->getDrawingMark(frameId);
   }
 }
 
@@ -338,6 +343,16 @@ bool DrawingData::getLevelFrames(TXshSimpleLevel *sl,
     ++frameIt;
   }
 
+  if (!m_drawingMarks.empty()) {
+    frameIt = m_imageSet.begin();
+    for (auto const &image : usedImageSet) {
+      const auto markIt = m_drawingMarks.find(frameIt->first);
+      sl->setDrawingMark(image.first,
+                         markIt == m_drawingMarks.end() ? -1 : markIt->second);
+      ++frameIt;
+    }
+  }
+
   sl->setDirtyFlag(true);
 
   // notify if there are any modifications to the palette
@@ -423,8 +438,10 @@ TImageP DrawingData::getImage(QString imageId, TXshSimpleLevel *sl,
 //-----------------------------------------------------------------------------
 
 void DrawingData::setFrames(const std::map<TFrameId, QString> &imageSet,
-                            TXshSimpleLevel *level, const HookSet &levelHooks) {
-  m_levelHooks = levelHooks;
+                            TXshSimpleLevel *level, const HookSet &levelHooks,
+                            const std::map<TFrameId, int> &drawingMarks) {
+  m_levelHooks   = levelHooks;
+  m_drawingMarks = drawingMarks;
   m_imageSet.clear();
 
   assert(!imageSet.empty());

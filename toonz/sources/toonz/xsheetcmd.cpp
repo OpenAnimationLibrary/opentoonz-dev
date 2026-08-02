@@ -55,6 +55,7 @@
 // Tnz6 includes
 #include "cellselection.h"
 #include "columnselection.h"
+#include "filmstripselection.h"
 #include "keyframeselection.h"
 #include "celldata.h"
 #include "tapp.h"
@@ -66,6 +67,8 @@
 
 // Qt includes
 #include <QClipboard>
+
+#include <algorithm>
 
 // tcg includes
 #include "tcg/boost/range_utility.h"
@@ -2158,6 +2161,64 @@ public:
   }
 
 } ToggleXsheetCameraColumnCommand;
+
+//-----------------------------------------------------------------------------
+
+class SetDrawingMarkCommand final : public MenuItemHandler {
+  int m_markId;
+
+public:
+  explicit SetDrawingMarkCommand(int markId)
+      : MenuItemHandler(
+            ((std::string)MI_SetDrawingMark + std::to_string(markId)).c_str())
+      , m_markId(markId) {}
+
+  void execute() override {
+    TApp *app              = TApp::instance();
+    TSelection *selection  = app->getCurrentSelection()->getSelection();
+    if (!selection) return;
+
+    if (app->getCurrentFrame()->isEditingLevel()) {
+      auto *filmstripSelection = dynamic_cast<TFilmstripSelection *>(selection);
+      if (filmstripSelection) filmstripSelection->setDrawingMark(m_markId);
+      return;
+    }
+
+    auto *cellSelection = dynamic_cast<TCellSelection *>(selection);
+    if (!cellSelection) return;
+
+    int r0, c0, r1, c1;
+    cellSelection->getSelectedCells(r0, c0, r1, c1);
+    TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
+    std::vector<TXshCell> cells;
+    for (int col = std::max(0, c0); col <= c1; ++col) {
+      for (int row = r0; row <= r1; ++row) {
+        const TXshCell cell = xsheet->getCell(row, col);
+        if (cell.isEmpty() || !cell.getSimpleLevel() ||
+            std::find(cells.begin(), cells.end(), cell) != cells.end())
+          continue;
+        cells.push_back(cell);
+      }
+    }
+    if (cells.empty()) return;
+
+    auto *undo = new XsheetGUI::SetDrawingMarkUndo(std::move(cells), m_markId);
+    undo->redo();
+    TUndoManager::manager()->add(undo);
+  }
+};
+SetDrawingMarkCommand DrawingMarkCommand0(0);
+SetDrawingMarkCommand DrawingMarkCommand1(1);
+SetDrawingMarkCommand DrawingMarkCommand2(2);
+SetDrawingMarkCommand DrawingMarkCommand3(3);
+SetDrawingMarkCommand DrawingMarkCommand4(4);
+SetDrawingMarkCommand DrawingMarkCommand5(5);
+SetDrawingMarkCommand DrawingMarkCommand6(6);
+SetDrawingMarkCommand DrawingMarkCommand7(7);
+SetDrawingMarkCommand DrawingMarkCommand8(8);
+SetDrawingMarkCommand DrawingMarkCommand9(9);
+SetDrawingMarkCommand DrawingMarkCommand10(10);
+SetDrawingMarkCommand DrawingMarkCommand11(11);
 
 //-----------------------------------------------------------------------------
 

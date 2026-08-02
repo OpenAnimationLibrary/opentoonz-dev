@@ -5,6 +5,7 @@
 
 #include <QWidget>
 #include <QLineEdit>
+#include <vector>
 #include "orientation.h"
 
 #include "toonz/txshcell.h"
@@ -25,6 +26,20 @@ class SetCellMarkUndo final : public TUndo {
 public:
   SetCellMarkUndo(int row, int col, int idAfter);
   void setId(int id) const;
+  void undo() const override;
+  void redo() const override;
+  int getSize() const override;
+  QString getHistoryString() override;
+  int getHistoryType() override;
+};
+
+class SetDrawingMarkUndo final : public TUndo {
+  std::vector<TXshCell> m_cells;
+  std::vector<int> m_oldMarks;
+  int m_newMark;
+
+public:
+  SetDrawingMarkUndo(std::vector<TXshCell> cells, int markId);
   void undo() const override;
   void redo() const override;
   int getSize() const override;
@@ -126,6 +141,7 @@ class CellArea final : public QWidget {
 
   void drawFrameMarker(QPainter &p, const QPoint &xy, QColor color,
                        bool isKeyFrame = false, bool isCamera = false);
+  void drawDrawingMarker(QPainter &p, int markId, const QRect &rect);
 
   void drawFocusCellBorder(QPainter &p);
 
@@ -188,6 +204,7 @@ protected slots:
   // Replace level with another level in the cast
   void onReplaceByCastedLevel(QAction *action);
   void onSetCellMark();
+  void onSetDrawingMark();
 };
 
 }  // namespace XsheetGUI

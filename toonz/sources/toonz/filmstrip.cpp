@@ -11,6 +11,7 @@
 #include "filmstripselection.h"
 #include "onionskinmaskgui.h"
 #include "comboviewerpane.h"
+#include "xshcellviewer.h"
 
 // TnzQt includes
 #include "toonzqt/icongenerator.h"
@@ -35,6 +36,7 @@
 #include "toonz/toonzscene.h"
 #include "toonz/levelset.h"
 #include "toonz/preferences.h"
+#include "toonz/sceneproperties.h"
 
 // TnzCore includes
 #include "tpalette.h"
@@ -51,6 +53,12 @@
 #include <QDrag>
 
 namespace {
+QIcon getColorChipIcon(const TPixel32 &color) {
+  QPixmap pixmap(15, 15);
+  pixmap.fill(QColor(color.r, color.g, color.b));
+  return QIcon(pixmap);
+}
+
 QString fidToFrameNumberWithLetter(int f) {
   QString str = QString::number((int)(f / 10));
   while (str.length() < 3) str.push_front("0");
@@ -776,6 +784,25 @@ void FilmstripFrames::drawFrameIcon(QPainter &p, const QRect &r, int index,
   if (!pm.isNull()) {
     p.drawPixmap(r.left(), r.top(), pm);
 
+    const int markId = sl->getDrawingMark(fid);
+    if (markId >= 0) {
+      const TPixel32 color = TApp::instance()
+                                 ->getCurrentScene()
+                                 ->getScene()
+                                 ->getProperties()
+                                 ->getCellMark(markId)
+                                 .color;
+      const int markerSize = 20;
+      p.save();
+      p.setPen(QColor(color.r + 50, color.g + 50, color.b + 50));
+      p.setBrush(QColor(color.r, color.g, color.b));
+      const QPoint points[3] = {QPoint(r.left(), r.top()),
+                                QPoint(r.left() + markerSize, r.top()),
+                                QPoint(r.left(), r.top() + markerSize)};
+      p.drawPolygon(points, 3);
+      p.restore();
+    }
+
     if (sl && sl->getType() == PLI_XSHLEVEL && flags & F_INBETWEEN_RANGE) {
       if (m_isVertical) {
         int x1 = r.right();
@@ -1285,6 +1312,34 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
              (sl->getType() == OVL_XSHLEVEL && !sl->getPath().isUneditable())))
     menu->addAction(cm->getAction(MI_RevertToLastSaved));
   menu->addSeparator();
+
+  if (sl && !m_selection->isEmpty()) {
+    QMenu *marksMenu = menu->addMenu(tr("Drawing Mark"));
+    const auto selected = m_selection->getSelectedFids();
+    const TFrameId firstFid = *selected.begin();
+    const int currentMark = selected.size() == 1
+                                ? sl->getDrawingMark(firstFid)
+                                : -2;
+    QAction *action = marksMenu->addAction(tr("None"));
+    action->setCheckable(true);
+    action->setChecked(currentMark == -1);
+    action->setData(-1);
+    connect(action, &QAction::triggered, this,
+            &FilmstripFrames::onSetDrawingMark);
+    const auto marks = TApp::instance()->getCurrentScene()->getScene()
+                           ->getProperties()
+                           ->getCellMarks();
+    for (int id = 0; id < marks.size(); ++id) {
+      action = marksMenu->addAction(getColorChipIcon(marks[id].color),
+                                    QString("%1: %2").arg(id).arg(marks[id].name));
+      action->setCheckable(true);
+      action->setChecked(currentMark == id);
+      action->setData(id);
+      connect(action, &QAction::triggered, this,
+              &FilmstripFrames::onSetDrawingMark);
+    }
+    menu->addSeparator();
+  }
   createSelectLevelMenu(menu);
   QMenu *panelMenu           = menu->addMenu(tr("Panel Settings"));
   QAction *toggleOrientation = panelMenu->addAction(tr("Toggle Orientation"));
@@ -1303,6 +1358,17 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
           SLOT(navigatorToggled(bool)));
 
   menu->exec(event->globalPos());
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::onSetDrawingMark() {
+  QAction *action = qobject_cast<QAction *>(sender());
+  TXshSimpleLevel *level = getLevel();
+  if (!action || !level || m_selection->isEmpty()) return;
+
+  std::set<TFrameId> frames = m_selection->getSelectedFids();
+  FilmstripCmd::setDrawingMark(level, frames, action->data().toInt());
 }
 
 //-----------------------------------------------------------------------------
