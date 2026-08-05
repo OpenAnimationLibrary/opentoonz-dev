@@ -40,6 +40,7 @@
 #include "./tzl/tiio_tzl.h"
 #include "./tzm/tiio_tzm.h"
 #include "./svg/tiio_svg.h"
+#include "./ffmpeg/tiio_webp.h"
 #include "./ffmpeg/tiio_gif.h"
 #include "./ffmpeg/tiio_webm.h"
 #include "./ffmpeg/tiio_mp4.h"
@@ -270,7 +271,7 @@ void initImageIo(bool lightVersion) {
     // Still WebP only requires a WebP decoder. Animated WebP support follows
     // the demuxing and decoding capabilities of the selected FFmpeg build.
     if (hasFFmpegDecoder("webp")) {
-      TLevelReader::define("webp", TLevelReaderFFmpeg::create);
+      TLevelReader::define("webp", TLevelReaderWebP::create);
       TFileType::declare("webp", TFileType::RASTER_LEVEL);
     }
     TLevelReader::define("ffvideo", TLevelReaderFFmpeg::create);
