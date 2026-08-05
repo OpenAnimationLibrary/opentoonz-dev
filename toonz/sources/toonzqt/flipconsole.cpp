@@ -443,6 +443,8 @@ FlipConsole::FlipConsole(QVBoxLayout *mainLayout, std::vector<int> gadgetsMask,
     , m_fps(24)
     , m_sceneFps(24)
     , m_isPlay(false)
+    , m_isLoop(false)
+    , m_isPingPong(false)
     , m_reverse(false)
     , m_doubleRed(nullptr)
     , m_doubleGreen(nullptr)
@@ -743,8 +745,12 @@ void FlipConsole::toggleLinked() {
 
   // if we are here, flip is playing!
   m_isLinkedPlaying = m_areLinked;
-  int button =
-      m_areLinked ? (playingConsole->m_isPlay ? ePlay : eLoop) : ePause;
+  int button = ePause;
+  if (m_areLinked) {
+    button = playingConsole->m_isPlay
+                 ? ePlay
+                 : (playingConsole->m_isPingPong ? ePingPong : eLoop);
+  }
 
   for (i = 0; i < m_visibleConsoles.size(); i++) {
     FlipConsole *console = m_visibleConsoles.at(i);
@@ -829,9 +835,12 @@ void FlipConsole::playNextFrame(QElapsedTimer *timer, qint64 targetInstant) {
   }
 
   if (m_framesCount == 0 ||
+      ((m_isLoop || m_isPingPong) && from == to) ||
       (m_isPlay && m_currentFrame == (m_reverse ? from : to))) {
     doButtonPressed(ePause);
-    setChecked(m_isPlay ? ePlay : eLoop, false);
+    setChecked(ePlay, false);
+    setChecked(eLoop, false);
+    setChecked(ePingPong, false);
     setChecked(ePause, true);
     if (Preferences::instance()->rewindAfterPlaybackEnabled())
       m_currentFrame = (m_reverse ? to : from);
@@ -839,12 +848,27 @@ void FlipConsole::playNextFrame(QElapsedTimer *timer, qint64 targetInstant) {
   } else {
     if (drawBlanks(from, to, timer, targetInstant)) return;
 
-    if (m_reverse)
-      m_currentFrame =
-          ((m_currentFrame - m_step < from) ? to : m_currentFrame - m_step);
-    else
-      m_currentFrame =
-          ((m_currentFrame + m_step > to) ? from : m_currentFrame + m_step);
+    if (m_reverse) {
+      m_currentFrame -= m_step;
+      if (m_currentFrame < from) {
+        if (m_isLoop)
+          m_currentFrame = to;
+        else if (m_isPingPong) {
+          m_currentFrame += 2 * m_step;
+          m_reverse      = false;
+        }
+      }
+    } else {
+      m_currentFrame += m_step;
+      if (m_currentFrame > to) {
+        if (m_isLoop)
+          m_currentFrame = from;
+        else if (m_isPingPong) {
+          m_currentFrame -= 2 * m_step;
+          m_reverse      = true;
+        }
+      }
+    }
   }
 
   m_currFrameSlider->setValue(m_currentFrame);
@@ -1048,6 +1072,7 @@ void FlipConsole::applyCustomizeMask() {
   enableButton(ePause, m_customizeMask & eShowVcr);
   enableButton(ePlay, m_customizeMask & eShowVcr);
   enableButton(eLoop, m_customizeMask & eShowVcr);
+  enableButton(ePingPong, m_customizeMask & eShowVcr);
   enableButton(eNext, m_customizeMask & eShowVcr);
   enableButton(eLast, m_customizeMask & eShowVcr);
 
@@ -1248,8 +1273,8 @@ void FlipConsole::createPlayToolBar(QWidget *customWidget) {
   QActionGroup *playGroup = nullptr;
   if (hasButton(m_gadgetsMask, eFirst) || hasButton(m_gadgetsMask, ePrev) ||
       hasButton(m_gadgetsMask, ePause) || hasButton(m_gadgetsMask, ePlay) ||
-      hasButton(m_gadgetsMask, eLoop) || hasButton(m_gadgetsMask, eNext) ||
-      hasButton(m_gadgetsMask, eLast)) {
+      hasButton(m_gadgetsMask, eLoop) || hasButton(m_gadgetsMask, ePingPong) ||
+      hasButton(m_gadgetsMask, eNext) || hasButton(m_gadgetsMask, eLast)) {
     playGroup = new QActionGroup(m_playToolBar);
   }
   if (hasButton(m_gadgetsMask, eFirst))
@@ -1265,6 +1290,9 @@ void FlipConsole::createPlayToolBar(QWidget *customWidget) {
   if (hasButton(m_gadgetsMask, eLoop))
     createCheckedButtonWithBorderImage(eLoop, "loop", tr("Loop"), true,
                                        playGroup, "A_Flip_Loop");
+  if (hasButton(m_gadgetsMask, ePingPong))
+    createCheckedButtonWithBorderImage(ePingPong, "pingpong", tr("Ping Pong"),
+                                       true, playGroup, "A_Flip_PingPong");
 
   if (hasButton(m_gadgetsMask, eNext))
     createButton(eNext, "framenext", tr("&Next Frame"), false);
@@ -1474,14 +1502,25 @@ void FlipConsole::pressLinkedConsoleButton(UINT button, FlipConsole *parent) {
 void FlipConsole::onButtonPressed(int button) {
   makeCurrent();
   if (m_playbackExecutor.isRunning() &&
-      (button == FlipConsole::ePlay || button == FlipConsole::eLoop)) {
-    pressButton(ePause);
+      (button == FlipConsole::ePlay || button == FlipConsole::eLoop ||
+       button == FlipConsole::ePingPong)) {
+    if (button == FlipConsole::eLoop && m_isPingPong) {
+      m_isPingPong = false;
+      m_isLoop     = true;
+      m_reverse    = (m_fps < 0);
+    } else if (button == FlipConsole::ePingPong && m_isLoop) {
+      m_isPingPong = true;
+      m_isLoop     = false;
+    } else {
+      pressButton(ePause);
+    }
   } else {
     // Sync playback state among all viewers & combo viewers.
     // Note that the property "m_isLinkable" is used for distinguishing the
     // owner between (viewer / combo viewer) and (flipbook / color model).
     if (!m_isLinkable &&
-        (button == FlipConsole::ePlay || button == FlipConsole::eLoop)) {
+        (button == FlipConsole::ePlay || button == FlipConsole::eLoop ||
+         button == FlipConsole::ePingPong)) {
       bool stoppedOther = false;
       for (auto playingConsole : m_visibleConsoles) {
         if (playingConsole == this || playingConsole->isLinkable()) continue;
@@ -1489,6 +1528,7 @@ void FlipConsole::onButtonPressed(int button) {
           playingConsole->doButtonPressed(ePause);
           playingConsole->setChecked(ePlay, false);
           playingConsole->setChecked(eLoop, false);
+          playingConsole->setChecked(ePingPong, false);
           playingConsole->setChecked(ePause, true);
           stoppedOther = true;
           m_stopAt     = -1;
@@ -1498,6 +1538,7 @@ void FlipConsole::onButtonPressed(int button) {
       if (stoppedOther) {
         setChecked(ePlay, false);
         setChecked(eLoop, false);
+        setChecked(ePingPong, false);
         setChecked(ePause, true);
         return;
       }
@@ -1587,12 +1628,15 @@ void FlipConsole::doButtonPressed(UINT button) {
   case eLast:
     m_currentFrame = to;
     break;
-  case ePlay:
   case eLoop:
+  case ePingPong:
+  case ePlay:
     m_editCurrFrame->disconnect();
     m_currFrameSlider->disconnect();
 
-    m_isPlay = (button == ePlay);
+    m_isPlay     = (button == ePlay);
+    m_isLoop     = (button == eLoop);
+    m_isPingPong = (button == ePingPong);
 
     if (linked && m_isLinkedPlaying) return;
 
@@ -1638,11 +1682,15 @@ void FlipConsole::doButtonPressed(UINT button) {
             playingConsole->doButtonPressed(button);
           playingConsole->setChecked(ePlay, false);
           playingConsole->setChecked(eLoop, false);
+          playingConsole->setChecked(ePingPong, false);
           playingConsole->setChecked(ePause, true);
         }
       }
-      m_stopAt  = -1;
-      m_startAt = -1;
+      m_stopAt     = -1;
+      m_startAt    = -1;
+      m_isPlay     = false;
+      m_isLoop     = false;
+      m_isPingPong = false;
       return;
     }
 
@@ -1653,6 +1701,8 @@ void FlipConsole::doButtonPressed(UINT button) {
     m_stopAt       = -1;
     m_startAt      = -1;
     m_isPlay       = false;
+    m_isLoop       = false;
+    m_isPingPong   = false;
     m_blanksToDraw = 0;
 
     m_consoleOwner->swapBuffers();
