@@ -1,46 +1,4 @@
-from pathlib import Path
-
-cpp_path = Path("toonz/sources/toonz/exportscenepopup.cpp")
-cpp = cpp_path.read_text(encoding="utf-8")
-
-cpp = cpp.replace(
-    "#include <QStandardPaths>\n",
-    "#include <QStandardPaths>\n#include <QCheckBox>\n#include <QDirIterator>\n#include <QFileInfo>\n\n#include \"simplezipwriter.h\"\n",
-    1,
-)
-
-namespace_marker = """  }\n}\n}  // namespace\n//------------------------------------------------------------------------\n"""
-helper = """  }\n}\n\nbool zipDirectory(const TFilePath &sourceFolder, const TFilePath &archivePath,\n                  QString &errorMessage) {\n  QDir sourceDir(sourceFolder.getQString());\n  if (!sourceDir.exists()) {\n    errorMessage = QObject::tr(\"The exported scene folder does not exist.\");\n    return false;\n  }\n\n  SimpleZipWriter writer(archivePath.getQString());\n  if (!writer.isOpen()) {\n    errorMessage = writer.errorString();\n    return false;\n  }\n\n  const QString rootName = QFileInfo(sourceDir.absolutePath()).fileName();\n  if (!writer.addDirectory(rootName)) {\n    errorMessage = writer.errorString();\n    return false;\n  }\n\n  QDirIterator iterator(sourceDir.absolutePath(),\n                        QDir::AllEntries | QDir::NoDotAndDotDot |\n                            QDir::Hidden | QDir::System,\n                        QDirIterator::Subdirectories);\n  while (iterator.hasNext()) {\n    iterator.next();\n    const QFileInfo info = iterator.fileInfo();\n    const QString relativePath =\n        sourceDir.relativeFilePath(info.absoluteFilePath());\n    const QString archiveEntry = rootName + \"/\" + relativePath;\n\n    bool added = true;\n    if (info.isDir())\n      added = writer.addDirectory(archiveEntry);\n    else if (info.isFile())\n      added = writer.addFile(archiveEntry, info.absoluteFilePath());\n\n    if (!added) {\n      errorMessage = writer.errorString();\n      return false;\n    }\n  }\n\n  if (!writer.close()) {\n    errorMessage = writer.errorString();\n    return false;\n  }\n  return true;\n}\n}  // namespace\n//------------------------------------------------------------------------\n"""
-if namespace_marker not in cpp:
-    raise SystemExit("namespace marker not found")
-cpp = cpp.replace(namespace_marker, helper, 1)
-
-old_ui = """  lonelyProjectLayout->addWidget(m_lonelyModePathFld, 1, 1);\n\n  lonelyProjectWidget->setLayout(lonelyProjectLayout);"""
-new_ui = """  lonelyProjectLayout->addWidget(m_lonelyModePathFld, 1, 1);\n\n  m_createZipCheckBox =\n      new QCheckBox(tr(\"Create ZIP archive of exported scene folder\"),\n                    lonelyProjectWidget);\n  m_createZipCheckBox->setToolTip(\n      tr(\"Create a ZIP archive after export while keeping the exported folder.\"));\n  lonelyProjectLayout->addWidget(m_createZipCheckBox, 2, 1);\n\n  lonelyProjectWidget->setLayout(lonelyProjectLayout);"""
-if old_ui not in cpp:
-    raise SystemExit("standalone UI marker not found")
-cpp = cpp.replace(old_ui, new_ui, 1)
-
-old_export = """      int count = collectAssets(scene);\n      scene.save(newScenePath);\n      Preferences::instance()->setValue(PreferencesItemId::pathAliasPriority,\n                                        oldPriority, false);"""
-new_export = """      int count = collectAssets(scene);\n      scene.save(newScenePath);\n      Preferences::instance()->setValue(PreferencesItemId::pathAliasPriority,\n                                        oldPriority, false);\n\n      if (m_createZipCheckBox->isChecked()) {\n        TFilePath archivePath(newSceneFolder.getWideString() + L\".zip\");\n        QString zipError;\n        if (!zipDirectory(newSceneFolder, archivePath, zipError)) {\n          DVGui::warning(\n              tr(\"The scene was exported, but the ZIP archive could not be \"\n                 \"created.\\n%1\")\n                  .arg(zipError));\n          success = false;\n        }\n      }"""
-if old_export not in cpp:
-    raise SystemExit("standalone export marker not found")
-cpp = cpp.replace(old_export, new_export, 1)
-cpp_path.write_text(cpp, encoding="utf-8")
-
-header_path = Path("toonz/sources/toonz/exportscenepopup.h")
-header = header_path.read_text(encoding="utf-8")
-header = header.replace(
-    "class QRadioButton;\n", "class QRadioButton;\nclass QCheckBox;\n", 1
-)
-old_member = """  DVGui::FileField *m_lonelyModePathFld;\n\npublic:"""
-new_member = """  DVGui::FileField *m_lonelyModePathFld;\n  QCheckBox *m_createZipCheckBox;\n\npublic:"""
-if old_member not in header:
-    raise SystemExit("header member marker not found")
-header = header.replace(old_member, new_member, 1)
-header_path.write_text(header, encoding="utf-8")
-
-zip_header = r'''#pragma once
+#pragma once
 
 #include <QByteArray>
 #include <QFile>
@@ -254,5 +212,3 @@ public:
     return true;
   }
 };
-'''
-Path("toonz/sources/toonz/simplezipwriter.h").write_text(zip_header, encoding="utf-8")

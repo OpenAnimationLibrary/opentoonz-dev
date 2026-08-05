@@ -32,6 +32,11 @@
 #include <QApplication>
 #include <QMainWindow>
 #include <QStandardPaths>
+#include <QCheckBox>
+#include <QDirIterator>
+#include <QFileInfo>
+
+#include "simplezipwriter.h"
 
 #include <vector>
 
@@ -101,6 +106,56 @@ void decodeLevelsPath(ToonzScene &scene) {
       sl->setPath(absolutePath);
     }
   }
+}
+
+bool zipDirectory(const TFilePath &sourceFolder, const TFilePath &archivePath,
+                  QString &errorMessage) {
+  QDir sourceDir(sourceFolder.getQString());
+  if (!sourceDir.exists()) {
+    errorMessage = QObject::tr("The exported scene folder does not exist.");
+    return false;
+  }
+
+  SimpleZipWriter writer(archivePath.getQString());
+  if (!writer.isOpen()) {
+    errorMessage = writer.errorString();
+    return false;
+  }
+
+  const QString rootName = QFileInfo(sourceDir.absolutePath()).fileName();
+  if (!writer.addDirectory(rootName)) {
+    errorMessage = writer.errorString();
+    return false;
+  }
+
+  QDirIterator iterator(sourceDir.absolutePath(),
+                        QDir::AllEntries | QDir::NoDotAndDotDot |
+                            QDir::Hidden | QDir::System,
+                        QDirIterator::Subdirectories);
+  while (iterator.hasNext()) {
+    iterator.next();
+    const QFileInfo info = iterator.fileInfo();
+    const QString relativePath =
+        sourceDir.relativeFilePath(info.absoluteFilePath());
+    const QString archiveEntry = rootName + "/" + relativePath;
+
+    bool added = true;
+    if (info.isDir())
+      added = writer.addDirectory(archiveEntry);
+    else if (info.isFile())
+      added = writer.addFile(archiveEntry, info.absoluteFilePath());
+
+    if (!added) {
+      errorMessage = writer.errorString();
+      return false;
+    }
+  }
+
+  if (!writer.close()) {
+    errorMessage = writer.errorString();
+    return false;
+  }
+  return true;
 }
 }  // namespace
 //------------------------------------------------------------------------
@@ -611,6 +666,13 @@ ExportScenePopup::ExportScenePopup(std::vector<TFilePath> scenes)
                        SLOT(onLonelyModeFocusIn()));
   lonelyProjectLayout->addWidget(m_lonelyModePathFld, 1, 1);
 
+  m_createZipCheckBox =
+      new QCheckBox(tr("Create ZIP archive of exported scene folder"),
+                    lonelyProjectWidget);
+  m_createZipCheckBox->setToolTip(
+      tr("Create a ZIP archive after export while keeping the exported folder."));
+  lonelyProjectLayout->addWidget(m_createZipCheckBox, 2, 1);
+
   lonelyProjectWidget->setLayout(lonelyProjectLayout);
   layout->addWidget(lonelyProjectWidget);
 
@@ -735,6 +797,18 @@ void ExportScenePopup::onExport() {
       scene.save(newScenePath);
       Preferences::instance()->setValue(PreferencesItemId::pathAliasPriority,
                                         oldPriority, false);
+
+      if (m_createZipCheckBox->isChecked()) {
+        TFilePath archivePath(newSceneFolder.getWideString() + L".zip");
+        QString zipError;
+        if (!zipDirectory(newSceneFolder, archivePath, zipError)) {
+          DVGui::warning(
+              tr("The scene was exported, but the ZIP archive could not be "
+                 "created.\n%1")
+                  .arg(zipError));
+          success = false;
+        }
+      }
     }
     progressBar.setValue(i + 1);
   }
