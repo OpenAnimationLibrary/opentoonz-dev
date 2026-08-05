@@ -315,7 +315,7 @@ PreferencesPopup::AdditionalStyleEdit::AdditionalStyleEdit(
 
   connect(loadButton, &QPushButton::pressed, this, [this]() {
     const QString filter =
-        tr("Style Sheets (*.qss *.css);;Theme Files (*.qss *.css *.txt);;All Files (*)");
+        tr("Style Sheets (*.qss *.css *.theme);;Theme Files (*.qss *.css *.theme *.txt);;All Files (*)");
     const QString fileName = QFileDialog::getOpenFileName(
         this, tr("Load Style Sheet"), QString(), filter);
     if (fileName.isEmpty()) return;
@@ -330,7 +330,7 @@ PreferencesPopup::AdditionalStyleEdit::AdditionalStyleEdit(
   });
   connect(saveButton, &QPushButton::pressed, this, [this]() {
     const QString filter =
-        tr("Style Sheets (*.qss *.css);;Theme Files (*.qss *.css *.txt);;All Files (*)");
+        tr("Style Sheets (*.qss *.css *.theme);;Theme Files (*.qss *.css *.theme *.txt);;All Files (*)");
     const QString fileName = QFileDialog::getSaveFileName(
         this, tr("Save Style Sheet"), tr("additional-style-sheet.qss"),
         filter);
