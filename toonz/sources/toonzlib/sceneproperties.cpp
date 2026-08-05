@@ -253,6 +253,8 @@ void TSceneProperties::saveData(TOStream &os) const {
     os.child("applyShrinkToViewer") << (rs.m_applyShrinkToViewer ? 1 : 0);
     os.child("fps") << out.getFrameRate();
     os.child("path") << outPath;
+    os.child("appendVersionFormat") <<
+        static_cast<int>(out.getAppendVersionFormat());
     os.child("bpp") << rs.m_bpp;
     if (rs.m_linearColorSpace) {
       os.child("linearColorSpace") << (rs.m_linearColorSpace ? 1 : 0);
@@ -548,6 +550,13 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
               if (ext == "avi" && pg->getPropertyCount() != 1)
                 fp = fp.withType("tif");
               out.setPath(fp);
+            } else if (tagName == "appendVersionFormat") {
+              int format;
+              is >> format;
+              if (format >= TOutputProperties::None &&
+                  format <= TOutputProperties::Timestamp)
+                out.setAppendVersionFormat(
+                    static_cast<TOutputProperties::AppendVersionFormat>(format));
             } else if (tagName == "offset") {
               int j;
               is >> j;
