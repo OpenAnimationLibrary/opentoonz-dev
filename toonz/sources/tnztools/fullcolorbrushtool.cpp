@@ -56,6 +56,7 @@
 
 TEnv::IntVar FullcolorBrushMinSize("FullcolorBrushMinSize", 1);
 TEnv::IntVar FullcolorBrushMaxSize("FullcolorBrushMaxSize", 5);
+TEnv::IntVar FullcolorBrushSmooth("FullcolorBrushSmooth", 0);
 TEnv::IntVar FullcolorPressureSensitivity("FullcolorPressureSensitivity", 1);
 TEnv::DoubleVar FullcolorBrushHardness("FullcolorBrushHardness", 100);
 TEnv::DoubleVar FullcolorMinOpacity("FullcolorMinOpacity", 100);
@@ -125,6 +126,7 @@ public:
 FullColorBrushTool::FullColorBrushTool(std::string name)
     : TTool(name)
     , m_thickness("Size", 1, 1000, 1, 5, false)
+    , m_smooth("Smooth:", 0, 500, 0)
     , m_pressure("Pressure", true)
     , m_opacity("Opacity", 0, 100, 100, 100, true)
     , m_hardness("Hardness:", 0, 100, 100)
@@ -145,8 +147,10 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
     , m_started(false) {
   bind(TTool::RasterImage | TTool::EmptyTarget);
   m_thickness.setNonLinearSlider();
+  m_smooth.setNonLinearSlider();
 
   m_prop.bind(m_thickness);
+  m_prop.bind(m_smooth);
   m_prop.bind(m_hardness);
   m_prop.bind(m_opacity);
   m_prop.bind(m_modifierSize);
@@ -165,6 +169,8 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
   m_modifierTangents     = new TModifierTangents();
   m_modifierAssistants   = new TModifierAssistants();
   m_modifierSegmentation = new TModifierSegmentation();
+  m_modifierSmoothSegmentation = new TModifierSegmentation(TPointD(1, 1), 3);
+  for (int i = 0; i < 3; ++i) m_modifierSmooth[i] = new TModifierSmooth();
 
   m_inputmanager.addModifier(
       TInputModifierP(m_modifierAssistants.getPointer()));
@@ -174,6 +180,7 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
   m_modifierEraser.setId("RasterEraser");
   m_modifierLockAlpha.setId("LockAlpha");
   m_pressure.setId("PressureSensitivity");
+  m_smooth.setId("Smooth");
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -214,6 +221,7 @@ void FullColorBrushTool::onColorStyleChanged() {
 
 void FullColorBrushTool::updateTranslation() {
   m_thickness.setQStringName(tr("Size"));
+  m_smooth.setQStringName(tr("Smooth:"));
   m_pressure.setQStringName(tr("Pressure"));
   m_opacity.setQStringName(tr("Opacity"));
   m_hardness.setQStringName(tr("Hardness:"));
@@ -327,6 +335,7 @@ bool FullColorBrushTool::askWrite(const TRect &rect) {
 //--------------------------------------------------------------------------------------------------
 
 void FullColorBrushTool::updateModifiers() {
+  const int smoothRadius          = m_smooth.getValue();
   m_modifierAssistants->magnetism = m_assistants.getValue() ? 1 : 0;
   m_inputmanager.drawPreview      = false; //!m_modifierAssistants->drawOnly;
 
@@ -336,6 +345,15 @@ void FullColorBrushTool::updateModifiers() {
   
   m_inputmanager.clearModifiers();
   m_inputmanager.addModifier(TInputModifierP(m_modifierTangents.getPointer()));
+  if (smoothRadius > 0) {
+    m_inputmanager.addModifier(
+        TInputModifierP(m_modifierSmoothSegmentation.getPointer()));
+    for (int i = 0; i < 3; ++i) {
+      m_modifierSmooth[i]->radius = smoothRadius;
+      m_inputmanager.addModifier(
+          TInputModifierP(m_modifierSmooth[i].getPointer()));
+    }
+  }
   m_inputmanager.addModifier(
       TInputModifierP(m_modifierAssistants.getPointer()));
 #ifndef NDEBUG
@@ -706,6 +724,7 @@ bool FullColorBrushTool::onPropertyChanged(std::string propertyName) {
 
   FullcolorBrushMinSize        = m_thickness.getValue().first;
   FullcolorBrushMaxSize        = m_thickness.getValue().second;
+  FullcolorBrushSmooth         = m_smooth.getValue();
   FullcolorPressureSensitivity = m_pressure.getValue();
   FullcolorBrushHardness       = m_hardness.getValue();
   FullcolorMinOpacity          = m_opacity.getValue().first;
@@ -762,6 +781,7 @@ void FullColorBrushTool::loadPreset() {
   {
     m_thickness.setValue(TIntPairProperty::Value(std::max((int)preset.m_min, 1),
                                                  (int)preset.m_max));
+    m_smooth.setValue(preset.m_smooth, true);
     m_hardness.setValue(preset.m_hardness, true);
     m_opacity.setValue(
         TDoublePairProperty::Value(preset.m_opacityMin, preset.m_opacityMax));
@@ -900,6 +920,7 @@ void FullColorBrushTool::addPreset(QString name) {
 
   preset.m_min               = m_thickness.getValue().first;
   preset.m_max               = m_thickness.getValue().second;
+  preset.m_smooth            = m_smooth.getValue();
   preset.m_hardness          = m_hardness.getValue();
   preset.m_opacityMin        = m_opacity.getValue().first;
   preset.m_opacityMax        = m_opacity.getValue().second;
@@ -990,6 +1011,7 @@ void FullColorBrushTool::removePreset() {
 void FullColorBrushTool::loadLastBrush() {
   m_thickness.setValue(
       TIntPairProperty::Value(FullcolorBrushMinSize, FullcolorBrushMaxSize));
+  m_smooth.setValue(FullcolorBrushSmooth);
   m_pressure.setValue(FullcolorPressureSensitivity ? 1 : 0);
   m_opacity.setValue(
       TDoublePairProperty::Value(FullcolorMinOpacity, FullcolorMaxOpacity));
