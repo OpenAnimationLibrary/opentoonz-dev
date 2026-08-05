@@ -20,6 +20,7 @@
 #include "toonz/txshcell.h"
 #include "toonz/childstack.h"
 #include "toonz/txshchildlevel.h"
+#include "toonz/textureutils.h"
 
 #include "toonzqt/dvdialog.h"
 #include "toonzqt/icongenerator.h"
@@ -27,6 +28,7 @@
 #include "tundo.h"
 #include "tconvert.h"
 #include "tlevel_io.h"
+#include "trasterimage.h"
 #include "ttoonzimage.h"
 #include "tsystem.h"
 
@@ -36,6 +38,10 @@
 #include <QProgressDialog>
 #include <QMainWindow>
 #include <QApplication>
+#include <QMessageBox>
+#include <QPushButton>
+
+#include <cstring>
 
 namespace {
 
@@ -243,32 +249,146 @@ void getLevelSelectedFids(std::set<TFrameId> &fids, TXshSimpleLevel *level,
 
 //-----------------------------------------------------------------------------
 
+enum class ImageComparison { Same, Different, Unsupported };
+
+bool rasterDataMatches(const TRasterP &cachedRaster,
+                       const TRasterP &diskRaster) {
+  if (!cachedRaster || !diskRaster) return false;
+  if (cachedRaster->getLx() != diskRaster->getLx() ||
+      cachedRaster->getLy() != diskRaster->getLy() ||
+      cachedRaster->getPixelSize() != diskRaster->getPixelSize())
+    return false;
+
+  if (cachedRaster->isEmpty()) return true;
+
+  cachedRaster->lock();
+  diskRaster->lock();
+
+  bool matches       = true;
+  const int rowBytes = cachedRaster->getRowSize();
+  for (int y = 0; y < cachedRaster->getLy(); ++y) {
+    if (std::memcmp(cachedRaster->getRawData(0, y),
+                    diskRaster->getRawData(0, y), rowBytes) != 0) {
+      matches = false;
+      break;
+    }
+  }
+
+  diskRaster->unlock();
+  cachedRaster->unlock();
+  return matches;
+}
+
+ImageComparison compareCachedAndDiskImages(const TImageP &cachedImage,
+                                           const TImageP &diskImage) {
+  if (!cachedImage || !diskImage) return ImageComparison::Unsupported;
+
+  if (TRasterImageP cachedRasterImage = cachedImage) {
+    TRasterImageP diskRasterImage = diskImage;
+    if (!diskRasterImage) return ImageComparison::Different;
+
+    return rasterDataMatches(cachedRasterImage->getRaster(),
+                             diskRasterImage->getRaster())
+               ? ImageComparison::Same
+               : ImageComparison::Different;
+  }
+
+  if (TToonzImageP cachedToonzImage = cachedImage) {
+    TToonzImageP diskToonzImage = diskImage;
+    if (!diskToonzImage) return ImageComparison::Different;
+
+    return rasterDataMatches(cachedToonzImage->getRaster(),
+                             diskToonzImage->getRaster())
+               ? ImageComparison::Same
+               : ImageComparison::Different;
+  }
+
+  return ImageComparison::Unsupported;
+}
+
+struct LoadedFrame {
+  TFrameId m_fid;
+  TImageP m_image;
+};
+
+bool confirmChangedSource(TXshSimpleLevel *sl, const TFilePath &path) {
+  QMessageBox box(TApp::instance()->getMainWindow());
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(QObject::tr("Source File Changed"));
+  box.setText(
+      QObject::tr("The source data for level %1 differs from the version "
+                  "currently loaded in OpenToonz.")
+          .arg(QString::fromStdWString(sl->getName())));
+  box.setInformativeText(
+      QObject::tr("Load the updated file, or keep the current in-memory "
+                  "version unchanged.\n\nSource: %1")
+          .arg(QString::fromStdWString(path.getWideString())));
+
+  QPushButton *loadButton =
+      box.addButton(QObject::tr("Load Updated File"), QMessageBox::AcceptRole);
+  QPushButton *keepButton = box.addButton(
+      QObject::tr("Keep Current Version"), QMessageBox::RejectRole);
+  box.setDefaultButton(loadButton);
+  box.setEscapeButton(keepButton);
+  box.exec();
+
+  return box.clickedButton() == loadButton;
+}
+
+//-----------------------------------------------------------------------------
+
 bool loadFids(const TFilePath &path, TXshSimpleLevel *sl,
-              const std::set<TFrameId> &selectedFids) {
+              const std::set<TFrameId> &selectedFids,
+              bool verifyCachedSource = false) {
   assert(sl && !selectedFids.empty());
 
   TLevelReaderP levelReader = TLevelReaderP(path);
   if (!levelReader.getPointer()) return false;
 
-  // Carico il livello e sostituisco i frames.
+  // Load disk images first so that they can be compared with unmodified cached
+  // images before either version is discarded.
   TLevelP level = levelReader->loadInfo();
   if (!level || level->getFrameCount() == 0) return false;
-  TLevel::Iterator levelIt         = level->begin();
-  bool almostOneUnpaintedFidLoaded = false;
-  for (; levelIt != level->end(); ++levelIt) {
-    TFrameId fid                          = levelIt->first;
-    std::set<TFrameId>::const_iterator it = selectedFids.find(fid);
-    if (it == selectedFids.end()) continue;
-    TImageP img = levelReader->getFrameReader(fid)->load();
-    if (!img.getPointer()) continue;
-    almostOneUnpaintedFidLoaded = true;
-    sl->setFrame(fid, img);
+
+  std::vector<LoadedFrame> loadedFrames;
+  bool sourceDiffers = false;
+
+  for (TLevel::Iterator levelIt = level->begin(); levelIt != level->end();
+       ++levelIt) {
+    TFrameId fid = levelIt->first;
+    if (selectedFids.find(fid) == selectedFids.end()) continue;
+
+    TImageP diskImage = levelReader->getFrameReader(fid)->load();
+    if (!diskImage) continue;
+
+    loadedFrames.push_back({fid, diskImage});
+
+    // Dirty levels are intentionally being reverted, so the normal Revert To
+    // Last Saved workflow remains unchanged. The comparison targets clean,
+    // externally sourced levels whose cached image may have become stale.
+    const std::string imageId = sl->getImageId(fid);
+    if (verifyCachedSource && !sl->getDirtyFlag() &&
+        ImageManager::instance()->isCached(imageId) &&
+        sl->getImageSubsampling(fid) == 1) {
+      TImageP cachedImage = sl->getFrame(fid, false);
+      if (compareCachedAndDiskImages(cachedImage, diskImage) ==
+          ImageComparison::Different)
+        sourceDiffers = true;
+    }
   }
-  if (almostOneUnpaintedFidLoaded) {
-    invalidateIcons(sl, selectedFids);
-    return true;
+
+  if (loadedFrames.empty()) return false;
+
+  if (sourceDiffers && !confirmChangedSource(sl, path)) return false;
+
+  for (const LoadedFrame &frame : loadedFrames) {
+    sl->invalidateFrame(frame.m_fid);
+    texture_utils::invalidateTexture(sl, frame.m_fid);
+    sl->setFrame(frame.m_fid, frame.m_image);
   }
-  return false;
+
+  invalidateIcons(sl, selectedFids);
+  return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -289,7 +409,8 @@ bool loadUnpaintedFids(TXshSimpleLevel *sl,
 //-----------------------------------------------------------------------------
 
 bool loadLastSaveFids(TXshSimpleLevel *sl,
-                      const std::set<TFrameId> &selectedFids) {
+                      const std::set<TFrameId> &selectedFids,
+                      bool verifyCachedSource = true) {
   TFilePath path = sl->getPath();
   path           = sl->getScene()->decodeFilePath(path);
 
@@ -299,7 +420,7 @@ bool loadLastSaveFids(TXshSimpleLevel *sl,
     return false;
   }
 
-  return loadFids(path, sl, selectedFids);
+  return loadFids(path, sl, selectedFids, verifyCachedSource);
 }
 
 //=============================================================================
@@ -340,9 +461,11 @@ public:
     assert((int)m_replacedImgsId.size() == (int)m_selectedFids.size());
     int i = 0;
     for (auto const &fid : m_selectedFids) {
-      QString imageId = m_replacedImgsId[i];
+      QString imageId = m_replacedImgsId[i++];
       TImageP img = TImageCache::instance()->get(imageId, false)->cloneImage();
       if (!img.getPointer()) continue;
+      m_sl->invalidateFrame(fid);
+      texture_utils::invalidateTexture(m_sl, fid);
       m_sl->setFrame(fid, img);
     }
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -353,7 +476,7 @@ public:
     if (m_isCleanedUp)
       loadUnpaintedFids(m_sl, m_selectedFids);
     else
-      loadLastSaveFids(m_sl, m_selectedFids);
+      loadLastSaveFids(m_sl, m_selectedFids, false);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   }
 
