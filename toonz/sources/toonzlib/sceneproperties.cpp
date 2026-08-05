@@ -253,6 +253,7 @@ void TSceneProperties::saveData(TOStream &os) const {
     os.child("applyShrinkToViewer") << (rs.m_applyShrinkToViewer ? 1 : 0);
     os.child("fps") << out.getFrameRate();
     os.child("path") << outPath;
+    os.child("syncWithPlayRange") << (out.isSyncWithPlayRangeEnabled() ? 1 : 0);
     os.child("bpp") << rs.m_bpp;
     if (rs.m_linearColorSpace) {
       os.child("linearColorSpace") << (rs.m_linearColorSpace ? 1 : 0);
@@ -548,6 +549,10 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
               if (ext == "avi" && pg->getPropertyCount() != 1)
                 fp = fp.withType("tif");
               out.setPath(fp);
+            } else if (tagName == "syncWithPlayRange") {
+              int enabled;
+              is >> enabled;
+              out.setSyncWithPlayRangeEnabled(enabled != 0);
             } else if (tagName == "offset") {
               int j;
               is >> j;
