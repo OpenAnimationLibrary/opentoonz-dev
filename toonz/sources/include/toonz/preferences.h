@@ -366,6 +366,7 @@ public:
   int getTempToolSwitchTimer() const {
     return getIntValue(tempToolSwitchTimer);
   }
+  bool isToolScaled() const { return getBoolValue(toolScale); }
   double getAnimateToolHandleSize() const {
     return getDoubleValue(animateToolHandleSize);
   }
