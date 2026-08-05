@@ -969,32 +969,58 @@ TPixel32 TTextureStyle::getMainColor() const
 //    TRasterImagePatternStrokeStyle  implementation
 //*************************************************************************************
 
-TRasterImagePatternStrokeStyle::TRasterImagePatternStrokeStyle()
-    : m_level(), m_name(""), m_space(0), m_rotation(0) {}
+TRasterImagePatternStrokeStyle::TRasterImagePatternStrokeStyle(
+    const TPixel32 &color)
+    : m_color(color)
+    , m_lastColor(color)
+    , m_tessellator(new TglTessellator)
+    , m_level()
+    , m_coloredLevel()
+    , m_name("")
+    , m_space(0)
+    , m_rotation(0) {}
 
 //-----------------------------------------------------------------------------
 
 TRasterImagePatternStrokeStyle::TRasterImagePatternStrokeStyle(
-    const std::string &patternName)
-    : m_level(), m_name(patternName), m_space(20), m_rotation(0) {
+    const std::string &patternName, const TPixel32 &color)
+    : m_color(color)
+    , m_lastColor(color)
+    , m_tessellator(new TglTessellator)
+    , m_level()
+    , m_coloredLevel()
+    , m_name(patternName)
+    , m_space(20)
+    , m_rotation(0) {
   if (m_name != "") loadLevel(m_name);
 }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle *TRasterImagePatternStrokeStyle::clone() const {
-  return new TRasterImagePatternStrokeStyle(*this);
+  auto *clone = new TRasterImagePatternStrokeStyle(m_color);
+  clone->m_level    = m_level;
+  clone->m_name     = m_name;
+  clone->m_space    = m_space;
+  clone->m_rotation = m_rotation;
+  if (clone->m_level) clone->colorizeTexture(m_color);
+  return clone;
 }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle *TRasterImagePatternStrokeStyle::clone(
     std::string brushIdName) const {
-  TRasterImagePatternStrokeStyle *style =
-      new TRasterImagePatternStrokeStyle(*this);
+  auto *style = static_cast<TRasterImagePatternStrokeStyle *>(clone());
   std::string patternName = getBrushIdNameParam(brushIdName);
   if (patternName != "") style->loadLevel(patternName);
   return style;
+}
+
+//-----------------------------------------------------------------------------
+
+TRasterImagePatternStrokeStyle::~TRasterImagePatternStrokeStyle() {
+  delete m_tessellator;
 }
 
 //-----------------------------------------------------------------------------
@@ -1028,6 +1054,7 @@ void TRasterImagePatternStrokeStyle::makeIcon(const TDimension &size) {
       double sc = 0.8 * std::min(sx, sy);
       TRop::resample(icon, src,
                      TScale(sc).place(src->getCenterD(), icon->getCenterD()));
+      if (m_color != TPixel32::Black) TRop::applyColorScale(icon, m_color);
       TRop::addBackground(icon, TPixel32::White);
       m_icon = icon;
     }
@@ -1197,6 +1224,22 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   }
   // cancello il contesto offline (se e' stato creato)
   delete glContext;
+  colorizeTexture(m_color);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::colorizeTexture(
+    const TPixel32 &color) const {
+  m_coloredLevel = TLevelP();
+  for (TLevel::Iterator frameIt = m_level->begin(); frameIt != m_level->end();
+       ++frameIt) {
+    TRasterImageP image = frameIt->second;
+    if (!image) continue;
+    TRasterP raster = image->getRaster()->clone();
+    if (color != TPixel32::Black) TRop::applyColorScale(raster, color);
+    m_coloredLevel->setFrame(frameIt->first, new TRasterImage(raster));
+  }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1241,12 +1284,23 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
 
 void TRasterImagePatternStrokeStyle::drawStroke(
     const TVectorRenderData &rd, const std::vector<TAffine> &transformations,
-    const TStroke *stroke) const {
+    const TStroke *stroke) {
   TStopWatch sw;
   sw.start();
   CHECK_GL_ERROR
 
-  const int frameCount = m_level->getFrameCount();
+  TPixel32 color = m_color;
+  if (rd.m_cf) color = (*rd.m_cf)(color);
+  TLevelP level = m_level;
+  if (color != TPixel32::Black) {
+    if (color != m_lastColor) {
+      colorizeTexture(color);
+      m_lastColor = color;
+    }
+    level = m_coloredLevel;
+  }
+
+  const int frameCount = level->getFrameCount();
   if (frameCount == 0) return;
 
   // lo stroke viene disegnato ripetendo size volte le frameCount immagini
@@ -1276,8 +1330,8 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   // visto che cambiare texture costa tempo il ciclo esterno e' sulle textures
   // piuttosto che sulle trasformazioni
-  TLevel::Iterator frameIt = m_level->begin();
-  for (int i = 0; i < (int)size && frameIt != m_level->end(); ++i, ++frameIt) {
+  TLevel::Iterator frameIt = level->begin();
+  for (int i = 0; i < (int)size && frameIt != level->end(); ++i, ++frameIt) {
     TRasterImageP ri = frameIt->second;
     TRasterP ras;
     if (ri) ras = ri->getRaster();
@@ -1324,6 +1378,21 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   glDisable(GL_TEXTURE_2D);
   glDisable(GL_BLEND);
+}
+
+//-----------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::drawStroke(
+    const TColorFunction *, TStrokeOutline *, const TStroke *) const {
+  assert(false);
+}
+
+//-----------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::drawRegion(
+    const TColorFunction *cf, const bool antiAliasing,
+    TRegionOutline &boundary) const {
+  m_tessellator->tessellate(cf, antiAliasing, boundary, m_color);
 }
 
 //-----------------------------------------------------------------------------
