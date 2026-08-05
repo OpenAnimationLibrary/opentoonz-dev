@@ -1118,8 +1118,9 @@ SelectionToolOptionsBox::SelectionToolOptionsBox(QWidget *parent, TTool *tool,
                                                  ToolHandle *toolHandle)
     : ToolOptionsBox(parent)
     , m_tool(tool)
+    , m_setSaveboxCheckbox(nullptr)
     , m_isVectorSelction(false)
-    , m_setSaveboxCheckbox(0) {
+    , m_flipStrokeButton(nullptr) {
   TPropertyGroup *props = tool->getProperties(0);
   assert(props->getPropertyCount() > 0);
 
@@ -1261,6 +1262,16 @@ SelectionToolOptionsBox::SelectionToolOptionsBox(QWidget *parent, TTool *tool,
         dynamic_cast<ToolOptionIntSlider *>(m_controls.value("Miter:"));
     m_miterField->setEnabled(m_joinStyle->currentIndex() ==
                              TStroke::OutlineOptions::MITER_JOIN);
+
+    addSeparator();
+    if (tool->getProperties(2)) tool->getProperties(2)->accept(builder);
+
+    m_flipStrokeButton = new QPushButton(tr("Flip Direction"), this);
+    m_flipStrokeButton->setFixedHeight(20);
+    m_flipStrokeButton->setFixedWidth(
+        fontMetrics().horizontalAdvance(m_flipStrokeButton->text()) + 10);
+    connect(m_flipStrokeButton, SIGNAL(clicked()), SLOT(onFlipDirection()));
+    hLayout()->addWidget(m_flipStrokeButton);
 
     onPropertyChanged();
   }
@@ -1413,6 +1424,13 @@ void SelectionToolOptionsBox::onRotateLeft() {
 void SelectionToolOptionsBox::onRotateRight() {
   m_rotationField->setValue(m_rotationField->getValue() - 90);
   m_rotationField->applyChange(true);
+}
+
+//-----------------------------------------------------------------------------
+
+void SelectionToolOptionsBox::onFlipDirection() {
+  VectorSelectionTool *tool = dynamic_cast<VectorSelectionTool *>(m_tool);
+  if (tool) tool->flipSelectedStrokeDirections();
 }
 
 //-----------------------------------------------------------------------------

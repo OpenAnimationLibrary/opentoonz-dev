@@ -1318,6 +1318,7 @@ VectorSelectionTool::VectorSelectionTool(int targetType)
     , m_selectionTarget("Mode:")
     , m_includeIntersection("Include Intersection", false)
     , m_constantThickness("Preserve Thickness", false)
+    , m_showStrokeDirection("Show Direction", false)
     , m_levelSelection(m_strokeSelection)
     , m_capStyle("Cap")
     , m_joinStyle("Join")
@@ -1345,6 +1346,7 @@ VectorSelectionTool::VectorSelectionTool(int targetType)
   m_includeIntersection.setId("IncludeIntersection");
   m_constantThickness.setId("PreserveThickness");
   m_selectionTarget.setId("SelectionMode");
+  m_showStrokeDirection.setId("ShowDirection");
 
   m_capStyle.addValue(BUTT_WSTR, QString::fromStdWString(BUTT_WSTR));
   m_capStyle.addValue(ROUNDC_WSTR, QString::fromStdWString(ROUNDC_WSTR));
@@ -1362,6 +1364,7 @@ VectorSelectionTool::VectorSelectionTool(int targetType)
   m_outlineProps.bind(m_capStyle);
   m_outlineProps.bind(m_joinStyle);
   m_outlineProps.bind(m_miterJoinLimit);
+  m_directionProps.bind(m_showStrokeDirection);
 }
 
 //------------------------------------------------------------------------------
@@ -1464,6 +1467,7 @@ void VectorSelectionTool::updateTranslation() {
   m_joinStyle.setItemUIName(BEVEL_WSTR, tr("Bevel join"));
 
   m_miterJoinLimit.setQStringName(tr("Miter:"));
+  m_showStrokeDirection.setQStringName(tr("Show Direction"));
   SelectionTool::updateTranslation();
 }
 
@@ -1830,6 +1834,35 @@ void VectorSelectionTool::drawInLevelType(const TVectorImage &vi) {
 
 //-----------------------------------------------------------------------------
 
+static void drawStrokeDirectionArrows(const TStroke &stroke) {
+  const double length = stroke.getLength(0.0, 1.0);
+  const int arrowCount = std::max(2, static_cast<int>(length / 20.0) + 1);
+
+  for (int arrow = 0; arrow <= arrowCount; ++arrow) {
+    const double position = static_cast<double>(arrow) / arrowCount;
+    const TPointD point = stroke.getPointAtLength(length * position);
+    const TPointD before =
+        arrow == 0 ? point : stroke.getPointAtLength(length * (position - 0.02));
+    const TPointD after = arrow == arrowCount
+                              ? point
+                              : stroke.getPointAtLength(length * (position + 0.02));
+    if (before == after) continue;
+
+    const double angle = std::atan2(after.y - before.y, after.x - before.x) *
+                         180.0 / 3.14159265358979323846;
+    glPushMatrix();
+    glTranslated(point.x, point.y, 0.0);
+    glRotated(angle, 0.0, 0.0, 1.0);
+    glBegin(GL_LINES);
+    glVertex2d(0.0, 0.0);
+    glVertex2d(-4.0, -4.0);
+    glVertex2d(0.0, 0.0);
+    glVertex2d(-4.0, 4.0);
+    glEnd();
+    glPopMatrix();
+  }
+}
+
 void VectorSelectionTool::drawSelectedStrokes(const TVectorImage &vi) {
   glEnable(GL_LINE_STIPPLE);
 
@@ -1847,6 +1880,12 @@ void VectorSelectionTool::drawSelectedStrokes(const TVectorImage &vi) {
       glLineStipple(1, 0x0F0F);
       tglColor(TPixel32::White);
       drawStrokeCenterline(*stroke, pixelSize);
+
+      if (m_showStrokeDirection.getValue()) {
+        glLineStipple(1, 0xFFFF);
+        tglColor(TPixel32::White);
+        drawStrokeDirectionArrows(*stroke);
+      }
     }
   }
 
@@ -2159,9 +2198,33 @@ TPropertyGroup *VectorSelectionTool::getProperties(int idx) {
     return &m_prop;
   case 1:
     return &m_outlineProps;
+  case 2:
+    return &m_directionProps;
   default:
     return 0;
   };
+}
+
+//-----------------------------------------------------------------------------
+
+bool VectorSelectionTool::flipSelectedStrokeDirections() {
+  if (!m_strokeSelection.isEditable() || m_strokeSelection.isEmpty())
+    return false;
+
+  TVectorImageP image = m_strokeSelection.getImage();
+  if (!image) return false;
+
+  for (int index : m_strokeSelection.getSelection()) {
+    TStroke *stroke = image->getStroke(index);
+    if (stroke) stroke->changeDirection();
+  }
+
+  TXshSimpleLevel *level =
+      TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
+  level->setDirtyFlag(true);
+  invalidate();
+  m_application->getCurrentLevel()->notifyLevelChange();
+  return true;
 }
 
 //-----------------------------------------------------------------------------
