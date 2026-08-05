@@ -11,9 +11,14 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QImage>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QProcess>
+#include <QSharedPointer>
 #include <QStringList>
+#include <QWaitCondition>
 
 #include <cstring>
 
@@ -46,6 +51,28 @@ double parseFrameRate(const QString &value) {
   if (!numeratorOk || !denominatorOk || denominator == 0.0) return 0.0;
 
   return numerator / denominator;
+}
+
+enum class WebPCacheStatus { NotStarted, Extracting, Ready, Failed };
+
+struct WebPCacheState {
+  QMutex mutex;
+  QWaitCondition finished;
+  WebPCacheStatus status = WebPCacheStatus::NotStarted;
+  int frameCount         = 0;
+};
+
+QMutex s_webpCacheRegistryMutex;
+QHash<QString, QSharedPointer<WebPCacheState>> s_webpCacheRegistry;
+
+QSharedPointer<WebPCacheState> webpCacheState(const QString &cacheKey) {
+  QMutexLocker locker(&s_webpCacheRegistryMutex);
+  auto state = s_webpCacheRegistry.value(cacheKey);
+  if (!state) {
+    state = QSharedPointer<WebPCacheState>::create();
+    s_webpCacheRegistry.insert(cacheKey, state);
+  }
+  return state;
 }
 
 class TImageReaderWebP final : public TImageReader {
@@ -106,9 +133,18 @@ TLevelReaderWebP::TLevelReaderWebP(const TFilePath &path)
   QFileInfo fileInfo(path.getQString());
   QString fullPath = fileInfo.absoluteFilePath();
   if (fullPath.isEmpty()) fullPath = path.getQString();
-  const QByteArray hash =
-      QCryptographicHash::hash(fullPath.toUtf8(), QCryptographicHash::Md5);
-  m_tempBaseName = QString::fromLatin1(hash.toHex().left(12)) + "_webp";
+
+  // Include source identity, size and modification time so replacing a WebP at
+  // the same path cannot reuse frames extracted from an older file.
+  QByteArray cacheIdentity = fullPath.toUtf8();
+  cacheIdentity.append('|');
+  cacheIdentity.append(QByteArray::number(fileInfo.size()));
+  cacheIdentity.append('|');
+  cacheIdentity.append(
+      QByteArray::number(fileInfo.lastModified().toMSecsSinceEpoch()));
+  const QByteArray hash = QCryptographicHash::hash(
+      cacheIdentity, QCryptographicHash::Md5);
+  m_tempBaseName = QString::fromLatin1(hash.toHex().left(16)) + "_webp";
 
   QStringList probeArgs;
   probeArgs << "-v" << "error" << "-select_streams" << "v:0"
@@ -167,7 +203,9 @@ TLevelReaderWebP::TLevelReaderWebP(const TFilePath &path)
 //-----------------------------------------------------------------------------
 
 TLevelReaderWebP::~TLevelReaderWebP() {
-  removeExtractedFrames();
+  // Extracted frames are shared by Level Strip, Xsheet and viewer readers.
+  // Removing them here races with other active readers and causes repeated
+  // extraction attempts and misleading failure dialogs while scrubbing.
   delete m_imageInfo;
 }
 
@@ -250,30 +288,58 @@ int TLevelReaderWebP::countExtractedFrames() const {
 //-----------------------------------------------------------------------------
 
 bool TLevelReaderWebP::ensureFramesExtracted() {
-  if (m_framesExtracted) return true;
+  if (m_framesExtracted && countExtractedFrames() == m_frameCount) return true;
 
-  removeExtractedFrames();
+  const auto sharedState = webpCacheState(m_tempBaseName);
+  {
+    QMutexLocker locker(&sharedState->mutex);
+    while (sharedState->status == WebPCacheStatus::Extracting)
+      sharedState->finished.wait(&sharedState->mutex);
 
-  // Explicitly ignore the WebP loop count and cap output at the exact decoded
-  // source-frame count. Passthrough timing prevents FFmpeg from duplicating held
-  // frames to make a constant-rate image sequence.
-  bool extracted = extractFrames(true, m_frameCount);
-  if (!extracted) {
-    // Older FFmpeg builds can decode still WebP through image2 but do not have
-    // the animated WebP demuxer's ignore_loop option.
+    if (sharedState->status == WebPCacheStatus::Ready &&
+        sharedState->frameCount == m_frameCount &&
+        countExtractedFrames() == m_frameCount) {
+      m_framesExtracted = true;
+      return true;
+    }
+
+    if (sharedState->status == WebPCacheStatus::Failed) return false;
+
+    sharedState->status = WebPCacheStatus::Extracting;
+  }
+
+  // Only the reader that changed the shared state to Extracting reaches here.
+  // Other Level Strip, Xsheet and viewer readers wait and then reuse its files.
+  bool extracted = false;
+  int extractedFrameCount = countExtractedFrames();
+  if (extractedFrameCount == m_frameCount) {
+    extracted = true;
+  } else {
     removeExtractedFrames();
-    extracted = extractFrames(false, m_frameCount);
+
+    // Explicitly ignore the WebP loop count and cap output at the exact decoded
+    // source-frame count. Passthrough timing prevents FFmpeg from duplicating
+    // held frames to make a constant-rate image sequence.
+    extracted = extractFrames(true, m_frameCount);
+    if (!extracted) {
+      // Older FFmpeg builds can decode still WebP through image2 but do not have
+      // the animated WebP demuxer's ignore_loop option.
+      removeExtractedFrames();
+      extracted = extractFrames(false, m_frameCount);
+    }
+    extractedFrameCount = countExtractedFrames();
+    extracted = extracted && extractedFrameCount == m_frameCount;
+  }
+
+  {
+    QMutexLocker locker(&sharedState->mutex);
+    sharedState->frameCount = extracted ? m_frameCount : 0;
+    sharedState->status =
+        extracted ? WebPCacheStatus::Ready : WebPCacheStatus::Failed;
+    sharedState->finished.wakeAll();
   }
 
   if (!extracted) {
-    removeExtractedFrames();
-    DVGui::warning(QObject::tr("FFmpeg failed to decode WebP file: %1")
-                       .arg(m_path.getQString()));
-    return false;
-  }
-
-  const int extractedFrameCount = countExtractedFrames();
-  if (extractedFrameCount != m_frameCount) {
     removeExtractedFrames();
     DVGui::warning(
         QObject::tr("FFmpeg decoded %1 of %2 expected WebP frames from: %3")
