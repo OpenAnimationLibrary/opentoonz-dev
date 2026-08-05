@@ -200,6 +200,7 @@ public:
     eBegin,
     ePlay,
     eLoop,
+    eInbetweenFlip,
     ePause,
     ePrev,
     eNext,
@@ -329,6 +330,7 @@ public:
   QColor getFpsFieldColor() const { return m_fpsFieldColor; }
 
   void resetGain(bool forceInit = false);
+  void triggerInbetweenFlip();
 signals:
 
   void buttonPressed(FlipConsole::EGadget button);
@@ -370,6 +372,7 @@ private:
   ImagePainter::VisualSettings m_settings;
 
   bool m_isPlay;
+  bool m_isInbetweenFlip;
   int m_fps, m_sceneFps;
   bool m_reverse;
   int m_markerFrom, m_markerTo;
@@ -378,6 +381,11 @@ private:
   TPixel m_blankColor;
   int m_blanksToDraw;
   bool m_isLinkable;
+
+  int m_inbetweenFlipSpeed;
+  int m_inbetweenFlipDrawings;
+  int m_inbetweenFlipLeft;
+  int m_inbetweenFlipRight;
 
   QToolButton *m_resetGainBtn;
   int m_prevGainStep;
