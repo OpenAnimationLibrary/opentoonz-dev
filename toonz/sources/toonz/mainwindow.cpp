@@ -513,6 +513,8 @@ centralWidget->setLayout(centralWidgetLayout);*/
   setCommandHandler(MI_OpenCommunityForum, this,
                     &MainWindow::onOpenCommunityForum);
   setCommandHandler(MI_OpenReportABug, this, &MainWindow::onOpenReportABug);
+  setCommandHandler(MI_OpenCrashReportFolder, this,
+                    &MainWindow::onOpenCrashReportFolder);
 
   setCommandHandler(MI_MaximizePanel, this, &MainWindow::maximizePanel);
   setCommandHandler(MI_FullScreenWindow, this, &MainWindow::fullScreenWindow);
@@ -1137,6 +1139,13 @@ void MainWindow::onOpenReportABug() {
   if (ret == 1)
     QDesktopServices::openUrl(
         QUrl("https://github.com/opentoonz/opentoonz/issues"));
+}
+
+//-----------------------------------------------------------------------------
+
+void MainWindow::onOpenCrashReportFolder() {
+  const TFilePath folder = ToonzFolder::getCrashReportFolder();
+  QDesktopServices::openUrl(QUrl::fromLocalFile(folder.getQString()));
 }
 //-----------------------------------------------------------------------------
 
@@ -2762,6 +2771,8 @@ void MainWindow::defineActions() {
                           QT_TR_NOOP("Toggle Main Window's See Through Mode"),
                           "Alt+`", "toggle_seethroughwin_on");
   createMenuHelpAction(MI_About, QT_TR_NOOP("&About OpenToonz..."), "", "info");
+  createMenuHelpAction(MI_OpenCrashReportFolder,
+                       QT_TR_NOOP("&Open Reports Folder..."), "", "");
   createMenuWindowsAction(MI_StartupPopup, QT_TR_NOOP("&Startup Popup..."),
                           "Alt+S", "opentoonz");
   createMenuWindowsAction(MI_OpenGuidedDrawingControls,

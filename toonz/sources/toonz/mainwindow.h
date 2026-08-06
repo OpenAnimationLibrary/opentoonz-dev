@@ -113,6 +113,7 @@ public:
   void onOpenWhatsNew();
   void onOpenCommunityForum();
   void onOpenReportABug();
+  void onOpenCrashReportFolder();
   void checkForUpdates();
   int getRoomCount() const;
   Room *getRoom(int index) const;
