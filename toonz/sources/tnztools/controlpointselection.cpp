@@ -8,6 +8,8 @@
 #include "tools/toolhandle.h"
 #include "tools/toolutils.h"
 
+#include "toonzqt/selectioncommandids.h"
+
 #include "toonz/tobjecthandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tstageobject.h"
@@ -1095,13 +1097,11 @@ void ControlPointSelection::addMenuItems(QMenu *menu) {
        m_controlPointEditorStroke->getControlPointCount() <= 1))
     return;
 
-  QAction *linear   = menu->addAction(tr("Set Linear Control Point"));
-  QAction *unlinear = menu->addAction(tr("Set Nonlinear Control Point"));
+  menu->addAction(
+      CommandManager::instance()->getAction(MI_SetLinearControlPoint));
+  menu->addAction(
+      CommandManager::instance()->getAction(MI_SetNonLinearControlPoint));
   menu->addSeparator();
-
-  connect(linear, &QAction::triggered, this, &ControlPointSelection::setLinear);
-  connect(unlinear, &QAction::triggered, this,
-          &ControlPointSelection::setUnlinear);
 }
 
 //-----------------------------------------------------------------------------
@@ -1268,5 +1268,9 @@ void ControlPointSelection::deleteControlPoints() {
 //-----------------------------------------------------------------------------
 
 void ControlPointSelection::enableCommands() {
-  enableCommand(this, "MI_Clear", &ControlPointSelection::deleteControlPoints);
+  enableCommand(this, MI_Clear, &ControlPointSelection::deleteControlPoints);
+  enableCommand(this, MI_SetLinearControlPoint,
+                &ControlPointSelection::setLinear);
+  enableCommand(this, MI_SetNonLinearControlPoint,
+                &ControlPointSelection::setUnlinear);
 }
