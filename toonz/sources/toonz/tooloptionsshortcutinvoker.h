@@ -204,6 +204,12 @@ protected slots:
   void togglePaintBrushLines();
   void togglePaintBrushLinesAndAreas();
 
+  /*-- Brush tool + option shortcuts --*/
+  void toggleBrushAutoFillOff();
+  void toggleBrushAutoFillOn();
+  void toggleBrushAutoCloseOn();
+  void toggleBrushAutoGroupOn();
+
   /*-- Fill tool + mode switching shortcuts --*/
   void toggleFillNextType();
   void toggleFillNormal();
