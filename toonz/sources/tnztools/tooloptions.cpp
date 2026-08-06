@@ -2147,6 +2147,7 @@ EraserToolOptionsBox::EraserToolOptionsBox(QWidget *parent, TTool *tool,
   if (m_hardnessField)
     m_hardnessLabel = m_labels.value(m_hardnessField->propertyName());
   m_colorMode  = dynamic_cast<ToolOptionCombo *>(m_controls.value("Mode:"));
+  m_pressure = dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Pressure"));
   m_invertMode = dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Invert"));
   m_multiFrameMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Frame Range"));
@@ -2173,6 +2174,7 @@ EraserToolOptionsBox::EraserToolOptionsBox(QWidget *parent, TTool *tool,
   if (m_toolType && m_toolType->getProperty()->getValue() == L"Normal") {
     m_invertMode->setEnabled(false);
     m_multiFrameMode->setEnabled(false);
+    if (m_pressure) m_pressure->setEnabled(true);
   }
 
   if (m_colorMode && m_colorMode->getProperty()->getValue() == L"Areas") {
@@ -2207,6 +2209,7 @@ void EraserToolOptionsBox::onToolTypeChanged(int index) {
   bool value                        = range[index] != L"Normal";
   m_invertMode->setEnabled(value);
   m_multiFrameMode->setEnabled(value);
+  if (m_pressure) m_pressure->setEnabled(!value);
 }
 
 //-----------------------------------------------------------------------------
