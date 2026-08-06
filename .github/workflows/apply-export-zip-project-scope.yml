@@ -28,90 +28,74 @@ jobs:
           path = Path("toonz/sources/toonz/exportscenepopup.cpp")
           text = path.read_text(encoding="utf-8")
 
-          replacements = [
-              (
-                  '''  if (!sourceDir.exists()) {
-            errorMessage = QObject::tr("The exported scene folder does not exist.");
-            return false;
-          }
-          ''',
-                  '''  if (!sourceDir.exists()) {
-            errorMessage = QObject::tr("The exported folder does not exist.");
-            return false;
-          }
-          ''',
-              ),
-              (
-                  '''  m_createZipCheckBox =
-              new QCheckBox(tr("Create ZIP archive of exported scene folder"),
-                            lonelyProjectWidget);
-          m_createZipCheckBox->setToolTip(
-              tr("Create a ZIP archive after export while keeping the exported folder."));
-          lonelyProjectLayout->addWidget(m_createZipCheckBox, 2, 1);
-
-          lonelyProjectWidget->setLayout(lonelyProjectLayout);
-          layout->addWidget(lonelyProjectWidget);
-          ''',
-                  '''  lonelyProjectWidget->setLayout(lonelyProjectLayout);
-          layout->addWidget(lonelyProjectWidget);
-
-          m_createZipCheckBox =
-              new QCheckBox(tr("Create ZIP archive of exported folder"), this);
-          m_createZipCheckBox->setToolTip(
-              tr("Create a ZIP archive after exporting a new project or "
-                 "standalone scene while keeping the exported folder."));
-          layout->addWidget(m_createZipCheckBox);
-          ''',
-              ),
-              (
-                  '''void ExportScenePopup::switchMode(int id) {
-            assert(id < 3);
-            m_mode = id;
-            // m_projectTreeView->setEnabled(true);
-          }
-          ''',
-                  '''void ExportScenePopup::switchMode(int id) {
-            assert(id < 3);
-            m_mode = id;
-            m_createZipCheckBox->setEnabled(id != 0);
-            // m_projectTreeView->setEnabled(true);
-          }
-          ''',
-              ),
-              (
-                  '''  progressBar.hide();
-            pm->setCurrentProjectPath(oldProjectPath);
-
-            QApplication::restoreOverrideCursor();
-          ''',
-                  '''  progressBar.hide();
-            pm->setCurrentProjectPath(oldProjectPath);
-
-            if (success && m_mode == 1 && m_createZipCheckBox->isChecked()) {
-              TFilePath projectFolder = projectPath.getParentDir();
-              TFilePath archivePath(projectFolder.getWideString() + L".zip");
-              QString zipError;
-              if (!zipDirectory(projectFolder, archivePath, zipError)) {
-                DVGui::warning(
-                    tr("The project was exported, but the ZIP archive could not be "
-                       "created.\\n%1")
-                        .arg(zipError));
-                success = false;
-              }
-            }
-
-            QApplication::restoreOverrideCursor();
-          ''',
-              ),
-          ]
-
-          for old, new in replacements:
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
               count = text.count(old)
               if count != 1:
                   raise RuntimeError(
-                      f"Expected exactly one match, found {count}: {old.splitlines()[0]}"
+                      f"Expected exactly one {label} match, found {count}"
                   )
               text = text.replace(old, new, 1)
+
+          replace_once(
+              'QObject::tr("The exported scene folder does not exist.")',
+              'QObject::tr("The exported folder does not exist.")',
+              "folder error text",
+          )
+
+          old_zip_ui = (
+              '  m_createZipCheckBox =\n'
+              '      new QCheckBox(tr("Create ZIP archive of exported scene folder"),\n'
+              '                    lonelyProjectWidget);\n'
+              '  m_createZipCheckBox->setToolTip(\n'
+              '      tr("Create a ZIP archive after export while keeping the exported folder."));\n'
+              '  lonelyProjectLayout->addWidget(m_createZipCheckBox, 2, 1);\n\n'
+              '  lonelyProjectWidget->setLayout(lonelyProjectLayout);\n'
+              '  layout->addWidget(lonelyProjectWidget);\n'
+          )
+          new_zip_ui = (
+              '  lonelyProjectWidget->setLayout(lonelyProjectLayout);\n'
+              '  layout->addWidget(lonelyProjectWidget);\n\n'
+              '  m_createZipCheckBox =\n'
+              '      new QCheckBox(tr("Create ZIP archive of exported folder"), this);\n'
+              '  m_createZipCheckBox->setToolTip(\n'
+              '      tr("Create a ZIP archive after exporting a new project or "\n'
+              '         "standalone scene while keeping the exported folder."));\n'
+              '  layout->addWidget(m_createZipCheckBox);\n'
+          )
+          replace_once(old_zip_ui, new_zip_ui, "ZIP checkbox UI")
+
+          replace_once(
+              '  m_mode = id;\n  // m_projectTreeView->setEnabled(true);',
+              '  m_mode = id;\n'
+              '  m_createZipCheckBox->setEnabled(id != 0);\n'
+              '  // m_projectTreeView->setEnabled(true);',
+              "mode switch",
+          )
+
+          archive_anchor = (
+              '  progressBar.hide();\n'
+              '  pm->setCurrentProjectPath(oldProjectPath);\n\n'
+              '  QApplication::restoreOverrideCursor();\n'
+          )
+          archive_replacement = (
+              '  progressBar.hide();\n'
+              '  pm->setCurrentProjectPath(oldProjectPath);\n\n'
+              '  if (success && m_mode == 1 && m_createZipCheckBox->isChecked()) {\n'
+              '    TFilePath projectFolder = projectPath.getParentDir();\n'
+              '    TFilePath archivePath(projectFolder.getWideString() + L".zip");\n'
+              '    QString zipError;\n'
+              '    if (!zipDirectory(projectFolder, archivePath, zipError)) {\n'
+              '      DVGui::warning(\n'
+              '          tr("The project was exported, but the ZIP archive could not be "\n'
+              '             "created.\\n%1")\n'
+              '              .arg(zipError));\n'
+              '      success = false;\n'
+              '    }\n'
+              '  }\n\n'
+              '  QApplication::restoreOverrideCursor();\n'
+          )
+          replace_once(archive_anchor, archive_replacement, "project ZIP insertion")
 
           path.write_text(text, encoding="utf-8")
 
@@ -125,6 +109,8 @@ jobs:
           grep -F 'm_createZipCheckBox->setEnabled(id != 0);' \
             toonz/sources/toonz/exportscenepopup.cpp
           grep -F 'if (success && m_mode == 1 && m_createZipCheckBox->isChecked())' \
+            toonz/sources/toonz/exportscenepopup.cpp
+          grep -F 'TFilePath projectFolder = projectPath.getParentDir();' \
             toonz/sources/toonz/exportscenepopup.cpp
 
       - name: Commit and push update
