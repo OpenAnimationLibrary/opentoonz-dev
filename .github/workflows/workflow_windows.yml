@@ -3,16 +3,16 @@ name: CI
 permissions:
   contents: read
 
+# Push events are retained for every branch because OpenToonz-Dev branches are
+# often used directly as PR heads against opentoonz/opentoonz. A branch push
+# and its local pull_request event share this key, so duplicate runs cancel
+# instead of both consuming a complete set of runners.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 on:
-  # Limit push builds to the default branch. Feature branches are covered by
-  # pull_request, avoiding duplicate push + pull-request runs for the same SHA.
   push:
-    branches:
-      - main
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -21,8 +21,6 @@ on:
       - '!**/.github/**'
       - '.github/workflows/workflow_windows.yml'
   pull_request:
-    branches:
-      - main
     paths:
       - '**/*'
       - '!appveyor.yml'
