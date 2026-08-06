@@ -1,0 +1,85 @@
+name: CI Gate Probe
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-gate-probe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+
+jobs:
+  Windows:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Record Windows start
+        shell: pwsh
+        run: Write-Host "Windows probe started at $([DateTime]::UtcNow.ToString('o'))"
+
+      - name: Allow cancellation to be observed
+        shell: pwsh
+        run: Start-Sleep -Seconds 30
+
+      - name: Force Windows failure when requested
+        if: contains(github.event.pull_request.title, '[windows-fail]')
+        shell: pwsh
+        run: |
+          Write-Error "Intentional Windows gate failure for CI orchestration testing."
+          exit 1
+
+      - name: Windows gate passed
+        shell: pwsh
+        run: Write-Host "Windows gate passed."
+
+  Ubuntu:
+    needs: Windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - name: Record Ubuntu start
+        run: echo "Ubuntu ${{ matrix.compiler }} probe started at $(date -u +%FT%TZ)"
+
+      - name: Force Ubuntu GCC failure when requested
+        if: matrix.compiler == 'gcc' && contains(github.event.pull_request.title, '[ubuntu-fail]')
+        run: |
+          echo "Intentional Ubuntu gate failure for CI orchestration testing."
+          exit 1
+
+      - name: Ubuntu compiler gate passed
+        run: echo "Ubuntu ${{ matrix.compiler }} gate passed."
+
+  Fedora:
+    needs: Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: fedora:latest
+    steps:
+      - name: Record Fedora start
+        run: echo "Fedora probe started at $(date -u +%FT%TZ)"
+      - name: Fedora final gate passed
+        run: echo "Fedora final gate passed."
+
+  macOS:
+    needs: Ubuntu
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - name: Record macOS start
+        run: echo "macOS probe started at $(date -u +%FT%TZ)"
+      - name: macOS final gate passed
+        run: echo "macOS final gate passed."
