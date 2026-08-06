@@ -8,11 +8,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
-  # Limit push builds to the default branch. Feature branches are covered by
-  # pull_request, avoiding duplicate push + pull-request runs for the same SHA.
+  # Limit normal push builds to the default branch. The exact agent branch is
+  # temporary so this newly added workflow can self-test before it exists on main.
   push:
     branches:
       - main
+      - agent/consolidate-staged-ci
     paths:
       - '**/*'
       - '!appveyor.yml'
