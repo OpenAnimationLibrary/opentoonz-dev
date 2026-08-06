@@ -491,6 +491,23 @@ public:
 } resetShiftTraceCommand;
 
 //-----------------------------------------------------------------------------
+
+class CurrentDrawingOnTopCommand final : public MenuItemHandler {
+public:
+  CurrentDrawingOnTopCommand()
+      : MenuItemHandler(MI_CurrentDrawingOnTop) {}
+
+  void execute() override {
+    QAction *action =
+        CommandManager::instance()->getAction(MI_CurrentDrawingOnTop);
+    TApp *app = TApp::instance();
+    app->getCurrentXsheet()->getXsheet()->setCurrentDrawingOnTop(
+        action && action->isChecked());
+    app->getCurrentXsheet()->notifyXsheetChanged();
+  }
+} currentDrawingOnTopCommand;
+
+//-----------------------------------------------------------------------------
 // Following commands (VB_***) are registered for command bar buttons.
 // They are separatd from the original visalization commands
 // so that they will not break a logic of ShortcutZoomer.
@@ -2187,6 +2204,8 @@ void SceneViewer::drawScene() {
     args.m_isGuidedDrawingEnabled = useGuidedDrawing;
     args.m_guidedFrontStroke      = guidedFrontStroke;
     args.m_guidedBackStroke       = guidedBackStroke;
+    args.m_currentDrawingOnTop =
+        app->getCurrentXsheet()->getXsheet()->isCurrentDrawingOnTop();
 
     // args.m_currentFrameId = app->getCurrentFrame()->getFid();
     Stage::visit(painter, args);
@@ -2250,6 +2269,8 @@ void SceneViewer::drawScene() {
       args.m_isGuidedDrawingEnabled = useGuidedDrawing;
       args.m_guidedFrontStroke      = guidedFrontStroke;
       args.m_guidedBackStroke       = guidedBackStroke;
+      args.m_currentDrawingOnTop =
+          app->getCurrentXsheet()->getXsheet()->isCurrentDrawingOnTop();
 
 #if defined(x64)
       if (m_stopMotion->m_alwaysUseLiveViewImages &&

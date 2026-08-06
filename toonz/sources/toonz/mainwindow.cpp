@@ -2677,6 +2677,8 @@ void MainWindow::defineActions() {
   createToggle(MI_VectorGuidedDrawing, QT_TR_NOOP("Vector Guided Drawing"), "",
                Preferences::instance()->isGuidedDrawingEnabled(),
                MenuViewCommandType, "view_guided_drawing");
+  createToggle(MI_CurrentDrawingOnTop, QT_TR_NOOP("Current Drawing On Top"),
+               "", false, MenuViewCommandType, "current_on_top");
   if (QGLPixelBuffer::hasOpenGLPbuffers())
     createToggle(MI_RasterizePli, QT_TR_NOOP("&Visualize Vector As Raster"), "",
                  RasterizePliToggleAction ? 1 : 0, MenuViewCommandType,
