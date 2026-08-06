@@ -19,6 +19,7 @@
 #include "toonz/stage.h"
 #include "toonz/stage2.h"
 #include "toonz/txshlevel.h"
+#include "toonz/txshleveltypes.h"
 #include "toonz/txshcell.h"
 #include "toonz/tcamera.h"
 #include "toonz/tstageobjecttree.h"
@@ -135,6 +136,12 @@ BaseViewerPanel::BaseViewerPanel(QWidget *parent, Qt::WindowFlags flags)
   m_flipConsole->setFrameHandle(TApp::instance()->getCurrentFrame());
 
   bool ret = true;
+  QAction *rasterizeAction =
+      CommandManager::instance()->getAction(MI_RasterizePli);
+  if (rasterizeAction)
+    ret = ret && connect(rasterizeAction, SIGNAL(changed()), this,
+                         SLOT(changeWindowTitle()));
+
   // When zoom changed, only if the viewer is active, change window titl
   ret = ret && connect(m_sceneViewer, SIGNAL(onZoomChanged()),
                        SLOT(changeWindowTitle()));
@@ -605,6 +612,11 @@ void BaseViewerPanel::changeWindowTitle() {  // �v�m�F
 
   // put the titlebar texts in this string
   QString name;
+  QAction *rasterizeAction =
+      CommandManager::instance()->getAction(MI_RasterizePli);
+  const bool rasterizeVector =
+      rasterizeAction && rasterizeAction->isChecked();
+  bool isVectorLevel = false;
 
   // if the frame type is "scene editing"
   if (app->getCurrentFrame()->isEditingScene()) {
@@ -642,6 +654,7 @@ void BaseViewerPanel::changeWindowTitle() {  // �v�m�F
       return;
     }
     assert(cell.m_level.getPointer());
+    isVectorLevel = cell.m_level->getType() == PLI_XSHLEVEL;
     TFilePath fp(cell.m_level->getName());
     QString imageName =
         QString::fromStdWString(fp.withFrame(cell.m_frameId).getWideString());
@@ -651,6 +664,7 @@ void BaseViewerPanel::changeWindowTitle() {  // �v�m�F
   else {
     TXshLevel *level = app->getCurrentLevel()->getLevel();
     if (level) {
+      isVectorLevel = level->getType() == PLI_XSHLEVEL;
       TFilePath fp(level->getName());
       QString imageName = QString::fromStdWString(
           fp.withFrame(app->getCurrentFrame()->getFid()).getWideString());
@@ -664,6 +678,8 @@ void BaseViewerPanel::changeWindowTitle() {  // �v�m�F
     if (m_sceneViewer->getIsFlippedY()) aff = aff * TScale(1, -1);
     name = name + tr("  ::  Zoom : ") +
            QString::number(tround(100.0 * sqrt(aff.det()))) + "%";
+    if (isVectorLevel && rasterizeVector)
+      name = name + tr(" (Rasterized Vector View)");
     if (m_sceneViewer->getIsFlippedX() || m_sceneViewer->getIsFlippedY()) {
       name = name + tr(" (Flipped)");
     }
