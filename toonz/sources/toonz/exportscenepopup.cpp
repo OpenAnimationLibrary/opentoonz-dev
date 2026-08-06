@@ -112,7 +112,7 @@ bool zipDirectory(const TFilePath &sourceFolder, const TFilePath &archivePath,
                   QString &errorMessage) {
   QDir sourceDir(sourceFolder.getQString());
   if (!sourceDir.exists()) {
-    errorMessage = QObject::tr("The exported scene folder does not exist.");
+    errorMessage = QObject::tr("The exported folder does not exist.");
     return false;
   }
 
@@ -666,15 +666,15 @@ ExportScenePopup::ExportScenePopup(std::vector<TFilePath> scenes)
                        SLOT(onLonelyModeFocusIn()));
   lonelyProjectLayout->addWidget(m_lonelyModePathFld, 1, 1);
 
-  m_createZipCheckBox =
-      new QCheckBox(tr("Create ZIP archive of exported scene folder"),
-                    lonelyProjectWidget);
-  m_createZipCheckBox->setToolTip(
-      tr("Create a ZIP archive after export while keeping the exported folder."));
-  lonelyProjectLayout->addWidget(m_createZipCheckBox, 2, 1);
-
   lonelyProjectWidget->setLayout(lonelyProjectLayout);
   layout->addWidget(lonelyProjectWidget);
+
+  m_createZipCheckBox =
+      new QCheckBox(tr("Create ZIP archive of exported folder"), this);
+  m_createZipCheckBox->setToolTip(
+      tr("Create a ZIP archive after exporting a new project or "
+         "standalone scene while keeping the exported folder."));
+  layout->addWidget(m_createZipCheckBox);
 
   ret = ret &&
         connect(group, SIGNAL(buttonClicked(int)), this, SLOT(switchMode(int)));
@@ -701,6 +701,7 @@ ExportScenePopup::ExportScenePopup(std::vector<TFilePath> scenes)
 void ExportScenePopup::switchMode(int id) {
   assert(id < 3);
   m_mode = id;
+  m_createZipCheckBox->setEnabled(id != 0);
   // m_projectTreeView->setEnabled(true);
 }
 
@@ -814,6 +815,19 @@ void ExportScenePopup::onExport() {
   }
   progressBar.hide();
   pm->setCurrentProjectPath(oldProjectPath);
+
+  if (success && m_mode == 1 && m_createZipCheckBox->isChecked()) {
+    TFilePath projectFolder = projectPath.getParentDir();
+    TFilePath archivePath(projectFolder.getWideString() + L".zip");
+    QString zipError;
+    if (!zipDirectory(projectFolder, archivePath, zipError)) {
+      DVGui::warning(
+          tr("The project was exported, but the ZIP archive could not be "
+             "created.\n%1")
+              .arg(zipError));
+      success = false;
+    }
+  }
 
   QApplication::restoreOverrideCursor();
   if (!success) return;
