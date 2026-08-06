@@ -10,8 +10,17 @@
 #include "toonz/txshsimplelevel.h"
 
 #include "toonz/onionskinmask.h"
+#include "toonzqt/menubarcommand.h"
+#include "menubarcommandids.h"
 
 #include <QMenu>
+
+namespace {
+OnioniSkinMaskGUI::OnionSkinSwitcher &onionSkinSwitcher() {
+  static OnioniSkinMaskGUI::OnionSkinSwitcher switcher;
+  return switcher;
+}
+}  // namespace
 
 //=============================================================================
 // OnioniSkinMaskGUI::OnionSkinSwitcher
@@ -100,14 +109,25 @@ void OnioniSkinMaskGUI::OnionSkinSwitcher::clearMOS() {
 }
 
 void OnioniSkinMaskGUI::OnionSkinSwitcher::clearOS() {
+  if (!isActive()) return;
   clearFOS();
   clearMOS();
 }
 
 //------------------------------------------------------------------------------
 
+void OnioniSkinMaskGUI::initializeCommands() {
+  OnionSkinSwitcher &switcher = onionSkinSwitcher();
+  QAction *action =
+      CommandManager::instance()->getAction(MI_ClearAllOnionSkinMarkers);
+  QObject::connect(action, SIGNAL(triggered()), &switcher, SLOT(clearOS()),
+                   Qt::UniqueConnection);
+}
+
+//------------------------------------------------------------------------------
+
 void OnioniSkinMaskGUI::addOnionSkinCommand(QMenu *menu, bool isFilmStrip) {
-  static OnioniSkinMaskGUI::OnionSkinSwitcher switcher;
+  OnionSkinSwitcher &switcher = onionSkinSwitcher();
   if (switcher.isActive()) {
     QAction *dectivateOnionSkin =
         menu->addAction(QString(QObject::tr("Deactivate Onion Skin")));
@@ -127,10 +147,8 @@ void OnioniSkinMaskGUI::addOnionSkinCommand(QMenu *menu, bool isFilmStrip) {
       }
       OnionSkinMask osm = switcher.getMask();
       if (osm.getFosCount() || osm.getMosCount()) {
-        QAction *clearAllOnionSkins = menu->addAction(
-            QString(QObject::tr("Clear All Onion Skin Markers")));
-        menu->connect(clearAllOnionSkins, SIGNAL(triggered()), &switcher,
-                      SLOT(clearOS()));
+        menu->addAction(CommandManager::instance()->getAction(
+            MI_ClearAllOnionSkinMarkers));
       }
       if (osm.getFosCount() && osm.getMosCount()) {
         QAction *clearFixedOnionSkins = menu->addAction(
