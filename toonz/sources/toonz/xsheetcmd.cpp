@@ -51,6 +51,7 @@
 #include "toonzqt/stageobjectsdata.h"
 #include "historytypes.h"
 #include "xsheetviewer.h"
+#include "xsheetdragtool.h"
 
 // Tnz6 includes
 #include "cellselection.h"
@@ -2196,6 +2197,33 @@ SetCellMarkCommand CellMarkCommand8(8);
 SetCellMarkCommand CellMarkCommand9(9);
 SetCellMarkCommand CellMarkCommand10(10);
 SetCellMarkCommand CellMarkCommand11(11);
+
+//============================================================
+
+class PreviewSelected final : public MenuItemHandler {
+public:
+  PreviewSelected() : MenuItemHandler(MI_PreviewSelected) {}
+
+  void execute() override {
+    TSelection *selection =
+        TApp::instance()->getCurrentSelection()->getSelection();
+    TCellSelection *cellSelection = dynamic_cast<TCellSelection *>(selection);
+    if (!cellSelection) return;
+
+    int firstRow = 0;
+    int firstColumn = 0;
+    int lastRow = 0;
+    int lastColumn = 0;
+    cellSelection->getSelectedCells(firstRow, firstColumn, lastRow, lastColumn);
+
+    int playStart = 0;
+    int playStop  = 0;
+    int step      = 1;
+    XsheetGUI::getPlayRange(playStart, playStop, step);
+    XsheetGUI::setPlayRange(firstRow, lastRow, step);
+    TApp::instance()->getCurrentXsheetViewer()->update();
+  }
+} PreviewSelected;
 
 //============================================================
 

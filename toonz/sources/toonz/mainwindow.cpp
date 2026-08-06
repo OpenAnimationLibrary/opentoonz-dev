@@ -2498,6 +2498,8 @@ void MainWindow::defineActions() {
                          "prev_nav_tag");
   createMenuXsheetAction(MI_EditTaggedFrame, QT_TR_NOOP("Edit Tag"), "", "");
   createMenuXsheetAction(MI_ClearTags, QT_TR_NOOP("Remove Tags"), "", "");
+  createMenuXsheetAction(MI_PreviewSelected,
+                         QT_TR_NOOP("Set Markers to Selected Range"), "");
   CommandManager::instance()->enable(MI_NextTaggedFrame, false);
   CommandManager::instance()->enable(MI_PrevTaggedFrame, false);
   CommandManager::instance()->enable(MI_EditTaggedFrame, false);
