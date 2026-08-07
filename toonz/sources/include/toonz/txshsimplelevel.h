@@ -27,6 +27,8 @@
 #include <boost/container/flat_set.hpp>
 #include <boost/container/flat_map.hpp>
 
+class TXsheet;
+
 #undef DVAPI
 #undef DVVAR
 #ifdef TOONZLIB_EXPORTS
@@ -288,6 +290,10 @@ public:
   void renumber(const std::vector<TFrameId> &fids);
 
   bool isFrameReadOnly(TFrameId fid);
+
+  bool isSingleFileLevel() const;
+  bool canConvertSingleFileToSequence() const;
+  void convertSingleFileToSequence(TXsheet *xsheet);
 
 public:
   // Static methods for auxiliary files management: hooks, tpl, etc.
