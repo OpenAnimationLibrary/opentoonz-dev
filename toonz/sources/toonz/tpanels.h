@@ -361,4 +361,11 @@ public:
   LocatorPanel(QWidget *parent);
 };
 
+class AlignmentPanel final : public TPanel {
+  Q_OBJECT
+
+public:
+  explicit AlignmentPanel(QWidget *parent);
+};
+
 #endif

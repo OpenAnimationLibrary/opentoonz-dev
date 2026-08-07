@@ -115,6 +115,7 @@ set(MOC_HEADERS
     tpanels.h
     trackerpopup.h
     vectorguideddrawingpane.h
+    alignmentpane.h
     vectorizerpopup.h
     vectorizerswatch.h
     versioncontrol.h
@@ -314,6 +315,7 @@ set(SOURCES
     timestretchpopup.cpp
     trackerpopup.cpp
     vectorguideddrawingpane.cpp
+    alignmentpane.cpp
     vectorizerpopup.cpp
     rasterizecommand.cpp
     vectorizerswatch.cpp

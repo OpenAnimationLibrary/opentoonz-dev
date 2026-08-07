@@ -2310,6 +2310,26 @@ void MainWindow::defineActions() {
                        "move_forward_one");
   createMenuEditAction(MI_BringToFront, QT_TR_NOOP("&Move to Front"), "",
                        "move_to_front");
+  createMenuEditAction(MI_AlignLeft, QT_TR_NOOP("&Align Left"), "",
+                       "select_align_left");
+  createMenuEditAction(MI_AlignRight, QT_TR_NOOP("&Align Right"), "",
+                       "select_align_right");
+  createMenuEditAction(MI_AlignTop, QT_TR_NOOP("&Align Top"), "",
+                       "select_align_top");
+  createMenuEditAction(MI_AlignBottom, QT_TR_NOOP("&Align Bottom"), "",
+                       "select_align_bottom");
+  createMenuEditAction(MI_AlignCenterHorizontal,
+                       QT_TR_NOOP("&Align Center Horizontally"), "",
+                       "select_align_center_h");
+  createMenuEditAction(MI_AlignCenterVertical,
+                       QT_TR_NOOP("&Align Center Vertically"), "",
+                       "select_align_center_v");
+  createMenuEditAction(MI_DistributeHorizontal,
+                       QT_TR_NOOP("&Distribute Horizontally"), "",
+                       "select_distribute_h");
+  createMenuEditAction(MI_DistributeVertical,
+                       QT_TR_NOOP("&Distribute Vertically"), "",
+                       "select_distribute_v");
 
   // Menu - Scan & Cleanup
 
@@ -2737,6 +2757,8 @@ void MainWindow::defineActions() {
                           "comboviewer");
   createMenuWindowsAction(MI_OpenHistoryPanel, QT_TR_NOOP("&History"), "Ctrl+H",
                           "history");
+  createMenuWindowsAction(MI_OpenAlignmentPanel,
+                          QT_TR_NOOP("Align and Distribute Panel"), "", "");
 
   // Shortcut keys will be assigned once the feature is complete.
   QAction *brushPresetAct = createMenuWindowsAction(
