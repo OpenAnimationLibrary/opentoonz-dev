@@ -68,6 +68,7 @@ enum CommandType {
   ZoomCommandType,
   MiscCommandType,
   StopMotionCommandType,
+  DrawingMarkCommandType,
   CellMarkCommandType,
   MenuCommandType,
   VisualizationButtonCommandType,

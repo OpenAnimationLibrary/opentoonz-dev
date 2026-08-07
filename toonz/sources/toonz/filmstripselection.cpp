@@ -369,6 +369,14 @@ void TFilmstripSelection::eachFrames(int each) {
 
 //-----------------------------------------------------------------------------
 
+void TFilmstripSelection::setDrawingMark(int markId) {
+  if (markId < -1) return;
+  TXshSimpleLevel *level = TApp::instance()->getCurrentLevel()->getSimpleLevel();
+  if (level) FilmstripCmd::setDrawingMark(level, m_selectedFrames, markId);
+}
+
+//-----------------------------------------------------------------------------
+
 void TFilmstripSelection::duplicateFrames() {
   TXshSimpleLevel *sl = TApp::instance()->getCurrentLevel()->getSimpleLevel();
   if (sl) FilmstripCmd::duplicate(sl, m_selectedFrames, true);

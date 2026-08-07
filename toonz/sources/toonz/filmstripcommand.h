@@ -71,6 +71,8 @@ void inbetween(TXshSimpleLevel *sl, const TFrameId &fid0, const TFrameId &fid1,
 // Renumber a single drawing
 void renumberDrawing(TXshSimpleLevel *sl, const TFrameId &oldFid,
                      const TFrameId &desiredNewFid);
+void setDrawingMark(TXshSimpleLevel *sl, std::set<TFrameId> &frames,
+                    int markId);
 
 }  // namespace FilmstripCmd
 

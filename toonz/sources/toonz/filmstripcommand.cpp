@@ -165,7 +165,7 @@ namespace {
 void copyFramesWithoutUndo(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
   QClipboard *clipboard = QApplication::clipboard();
   auto *data            = new DrawingData();
-  data->setLevelFrames(sl, frames);
+  data->setLevelFrames(sl, frames, true);
   clipboard->setMimeData(data, QClipboard::Clipboard);
 }
 
@@ -423,6 +423,7 @@ void cutFramesWithoutUndo(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
   std::map<TFrameId, QString> imageSet;
 
   HookSet *levelHooks   = sl->getHookSet();
+  const std::map<TFrameId, int> drawingMarks = sl->getDrawingMarks();
   int currentFrameIndex = TApp::instance()->getCurrentFrame()->getFrameIndex();
   int i                 = 0;
   for (const TFrameId &frameId : frames) {
@@ -436,7 +437,7 @@ void cutFramesWithoutUndo(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
 
   QClipboard *clipboard = QApplication::clipboard();
   auto *data            = new DrawingData();
-  data->setFrames(imageSet, sl, *levelHooks);
+  data->setFrames(imageSet, sl, *levelHooks, drawingMarks);
   clipboard->setMimeData(data, QClipboard::Clipboard);
 
   for (const TFrameId &fid : frames) sl->eraseFrame(fid);
@@ -1511,7 +1512,7 @@ void FilmstripCmd::merge(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
           dynamic_cast<const DrawingData *>(clipboard->mimeData())) {
     drawingData->getFrames(frameIdToChange);
     auto *data = new DrawingData();
-    data->setLevelFrames(sl, frameIdToChange);
+    data->setLevelFrames(sl, frameIdToChange, true);
     auto *oldLevelHooks = new HookSet();
     *oldLevelHooks      = *sl->getHookSet();
 
@@ -1548,7 +1549,7 @@ void FilmstripCmd::pasteInto(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
   if (const auto *drawingData =
           dynamic_cast<const DrawingData *>(clipboard->mimeData())) {
     auto *data = new DrawingData();
-    data->setLevelFrames(sl, frames);
+    data->setLevelFrames(sl, frames, true);
 
     auto *oldLevelHooks = new HookSet();
     *oldLevelHooks      = *sl->getHookSet();
@@ -1598,12 +1599,13 @@ void FilmstripCmd::clear(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
     }
   }
 
-  HookSet *levelHooks          = sl->getHookSet();
+  HookSet *levelHooks                  = sl->getHookSet();
+  const std::map<TFrameId, int> drawingMarks = sl->getDrawingMarks();
   std::set<TFrameId> oldFrames = frames;
   std::map<TFrameId, QString> clearedFrames =
       clearFramesWithoutUndo(sl, frames);
   auto *oldData = new DrawingData();
-  oldData->setFrames(clearedFrames, sl, *levelHooks);
+  oldData->setFrames(clearedFrames, sl, *levelHooks, drawingMarks);
   auto *newData = new DrawingData();
   newData->setLevelFrames(sl, frames);
   frames.clear();
@@ -1627,8 +1629,9 @@ void FilmstripCmd::remove(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
     imageSet[frameId] = id;
   }
   HookSet *levelHooks = sl->getHookSet();
+  const std::map<TFrameId, int> drawingMarks = sl->getDrawingMarks();
   auto *oldData       = new DrawingData();
-  oldData->setFrames(imageSet, sl, *levelHooks);
+  oldData->setFrames(imageSet, sl, *levelHooks, drawingMarks);
 
   removeFramesWithoutUndo(sl, frames);
   TUndoManager::manager()->add(new RemoveFramesUndo(sl, frames, oldData));
@@ -2501,4 +2504,52 @@ void FilmstripCmd::renumberDrawing(TXshSimpleLevel *sl, const TFrameId &oldFid,
   TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   TApp::instance()->getCurrentLevel()->notifyLevelChange();
   TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+}
+
+//-----------------------------------------------------------------------------
+
+namespace {
+
+class SetDrawingMarkUndo final : public TUndo {
+  TXshSimpleLevelP m_level;
+  std::map<TFrameId, int> m_oldMarks;
+  int m_newMark;
+
+public:
+  SetDrawingMarkUndo(TXshSimpleLevel *level, const std::set<TFrameId> &frames,
+                     int markId)
+      : m_level(level), m_newMark(markId) {
+    for (const TFrameId &frame : frames)
+      m_oldMarks[frame] = level->getDrawingMark(frame);
+  }
+
+  void undo() const override {
+    for (const auto &entry : m_oldMarks)
+      m_level->setDrawingMark(entry.first, entry.second);
+    TApp::instance()->getCurrentLevel()->notifyLevelChange();
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  }
+
+  void redo() const override {
+    for (const auto &entry : m_oldMarks)
+      m_level->setDrawingMark(entry.first, m_newMark);
+    TApp::instance()->getCurrentLevel()->notifyLevelChange();
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  }
+
+  int getSize() const override { return sizeof(*this); }
+  QString getHistoryString() override {
+    return QObject::tr("Set Drawing Mark to %1").arg(m_newMark);
+  }
+  int getHistoryType() override { return HistoryType::FilmStrip; }
+};
+
+}  // namespace
+
+void FilmstripCmd::setDrawingMark(TXshSimpleLevel *sl,
+                                  std::set<TFrameId> &frames, int markId) {
+  if (!sl || sl->isSubsequence() || frames.empty()) return;
+  auto *undo = new SetDrawingMarkUndo(sl, frames, markId);
+  undo->redo();
+  TUndoManager::manager()->add(undo);
 }

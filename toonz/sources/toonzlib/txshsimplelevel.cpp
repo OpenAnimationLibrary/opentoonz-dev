@@ -841,6 +841,7 @@ void TXshSimpleLevel::eraseFrame(const TFrameId& fid) {
   }
 
   m_frames.erase(ft);
+  m_drawingMarks.erase(fid);
   getHookSet()->eraseFrame(fid);
 
   ImageManager* im = ImageManager::instance();
@@ -896,6 +897,7 @@ void TXshSimpleLevel::clearFrames() {
   m_editableRangeUserInfo.clear();
   m_renumberTable.clear();
   m_framesStatus.clear();
+  m_drawingMarks.clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -952,6 +954,15 @@ void TXshSimpleLevel::loadData(TIStream& is) {
         m_properties->setColorSpaceGamma(colorSpaceGamma);
 
         if (isStopMotionLevel == 1) setIsReadOnly(true);
+      } else if (tagName == "drawingMarks") {
+        int markCount;
+        is >> markCount;
+        for (int i = 0; i < markCount; ++i) {
+          int frameNumber, markId;
+          is >> frameNumber >> markId;
+          setDrawingMark(TFrameId(frameNumber), markId);
+        }
+        is.matchEndTag();
       } else {
         throw TException("unexpected tag " + tagName);
       }
@@ -1400,6 +1411,13 @@ void TXshSimpleLevel::saveData(TOStream& os) {
 
   os.child("path") << m_path;
   if (m_scannedPath != TFilePath()) os.child("scannedPath") << m_scannedPath;
+  if (!m_drawingMarks.empty()) {
+    os.openChild("drawingMarks");
+    os << static_cast<int>(m_drawingMarks.size());
+    for (const auto &[fid, markId] : m_drawingMarks)
+      os << fid.getNumber() << markId;
+    os.closeChild();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -2145,6 +2163,28 @@ void TXshSimpleLevel::renumber(const std::vector<TFrameId>& fids) {
   m_properties->setDirtyFlag(true);
 
   if (getHookSet()) getHookSet()->renumber(table);
+
+  const std::map<TFrameId, int> oldDrawingMarks = m_drawingMarks;
+  m_drawingMarks.clear();
+  for (const auto &[fid, markId] : oldDrawingMarks)
+    m_drawingMarks[table[fid]] = markId;
+}
+
+//-----------------------------------------------------------------------------
+
+int TXshSimpleLevel::getDrawingMark(const TFrameId &fid) const {
+  const auto it = m_drawingMarks.find(fid);
+  return it == m_drawingMarks.end() ? -1 : it->second;
+}
+
+//-----------------------------------------------------------------------------
+
+void TXshSimpleLevel::setDrawingMark(const TFrameId &fid, int markId) {
+  if (markId < 0) {
+    m_drawingMarks.erase(fid);
+    return;
+  }
+  m_drawingMarks[fid] = markId;
 }
 
 //-----------------------------------------------------------------------------

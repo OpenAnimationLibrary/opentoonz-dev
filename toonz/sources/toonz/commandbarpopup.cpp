@@ -131,6 +131,8 @@ CommandListTree::CommandListTree(const QString& dropTargetString,
   QTreeWidgetItem* rcmSubFolder =
       addFolder(ShortcutTree::tr("Right-click Menu Commands"),
                 RightClickMenuCommandType, advancedFolder);
+  addFolder(ShortcutTree::tr("Drawing Mark"), DrawingMarkCommandType,
+            rcmSubFolder);
   addFolder(ShortcutTree::tr("Cell Mark"), CellMarkCommandType, rcmSubFolder);
   QTreeWidgetItem* toolModifiersFolder =
       addFolder(ShortcutTree::tr("Tool Modifiers"), ToolModifierCommandType,
@@ -213,6 +215,8 @@ void CommandListTree::refreshTree() {
   QTreeWidgetItem* rcmSubFolder =
       addFolder(ShortcutTree::tr("Right-click Menu Commands"),
                 RightClickMenuCommandType, advancedFolder);
+  addFolder(ShortcutTree::tr("Drawing Mark"), DrawingMarkCommandType,
+            rcmSubFolder);
   addFolder(ShortcutTree::tr("Cell Mark"), CellMarkCommandType, rcmSubFolder);
   QTreeWidgetItem* toolModifiersFolder =
       addFolder(ShortcutTree::tr("Tool Modifiers"), ToolModifierCommandType,
