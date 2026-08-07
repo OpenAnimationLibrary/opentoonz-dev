@@ -491,6 +491,25 @@ public:
 } resetShiftTraceCommand;
 
 //-----------------------------------------------------------------------------
+
+class TLightTableToggleCommand final : public MenuItemHandler {
+public:
+  TLightTableToggleCommand() : MenuItemHandler(MI_ToggleLightTable) {}
+
+  void execute() override {
+    QAction *action =
+        CommandManager::instance()->getAction(MI_ToggleLightTable);
+    if (!action) return;
+
+    OnionSkinMask osm =
+        TApp::instance()->getCurrentOnionSkin()->getOnionSkinMask();
+    osm.setLightTableStatus(action->isChecked());
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentOnionSkin()->setOnionSkinMask(osm);
+  }
+} lightTableToggleCommand;
+
+//-----------------------------------------------------------------------------
 // Following commands (VB_***) are registered for command bar buttons.
 // They are separatd from the original visalization commands
 // so that they will not break a logic of ShortcutZoomer.

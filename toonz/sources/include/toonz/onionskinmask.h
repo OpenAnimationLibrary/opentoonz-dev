@@ -46,7 +46,8 @@ public:
   };
 
 public:
-  OnionSkinMask() : m_enabled(false), m_wholeScene(false) {}
+  OnionSkinMask()
+      : m_enabled(false), m_wholeScene(false), m_lightTableStatus(false) {}
 
   void clear();
 
@@ -111,6 +112,9 @@ since underlying onion-skinned drawings must be visible.
   bool isShiftTraceEnabled() const { return m_shiftTraceStatus != DISABLED; }
   bool isEditingShift() const { return m_shiftTraceStatus == EDITING_GHOST; }
 
+  bool isLightTableEnabled() const { return m_lightTableStatus; }
+  void setLightTableStatus(bool status) { m_lightTableStatus = status; }
+
   const TAffine getShiftTraceGhostAff(int index) const {
     return m_ghostAff[index];
   }
@@ -150,6 +154,7 @@ private:
   int m_ghostFrame[2];         // relative frame position of the ghosts
   QList<int> m_ghostFlipKeys;  // If F1, F2 or F3 key is pressed, then only
                                // display the corresponding ghost
+  bool m_lightTableStatus;
 };
 
 //***************************************************************************

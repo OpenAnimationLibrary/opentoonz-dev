@@ -2674,6 +2674,8 @@ void MainWindow::defineActions() {
   CommandManager::instance()->enable(MI_ShowShiftOrigin, false);
   createAction(MI_ResetShift, QT_TR_NOOP("Reset Shift"), "",
                MenuViewCommandType, "shift_and_trace_reset");
+  createToggle(MI_ToggleLightTable, QT_TR_NOOP("Light Table"), "", false,
+               MenuViewCommandType, "light_table");
   createToggle(MI_VectorGuidedDrawing, QT_TR_NOOP("Vector Guided Drawing"), "",
                Preferences::instance()->isGuidedDrawingEnabled(),
                MenuViewCommandType, "view_guided_drawing");
