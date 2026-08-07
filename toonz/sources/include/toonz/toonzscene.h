@@ -34,6 +34,8 @@ class TXshLevel;
 class TXshSoundColumn;
 class TContentHistory;
 class LevelOptions;
+class TXshLevelColumn;
+class TLevelColumnFx;
 
 //========================================================================
 
@@ -265,6 +267,12 @@ If \b scene is in +scenes/name.tnz return name,
   bool isLoading() { return m_isLoading; }
   void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
 
+  void loadOverlayFile(const TFilePath &overlayFile);
+  TXshLevel *getOverlayLevel();
+  int getOverlayOpacity() const { return m_overlayOpacity; }
+  void setOverlayOpacity(int opacity);
+  TLevelColumnFx *getOverlayFx(int row);
+
 private:
   TFilePath m_scenePath;  //!< Full path to the scene file (.tnz).
 
@@ -286,6 +294,12 @@ private:
                      // is used when loading PSD levels, for defining whether to
                      // convert a layerId in the path to the layer name. See
                      // TXshSimpleLevel::load().
+
+  bool m_overlayLoaded;
+  TXshLevel *m_overlayLevel;
+  int m_overlayOpacity;
+  TXshLevelColumn *m_overlayLevelColumn;
+  TLevelColumnFx *m_overlayFx;
 
 private:
   // noncopyable

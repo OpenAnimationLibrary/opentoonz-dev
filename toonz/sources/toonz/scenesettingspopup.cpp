@@ -25,6 +25,8 @@
 
 // TnzCore includes
 #include "trop.h"
+#include "tsystem.h"
+#include "tlevel_io.h"
 
 // Qt includes
 #include <QLayout>
@@ -34,6 +36,7 @@
 #include <QMainWindow>
 #include <QPainter>
 #include <QPushButton>
+#include <QImageReader>
 
 using namespace DVGui;
 
@@ -507,6 +510,15 @@ SceneSettingsPopup::SceneSettingsPopup()
   QPushButton *editColorFiltersButton =
       new QPushButton(tr("Edit Column Color Filters"), this);
 
+  m_overlayFile = new DVGui::FileField(this);
+  m_overlayFile->setFileMode(QFileDialog::AnyFile);
+  QStringList filters;
+  for (const QByteArray &format : QImageReader::supportedImageFormats())
+    filters << format;
+  filters << "pli" << "tlv";
+  m_overlayFile->setFilters(filters);
+  m_overlayOpacity = new DVGui::IntLineEdit(this, 100, 0, 100);
+
   // layout
   QGridLayout *mainLayout = new QGridLayout();
   mainLayout->setContentsMargins(10, 10, 10, 10);
@@ -557,6 +569,13 @@ SceneSettingsPopup::SceneSettingsPopup()
                           Qt::AlignRight | Qt::AlignVCenter);
     mainLayout->addWidget(editCellMarksButton, 7, 1, 1, 4,
                           Qt::AlignLeft | Qt::AlignVCenter);
+    mainLayout->addWidget(new QLabel(tr("Overlay Image:"), this), 8, 0,
+                          Qt::AlignRight | Qt::AlignVCenter);
+    mainLayout->addWidget(m_overlayFile, 8, 1, 1, 4);
+    mainLayout->addWidget(new QLabel(tr("Overlay Opacity:"), this), 9, 0,
+                          Qt::AlignRight | Qt::AlignVCenter);
+    mainLayout->addWidget(m_overlayOpacity, 9, 1, 1, 4,
+                          Qt::AlignLeft | Qt::AlignVCenter);
   }
   mainLayout->setColumnStretch(0, 0);
   mainLayout->setColumnStretch(1, 0);
@@ -601,6 +620,10 @@ SceneSettingsPopup::SceneSettingsPopup()
   // Cell Marks
   ret = ret && connect(editCellMarksButton, SIGNAL(clicked()), this,
                        SLOT(onEditCellMarksButtonClicked()));
+  ret = ret && connect(m_overlayFile, SIGNAL(pathChanged()), this,
+                       SLOT(onOverlayFileChanged()));
+  ret = ret && connect(m_overlayOpacity, SIGNAL(editingFinished()), this,
+                       SLOT(onOverlayOpacityChanged()));
   assert(ret);
 }
 
@@ -657,6 +680,8 @@ void SceneSettingsPopup::update() {
 
   if (m_cellMarksPopup) m_cellMarksPopup->update();
   if (m_colorFiltersPopup) m_colorFiltersPopup->updateContents();
+  m_overlayFile->setPath(sprop->getOverlayFile().getQString());
+  m_overlayOpacity->setValue(100 * sprop->getOverlayOpacity() / 255);
 }
 
 //-----------------------------------------------------------------------------
@@ -769,6 +794,33 @@ void SceneSettingsPopup::onEditCellMarksButtonClicked() {
   if (!m_cellMarksPopup) m_cellMarksPopup = new CellMarksPopup(this);
   m_cellMarksPopup->show();
   m_cellMarksPopup->raise();
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneSettingsPopup::onOverlayFileChanged() {
+  ToonzScene *scene = TApp::instance()->getCurrentScene()->getScene();
+  TSceneProperties *properties = getProperties();
+  TFilePath path(m_overlayFile->getPath());
+  if (!path.isEmpty() &&
+      !TSystem::doesExistFileOrLevel(scene->decodeFilePath(path))) {
+    m_overlayFile->setPath(properties->getOverlayFile().getQString());
+    return;
+  }
+
+  properties->setOverlayFile(path);
+  scene->loadOverlayFile(path);
+  TApp::instance()->getCurrentScene()->notifySceneChanged();
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneSettingsPopup::onOverlayOpacityChanged() {
+  const int opacity = 255 * m_overlayOpacity->getValue() / 100;
+  TSceneProperties *properties = getProperties();
+  properties->setOverlayOpacity(opacity);
+  TApp::instance()->getCurrentScene()->getScene()->setOverlayOpacity(opacity);
+  TApp::instance()->getCurrentScene()->notifySceneChanged();
 }
 
 //=============================================================================
