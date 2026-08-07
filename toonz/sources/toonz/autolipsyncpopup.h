@@ -83,6 +83,8 @@ class AutoLipSyncPopup final : public DVGui::Dialog {
   QLabel *m_scriptLabel;
   QLabel *m_columnLabel;
   QLabel *m_insertAtLabel;
+  QLabel *m_recognizerLabel;
+  QComboBox *m_recognizer;
   bool m_deleteFile = false;
   DVGui::ProgressDialog *m_progressDialog;
   QProcess *m_rhubarb;
