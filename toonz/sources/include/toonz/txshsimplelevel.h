@@ -13,6 +13,7 @@
 #include "toonz/txshlevel.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/imagemanager.h"
+#include "toonz/levelsourcefingerprint.h"
 
 // TnzCore includes
 #include "traster.h"
@@ -138,6 +139,31 @@ public:
 
   TFilePath getScannedPath() const { return m_scannedPath; }
   void setScannedPath(const TFilePath &path);
+
+  // External source fingerprint management. These helpers are intentionally
+  // passive: callers decide when a load/reload boundary is authoritative.
+  const LevelSourceFingerprint &getAcceptedSourceFingerprint() const {
+    return m_acceptedSourceFingerprint;
+  }
+  bool hasAcceptedSourceFingerprint() const {
+    return m_acceptedSourceFingerprint.m_valid;
+  }
+  LevelSourceFingerprint getCurrentSourceFingerprint(
+      const TFilePath &decodedSourcePath) const {
+    return LevelSourceFingerprint::fromFile(decodedSourcePath);
+  }
+  bool hasSourceChanged(const TFilePath &decodedSourcePath) const {
+    return m_acceptedSourceFingerprint.m_valid &&
+           getCurrentSourceFingerprint(decodedSourcePath) !=
+               m_acceptedSourceFingerprint;
+  }
+  void acceptSourceFingerprint(const TFilePath &decodedSourcePath) {
+    m_acceptedSourceFingerprint = LevelSourceFingerprint::fromFile(
+        decodedSourcePath, getFrameCount());
+  }
+  void clearAcceptedSourceFingerprint() {
+    m_acceptedSourceFingerprint = LevelSourceFingerprint();
+  }
 
   // Frame ID management
   std::vector<TFrameId> getFids() const;
@@ -326,7 +352,7 @@ public:
 
   /*!
     \brief Returns the path of the newest \a existing hook file associated to
-    the specified \b decoded level path - or an empty path if none was found.
+           the specified \b decoded level path - or an empty path if none was found.
 
     \note In case there are more than one hook file (ie files from older
           Toonz version), the latest file version is used.
@@ -363,6 +389,7 @@ private:
 
   TFilePath m_path;
   TFilePath m_scannedPath;
+  LevelSourceFingerprint m_acceptedSourceFingerprint;
 
   std::string m_idBase;
   std::wstring m_editableRangeUserInfo;
