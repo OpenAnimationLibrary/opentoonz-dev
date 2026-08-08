@@ -525,7 +525,7 @@ TFrameId TXshSimpleLevel::index2fid(int index) const {
   if (index < frameCount) {
     auto ft = m_frames.begin();
     std::advance(ft, index);
-    return *ft;
+    return *it;
   } else {
     int step        = guessStep();
     TFrameId maxFid = *m_frames.rbegin();
@@ -1300,6 +1300,11 @@ void TXshSimpleLevel::load() {
 
 void TXshSimpleLevel::load(const std::vector<TFrameId>& fIds) {
   getProperties()->setCreator("");
+  getProperties()->setIsForbidden(false);
+  // A selective load cannot establish or preserve a whole-source baseline if
+  // this object is being repopulated from disk. Re-add paths that import only
+  // selected fids therefore remain explicitly non-authoritative.
+  clearAcceptedSourceFingerprint();
   QString creator;
   assert(getScene());
   getProperties()->setDirtyFlag(false);
