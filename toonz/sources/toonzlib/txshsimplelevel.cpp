@@ -357,9 +357,10 @@ void TXshSimpleLevel::setScannedPath(const TFilePath& fp) {
 void TXshSimpleLevel::setPath(const TFilePath& fp, bool keepFrames) {
   m_path = fp;
   if (!keepFrames) {
-    clearFrames();
     assert(getScene());
     try {
+      // Full load owns source-refresh invalidation so the old frame IDs remain
+      // available long enough to evict their Normal ImageLoader bindings.
       load();
     } catch (...) {
     }
@@ -497,8 +498,6 @@ int TXshSimpleLevel::fid2index(const TFrameId& fid) const {
 //-----------------------------------------------------------------------------
 
 int TXshSimpleLevel::guessIndex(const TFrameId& fid) const {
-  if (m_frames.empty()) return 0;  // no frames, return 0 (by definition)
-
   auto ft = m_frames.lower_bound(fid);
   if (ft == m_frames.end()) {
     const TFrameId& maxFid = *m_frames.rbegin();
@@ -1088,12 +1087,21 @@ static TFilePath getLevelPathAndSetNameWithPsdLevelName(
 
 void TXshSimpleLevel::load() {
   getProperties()->setCreator("");
+  getProperties()->setIsForbidden(false);
   QString creator;
 
   assert(getScene());
   if (!getScene()) return;
 
+  // A full load is the authoritative in-place source refresh operation. Do
+  // this before replacing the frame table so every prior Normal loader can be
+  // evicted while its frame ID is still known.
+  clearFramesForSourceReload();
+
   m_isSubsequence = loadingLevelRange.isEnabled();
+  bool authoritativeSourceLoad =
+      !m_isSubsequence && m_scannedPath == TFilePath();
+  int sourceFrameCount = -1;
 
   TFilePath checkpath = getScene()->decodeFilePath(m_path);
   std::string type    = checkpath.getType();
@@ -1154,12 +1162,15 @@ void TXshSimpleLevel::load() {
     TLevelReaderP lr(path);
     assert(lr);
 
-    TLevelP level = lr->loadInfo();
+    TLevelP level   = lr->loadInfo();
+    sourceFrameCount = level->getFrameCount();
     if (level->isPartialLoad()) {
+      authoritativeSourceLoad = false;
       QString msg =
           QString(
               "File '%1' partially loaded. Not all frames were found. "
-              "Possible file corruption. Loaded what could be found.\n"
+              "Possible file corruption. Loaded what could be found.\
+"
               "Recommend replacing any bad frames in Level Strip and saving.")
               .arg(QString::fromStdWString(m_path.getWideString()));
       QMessageBox::warning(nullptr, "File load warning", msg);
@@ -1170,7 +1181,8 @@ void TXshSimpleLevel::load() {
       const TImageInfo* info = lr->getImageInfo(level->begin()->first);
       if (info && info->m_samplePerPixel >= 5) {
         QString msg = QString(
-                          "Failed to open %1.\nSamples per pixel is more than "
+                          "Failed to open %1.\
+Samples per pixel is more than "
                           "4. It may contain more than one alpha channel.")
                           .arg(QString::fromStdWString(m_path.getWideString()));
         QMessageBox::warning(nullptr, "Image format not supported", msg);
@@ -1191,6 +1203,7 @@ void TXshSimpleLevel::load() {
 
     if (!checkCreatorString(creator = lr->getCreator())) {
       getProperties()->setIsForbidden(true);
+      authoritativeSourceLoad = false;
     } else {
       for (TLevel::Iterator it = level->begin(); it != level->end(); ++it) {
         m_renumberTable[it->first] = it->first;
@@ -1276,6 +1289,11 @@ void TXshSimpleLevel::load() {
     }
   }
   updateReadOnly();
+
+  if (authoritativeSourceLoad) {
+    acceptSourceFingerprint(getScene()->decodeFilePath(m_path),
+                            sourceFrameCount);
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -1408,7 +1426,8 @@ void TXshSimpleLevel::save() {
   assert(getScene());
   TFilePath path = getScene()->decodeFilePath(m_path);
   TSystem::outputDebug("save() : " + ::to_string(m_path) + " = " +
-                       ::to_string(path) + "\n");
+                       ::to_string(path) + "\
+");
 
   if (getProperties()->getDirtyFlag() == false &&
       getPalette()->getDirtyFlag() == false &&
@@ -1621,8 +1640,11 @@ void TXshSimpleLevel::saveSimpleLevel(const TFilePath& decodedFp,
           m_properties->setSubsampling(oldSubs);
           m_path = oldPath;
           throw TSystemException(decodedFp,
-                                 "Can't open file.\nAccess may be denied or \n"
-                                 "someone else may be saving the same file.\n"
+                                 "Can't open file.\
+Access may be denied or \
+"
+                                 "someone else may be saving the same file.\
+"
                                  "Please wait and try again.");
         }
 
@@ -1793,6 +1815,13 @@ void TXshSimpleLevel::saveSimpleLevel(const TFilePath& decodedFp,
   if (paletteNotSaved) {
     throw TSystemException(m_path,
                            "The palette of the level could not be saved.");
+  }
+
+  // Only the real, complete source save establishes a new accepted baseline.
+  // Editable-range temporary levels return earlier, subsequences are partial,
+  // and scanned+cleanup levels represent more than one source file.
+  if (savingOriginal && !isSubsequence() && m_scannedPath == TFilePath()) {
+    acceptSourceFingerprint(decodedFp, getFrameCount());
   }
 }
 
