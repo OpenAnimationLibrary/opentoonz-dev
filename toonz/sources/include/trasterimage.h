@@ -23,7 +23,7 @@
 /*!
   Some examples:
  \include rasterImage_ex.cpp
-*/
+ */
 
 class DVAPI TRasterImage final : public TImage {
   TRasterP m_mainRaster, m_patchRaster, m_iconRaster;
@@ -152,7 +152,7 @@ public:
   TRasterImageP(TImageP image) : DerivedSmartPointer(image) {}
   TRasterImageP(const TRasterP &ras)
       : DerivedSmartPointer(new TRasterImage(ras)) {}
-  operator TImageP() { return TImageP(m_pointer); }
+  operator TImageP() const { return TImageP(m_pointer); }
 };
 
 #endif

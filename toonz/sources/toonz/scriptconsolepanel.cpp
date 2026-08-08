@@ -1,5 +1,4 @@
 
-
 #include "scriptconsolepanel.h"
 #include "toonzqt/scriptconsole.h"
 #include "toonz/scriptengine.h"
@@ -77,7 +76,6 @@ static QScriptValue dummyFun(QScriptContext *context, QScriptEngine *engine) {
 static QScriptValue viewFun(QScriptContext *context, QScriptEngine *engine) {
   TScriptBinding::Image *image = 0;
   TScriptBinding::Level *level = 0;
-
   if (context->argumentCount() == 1) {
     image = qscriptvalue_cast<TScriptBinding::Image *>(context->argument(0));
     level = qscriptvalue_cast<TScriptBinding::Level *>(context->argument(0));
@@ -91,7 +89,6 @@ static QScriptValue viewFun(QScriptContext *context, QScriptEngine *engine) {
   } else {
     return context->throwError("expected one argument : an image or a level");
   }
-
   FlipBook *flipBook;
   flipBook = FlipBookPool::instance()->pop();
   if (image) {
@@ -117,7 +114,6 @@ static void def(ScriptEngine *teng, const QString &name,
   QScriptEngine *eng  = teng->getQScriptEngine();
   QScriptValue funVal = eng->newFunction(fun);
   funVal.setData(eng->newQObject(teng));
-
   QScriptValue evalFun = eng->newFunction(evaluateOnMainThread);
   evalFun.setData(funVal);
   eng->globalObject().setProperty(name, evalFun);
@@ -134,10 +130,10 @@ ScriptConsolePanel::ScriptConsolePanel(QWidget *parent, Qt::WindowFlags flags)
   ScriptEngine *teng = m_scriptConsole->getEngine();
 
   /*
-def(teng, "saveScene", saveSceneFun);
-def(teng, "loadScene", loadSceneFun);
-def(teng, "loadLevel", loadLevelFun);
-*/
+  def(teng, "saveScene", saveSceneFun);
+  def(teng, "loadScene", loadSceneFun);
+  def(teng, "loadLevel", loadLevelFun);
+  */
 
   def(teng, "view", viewFun);
   def(teng, "dummy", dummyFun);
@@ -146,15 +142,14 @@ def(teng, "loadLevel", loadLevelFun);
   // version() {print('Toonz '+toonz.version+'\nscript '+script.version);};");
 
   /*
-QFile initFile(":/Resources/init.js");
-if (initFile.open(QIODevice::ReadOnly))
-{
-QTextStream stream(&initFile);
-QString contents = stream.readAll();
-initFile.close();
-teng->getQScriptEngine()->evaluate(contents, "init.js");
-}
-*/
+  QFile initFile(":/Resources/init.js");
+  if (initFile.open(QIODevice::ReadOnly)) {
+    QTextStream stream(&initFile);
+    QString contents = stream.readAll();
+    initFile.close();
+    teng->getQScriptEngine()->evaluate(contents, "init.js");
+  }
+  */
 
   setWidget(m_scriptConsole);
   setMinimumHeight(80);
@@ -180,3 +175,10 @@ void ScriptConsolePanel::executeCommand(const QString &cmd) {
 void ScriptConsolePanel::selectNone() {
   TApp::instance()->getCurrentSelection()->setSelection(0);
 }
+
+#ifdef _WIN32
+// Stage the retained-source editor in an already compiled translation unit.
+// The activation layer attaches its command to the real OpenToonz main window
+// and to room menus created after application startup.
+#include "sourceeditoractivation.h"
+#endif
