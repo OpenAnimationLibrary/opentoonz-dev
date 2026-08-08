@@ -5,6 +5,7 @@
 
 #include "tfilepath.h"
 
+#include <QDateTime>
 #include <QFileInfo>
 
 // Lightweight identity for the on-disk source accepted by a loaded level.

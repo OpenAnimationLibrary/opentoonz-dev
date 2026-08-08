@@ -149,17 +149,19 @@ public:
     return m_acceptedSourceFingerprint.m_valid;
   }
   LevelSourceFingerprint getCurrentSourceFingerprint(
-      const TFilePath &decodedSourcePath) const {
-    return LevelSourceFingerprint::fromFile(decodedSourcePath);
+      const TFilePath &decodedSourcePath, int sourceFrameCount = -1) const {
+    return LevelSourceFingerprint::fromFile(decodedSourcePath, sourceFrameCount);
   }
-  bool hasSourceChanged(const TFilePath &decodedSourcePath) const {
+  bool hasSourceChanged(const TFilePath &decodedSourcePath,
+                        int sourceFrameCount = -1) const {
     return m_acceptedSourceFingerprint.m_valid &&
-           getCurrentSourceFingerprint(decodedSourcePath) !=
+           getCurrentSourceFingerprint(decodedSourcePath, sourceFrameCount) !=
                m_acceptedSourceFingerprint;
   }
-  void acceptSourceFingerprint(const TFilePath &decodedSourcePath) {
-    m_acceptedSourceFingerprint = LevelSourceFingerprint::fromFile(
-        decodedSourcePath, getFrameCount());
+  void acceptSourceFingerprint(const TFilePath &decodedSourcePath,
+                               int sourceFrameCount = -1) {
+    m_acceptedSourceFingerprint =
+        LevelSourceFingerprint::fromFile(decodedSourcePath, sourceFrameCount);
   }
   void clearAcceptedSourceFingerprint() {
     m_acceptedSourceFingerprint = LevelSourceFingerprint();
@@ -226,6 +228,16 @@ public:
 
   void eraseFrame(const TFrameId &fid);
   void clearFrames();
+  // Explicit external-source reload must drop the normal ImageLoader binding
+  // too. Generic clearFrames() intentionally keeps that binding today, so keep
+  // this destructive behavior scoped to source synchronization.
+  void clearFramesForSourceReload() {
+    for (const auto &fid : m_frames) {
+      ImageManager::instance()->unbind(getImageId(fid, Normal));
+    }
+    clearFrames();
+    clearAcceptedSourceFingerprint();
+  }
   void invalidateFrames();
   void invalidateFrame(const TFrameId &fid);
 
