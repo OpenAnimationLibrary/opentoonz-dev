@@ -15,6 +15,7 @@
 #include <QCoreApplication>
 #include <map>
 #include <memory>
+#include <vector>
 
 class Primitive;
 class FullColorGeometricToolNotifier;
@@ -52,6 +53,7 @@ public:
   // for mypaint styles
   TDoubleProperty m_modifierSize;
   TDoubleProperty m_modifierOpacity;
+  TEnumProperty m_frameRange;
 
   TPropertyGroup m_prop[2];
 
@@ -101,6 +103,13 @@ protected:
   TTileSaverFullColor* m_tileSaver;
   TTileSaverCM32* m_tileSaverCM;
   FullColorGeometricToolNotifier* m_notifier;
+  std::vector<TStroke*> m_firstStrokes;
+  TFrameId m_firstFrameId;
+  int m_firstRow;
+  int m_firstColumn;
+  TXshSimpleLevel* m_frameRangeLevel;
+  TStroke* m_pendingFrameRangeStroke;
+  bool m_shiftPressed;
 
 public:
   GeometricTool(int targetType);
@@ -130,6 +139,8 @@ public:
   TPropertyGroup* getProperties(int idx) override;
   bool onPropertyChanged(std::string propertyName) override;
   void addStroke();
+  void resetFrameRange();
+  void applyFrameRange(const TStroke* lastStroke);
   void addRasterMyPaintStroke(const TToonzImageP& ti, TStroke* stroke,
                               TXshSimpleLevel* sl, const TFrameId& id);
   void addFullColorMyPaintStroke(const TRasterImageP& ri, TStroke* stroke,

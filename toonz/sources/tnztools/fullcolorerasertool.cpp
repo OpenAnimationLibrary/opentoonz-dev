@@ -47,6 +47,11 @@ using namespace ToolUtils;
 #define POLYLINEERASE L"Polyline"
 #define MULTIARCERASE L"MultiArc"
 
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
+
 TEnv::DoubleVar FullcolorEraseSize("FullcolorEraseSize", 5);
 TEnv::DoubleVar FullcolorEraseHardness("FullcolorEraseHardness", 100);
 TEnv::DoubleVar FullcolorEraserOpacity("FullcolorEraserOpacity", 100);
@@ -632,7 +637,7 @@ private:
   TDoubleProperty m_hardness;
   TEnumProperty m_eraseType;
   TBoolProperty m_invertOption;
-  TBoolProperty m_multi;
+  TEnumProperty m_multi;
 
   TXshSimpleLevelP m_level;
   std::pair<int, int> m_currCell;
@@ -676,7 +681,7 @@ FullColorEraserTool::FullColorEraserTool(std::string name)
     , m_hardness("Hardness:", 0, 100, 100)
     , m_eraseType("Type:")
     , m_invertOption("Invert", false)
-    , m_multi("Frame Range", false)
+    , m_multi("Frame Range:")
     , m_currCell(-1, -1)
     , m_brush(0)
     , m_tileSet(0)
@@ -703,6 +708,12 @@ FullColorEraserTool::FullColorEraserTool(std::string name)
   m_eraseType.addValue(POLYLINEERASE);
   m_eraseType.addValue(MULTIARCERASE);
 
+  m_multi.addValue(L"Off");
+  m_multi.addValue(LINEAR_INTERPOLATION);
+  m_multi.addValue(EASE_IN_INTERPOLATION);
+  m_multi.addValue(EASE_OUT_INTERPOLATION);
+  m_multi.addValue(EASE_IN_OUT_INTERPOLATION);
+
   m_eraseType.setId("Type");
   m_invertOption.setId("Invert");
   m_multi.setId("FrameRange");
@@ -728,7 +739,12 @@ void FullColorEraserTool::updateTranslation() {
   m_eraseType.setItemUIName(MULTIARCERASE, tr("MultiArc"));
 
   m_invertOption.setQStringName(tr("Invert"));
-  m_multi.setQStringName(tr("Frame Range"));
+  m_multi.setQStringName(tr("Frame Range:"));
+  m_multi.setItemUIName(L"Off", tr("Off"));
+  m_multi.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+  m_multi.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+  m_multi.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+  m_multi.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
 }
 
 //---------------------------------------------------------------------------------------------------
@@ -741,7 +757,7 @@ void FullColorEraserTool::onActivate() {
     m_hardness.setValue(FullcolorEraseHardness);
     m_eraseType.setValue(::to_wstring(FullcolorEraserType.getValue()));
     m_invertOption.setValue((bool)FullcolorEraserInvert);
-    m_multi.setValue((bool)FullcolorEraserRange);
+    m_multi.setIndex(FullcolorEraserRange);
     m_firstTime = false;
   }
 
@@ -796,7 +812,7 @@ void FullColorEraserTool::leftButtonDown(const TPointD &pos,
     m_brush->addPoint(point, 1);
     m_brush->eraseDrawing(ras, m_backUpRas, bbox, opacity);
   } else if (m_eraseType.getValue() == RECTERASE) {
-    if (m_multi.getValue() && m_firstRect.isEmpty()) {
+    if (m_multi.getIndex() && m_firstRect.isEmpty()) {
       invalidateRect = m_selectingRect;
       m_selectingRect.empty();
       invalidate(invalidateRect.enlarge(2));
@@ -809,7 +825,7 @@ void FullColorEraserTool::leftButtonDown(const TPointD &pos,
     invalidateRect     = m_selectingRect;
   } else if (m_eraseType.getValue() == FREEHANDERASE ||
              m_eraseType.getValue() == POLYLINEERASE) {
-    if (m_multi.getValue() && m_firstStroke && !m_firstFrameSelected) {
+    if (m_multi.getIndex() && m_firstStroke && !m_firstFrameSelected) {
       invalidateRect = m_firstStroke->getBBox();
       delete m_firstStroke;
       m_firstStroke = 0;
@@ -963,7 +979,7 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
     if (m_selectingRect.y0 > m_selectingRect.y1)
       std::swap(m_selectingRect.y1, m_selectingRect.y0);
 
-    if (m_multi.getValue()) {
+    if (m_multi.getIndex()) {
       TTool::Application *app = TTool::getApplication();
       if (m_firstFrameSelected) {
         multiUpdate(m_firstRect, m_selectingRect);
@@ -1044,7 +1060,7 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
 
     TTool::Application *app = TTool::getApplication();
 
-    if (m_multi.getValue())  // stroke multi
+    if (m_multi.getIndex())  // stroke multi
     {
       if (m_firstFrameSelected) {
         TFrameId tmp = getCurrentFid();
@@ -1081,7 +1097,7 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
       if (!getImage(true)) return;
       TFrameId frameId = getCurrentFid();
       eraseStroke(ri, stroke, m_eraseType.getValue(), m_invertOption.getValue(),
-                  /*m_multi.getValue(),*/ m_level, frameId);
+                  /*m_multi.getIndex(),*/ m_level, frameId);
       notifyImageChanged();
       if (m_invertOption.getValue())
         invalidate();
@@ -1094,7 +1110,7 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
     stroke = m_multiArcPrimitive.getEraseStroke();
     if (stroke) {
       TTool::Application *app = TTool::getApplication();
-      if (m_multi.getValue())  // stroke multi
+      if (m_multi.getIndex())  // stroke multi
       {
         if (m_firstFrameSelected) {
           TFrameId tmp = getFrameId();
@@ -1133,7 +1149,7 @@ void FullColorEraserTool::leftButtonUp(const TPointD &pos,
         TFrameId frameId          = getFrameId();
         eraseStroke(ri, stroke, m_eraseType.getValue(),
                     m_invertOption.getValue(),
-                    /*m_multi.getValue(),*/ m_level, frameId);
+                    /*m_multi.getIndex(),*/ m_level, frameId);
         notifyImageChanged();
         if (m_invertOption.getValue())
           invalidate();
@@ -1186,7 +1202,7 @@ void FullColorEraserTool::leftButtonDoubleClick(const TPointD &pos,
     stroke = strokePtr.get();
   }
 
-  if (m_multi.getValue())  // stroke multi
+  if (m_multi.getIndex())  // stroke multi
   {
     if (m_firstFrameSelected) {
       TFrameId tmp = getFrameId();
@@ -1230,7 +1246,7 @@ void FullColorEraserTool::leftButtonDoubleClick(const TPointD &pos,
     TXshSimpleLevelP simLevel = level->getSimpleLevel();
     TFrameId frameId          = getFrameId();
     eraseStroke(ri, stroke, m_eraseType.getValue(), m_invertOption.getValue(),
-                /*m_multi.getValue(),*/ m_level, frameId);
+                /*m_multi.getIndex(),*/ m_level, frameId);
     notifyImageChanged();
     if (m_invertOption.getValue())
       invalidate();
@@ -1299,15 +1315,15 @@ void FullColorEraserTool::draw() {
     TPixel color = ToonzCheck::instance()->getChecks() & ToonzCheck::eBlackBg
                        ? TPixel32::White
                        : TPixel32::Black;
-    if (m_multi.getValue() && m_firstFrameSelected)
+    if (m_multi.getIndex() && m_firstFrameSelected)
       drawRect(m_firstRect, color, 0x3F33, true);
 
-    if (m_selecting || (m_multi.getValue() && !m_firstFrameSelected))
+    if (m_selecting || (m_multi.getIndex() && !m_firstFrameSelected))
       drawRect(m_selectingRect, color, 0x3F33, true);
   }
   if ((m_eraseType.getValue() == FREEHANDERASE ||
        m_eraseType.getValue() == POLYLINEERASE) &&
-      m_multi.getValue()) {
+      m_multi.getIndex()) {
     TPixel color = ToonzCheck::instance()->getChecks() & ToonzCheck::eBlackBg
                        ? TPixel32::White
                        : TPixel32::Black;
@@ -1344,7 +1360,7 @@ bool FullColorEraserTool::onPropertyChanged(std::string propertyName) {
   FullcolorEraserOpacity = m_opacity.getValue();
   FullcolorEraserType    = ::to_string(m_eraseType.getValue());
   FullcolorEraserInvert  = (int)m_invertOption.getValue();
-  FullcolorEraserRange   = (int)m_multi.getValue();
+  FullcolorEraserRange   = (int)m_multi.getIndex();
   if (propertyName == "Hardness:" || propertyName == "Size:") {
     m_brushPad = getBrushPad(m_size.getValue(), m_hardness.getValue() * 0.01);
     TRectD rect(
@@ -1406,7 +1422,7 @@ void FullColorEraserTool::resetMulti() {
 //----------------------------------------------------------------------------------------------------------
 
 void FullColorEraserTool::onImageChanged() {
-  if (!m_multi.getValue()) return;
+  if (!m_multi.getIndex()) return;
   TTool::Application *app = TTool::getApplication();
   TXshSimpleLevel *xshl   = 0;
   if (app->getCurrentLevel()->getLevel())
@@ -1456,12 +1472,21 @@ void FullColorEraserTool::multiUpdate(const TRectD firstRect,
   assert(m > 0);
 
   TUndoManager::manager()->beginBlock();
+  enum TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_multi.getValue() == EASE_IN_INTERPOLATION)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_multi.getValue() == EASE_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_multi.getValue() == EASE_IN_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
   for (int i = 0; i < m; ++i) {
     TFrameId fid = fids[i];
     assert(firstFid <= fid && fid <= lastFid);
     TRasterImageP ri = m_level->getFrame(fid, true);
     assert(ri);
-    double t    = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    t        = TInbetween::interpolation(t, algorithm);
     TRectD rect = interpolateRect(firstRect, lastRect, backward ? 1 - t : t);
     if (m_invertOption.getValue()) {
       TRectD rect01 =
@@ -1527,11 +1552,20 @@ void FullColorEraserTool::multiAreaEraser(TFrameId &firstFid, TFrameId &lastFid,
   int m = fids.size();
   assert(m > 0);
   TUndoManager::manager()->beginBlock();
+  enum TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_multi.getValue() == EASE_IN_INTERPOLATION)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_multi.getValue() == EASE_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_multi.getValue() == EASE_IN_OUT_INTERPOLATION)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
   for (int i = 0; i < m; ++i) {
     TFrameId fid = fids[i];
     assert(firstFid <= fid && fid <= lastFid);
     TImageP img = m_level->getFrame(fid, true);
-    double t    = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    t        = TInbetween::interpolation(t, algorithm);
     doMultiEraser(img, backward ? 1 - t : t, fid, firstImage, lastImage);
     m_level->getProperties()->setDirtyFlag(true);
     notifyImageChanged(fid);
@@ -1547,11 +1581,11 @@ void FullColorEraserTool::doMultiEraser(const TImageP &img, double t,
                                         const TVectorImageP &lastImage) {
   if (t == 0)
     eraseStroke(img, firstImage->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
+                m_invertOption.getValue(), /*m_multi.getIndex(),*/ m_level,
                 fid);
   else if (t == 1)
     eraseStroke(img, lastImage->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
+                m_invertOption.getValue(), /*m_multi.getIndex(),*/ m_level,
                 fid);
   else {
     assert(firstImage->getStrokeCount() == 1);
@@ -1559,7 +1593,7 @@ void FullColorEraserTool::doMultiEraser(const TImageP &img, double t,
     TVectorImageP vi = TInbetween(firstImage, lastImage).tween(t);
     assert(vi->getStrokeCount() == 1);
     eraseStroke(img, vi->getStroke(0), m_eraseType.getValue(),
-                m_invertOption.getValue(), /*m_multi.getValue(),*/ m_level,
+                m_invertOption.getValue(), /*m_multi.getIndex(),*/ m_level,
                 fid);
   }
 }
