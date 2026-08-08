@@ -498,6 +498,8 @@ int TXshSimpleLevel::fid2index(const TFrameId& fid) const {
 //-----------------------------------------------------------------------------
 
 int TXshSimpleLevel::guessIndex(const TFrameId& fid) const {
+  if (m_frames.empty()) return 0;  // no frames, return 0 (by definition)
+
   auto ft = m_frames.lower_bound(fid);
   if (ft == m_frames.end()) {
     const TFrameId& maxFid = *m_frames.rbegin();
@@ -1162,15 +1164,14 @@ void TXshSimpleLevel::load() {
     TLevelReaderP lr(path);
     assert(lr);
 
-    TLevelP level   = lr->loadInfo();
+    TLevelP level    = lr->loadInfo();
     sourceFrameCount = level->getFrameCount();
     if (level->isPartialLoad()) {
       authoritativeSourceLoad = false;
       QString msg =
           QString(
               "File '%1' partially loaded. Not all frames were found. "
-              "Possible file corruption. Loaded what could be found.\
-"
+              "Possible file corruption. Loaded what could be found.\n"
               "Recommend replacing any bad frames in Level Strip and saving.")
               .arg(QString::fromStdWString(m_path.getWideString()));
       QMessageBox::warning(nullptr, "File load warning", msg);
@@ -1181,8 +1182,7 @@ void TXshSimpleLevel::load() {
       const TImageInfo* info = lr->getImageInfo(level->begin()->first);
       if (info && info->m_samplePerPixel >= 5) {
         QString msg = QString(
-                          "Failed to open %1.\
-Samples per pixel is more than "
+                          "Failed to open %1.\nSamples per pixel is more than "
                           "4. It may contain more than one alpha channel.")
                           .arg(QString::fromStdWString(m_path.getWideString()));
         QMessageBox::warning(nullptr, "Image format not supported", msg);
@@ -1426,8 +1426,7 @@ void TXshSimpleLevel::save() {
   assert(getScene());
   TFilePath path = getScene()->decodeFilePath(m_path);
   TSystem::outputDebug("save() : " + ::to_string(m_path) + " = " +
-                       ::to_string(path) + "\
-");
+                       ::to_string(path) + "\n");
 
   if (getProperties()->getDirtyFlag() == false &&
       getPalette()->getDirtyFlag() == false &&
@@ -1640,11 +1639,8 @@ void TXshSimpleLevel::saveSimpleLevel(const TFilePath& decodedFp,
           m_properties->setSubsampling(oldSubs);
           m_path = oldPath;
           throw TSystemException(decodedFp,
-                                 "Can't open file.\
-Access may be denied or \
-"
-                                 "someone else may be saving the same file.\
-"
+                                 "Can't open file.\nAccess may be denied or \n"
+                                 "someone else may be saving the same file.\n"
                                  "Please wait and try again.");
         }
 
