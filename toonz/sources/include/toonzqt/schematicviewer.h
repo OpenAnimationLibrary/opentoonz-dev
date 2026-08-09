@@ -62,7 +62,7 @@ class SnapTargetItem;
 
 //====================================================
 namespace {
-enum CursorMode { Select, Zoom, Hand };
+enum CursorMode { Select, Zoom };
 }
 
 //==================================================================
@@ -634,7 +634,6 @@ protected slots:
 
   void selectModeEnabled();
   void zoomModeEnabled();
-  void handModeEnabled();
 
   void deleteFxs();
   void deleteStageObjects();
@@ -649,7 +648,7 @@ private:
   QToolBar *m_stageToolbar, *m_commonToolbar, *m_fxToolbar, *m_swapToolbar;
 
   QAction *m_fitSchematic, *m_centerOn, *m_reorder, *m_normalize, *m_nodeSize,
-      *m_changeScene, *m_selectMode, *m_zoomMode, *m_handMode;
+      *m_changeScene, *m_selectMode, *m_zoomMode;
 
   bool m_fullSchematic, m_maximizedNode;
 

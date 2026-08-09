@@ -419,32 +419,36 @@ void SchematicSceneViewer::mousePressEvent(QMouseEvent *me) {
       m_zoomPoint = me->pos();
       m_zooming   = true;
       return;
-    } else if (m_cursorMode == CursorMode::Hand) {
-      m_mousePanPoint = m_touchDevice == QTouchDevice::TouchScreen
-                            ? mapToScene(me->pos())
-                            : me->pos() * getDevicePixelRatio(this);
-      m_panning       = true;
-      return;
     }
   } else if (m_buttonState == Qt::MiddleButton) {
     m_mousePanPoint = m_touchDevice == QTouchDevice::TouchScreen
                           ? mapToScene(me->pos())
                           : me->pos() * getDevicePixelRatio(this);
   }
-  bool drawRect                       = true;
+  bool isEmptyBackground              = true;
   QList<QGraphicsItem *> pointedItems = items(me->pos());
   int i;
   for (i = 0; i < pointedItems.size(); i++) {
     SchematicWindowEditor *editor =
         dynamic_cast<SchematicWindowEditor *>(pointedItems[i]);
     if (!editor) {
-      drawRect = false;
+      isEmptyBackground = false;
       break;
     }
   }
 
-  if (m_buttonState == Qt::LeftButton && drawRect)
-    setDragMode(QGraphicsView::RubberBandDrag);
+  if (m_buttonState == Qt::LeftButton && isEmptyBackground) {
+    if (me->modifiers() & Qt::ShiftModifier) {
+      setDragMode(QGraphicsView::RubberBandDrag);
+    } else {
+      m_mousePanPoint = m_touchDevice == QTouchDevice::TouchScreen
+                            ? mapToScene(me->pos())
+                            : me->pos() * getDevicePixelRatio(this);
+      m_panning       = true;
+      return;
+    }
+  }
+
   QGraphicsView::mousePressEvent(me);
 }
 
@@ -461,8 +465,7 @@ void SchematicSceneViewer::mouseMoveEvent(QMouseEvent *me) {
 
   QPoint currWinPos    = me->pos();
   QPointF currScenePos = mapToScene(currWinPos);
-  if ((m_cursorMode == CursorMode::Hand && m_panning) ||
-      m_buttonState == Qt::MiddleButton) {
+  if (m_panning || m_buttonState == Qt::MiddleButton) {
     QPointF usePos     = m_touchDevice == QTouchDevice::TouchScreen
                              ? mapToScene(me->pos())
                              : me->pos() * getDevicePixelRatio(this);
@@ -693,9 +696,6 @@ void SchematicSceneViewer::showEvent(QShowEvent *se) {
 
 void SchematicSceneViewer::enterEvent(QEvent *e) {
   switch (m_cursorMode) {
-  case CursorMode::Hand:
-    setToolCursor(this, ToolCursor::PanCursor);
-    break;
   case CursorMode::Zoom:
     setToolCursor(this, ToolCursor::ZoomCursor);
     break;
@@ -1140,11 +1140,6 @@ void SchematicViewer::createActions() {
     m_zoomMode->setCheckable(true);
     connect(m_zoomMode, SIGNAL(triggered()), this, SLOT(zoomModeEnabled()));
 
-    QIcon handModeIcon = createQIcon("hand_schematic");
-    m_handMode = new QAction(handModeIcon, tr("&Hand Mode"), m_commonToolbar);
-    m_handMode->setCheckable(true);
-    connect(m_handMode, SIGNAL(triggered()), this, SLOT(handModeEnabled()));
-
     setCursorMode(m_cursorMode);
 
     if (m_fullSchematic) {
@@ -1220,7 +1215,6 @@ void SchematicViewer::createActions() {
   m_commonToolbar->addAction(m_centerOn);
   m_commonToolbar->addAction(m_fitSchematic);
   m_commonToolbar->addSeparator();
-  m_commonToolbar->addAction(m_handMode);
   m_commonToolbar->addAction(m_zoomMode);
   m_commonToolbar->addAction(m_selectMode);
 
@@ -1386,7 +1380,6 @@ void SchematicViewer::setCursorMode(CursorMode cursorMode) {
 
   m_selectMode->setChecked((m_cursorMode == CursorMode::Select));
   m_zoomMode->setChecked((m_cursorMode == CursorMode::Zoom));
-  m_handMode->setChecked((m_cursorMode == CursorMode::Hand));
 }
 
 //------------------------------------------------------------------
@@ -1396,10 +1389,6 @@ void SchematicViewer::selectModeEnabled() { setCursorMode(CursorMode::Select); }
 //------------------------------------------------------------------
 
 void SchematicViewer::zoomModeEnabled() { setCursorMode(CursorMode::Zoom); }
-
-//------------------------------------------------------------------
-
-void SchematicViewer::handModeEnabled() { setCursorMode(CursorMode::Hand); }
 
 //------------------------------------------------------------------
 
