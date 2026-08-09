@@ -1687,7 +1687,9 @@ public:
 //-----------------------------------------------------------------------------
 
 class ColumnMoveDragTool final : public XsheetGUI::DragTool {
-  int m_offset, m_firstCol, m_lastCol, m_origOffset;
+  int m_offset, m_firstCol, m_lastCol, m_origOffset, m_clickedColumn;
+  bool m_collapseSelectionOnRelease;
+  bool m_movedColumns;
 
 public:
   ColumnMoveDragTool(XsheetViewer *viewer)
@@ -1695,13 +1697,21 @@ public:
       , m_firstCol(-1)
       , m_lastCol(-1)
       , m_offset(0)
-      , m_origOffset(0) {}
+      , m_origOffset(0)
+      , m_clickedColumn(-1)
+      , m_collapseSelectionOnRelease(false)
+      , m_movedColumns(false) {}
 
   void onClick(const QMouseEvent *event) override {
     QPoint xy                   = event->pos();
     CellPosition pos            = getViewer()->xyToPosition(xy);
     int col                     = pos.layer();
+    m_clickedColumn             = col;
     TColumnSelection *selection = getViewer()->getColumnSelection();
+    m_collapseSelectionOnRelease =
+        getViewer()->orientation()->isVerticalTimeline() &&
+        event->modifiers() == Qt::NoModifier && selection->isColumnSelected(col);
+    m_movedColumns = false;
     if (!selection->isColumnSelected(col)) {
       if (event->modifiers() & Qt::ControlModifier) {
         selection->selectColumn(col, true);
@@ -1782,13 +1792,21 @@ public:
     assert(*indices.begin() + dCol >= 0);
 
     moveColumns(indices, dCol);
+    m_movedColumns = true;
 
     selection->selectNone();
     for (std::set<int>::iterator it = indices.begin(); it != indices.end();
          ++it)
       selection->selectColumn(*it + dCol, true);
   }
-  void onRelease(const CellPosition &pos) override {
+  void onRelease(const CellPosition &) override {
+    if (m_collapseSelectionOnRelease && !m_movedColumns) {
+      TColumnSelection *selection = getViewer()->getColumnSelection();
+      selection->selectNone();
+      selection->selectColumn(m_clickedColumn, true);
+      selection->makeCurrent();
+      getViewer()->update();
+    }
     TApp::instance()->getCurrentSelection()->notifySelectionChanged();
     int delta = m_lastCol - m_firstCol;
     if (delta != 0) {
