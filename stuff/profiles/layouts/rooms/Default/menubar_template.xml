@@ -261,6 +261,7 @@
         <command>MI_Render</command>
         <separator/>
         <command>MI_FastRender</command>
+        <command>MI_FastRenderFrame</command>
     </menu>
     <menu title="View">
         <command>MI_ViewTable</command>
