@@ -100,6 +100,7 @@ endif()
 
 set(SOURCES
     adjustlevelsfx.cpp
+    afterimagetrailfx.cpp
     artcontourfx.cpp
     backlitfx.cpp
     blendtzfx.cpp
