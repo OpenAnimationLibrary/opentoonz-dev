@@ -4,7 +4,16 @@
 
 namespace {
 
-enum { SUBSTITUTE, PATTERNTYPE, ADD, SUBTRACT, MULTIPLY, LIGHTEN, DARKEN };
+enum {
+  SUBSTITUTE,
+  PATTERNTYPE,
+  ADD,
+  SUBTRACT,
+  MULTIPLY,
+  LIGHTEN,
+  DARKEN,
+  OVER_SOURCE
+};
 
 typedef void (*func32)(TPixel32 &pixmask, const TPixel32 &pixtext, double v);
 typedef void (*func64)(TPixel64 &pixmask, const TPixel64 &pixtext, double v);
@@ -41,6 +50,25 @@ inline void substitute(T &pixout, const T &pixin, double v) {
   pixout.g = k * pixin.g;
   pixout.b = k * pixin.b;
   pixout.m = k * pixin.m;
+}
+
+//-----------------------------------------------------------------------------
+
+//! Composites the texture inside the source alpha, retaining the source alpha.
+//! This makes transparent texture pixels reveal the original source without
+//! extending the source's antialiased edge.
+template <class T>
+inline void textureOverSource(T &pixout, const T &pixin, double v) {
+  const double sourceAlpha  = pixout.m / (double)T::maxChannelValue;
+  const double textureAlpha = pixin.m / (double)T::maxChannelValue;
+  const double opacity      = textureAlpha * v / 100.0;
+
+  pixout.r = troundp(pixout.r * (1.0 - opacity) +
+                     pixin.r * sourceAlpha * v / 100.0);
+  pixout.g = troundp(pixout.g * (1.0 - opacity) +
+                     pixin.g * sourceAlpha * v / 100.0);
+  pixout.b = troundp(pixout.b * (1.0 - opacity) +
+                     pixin.b * sourceAlpha * v / 100.0);
 }
 
 //---------------------------------------------------------------------------------------
