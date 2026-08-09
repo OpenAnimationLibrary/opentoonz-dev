@@ -39,11 +39,13 @@
 // TnzCore includes
 #include "tconst.h"
 #include "tenv.h"
+#include "historytypes.h"
 
 // Qt includes
 #include <QMenu>
 #include <QApplication>
 #include <QGraphicsSceneContextMenuEvent>
+#include <QSet>
 #include <QStack>
 
 TEnv::IntVar IconifyFxSchematicNodes("IconifyFxSchematicNodes", 0);
@@ -62,6 +64,101 @@ public:
            (zfx && m_fx.getPointer() == zfx->getZeraryFx());
   }
 };
+
+class FxSchematicNodeMoveUndo final : public TUndo {
+  struct PositionChange {
+    TFxP m_fx;
+    TPointD m_oldPos;
+    TPointD m_newPos;
+  };
+
+  TXsheetHandle *m_xshHandle;
+  QList<PositionChange> m_changes;
+
+public:
+  FxSchematicNodeMoveUndo(
+      TXsheetHandle *xshHandle, const QList<QPair<TFxP, TPointD>> &oldPos,
+      const QList<QPair<TFxP, TPointD>> &newPos)
+      : m_xshHandle(xshHandle) {
+    for (const auto &oldPosition : oldPos) {
+      for (const auto &newPosition : newPos) {
+        if (oldPosition.first != newPosition.first ||
+            oldPosition.second == newPosition.second)
+          continue;
+        m_changes.append(
+            {oldPosition.first, oldPosition.second, newPosition.second});
+        break;
+      }
+    }
+  }
+
+  bool isEmpty() const { return m_changes.isEmpty(); }
+
+  void undo() const override { setPositions(false); }
+  void redo() const override { setPositions(true); }
+
+  int getSize() const override {
+    return sizeof(*this) + m_changes.size() * sizeof(PositionChange);
+  }
+
+  int getHistoryType() override { return HistoryType::Fx; }
+
+  QString getHistoryString() override {
+    return QObject::tr("Move Fx Schematic Node");
+  }
+
+private:
+  void setPositions(bool useNewPositions) const {
+    for (const PositionChange &change : m_changes) {
+      if (!change.m_fx) continue;
+      change.m_fx->getAttributes()->setDagNodePos(
+          useNewPositions ? change.m_newPos : change.m_oldPos);
+    }
+    if (m_xshHandle) m_xshHandle->notifyXsheetChanged();
+  }
+};
+
+void appendFxPosition(TFx *fx, QList<QPair<TFxP, TPointD>> &positions,
+                      QSet<TFx *> &visited) {
+  if (!fx || visited.contains(fx)) return;
+
+  visited.insert(fx);
+  positions.append(qMakePair(TFxP(fx), fx->getAttributes()->getDagNodePos()));
+
+  TMacroFx *macro = dynamic_cast<TMacroFx *>(fx);
+  if (!macro) return;
+  for (const TFxP &macroFx : macro->getFxs())
+    appendFxPosition(macroFx.getPointer(), positions, visited);
+}
+
+QList<QPair<TFxP, TPointD>> snapshotFxNodePositions(TXsheet *xsh) {
+  QList<QPair<TFxP, TPointD>> positions;
+  QSet<TFx *> visited;
+  FxDag *fxDag = xsh->getFxDag();
+
+  appendFxPosition(fxDag->getXsheetFx(), positions, visited);
+  for (int i = 0; i < fxDag->getOutputFxCount(); ++i)
+    appendFxPosition(fxDag->getOutputFx(i), positions, visited);
+
+  TFxSet *internalFxs = fxDag->getInternalFxs();
+  for (int i = 0; i < internalFxs->getFxCount(); ++i)
+    appendFxPosition(internalFxs->getFx(i), positions, visited);
+
+  for (int i = 0; i < xsh->getColumnCount(); ++i) {
+    TXshColumn *column = xsh->getColumn(i);
+    if (!column) continue;
+    if (TXshLevelColumn *levelColumn = column->getLevelColumn())
+      appendFxPosition(levelColumn->getLevelColumnFx(), positions, visited);
+    else if (TXshPaletteColumn *paletteColumn =
+                 dynamic_cast<TXshPaletteColumn *>(column))
+      appendFxPosition(paletteColumn->getPaletteColumnFx(), positions, visited);
+    else if (TXshZeraryFxColumn *zeraryColumn =
+                 dynamic_cast<TXshZeraryFxColumn *>(column))
+      appendFxPosition(zeraryColumn->getZeraryColumnFx(), positions, visited);
+  }
+
+  return positions;
+}
 
 //-----------------------------------------------------------
 
@@ -1619,6 +1716,10 @@ void FxSchematicScene::mousePressEvent(QGraphicsSceneMouseEvent *me) {
     return;
   }
   m_isConnected = false;
+  m_nodeMoveOldPos.clear();
+  if (me->button() == Qt::LeftButton && !selectedItems().isEmpty())
+    m_nodeMoveOldPos = snapshotFxNodePositions(getXsheet());
+
   if (!canDisconnectSelection(m_selection)) return;
   m_selectionOldPos.clear();
   QList<TFxP> selectedFxs = m_selection->getFxs();
@@ -1683,6 +1784,17 @@ void FxSchematicScene::mouseMoveEvent(QGraphicsSceneMouseEvent *me) {
 
 void FxSchematicScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *me) {
   SchematicScene::mouseReleaseEvent(me);
+
+  if (me->button() == Qt::LeftButton && !m_linkUnlinkSimulation &&
+      !m_nodeMoveOldPos.isEmpty()) {
+    FxSchematicNodeMoveUndo *undo = new FxSchematicNodeMoveUndo(
+        m_xshHandle, m_nodeMoveOldPos, snapshotFxNodePositions(getXsheet()));
+    if (undo->isEmpty())
+      delete undo;
+    else
+      TUndoManager::manager()->add(undo);
+  }
+  m_nodeMoveOldPos.clear();
 
   m_linkUnlinkSimulation = false;
 

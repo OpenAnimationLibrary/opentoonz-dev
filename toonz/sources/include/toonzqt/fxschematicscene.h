@@ -95,6 +95,7 @@ class FxSchematicScene final : public SchematicScene {
   bool m_altPressed;
   QPointF m_lastPos;
   QList<QPair<TFxP, TPointD>> m_selectionOldPos;
+  QList<QPair<TFxP, TPointD>> m_nodeMoveOldPos;
   QList<TFx *> m_placedFxs;
   FxSchematicNode *m_currentFxNode;
   int m_gridDimension;
