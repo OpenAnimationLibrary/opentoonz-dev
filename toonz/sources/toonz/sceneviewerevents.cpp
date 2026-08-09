@@ -1496,6 +1496,29 @@ bool changeFrameSkippingHolds(QKeyEvent *e) {
 
 //-----------------------------------------------------------------------------
 
+bool changeColumnWithArrowKey(QKeyEvent *event) {
+  if (event->modifiers() != Qt::NoModifier ||
+      (event->key() != Qt::Key_Up && event->key() != Qt::Key_Down))
+    return false;
+
+  TApp *app        = TApp::instance();
+  TFrameHandle *fh = app->getCurrentFrame();
+  if (!fh->isEditingScene()) return false;
+
+  TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
+  int firstColumn =
+      Preferences::instance()->isXsheetCameraColumnVisible() ? -1 : 0;
+  int lastColumn = std::max(0, xsh->getColumnCount() - 1);
+  int currentColumn = app->getCurrentColumn()->getColumnIndex();
+  int nextColumn = currentColumn +
+                   (event->key() == Qt::Key_Up ? 1 : -1);
+  if (nextColumn >= firstColumn && nextColumn <= lastColumn)
+    app->getCurrentColumn()->setColumnIndex(nextColumn);
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
 void SceneViewer::keyPressEvent(QKeyEvent *event) {
   if (m_freezedStatus != NO_FREEZED) return;
   int key = event->key();
@@ -1624,6 +1647,7 @@ void SceneViewer::keyPressEvent(QKeyEvent *event) {
 
   // Handle frame navigation if no tool handled the key
   if (!ret) {
+    if (changeColumnWithArrowKey(event)) return;
     if (changeFrameSkippingHolds(event)) return;
 
     TFrameHandle *fh = TApp::instance()->getCurrentFrame();
