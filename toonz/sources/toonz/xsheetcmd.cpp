@@ -232,6 +232,20 @@ public:
 
 //=============================================================================
 
+class ToggleCreationInHoldCellsCommand final : public MenuItemHandler {
+public:
+  ToggleCreationInHoldCellsCommand()
+      : MenuItemHandler(MI_ToggleCreationInHoldCells) {}
+
+  void execute() override {
+    Preferences *preferences = Preferences::instance();
+    preferences->setValue(EnableCreationInHoldCells,
+                          !preferences->isCreationInHoldCellsEnabled());
+  }
+} toggleCreationInHoldCellsCommand;
+
+//=============================================================================
+
 class InsertSceneFrameCommand final : public MenuItemHandler {
 public:
   InsertSceneFrameCommand() : MenuItemHandler(MI_InsertSceneFrame) {}

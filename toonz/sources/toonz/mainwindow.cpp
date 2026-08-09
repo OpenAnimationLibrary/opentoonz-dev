@@ -2436,6 +2436,9 @@ void MainWindow::defineActions() {
                          "scene_settings");
   createMenuXsheetAction(MI_CameraSettings, QT_TR_NOOP("&Camera Settings..."),
                          "", "camera_settings");
+  createMenuXsheetAction(MI_ToggleCreationInHoldCells,
+                         QT_TR_NOOP("Toggle Creation in Hold Cells"),
+                         "Caps Lock");
   createMenuXsheetAction(MI_OpenChild, QT_TR_NOOP("&Open Sub-Xsheet"), "",
                          "sub_enter");
   createMenuXsheetAction(MI_CloseChild, QT_TR_NOOP("&Close Sub-Xsheet"), "",
