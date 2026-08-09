@@ -99,6 +99,15 @@ TLevelWriterSprite::~TLevelWriterSprite() {
   int totalHorizPadding = 0;
   int spriteSheetWidth;
   int spriteSheetHeight;
+  // Scene origin inside one frame cell, in pixels from the cell's top-left
+  // corner. A level pivot is not reachable here: the writer is handed only
+  // images, with no scene, column or stage object. What it does know is that
+  // every frame is a rendered camera raster whose centre is the scene origin,
+  // so the trim box, scale and padding place that origin inside the cell.
+  QString anchorX = QString::number(
+      (m_lx / 2.0 - m_left) * m_scale / 100.0 + m_leftPadding, 'f', 2);
+  QString anchorY = QString::number(
+      (m_ly / 2.0 - m_top) * m_scale / 100.0 + m_topPadding, 'f', 2);
   if (m_format == "Grid") {
     // Calculate Grid Size
     while (horizDim * horizDim < m_imagesResized.size()) horizDim++;
@@ -138,6 +147,28 @@ TLevelWriterSprite::~TLevelWriterSprite() {
       paddingPainter.end();
       padded.save(path, "PNG", -1);
     }
+    // The sheet formats have always written a companion text file describing
+    // their layout. Individual frames wrote none, so a script consuming them
+    // had no way to learn the cell geometry or the anchor.
+    QString textPath = m_path.getQString();
+    textPath         = textPath.replace(".spritesheet", ".txt");
+    QFile file(textPath);
+    file.open(QIODevice::WriteOnly | QIODevice::Text);
+    QTextStream out(&file);
+    out << "Total Images: " << m_imagesResized.size() << "\n";
+    out << "Individual Image Width: " << resizedWidth << "\n";
+    out << "Individual Image Height: " << resizedHeight << "\n";
+    out << "Individual Image Width with Padding: " << resizedWidth + horizPadding
+        << "\n";
+    out << "Individual Image Height with Padding: "
+        << resizedHeight + vertPadding << "\n";
+    out << "Top Padding: " << m_topPadding << "\n";
+    out << "Bottom Padding: " << m_bottomPadding << "\n";
+    out << "Left Padding: " << m_leftPadding << "\n";
+    out << "Right Padding: " << m_rightPadding << "\n";
+    out << "Anchor X: " << anchorX << "\n";
+    out << "Anchor Y: " << anchorY << "\n";
+    file.close();
   }
   if (m_format != "Individual") {
     QImage spriteSheet = QImage(spriteSheetWidth, spriteSheetHeight,
@@ -191,6 +222,8 @@ TLevelWriterSprite::~TLevelWriterSprite() {
     out << "Right Padding: " << m_rightPadding << "\n";
     out << "Horizontal Space Between Images: " << horizPadding << "\n";
     out << "Vertical Space Between Images: " << vertPadding << "\n";
+    out << "Anchor X: " << anchorX << "\n";
+    out << "Anchor Y: " << anchorY << "\n";
 
     file.close();
   }
