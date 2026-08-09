@@ -40,8 +40,10 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QMouseEvent>
 #include <QGraphicsItem>
+#include <QCursor>
 #include <QToolBar>
 #include <QToolButton>
+#include <QToolTip>
 #include <QMenu>
 #include <QIcon>
 #include <QAction>
@@ -87,9 +89,12 @@ int SchematicScene::snapVInterval = 75;
 //
 //==================================================================
 
-SchematicScene::SchematicScene(QWidget *parent) : QGraphicsScene(parent) {
+SchematicScene::SchematicScene(QWidget *parent)
+    : QGraphicsScene(parent), m_showingSelectedNodesOnly(false) {
   setSceneRect(0, 0, 50000, 50000);
   setItemIndexMethod(NoIndex);
+  connect(this, &QGraphicsScene::selectionChanged, this,
+          &SchematicScene::onSceneSelectionChanged);
 }
 
 //------------------------------------------------------------------
@@ -119,6 +124,7 @@ void SchematicScene::hideEvent(QHideEvent *se) {
  */
 
 void SchematicScene::clearAllItems() {
+  showAllNodes();
   clearSelection();
   m_highlightedLinks.clear();
   QList<SchematicWindowEditor *> editors;
@@ -160,6 +166,79 @@ void SchematicScene::clearAllItems() {
     delete node;
   }
   assert(items().size() == 0);
+}
+
+//------------------------------------------------------------------
+
+void SchematicScene::showSelectedNodesOnly() {
+  QList<SchematicNode *> selectedNodes;
+  for (QGraphicsItem *item : selectedItems()) {
+    SchematicNode *node = dynamic_cast<SchematicNode *>(item);
+    if (node) selectedNodes.append(node);
+  }
+
+  if (selectedNodes.isEmpty()) {
+    if (!views().isEmpty())
+      QToolTip::showText(QCursor::pos(), tr("Select one or more nodes first."),
+                         views().front());
+    return;
+  }
+
+  showAllNodes();
+  m_showingSelectedNodesOnly = true;
+
+  QRectF visibleBounds;
+  for (QGraphicsItem *item : items()) {
+    SchematicNode *node = dynamic_cast<SchematicNode *>(item);
+    if (!node) continue;
+
+    m_filteredItemVisibility.insert(node, node->isVisible());
+    bool isSelected = selectedNodes.contains(node);
+    node->setVisible(isSelected);
+    if (isSelected) visibleBounds |= node->sceneBoundingRect();
+  }
+
+  for (QGraphicsItem *item : items()) {
+    SchematicLink *link = dynamic_cast<SchematicLink *>(item);
+    if (!link) continue;
+
+    m_filteredItemVisibility.insert(link, link->isVisible());
+    SchematicPort *startPort = link->getStartPort();
+    SchematicPort *endPort   = link->getEndPort();
+    bool isVisible = startPort && endPort && startPort->getNode()->isVisible() &&
+                     endPort->getNode()->isVisible();
+    link->setVisible(link->isVisible() && isVisible);
+  }
+
+  if (!views().isEmpty() && visibleBounds.isValid())
+    views().front()->fitInView(visibleBounds.adjusted(-30, -30, 30, 30),
+                               Qt::KeepAspectRatio);
+}
+
+//------------------------------------------------------------------
+
+void SchematicScene::showAllNodes() {
+  if (!m_showingSelectedNodesOnly) return;
+
+  for (auto it = m_filteredItemVisibility.cbegin();
+       it != m_filteredItemVisibility.cend(); ++it) {
+    QGraphicsItem *item = it.key();
+    if (item && item->scene() == this) item->setVisible(it.value());
+  }
+
+  m_filteredItemVisibility.clear();
+  m_showingSelectedNodesOnly = false;
+}
+
+//------------------------------------------------------------------
+
+void SchematicScene::onSceneSelectionChanged() {
+  if (!m_showingSelectedNodesOnly) return;
+
+  for (QGraphicsItem *item : selectedItems())
+    if (dynamic_cast<SchematicNode *>(item)) return;
+
+  showAllNodes();
 }
 
 //------------------------------------------------------------------
@@ -445,6 +524,16 @@ void SchematicSceneViewer::mouseDoubleClickEvent(QMouseEvent *event) {
 //------------------------------------------------------------------
 
 void SchematicSceneViewer::keyPressEvent(QKeyEvent *ke) {
+  if (ke->key() == Qt::Key_Escape) {
+    SchematicScene *schematicScene =
+        dynamic_cast<SchematicScene *>(scene());
+    if (schematicScene && schematicScene->isShowingSelectedNodesOnly()) {
+      schematicScene->showAllNodes();
+      ke->accept();
+      return;
+    }
+  }
+
   ke->ignore();
   QGraphicsView::keyPressEvent(ke);
   if (!ke->isAccepted()) SchematicZoomer(this).exec(ke);

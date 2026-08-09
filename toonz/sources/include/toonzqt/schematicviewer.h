@@ -13,6 +13,7 @@
 // Qt includes
 #include <QGraphicsScene>
 #include <QGraphicsView>
+#include <QHash>
 #include <QTouchDevice>
 
 #include <QIcon>
@@ -74,6 +75,8 @@ class DVAPI SchematicScene : public QGraphicsScene {
   Q_OBJECT
 
   QPointF m_mousePos, m_clickedPos;
+  bool m_showingSelectedNodesOnly;
+  QHash<QGraphicsItem *, bool> m_filteredItemVisibility;
 
 public:
   SchematicScene(QWidget *parent);
@@ -84,6 +87,12 @@ public:
   virtual QGraphicsItem *getCurrentNode() { return 0; }
   virtual void reorderScene() = 0;
   virtual void updateScene()  = 0;
+
+  void showSelectedNodesOnly();
+  void showAllNodes();
+  bool isShowingSelectedNodesOnly() const {
+    return m_showingSelectedNodesOnly;
+  }
 
   QPointF mousePos() { return m_mousePos; }
   void setMousePos(QPointF pos) { m_mousePos = pos; }
@@ -117,6 +126,7 @@ protected:
 protected slots:
 
   virtual void onSelectionSwitched(TSelection *, TSelection *) {}
+  void onSceneSelectionChanged();
 };
 
 //==================================================================
