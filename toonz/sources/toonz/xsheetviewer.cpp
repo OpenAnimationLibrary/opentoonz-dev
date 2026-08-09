@@ -1497,13 +1497,27 @@ void XsheetViewer::onPreferenceChanged(const QString &prefName) {
 //-----------------------------------------------------------------------------
 
 void XsheetViewer::onCurrentFrameSwitched() {
-  int row           = TApp::instance()->getCurrentFrame()->getFrame();
+  TFrameHandle *frameHandle = TApp::instance()->getCurrentFrame();
+  int row                   = frameHandle->getFrame();
   QRect visibleRect = m_cellArea->visibleRegion().boundingRect();
   if (visibleRect.isEmpty()) {
     m_isCurrentFrameSwitched = true;
     return;
   }
   m_isCurrentFrameSwitched = false;
+
+  if (Preferences::instance()->isAutoSelectCurrentFrameEnabled() &&
+      frameHandle->isEditingScene() && !frameHandle->isPlaying()) {
+    int col = getCurrentColumn();
+    if (col >= 0) {
+      TCellSelection *selection = getCellSelection();
+      selection->makeCurrent();
+      selection->selectCell(row, col);
+      m_cellArea->update(m_cellArea->visibleRegion());
+      m_rowArea->update(m_rowArea->visibleRegion());
+    }
+  }
+
   scrollToRow(row);
 
   TXsheet *xsh            = getXsheet();

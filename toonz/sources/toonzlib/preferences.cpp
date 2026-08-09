@@ -616,6 +616,8 @@ void Preferences::definePreferenceItems() {
          QMetaType::Bool, true);
   define(currentTimelineEnabled, "currentTimelineEnabled", QMetaType::Bool,
          true);
+  define(autoSelectCurrentFrame, "autoSelectCurrentFrame", QMetaType::Bool,
+         false);
   define(currentColumnColor, "currentColumnColor", QMetaType::QColor,
          QColor(Qt::yellow));
   define(levelNameDisplayType, "levelNameDisplayType", QMetaType::Int,
