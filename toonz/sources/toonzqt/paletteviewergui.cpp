@@ -35,6 +35,7 @@
 #include <QToolTip>
 #include <QDrag>
 #include <QAction>
+#include <QRegularExpression>
 #include <QShortcut>
 
 // enable to set font size for style name separately from other texts
@@ -247,17 +248,69 @@ bool PageViewer::getShowStyleIndex() const { return ShowStyleIndex != 0; }
 /*! Set current page to \b page and update view.
  */
 void PageViewer::setPage(TPalette::Page *page) {
-  if (m_page == page) return;
+  if (m_page == page) {
+    rebuildFilteredStyleIndices();
+    computeSize();
+    update();
+    return;
+  }
   m_page = page;
+  rebuildFilteredStyleIndices();
   computeSize();
   update();
+}
+
+//-----------------------------------------------------------------------------
+
+void PageViewer::setFilterText(const QString &filterText) {
+  if (m_filterText == filterText) return;
+
+  m_filterText = filterText;
+  rebuildFilteredStyleIndices();
+  computeSize();
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+int PageViewer::pageIndexFromDisplayedIndex(int displayedIndex) const {
+  if (displayedIndex < 0 || displayedIndex >= m_filteredStyleIndices.size())
+    return -1;
+  return m_filteredStyleIndices[displayedIndex];
+}
+
+//-----------------------------------------------------------------------------
+
+void PageViewer::rebuildFilteredStyleIndices() {
+  m_filteredStyleIndices.clear();
+  if (!m_page) return;
+
+  if (m_filterText.isEmpty()) {
+    for (int index = 0; index < m_page->getStyleCount(); ++index)
+      m_filteredStyleIndices.append(index);
+    return;
+  }
+
+  QString pattern = m_filterText;
+  if (!pattern.contains('*') && !pattern.contains('?'))
+    pattern = "*" + pattern + "*";
+  QRegularExpression expression(
+      QRegularExpression::wildcardToRegularExpression(pattern),
+      QRegularExpression::CaseInsensitiveOption);
+
+  for (int index = 0; index < m_page->getStyleCount(); ++index) {
+    TColorStyle *style = m_page->getStyle(index);
+    if (style && expression.match(QString::fromStdWString(style->getName()))
+                     .hasMatch())
+      m_filteredStyleIndices.append(index);
+  }
 }
 
 //-----------------------------------------------------------------------------
 /*! Return chip count contained in current page.
  */
 int PageViewer::getChipCount() const {
-  return m_page ? m_page->getStyleCount() : 0;
+  return m_filteredStyleIndices.size();
 }
 
 //-----------------------------------------------------------------------------
@@ -341,8 +394,11 @@ void PageViewer::drop(int dstIndexInPage, const QMimeData *mimeData) {
   TPalette *palette = m_page->getPalette();
   if (!palette) return;
   int dstPageIndex = m_page->getIndex();
-  if ((m_page->getStyleId(0) == 0 || m_page->getStyleId(1) == 1) &&
-      dstIndexInPage < 2)
+  bool hasBackgroundStyle =
+      m_page->getStyleCount() > 0 && m_page->getStyleId(0) == 0;
+  bool hasForegroundStyle =
+      m_page->getStyleCount() > 1 && m_page->getStyleId(1) == 1;
+  if ((hasBackgroundStyle || hasForegroundStyle) && dstIndexInPage < 2)
     dstIndexInPage = 2;
   if (dstIndexInPage < 0) dstIndexInPage = m_page->getStyleCount();
 
@@ -401,6 +457,9 @@ void PageViewer::drop(int dstIndexInPage, const QMimeData *mimeData) {
     m_dropPageCreated = false;
     TUndoManager::manager()->endBlock();
   }
+  rebuildFilteredStyleIndices();
+  computeSize();
+  update();
 }
 
 //-----------------------------------------------------------------------------
@@ -629,8 +688,9 @@ void PageViewer::paintEvent(QPaintEvent *e) {
     int i;
     int currentStyleIndexInPage = -1;
     for (i = i0; i <= i1; i++) {
-      TColorStyle *style = m_page->getStyle(i);
-      int styleIndex     = m_page->getStyleId(i);
+      int indexInPage    = pageIndexFromDisplayedIndex(i);
+      TColorStyle *style = m_page->getStyle(indexInPage);
+      int styleIndex     = m_page->getStyleId(indexInPage);
       if (getCurrentStyleIndex() == styleIndex) currentStyleIndexInPage = i;
 
       QRect chipRect = getColorChipRect(i);
@@ -640,13 +700,13 @@ void PageViewer::paintEvent(QPaintEvent *e) {
       // current style
       if (i == currentStyleIndexInPage && 0 <= i && i < getChipCount()) {
         QRect rect = getItemRect(i);
-        if (!m_styleSelection->isSelected(m_page->getIndex(), i)) {
+        if (!m_styleSelection->isSelected(m_page->getIndex(), indexInPage)) {
           p.fillRect(rect.adjusted(23, 0, 0, 0), getCurrentCellColor());
         }
       }
 
       // selected
-      if (m_styleSelection->isSelected(m_page->getIndex(), i)) {
+      if (m_styleSelection->isSelected(m_page->getIndex(), indexInPage)) {
         QRect itemRect = getItemRect(i);
         p.fillRect(itemRect.adjusted(23, 0, 0, 0), getSelectedCellColor());
       }
@@ -675,7 +735,7 @@ void PageViewer::paintEvent(QPaintEvent *e) {
       // toggle link
       drawToggleLink(p, chipRect, style);
     }
-    if (ShowNewStyleButton && !m_page->getPalette()->isLocked()) {
+    if (ShowNewStyleButton && !hasFilter() && !m_page->getPalette()->isLocked()) {
       int j      = getChipCount();
       QRect rect = getItemRect(j);
       p.setPen(
@@ -697,8 +757,9 @@ void PageViewer::paintEvent(QPaintEvent *e) {
     int currentStyleIndex = getCurrentStyleIndex();
     int i;
     for (i = i0; i <= i1; i++) {
-      TColorStyle *style = m_page->getStyle(i);
-      int styleIndex     = m_page->getStyleId(i);
+      int indexInPage    = pageIndexFromDisplayedIndex(i);
+      TColorStyle *style = m_page->getStyle(indexInPage);
+      int styleIndex     = m_page->getStyleId(indexInPage);
 
       // if numpad shortcut is activated, draw shortcut scope
       if (Preferences::instance()->isUseNumpadForSwitchingStylesEnabled() &&
@@ -728,7 +789,7 @@ void PageViewer::paintEvent(QPaintEvent *e) {
       }
 
       // draw frame if the style is selected or current
-      if (m_styleSelection->isSelected(m_page->getIndex(), i)) {
+      if (m_styleSelection->isSelected(m_page->getIndex(), indexInPage)) {
         QRect itemRect = getItemRect(i).adjusted(0, -1, 0, 1);
         p.setPen(Qt::NoPen);
         p.setBrush(getSelectedBorderColor());
@@ -853,7 +914,7 @@ void PageViewer::paintEvent(QPaintEvent *e) {
       }
 
       // draw the frame border if the style is selected or current
-      if (m_styleSelection->isSelected(m_page->getIndex(), i) ||
+      if (m_styleSelection->isSelected(m_page->getIndex(), indexInPage) ||
           currentStyleIndex == styleIndex) {
         p.setBrush(Qt::NoBrush);
         p.drawRect(chipRect.adjusted(3, 3, -3, -3));
@@ -930,7 +991,7 @@ void PageViewer::paintEvent(QPaintEvent *e) {
       drawToggleLink(p, chipRect, style);
     }
     // draw new style chip
-    if (ShowNewStyleButton && !m_page->getPalette()->isLocked()) {
+    if (ShowNewStyleButton && !hasFilter() && !m_page->getPalette()->isLocked()) {
       i              = getChipCount();
       QRect chipRect = getItemRect(i).adjusted(4, 4, -5, -5);
       p.setPen(
@@ -978,7 +1039,8 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
   if (!m_page) return;
   TPalette *palette = m_page->getPalette();
   QPoint pos        = event->pos();
-  int indexInPage   = posToIndex(pos);
+  int displayedIndex = posToIndex(pos);
+  int indexInPage    = pageIndexFromDisplayedIndex(displayedIndex);
   m_startDrag       = false;
   if (!m_page) return;
   int pageIndex = m_page->getIndex();
@@ -986,7 +1048,7 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
   // disable style selection in the cleanup palette in order to avoid editing
   // the styles by mistake.
   if (m_viewType == CLEANUP_PALETTE) {
-    if (0 <= indexInPage && indexInPage < getChipCount()) {
+    if (indexInPage >= 0) {
       // Right-click is available
       if (event->button() == Qt::RightButton) {
         m_styleSelection->makeCurrent();
@@ -1004,7 +1066,7 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
   if (event->button() == Qt::RightButton) {
     m_styleSelection->makeCurrent();
     // if you are clicking on the color chip
-    if (0 <= indexInPage && indexInPage < getChipCount()) {
+    if (indexInPage >= 0) {
       // Se pageIndex non e' selezionato lo seleziono
       if (!m_styleSelection->isSelected(pageIndex, indexInPage)) {
         m_styleSelection->select(pageIndex);
@@ -1022,12 +1084,13 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
     return;
   }
   m_dragStartPosition = pos;
-  if (indexInPage < 0 || indexInPage >= getChipCount()) {
-    if (ShowNewStyleButton && indexInPage == getChipCount() &&
+  if (indexInPage < 0) {
+    if (ShowNewStyleButton && !hasFilter() && displayedIndex == getChipCount() &&
         !m_page->getPalette()->isLocked()) {
       PaletteCmd::createStyle(getPaletteHandle(), getPage());
+      rebuildFilteredStyleIndices();
       m_styleSelection->select(pageIndex);
-      m_styleSelection->select(pageIndex, indexInPage, true);
+      m_styleSelection->select(pageIndex, m_page->getStyleCount() - 1, true);
     } else {
       // the user clicked out of the color chips.wants to deselect everything
       // (leaving the selection active, for a possible paste)
@@ -1082,9 +1145,9 @@ void PageViewer::mouseReleaseEvent(QMouseEvent *event) {
   if (!m_page) return;
   TPalette *palette = m_page->getPalette();
   QPoint pos        = event->pos();
-  int indexInPage   = posToIndex(pos);
+  int indexInPage   = pageIndexFromDisplayedIndex(posToIndex(pos));
   if (m_startDrag && m_dropPositionIndex == -1 &&
-      event->modifiers() == Qt::ControlModifier)
+      event->modifiers() == Qt::ControlModifier && indexInPage >= 0)
     select(indexInPage, event);
   m_startDrag = false;
 }
@@ -1095,15 +1158,16 @@ void PageViewer::mouseReleaseEvent(QMouseEvent *event) {
    editor.
                 */
 void PageViewer::mouseDoubleClickEvent(QMouseEvent *e) {
-  int index = posToIndex(e->pos());
-  if (index < 0 || index >= getChipCount()) return;
-  TColorStyle *style = m_page->getStyle(index);
+  int displayedIndex = posToIndex(e->pos());
+  int indexInPage    = pageIndexFromDisplayedIndex(displayedIndex);
+  if (indexInPage < 0) return;
+  TColorStyle *style = m_page->getStyle(indexInPage);
   if (!style) return;
 
   if (m_page->getPalette()->isLocked()) return;
 
   if (m_viewMode != SmallChips) {
-    QRect nameRect = getColorNameRect(index);
+    QRect nameRect = getColorNameRect(displayedIndex);
     if (nameRect.contains(e->pos())) {
       std::wstring styleName = style->getName();
       LineEdit *fld          = m_renameTextField;
@@ -1135,6 +1199,7 @@ void PageViewer::createMenuAction(QMenu &menu, const char *id, QString name,
 
 void PageViewer::addNewColor() {
   PaletteCmd::createStyle(getPaletteHandle(), getPage());
+  rebuildFilteredStyleIndices();
   computeSize();
   update();
 }
@@ -1197,8 +1262,9 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
 
   // Verifica se lo stile e' link.
   // Abilita e disabilita le voci di menu' in base a dove si e' cliccato.
-  int index     = posToIndex(event->pos());
-  int indexPage = m_page ? m_page->getIndex() : -1;
+  int displayedIndex = posToIndex(event->pos());
+  int index           = pageIndexFromDisplayedIndex(displayedIndex);
+  int indexPage       = m_page ? m_page->getIndex() : -1;
 
   bool isLocked = m_page ? m_page->getPalette()->isLocked() : false;
 
@@ -1218,7 +1284,7 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
   }
 
   if (((indexPage == 0 && index > 0) || (indexPage > 0 && index >= 0)) &&
-      index < getChipCount() && !isLocked) {
+      !isLocked) {
     if (pasteValueAct) pasteValueAct->setEnabled(true);
     if (pasteColorsAct) pasteColorsAct->setEnabled(true);
 
@@ -1266,13 +1332,10 @@ void PageViewer::dragEnterEvent(QDragEnterEvent *event) {
       return;
     }
     int index = posToIndex(event->pos());
-    // non si puo' spostare qualcosa nelle prime due posizioni di pagina 0
-    // (occupate da BG e FG)
-    if (m_page->getIndex() == 0 && index < 2) index = 2;
     if (index < 0)
       index = 0;
-    else if (index > m_page->getStyleCount())
-      index = m_page->getStyleCount();
+    else if (index > getChipCount())
+      index = getChipCount();
     m_dropPositionIndex = index;
     update();
     event->acceptProposedAction();
@@ -1287,12 +1350,10 @@ void PageViewer::dragMoveEvent(QDragMoveEvent *event) {
   if (!m_page) return;
   int index = posToIndex(event->pos());
   if (index != m_dropPositionIndex) {
-    if ((m_page->getStyleId(0) == 0 || m_page->getStyleId(1) == 1) && index < 2)
-      index = 2;
     if (index < 0)
       index = 0;
-    else if (index > m_page->getStyleCount())
-      index = m_page->getStyleCount();
+    else if (index > getChipCount())
+      index = getChipCount();
     m_dropPositionIndex = index;
     update();
     event->acceptProposedAction();
@@ -1303,7 +1364,8 @@ void PageViewer::dragMoveEvent(QDragMoveEvent *event) {
 /*! If event data has correct format drop it in current drop position index.
  */
 void PageViewer::dropEvent(QDropEvent *event) {
-  int dstIndexInPage  = m_dropPositionIndex;
+  int dstIndexInPage = pageIndexFromDisplayedIndex(m_dropPositionIndex);
+  if (dstIndexInPage < 0 && m_page) dstIndexInPage = m_page->getStyleCount();
   m_dropPositionIndex = -1;
   update();
   if (!dynamic_cast<const PaletteData *>(event->mimeData())) return;
@@ -1402,8 +1464,9 @@ bool PageViewer::event(QEvent *e) {
     QHelpEvent *helpEvent = dynamic_cast<QHelpEvent *>(e);
     QString toolTip;
     QPoint pos      = helpEvent->pos();
-    int indexInPage = posToIndex(pos);
-    if (0 <= indexInPage && indexInPage < m_page->getStyleCount()) {
+    int displayedIndex = posToIndex(pos);
+    int indexInPage    = pageIndexFromDisplayedIndex(displayedIndex);
+    if (indexInPage >= 0) {
       TColorStyle *style = m_page->getStyle(indexInPage);
       if (style) {
         int styleIndex = m_page->getStyleId(indexInPage);
@@ -1416,7 +1479,8 @@ bool PageViewer::event(QEvent *e) {
                                              (wchar_t)shortcutKey + L")");
       }
     }
-    if (ShowNewStyleButton && indexInPage == m_page->getStyleCount()) {
+    if (ShowNewStyleButton && !hasFilter() &&
+        displayedIndex == getChipCount()) {
       toolTip = tr("New Style");
     }
     if (toolTip != "")
@@ -1426,6 +1490,41 @@ bool PageViewer::event(QEvent *e) {
     e->accept();
   }
   return QFrame::event(e);
+}
+
+//-----------------------------------------------------------------------------
+bool PageViewer::selectFilteredRange(int pageIndex, int indexInPage) {
+  int selectedDisplayIndex = m_filteredStyleIndices.indexOf(indexInPage);
+  if (selectedDisplayIndex < 0) return false;
+
+  int first = -1;
+  int last  = -1;
+  for (int i = 0; i < getChipCount(); ++i) {
+    int styleIndexInPage = pageIndexFromDisplayedIndex(i);
+    if (!m_styleSelection->isSelected(pageIndex, styleIndexInPage)) continue;
+    if (i < selectedDisplayIndex)
+      first = i;
+    else if (i > selectedDisplayIndex) {
+      last = i;
+      break;
+    }
+  }
+  if (first >= 0 && last >= 0) {
+    ++first;
+    --last;
+  } else if (first >= 0) {
+    ++first;
+    last = selectedDisplayIndex;
+  } else if (last >= 0) {
+    --last;
+    first = selectedDisplayIndex;
+  } else {
+    first = selectedDisplayIndex;
+    last  = selectedDisplayIndex;
+  }
+  for (int i = first; i <= last; ++i)
+    m_styleSelection->select(pageIndex, pageIndexFromDisplayedIndex(i), true);
+  return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -1447,6 +1546,9 @@ void PageViewer::select(int indexInPage, QMouseEvent *event) {
   else if (event->modifiers() == Qt::CTRL && wasSelected)
     on = false;
   else if (event->modifiers() == Qt::SHIFT && !m_styleSelection->isEmpty()) {
+    if (hasFilter())
+      selected = selectFilteredRange(pageIndex, indexInPage);
+    else {
     // premuto shift. la selezione si estende fino ai piu' vicini colori
     // selezionati (prima e dopo)
     // a e' b diventeranno gli estremi della selezione
@@ -1477,6 +1579,7 @@ void PageViewer::select(int indexInPage, QMouseEvent *event) {
     for (i = a; i <= b; i++) {
       m_styleSelection->select(pageIndex, i, true);
       selected = true;
+    }
     }
   }
 
@@ -1511,7 +1614,7 @@ void PageViewer::computeSize() {
   QSize chipSize = getChipSize();
   m_chipPerRow   = m_viewMode == List ? 1 : (w - 8) / chipSize.width();
   if (m_chipPerRow == 0) m_chipPerRow = 1;
-  if (ShowNewStyleButton) chipCount++;
+  if (ShowNewStyleButton && !hasFilter()) chipCount++;
   int rowCount = (chipCount + m_chipPerRow - 1) / m_chipPerRow;
   setMinimumSize(w, rowCount * chipSize.height() + 10);
 }
@@ -1534,14 +1637,18 @@ void PageViewer::onStyleRenamed() {
   std::wstring newName = m_renameTextField->text().toStdWString();
   assert(getPaletteHandle());
   PaletteCmd::renamePaletteStyle(getPaletteHandle(), newName);
+  rebuildFilteredStyleIndices();
+  computeSize();
+  update();
 }
 
 //-----------------------------------------------------------------------------
 
 bool PageViewer::hasShortcut(int indexInPage) {
   if (!m_page) return false;
-  if (indexInPage < 0 || indexInPage >= m_page->getStyleCount()) return false;
-  int styleIndex = m_page->getStyleId(indexInPage);
+  int pageIndex = pageIndexFromDisplayedIndex(indexInPage);
+  if (pageIndex < 0) return false;
+  int styleIndex = m_page->getStyleId(pageIndex);
   return (m_page->getPalette()->getStyleShortcut(styleIndex) >= 0);
 }
 

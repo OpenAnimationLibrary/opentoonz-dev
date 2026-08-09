@@ -14,6 +14,7 @@
 #include <QFrame>
 #include <QTabBar>
 #include <QShortcut>
+#include <QVector>
 
 #undef DVAPI
 #undef DVVAR
@@ -157,6 +158,9 @@ public:
   bool getShowStyleIndex() const;
   PaletteViewerGUI::PaletteViewType getViewType() const { return m_viewType; }
 
+  void setFilterText(const QString &filterText);
+  bool hasFilter() const { return !m_filterText.isEmpty(); }
+
   int posToIndex(const QPoint &pos) const;
 
   QRect getItemRect(int index) const;
@@ -264,12 +268,17 @@ protected:
   void zoomOutChip();
 
   bool hasShortcut(int indexInPage);
+  int pageIndexFromDisplayedIndex(int displayedIndex) const;
+  void rebuildFilteredStyleIndices();
+  bool selectFilteredRange(int pageIndex, int indexInPage);
 
 private:
   DVGui::LineEdit *m_renameTextField;
   QPoint m_dragStartPosition;
 
   TPalette::Page *m_page;
+  QString m_filterText;
+  QVector<int> m_filteredStyleIndices;
   QPoint m_chipsOrigin;
   int m_chipPerRow;
   ViewMode m_viewMode;

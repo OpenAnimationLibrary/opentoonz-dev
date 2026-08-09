@@ -43,6 +43,7 @@
 #include <QApplication>
 #include <QLabel>
 #include <QDrag>
+#include <QLineEdit>
 #include <QSignalBlocker>
 
 TEnv::IntVar ShowNewStyleButton("ShowNewStyleButton", 1);
@@ -258,6 +259,10 @@ void PaletteViewer::toggleNameEditorVisibility(bool checked) {
   applyToolbarPartVisibility(TBVisNameEditor, checked);
 }
 
+void PaletteViewer::toggleFilterVisibility(bool checked) {
+  applyToolbarPartVisibility(TBVisFilter, checked);
+}
+
 //-----------------------------------------------------------------------------
 
 void PaletteViewer::toggleVariableWidth(bool checked) {
@@ -278,6 +283,7 @@ void PaletteViewer::save(QSettings &settings) const {
   if (m_visibleNewAction->isChecked()) visibleParts |= 0x02;
   if (m_visibleGizmoAction->isChecked()) visibleParts |= 0x04;
   if (m_visibleNameAction->isChecked()) visibleParts |= 0x08;
+  if (m_visibleFilterAction->isChecked()) visibleParts |= 0x10;
   settings.setValue("toolbarVisibleMsk", visibleParts);
   int variableWidth = m_variableWidthAction->isChecked() ? 1 : 0;
   settings.setValue("variableWidth", variableWidth);
@@ -293,19 +299,21 @@ void PaletteViewer::load(QSettings &settings) {
   if (visibleVar.canConvert(QVariant::Int)) {
     visibleParts = visibleVar.toInt();
   } else {
-    visibleParts = 3;  // Show keyframes and new style/page
+    visibleParts = 0x13;  // Show keyframes, new style/page, and filter
   }
 
   m_visibleKeysAction->setChecked(visibleParts & 0x01);
   m_visibleNewAction->setChecked(visibleParts & 0x02);
   m_visibleGizmoAction->setChecked(visibleParts & 0x04);
   m_visibleNameAction->setChecked(visibleParts & 0x08);
-  m_toolbarVisibleOtherParts = visibleParts & ~0x0F;  // Reserve
+  m_visibleFilterAction->setChecked(visibleParts & 0x10);
+  m_toolbarVisibleOtherParts = visibleParts & ~0x1F;  // Reserve
 
   applyToolbarPartVisibility(TBVisKeyframe, visibleParts & 0x01);
   applyToolbarPartVisibility(TBVisNewStylePage, visibleParts & 0x02);
   applyToolbarPartVisibility(TBVisPaletteGizmo, visibleParts & 0x04);
   applyToolbarPartVisibility(TBVisNameEditor, visibleParts & 0x08);
+  applyToolbarPartVisibility(TBVisFilter, visibleParts & 0x10);
 
   bool variableWidth = settings.value("variableWidth", true).toInt() != 0;
   m_variableWidthAction->setChecked(variableWidth);
@@ -564,6 +572,10 @@ void PaletteViewer::createPaletteToolBar() {
   m_visibleNameAction->setCheckable(true);
   m_visibleNameAction->setChecked(true);
   visibleButtons->addAction(m_visibleNameAction);
+  m_visibleFilterAction = new QAction(tr("Filter"));
+  m_visibleFilterAction->setCheckable(true);
+  m_visibleFilterAction->setChecked(true);
+  visibleButtons->addAction(m_visibleFilterAction);
   viewMode->addMenu(visibleButtons);
 
   if (m_viewType == CLEANUP_PALETTE) m_visibleKeysAction->setVisible(false);
@@ -578,6 +590,8 @@ void PaletteViewer::createPaletteToolBar() {
           &PaletteViewer::togglePaletteGizmoVisibility);
   connect(m_visibleNameAction, &QAction::toggled, this,
           &PaletteViewer::toggleNameEditorVisibility);
+  connect(m_visibleFilterAction, &QAction::toggled, this,
+          &PaletteViewer::toggleFilterVisibility);
 
   viewMode->addMenu(visibleButtons);
 
@@ -605,6 +619,17 @@ void PaletteViewer::createPaletteToolBar() {
   m_paletteToolBar->addSeparator();
 
   m_toolbarParts.clear();
+  m_filterField = new QLineEdit(m_paletteToolBar);
+  m_filterField->setClearButtonEnabled(true);
+  m_filterField->setMinimumWidth(120);
+  m_filterField->setPlaceholderText(tr("Filter styles"));
+  m_filterField->setToolTip(
+      tr("Filter style names. Use * and ? as wildcard characters."));
+  connect(m_filterField, &QLineEdit::textChanged, m_pageViewer,
+          &PageViewer::setFilterText);
+  QAction *filterAction = m_paletteToolBar->addWidget(m_filterField);
+  m_toolbarParts.insert(TBVisFilter, filterAction);
+  m_toolbarParts.insert(TBVisFilter, m_paletteToolBar->addSeparator());
 
   QAction *openStyleNameEditorAct = new QAction(tr("Name Editor"));
   openStyleNameEditorAct->setIcon(createQIcon("rename", true));
@@ -1087,6 +1112,7 @@ void PaletteViewer::addNewColor() {
   TPalette::Page *page = m_pageViewer->getPage();
   update();
   PaletteCmd::createStyle(m_paletteHandle, page);
+  m_pageViewer->setPage(page);
   m_pageViewer->computeSize();
   if (m_viewType == CLEANUP_PALETTE) updatePaletteToolBar();
 }

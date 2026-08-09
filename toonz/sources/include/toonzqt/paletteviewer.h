@@ -24,6 +24,7 @@
 class QScrollArea;
 class DvScrollWidget;
 class QToolBar;
+class QLineEdit;
 class PaletteKeyframeNavigator;
 class TFrameHandle;
 
@@ -60,6 +61,7 @@ public:
     TBVisNewStylePage,
     TBVisPaletteGizmo,
     TBVisNameEditor,
+    TBVisFilter,
     TBVisTotal
   };
 
@@ -139,7 +141,9 @@ protected:
   QAction *m_visibleNewAction;
   QAction *m_visibleGizmoAction;
   QAction *m_visibleNameAction;
+  QAction *m_visibleFilterAction;
   QAction *m_variableWidthAction;
+  QLineEdit *m_filterField;
 
 protected:
   void createTabBar();
@@ -209,6 +213,7 @@ protected slots:
   void toggleNewStylePageVisibility(bool);
   void togglePaletteGizmoVisibility(bool);
   void toggleNameEditorVisibility(bool);
+  void toggleFilterVisibility(bool);
 
   void toggleVariableWidth(bool);
 };
