@@ -104,6 +104,8 @@ public:
   void shiftKeyframesDown() { shiftKeyframes(1); }
 
   void cloneLevel();
+  bool canMergeFrames() const;
+  void mergeFrames();
   void insertCells();
 
   void openTimeStretchPopup();

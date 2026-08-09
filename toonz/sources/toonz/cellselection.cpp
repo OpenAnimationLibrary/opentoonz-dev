@@ -1551,6 +1551,7 @@ void TCellSelection::enableCommands() {
 
   enableCommand(this, MI_TimeStretch, &TCellSelection::openTimeStretchPopup);
   enableCommand(this, MI_CloneLevel, &TCellSelection::cloneLevel);
+  enableCommand(this, MI_MergeFrames, &TCellSelection::mergeFrames);
   enableCommand(this, MI_SetKeyframes, &TCellSelection::setKeyframes);
 
   enableCommand(this, MI_ShiftKeyframesDown,
@@ -1625,6 +1626,7 @@ bool TCellSelection::isEnabledCommand(
                                         MI_Rolldown,
                                         MI_TimeStretch,
                                         MI_CloneLevel,
+                                        MI_MergeFrames,
                                         MI_SetKeyframes,
                                         MI_ShiftKeyframesDown,
                                         MI_ShiftKeyframesUp,
@@ -1655,6 +1657,46 @@ bool TCellSelection::isEmpty() const { return m_range.isEmpty(); }
 
 //-----------------------------------------------------------------------------
 
+bool TCellSelection::canMergeFrames() const {
+  if (isEmpty()) return false;
+
+  TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+  TXshSimpleLevel *level = nullptr;
+  for (int row = m_range.m_r0; row <= m_range.m_r1; ++row) {
+    for (int col = m_range.m_c0; col <= m_range.m_c1; ++col) {
+      TXshCell cell = xsh->getCell(row, col);
+      if (cell.isEmpty()) continue;
+
+      TXshSimpleLevel *cellLevel = cell.getSimpleLevel();
+      if (!cellLevel || (level && level != cellLevel)) return false;
+      level = cellLevel;
+    }
+  }
+  return level && !level->isReadOnly() && !level->isSubsequence();
+}
+
+//-----------------------------------------------------------------------------
+
+void TCellSelection::mergeFrames() {
+  if (!canMergeFrames()) return;
+
+  TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+  TXshSimpleLevel *level = nullptr;
+  std::set<TFrameId> frames;
+  for (int row = m_range.m_r0; row <= m_range.m_r1; ++row) {
+    for (int col = m_range.m_c0; col <= m_range.m_c1; ++col) {
+      TXshCell cell = xsh->getCell(row, col);
+      if (cell.isEmpty()) continue;
+
+      level = cell.getSimpleLevel();
+      frames.insert(cell.getFrameId());
+    }
+  }
+  FilmstripCmd::merge(level, frames);
+}
+
+//-----------------------------------------------------------------------------
+
 void TCellSelection::selectCells(int r0, int c0, int r1, int c1) {
   if (r0 > r1) std::swap(r0, r1);
   if (c0 > c1) std::swap(c0, c1);
@@ -1671,6 +1713,7 @@ void TCellSelection::selectCells(int r0, int c0, int r1, int c1) {
       (std::abs(r0 - m_resizePivotRow) < std::abs(r1 - m_resizePivotRow)) ? r0
                                                                           : r1;
   CommandManager::instance()->enable(MI_CanvasSize, onlyOneRasterLevel);
+  CommandManager::instance()->enable(MI_MergeFrames, canMergeFrames());
 }
 
 //-----------------------------------------------------------------------------
@@ -1683,6 +1726,7 @@ void TCellSelection::selectCell(int row, int col) {
   bool onlyOneRasterLevel = containsOnlyOneRasterLevel(row, col, row, col);
   m_resizePivotRow        = row;
   CommandManager::instance()->enable(MI_CanvasSize, onlyOneRasterLevel);
+  CommandManager::instance()->enable(MI_MergeFrames, canMergeFrames());
 }
 
 //-----------------------------------------------------------------------------
@@ -1691,6 +1735,7 @@ void TCellSelection::selectNone() {
   m_range          = Range();
   m_resizePivotRow = -1;
   CommandManager::instance()->enable(MI_CanvasSize, false);
+  CommandManager::instance()->enable(MI_MergeFrames, false);
 }
 
 //-----------------------------------------------------------------------------

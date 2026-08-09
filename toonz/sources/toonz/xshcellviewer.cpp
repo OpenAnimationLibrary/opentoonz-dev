@@ -3991,6 +3991,9 @@ void CellArea::createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell,
     if (!soundTextCellsSelected) {
       menu.addAction(cmdManager->getAction(MI_CreateBlankDrawing));
       menu.addAction(cmdManager->getAction(MI_Duplicate));
+      if (m_viewer->getCellSelection()->canMergeFrames())
+        menu.addAction(cmdManager->getAction(MI_MergeFrames));
+      menu.addAction(cmdManager->getAction(MI_CloneLevel));
     }
     menu.addSeparator();
 
