@@ -85,6 +85,7 @@
 #include <QKeyEvent>
 #include <QCommonStyle>
 #include <QTimer>
+#include <QApplication>
 #include <QIntValidator>
 #include <QRegularExpressionValidator>
 
@@ -1584,6 +1585,7 @@ PencilTestPopup::PencilTestPopup()
     , m_currentCamera(NULL)
     , m_captureWhiteBGCue(false)
     , m_captureCue(false)
+    , m_lastCountdownSecond(-1)
     , m_useMjpg(CamCapUseMjpg != 0)
 #ifdef _WIN32
     , m_useDirectShow(CamCapUseDirectShow != 0)
@@ -1641,6 +1643,7 @@ PencilTestPopup::PencilTestPopup()
 
   m_timerGBox        = new QGroupBox(tr("Interval timer"), this);
   m_timerIntervalFld = new IntField(this);
+  m_timerSoundCB     = new QCheckBox(tr("Play countdown sound"), this);
   m_captureTimer     = new QTimer(this);
   m_countdownTimer   = new QTimer(this);
   m_timer            = new QTimer(this);
@@ -1722,6 +1725,8 @@ PencilTestPopup::PencilTestPopup()
   m_timerIntervalFld->setRange(0, 60);
   m_timerIntervalFld->setValue(10);
   m_timerIntervalFld->setDisabled(true);
+  m_timerSoundCB->setChecked(false);
+  m_timerSoundCB->setDisabled(true);
   // Make the interval timer single-shot. When the capture finished, restart
   // timer for next frame.
   // This is because capturing and saving the image needs some time.
@@ -1962,6 +1967,7 @@ PencilTestPopup::PencilTestPopup()
           timerLay->addWidget(new QLabel(tr("Interval(sec):"), this), 0,
                               Qt::AlignRight);
           timerLay->addWidget(m_timerIntervalFld, 1);
+          timerLay->addWidget(m_timerSoundCB);
         }
         m_timerGBox->setLayout(timerLay);
         rightLay->addWidget(m_timerGBox);
@@ -2994,6 +3000,7 @@ void PencilTestPopup::onOnionOpacityFldEdited() {
 //-----------------------------------------------------------------------------
 
 void PencilTestPopup::onTimerCBToggled(bool on) {
+  m_timerSoundCB->setEnabled(on);
   m_captureButton->setCheckable(on);
   if (on)
     m_captureButton->setText(tr("Start Capturing\n[Return key]"));
@@ -3007,9 +3014,11 @@ void PencilTestPopup::onCaptureButtonClicked(bool on) {
   if (m_timerGBox->isChecked()) {
     m_timerGBox->setDisabled(on);
     m_timerIntervalFld->setDisabled(on);
+    m_timerSoundCB->setDisabled(on);
     // Start interval capturing
     if (on) {
       m_captureButton->setText(tr("Stop Capturing\n[Return key]"));
+      m_lastCountdownSecond = -1;
       m_captureTimer->start(m_timerIntervalFld->getValue() * 1000);
       if (m_timerIntervalFld->getValue() != 0) m_countdownTimer->start(100);
     }
@@ -3018,6 +3027,7 @@ void PencilTestPopup::onCaptureButtonClicked(bool on) {
       m_captureButton->setText(tr("Start Capturing\n[Return key]"));
       m_captureTimer->stop();
       m_countdownTimer->stop();
+      m_lastCountdownSecond = -1;
       // Hide the count down text
       m_videoWidget->showCountDownTime(0);
     }
@@ -3029,13 +3039,25 @@ void PencilTestPopup::onCaptureButtonClicked(bool on) {
 
 //-----------------------------------------------------------------------------
 
-void PencilTestPopup::onCaptureTimerTimeout() { m_captureCue = true; }
+void PencilTestPopup::onCaptureTimerTimeout() {
+  if (m_timerSoundCB->isChecked()) QApplication::beep();
+  m_lastCountdownSecond = -1;
+  m_captureCue          = true;
+}
 
 //-----------------------------------------------------------------------------
 
 void PencilTestPopup::onCountDown() {
-  m_videoWidget->showCountDownTime(
-      m_captureTimer->isActive() ? m_captureTimer->remainingTime() : 0);
+  int remainingTime =
+      m_captureTimer->isActive() ? m_captureTimer->remainingTime() : 0;
+  m_videoWidget->showCountDownTime(remainingTime);
+  if (!m_timerSoundCB->isChecked() || remainingTime <= 0) return;
+
+  int remainingSecond = (remainingTime + 999) / 1000;
+  if (remainingSecond == m_lastCountdownSecond) return;
+
+  m_lastCountdownSecond = remainingSecond;
+  QApplication::beep();
 }
 
 //-----------------------------------------------------------------------------

@@ -268,7 +268,7 @@ class PencilTestPopup : public DVGui::Dialog {
   QComboBox *m_cameraListCombo, *m_resolutionCombo, *m_fileTypeCombo,
       *m_colorTypeCombo;
   LevelNameLineEdit* m_levelNameEdit;
-  QCheckBox *m_upsideDownCB, *m_saveOnCaptureCB;
+  QCheckBox *m_upsideDownCB, *m_saveOnCaptureCB, *m_timerSoundCB;
   QGroupBox *m_onionSkinGBox, *m_timerGBox;
   QPushButton *m_fileFormatOptionButton, *m_captureWhiteBGButton,
       *m_captureButton, *m_loadImageButton, *m_saveImgAdjustDefaultButton;
@@ -298,6 +298,7 @@ class PencilTestPopup : public DVGui::Dialog {
 
   bool m_captureWhiteBGCue;
   bool m_captureCue;
+  int m_lastCountdownSecond;
   bool m_alwaysOverwrite = false;
   bool m_useMjpg;
 #ifdef _WIN32
