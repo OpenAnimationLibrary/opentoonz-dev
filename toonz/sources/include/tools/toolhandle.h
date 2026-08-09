@@ -53,7 +53,7 @@ public:
   // used to change tool for a short while (e.g. while keeping pressed a
   // short-key)
   void storeTool();
-  void restoreTool();
+  void restoreTool(bool immediately = false);
 
   bool isViewerNavigationToolSelected();
 

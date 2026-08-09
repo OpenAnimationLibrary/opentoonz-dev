@@ -74,12 +74,12 @@ void ToolHandle::storeTool() {
 
 //-----------------------------------------------------------------------------
 
-void ToolHandle::restoreTool() {
+void ToolHandle::restoreTool(bool immediately) {
   // qDebug() << m_storedToolTime.elapsed();
   // navigation tools will always return to the stored one even if the key press
   // time is short
   if (m_storedToolName != m_toolName && m_storedToolName != "" &&
-      (m_storedToolTime.elapsed() >
+      (immediately || m_storedToolTime.elapsed() >
            Preferences::instance()->getTempToolSwitchTimer() ||
        isViewerNavigationToolSelected())) {
     setTool(m_storedToolName);

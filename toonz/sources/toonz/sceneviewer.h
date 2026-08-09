@@ -144,6 +144,7 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
 
   double m_pixelSize;
   bool m_eraserPointerOn;
+  bool m_altPickerToolOn;
   QString m_backupTool;
   TRectD m_clipRect;
 

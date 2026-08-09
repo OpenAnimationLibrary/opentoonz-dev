@@ -1371,6 +1371,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Geometric Tool: Click Twice to Create Arcs")},
       {tempToolSwitchTimer,
        tr("Switch Tool Temporarily Keypress Length (ms):")},
+      {altTemporaryPicker, tr("Alt Temporarily Switches to:")},
       {animateToolHandleSize, tr("Handle Size (%):")},
       {animateToolColor, tr("Handle Color:")},
 
@@ -1557,6 +1558,10 @@ QList<ComboBoxItem> PreferencesPopup::getComboItemList(
        {{tr("Default"), 0},
         {tr("Enable Tools For Level Only"), 1},
         {tr("Show Tools For Level Only"), 2}}},
+      {altTemporaryPicker,
+       {{tr("Off"), Preferences::AltPickerOff},
+        {tr("Style Picker Tool"), Preferences::AltPickerStyle},
+        {tr("RGB Picker Tool"), Preferences::AltPickerRGB}}},
       {xsheetLayoutPreference,
        {{tr("Classic"), "Classic"},
         {tr("Classic-revised"), "Classic-revised"},
@@ -2165,6 +2170,7 @@ QWidget* PreferencesPopup::createToolsPage() {
   insertUI(useCtrlAltToResizeBrush, lay);
   insertUI(clickTwiceToCreateArcs, lay);
   insertUI(tempToolSwitchTimer, lay);
+  insertUI(altTemporaryPicker, lay, getComboItemList(altTemporaryPicker));
 
   QGridLayout* animateToolLay = insertGroupBox(tr("Animate Tool"), lay);
   {

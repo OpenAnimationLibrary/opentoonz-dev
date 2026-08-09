@@ -116,6 +116,12 @@ public:
     ShowLevelNameOnColumnHeader
   };
 
+  enum AltTemporaryPicker {
+    AltPickerOff   = 0,
+    AltPickerStyle = 1,
+    AltPickerRGB   = 2
+  };
+
   //--- callbacks
   // General
   void enableAutosave();
@@ -365,6 +371,9 @@ public:
   }
   int getTempToolSwitchTimer() const {
     return getIntValue(tempToolSwitchTimer);
+  }
+  AltTemporaryPicker getAltTemporaryPicker() const {
+    return static_cast<AltTemporaryPicker>(getIntValue(altTemporaryPicker));
   }
   double getAnimateToolHandleSize() const {
     return getDoubleValue(animateToolHandleSize);

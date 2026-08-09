@@ -570,6 +570,8 @@ void Preferences::definePreferenceItems() {
          true);
   define(tempToolSwitchTimer, "tempToolSwitchTimer", QMetaType::Int, 500, 1,
          std::numeric_limits<int>::max());
+  define(altTemporaryPicker, "altTemporaryPicker", QMetaType::Int,
+         AltPickerOff, AltPickerOff, AltPickerRGB);
   define(animateToolHandleSize, "animateToolHandleSize", QMetaType::Double, 1.0,
          1.0, 5.0);
   define(animateToolColor, "animateToolColor", QMetaType::QColor,

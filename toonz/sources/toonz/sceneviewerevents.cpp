@@ -1500,6 +1500,26 @@ void SceneViewer::keyPressEvent(QKeyEvent *event) {
   if (m_freezedStatus != NO_FREEZED) return;
   int key = event->key();
 
+  if (key == Qt::Key_Alt && !event->isAutoRepeat() && !m_dragging &&
+      (event->modifiers() == Qt::NoModifier ||
+       event->modifiers() == Qt::AltModifier)) {
+    ToolHandle *toolHandle = TApp::instance()->getCurrentTool();
+    Preferences::AltTemporaryPicker picker =
+        Preferences::instance()->getAltTemporaryPicker();
+    QString pickerTool = picker == Preferences::AltPickerStyle
+                             ? QString(T_StylePicker)
+                         : picker == Preferences::AltPickerRGB
+                             ? QString(T_RGBPicker)
+                             : QString();
+    if (toolHandle && !pickerTool.isEmpty() &&
+        toolHandle->getRequestedToolName() != pickerTool) {
+      toolHandle->setTool(pickerTool);
+      m_altPickerToolOn = true;
+      event->accept();
+      return;
+    }
+  }
+
   // Handle Canon camera controls if enabled
 #ifdef WITH_CANON
   if ((m_stopMotion->m_canon->m_pickLiveViewZoom ||
@@ -1676,6 +1696,14 @@ void SceneViewer::keyPressEvent(QKeyEvent *event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::keyReleaseEvent(QKeyEvent *event) {
+  if (event->key() == Qt::Key_Alt && m_altPickerToolOn) {
+    ToolHandle *toolHandle = TApp::instance()->getCurrentTool();
+    if (toolHandle) toolHandle->restoreTool(true);
+    m_altPickerToolOn = false;
+    event->accept();
+    return;
+  }
+
   // Skip if viewer is in frozen state
   if (m_freezedStatus != NO_FREEZED) return;
 
