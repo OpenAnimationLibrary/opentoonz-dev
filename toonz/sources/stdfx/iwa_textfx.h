@@ -16,6 +16,7 @@ protected:
   TStringParamP m_text;
 
   TIntEnumParamP m_hAlign;
+  TIntEnumParamP m_anchor;
 
   TPointParamP m_center;
   TDoubleParamP m_width;
