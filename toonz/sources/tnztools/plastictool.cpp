@@ -1385,7 +1385,31 @@ void PlasticTool::mouseMove(const TPointD &pos, const TMouseEvent &me) {
 
 //------------------------------------------------------------------------
 
+bool PlasticTool::selectMeshColumn(const TMouseEvent &me) {
+  if (!me.isCtrlPressed()) return false;
+
+  std::vector<int> columnIndexes;
+  getViewer()->posToColumnIndexes(me.m_pos, columnIndexes, 5.0, true);
+
+  TXsheet *xsh = getXsheet();
+  for (auto it = columnIndexes.rbegin(); it != columnIndexes.rend(); ++it) {
+    TXshColumn *column = xsh->getColumn(*it);
+    if (!column || column->isLocked() || !column->getMeshColumn()) continue;
+    if (*it == ::column()) return false;
+
+    clearMeshSelections();
+    TTool::getApplication()->getCurrentColumn()->setColumnIndex(*it);
+    return true;
+  }
+
+  return false;
+}
+
+//------------------------------------------------------------------------
+
 void PlasticTool::leftButtonDown(const TPointD &pos, const TMouseEvent &me) {
+  if (selectMeshColumn(me)) return;
+
   switch (m_mode.getIndex()) {
   case MESH_IDX:
     leftButtonDown_mesh(pos, me);

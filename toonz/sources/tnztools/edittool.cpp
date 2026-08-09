@@ -35,6 +35,8 @@
 #include <QApplication>
 #include <QDesktopWidget>
 
+#include <vector>
+
 //=============================================================================
 // Scale Constraints
 //-----------------------------------------------------------------------------
@@ -931,6 +933,22 @@ void EditTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
 void EditTool::onEditAllLeftButtonDown(TPointD &pos, const TMouseEvent &e) {
   int selectedDevice = pick(e.m_pos);
   m_what             = selectedDevice >= 0 ? selectedDevice : Translation;
+
+  if (selectedDevice < 0 && e.isCtrlPressed()) {
+    std::vector<int> columnIndexes;
+    getViewer()->posToColumnIndexes(e.m_pos, columnIndexes, 5.0, true);
+
+    TXsheet *xsh = getXsheet();
+    for (auto it = columnIndexes.rbegin(); it != columnIndexes.rend(); ++it) {
+      TXshColumn *column = xsh->getColumn(*it);
+      if (!column || column->isLocked() || !column->getMeshColumn()) continue;
+
+      TTool::getApplication()->getCurrentColumn()->setColumnIndex(*it);
+      updateMatrix();
+      m_what = None;
+      return;
+    }
+  }
 
   if (selectedDevice < 0 && m_autoSelect.getValue() != L"None") {
     pos             = getMatrix() * pos;

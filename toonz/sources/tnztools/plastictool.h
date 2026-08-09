@@ -337,6 +337,8 @@ protected:
   void draw_animate();
 
 private:
+  bool selectMeshColumn(const TMouseEvent &me);
+
   // Skeleton methods
 
   PlasticSkeleton &deformedSkeleton();
