@@ -604,6 +604,8 @@ int main(int argc, char *argv[]) {
   RangeQualifier range;
   IntQualifier stepOpt("-step n", "Step");
   IntQualifier shrinkOpt("-shrink n", "Shrink");
+  IntQualifier widthOpt("-width n", "Output width in pixels");
+  IntQualifier heightOpt("-height n", "Output height in pixels");
   IntQualifier multimedia("-multimedia n", "Multimedia rendering mode");
   StringQualifier farmData("-farm data", "TFarm Controller");
   StringQualifier idq("-id n", "id");
@@ -611,8 +613,9 @@ int main(int argc, char *argv[]) {
   StringQualifier tileSize("-maxtilesize n",
                            "Enable tile rendering of max n MB per tile");
   StringQualifier tmsg("-tmsg val", "only internal use");
-  usageLine = srcName + dstName + range + stepOpt + shrinkOpt + multimedia +
-              farmData + idq + nthreads + tileSize + tmsg;
+  usageLine = srcName + dstName + range + stepOpt + shrinkOpt + widthOpt +
+              heightOpt + multimedia + farmData + idq + nthreads + tileSize +
+              tmsg;
 
   // system path qualifiers
   std::map<QString, std::unique_ptr<TCli::QualifierT<TFilePath>>>
@@ -920,6 +923,37 @@ int main(int argc, char *argv[]) {
       shrink = shrinkOpt.getValue();
     else
       shrink = scene_shrink;
+
+    if (widthOpt.isSelected() || heightOpt.isSelected()) {
+      int outWidth  = widthOpt.isSelected() ? widthOpt.getValue() : 0;
+      int outHeight = heightOpt.isSelected() ? heightOpt.getValue() : 0;
+      if (outWidth < 0 || outHeight < 0 ||
+          (widthOpt.isSelected() && outWidth == 0) ||
+          (heightOpt.isSelected() && outHeight == 0)) {
+        cout << "Qualifier 'width'/'height': size must be positive" << endl;
+        exit(1);
+      }
+      TCamera *camera     = scene->getCurrentCamera();
+      TDimension sceneRes = camera->getRes();
+      if (sceneRes.lx <= 0 || sceneRes.ly <= 0) {
+        cout << "The scene camera has no usable resolution" << endl;
+        exit(1);
+      }
+      if (outWidth == 0)
+        outWidth = (int)(outHeight * (double)sceneRes.lx / sceneRes.ly + 0.5);
+      if (outHeight == 0)
+        outHeight = (int)(outWidth * (double)sceneRes.ly / sceneRes.lx + 0.5);
+      outWidth  = std::max(1, outWidth);
+      outHeight = std::max(1, outHeight);
+      camera->setRes(TDimension(outWidth, outHeight));
+      if (shrink != 1) {
+        m_userLog->info("Shrink ignored because -width or -height was given");
+        shrink = 1;
+      }
+      m_userLog->info("Output resolution: " + std::to_string(outWidth) + "x" +
+                      std::to_string(outHeight));
+    }
+
     if (multimedia.isSelected())
       scene->getProperties()->getOutputProperties()->setMultimediaRendering(
           multimedia.getValue());
