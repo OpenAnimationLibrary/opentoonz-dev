@@ -7,9 +7,66 @@
 
 //------------------------------------------------------------------
 
+namespace {
+
+enum class TextBoxAnchor {
+  TopLeft,
+  Top,
+  TopRight,
+  Left,
+  Center,
+  Right,
+  BottomLeft,
+  Bottom,
+  BottomRight
+};
+
+void positionTextBox(QRect &box, const TPoint &anchor,
+                     TextBoxAnchor boxAnchor) {
+  switch (boxAnchor) {
+  case TextBoxAnchor::TopLeft:
+    box.moveTopLeft(QPoint(anchor.x, anchor.y));
+    break;
+  case TextBoxAnchor::Top:
+    box.moveTop(anchor.y);
+    box.moveLeft(anchor.x - box.width() / 2);
+    break;
+  case TextBoxAnchor::TopRight:
+    box.moveTopRight(QPoint(anchor.x, anchor.y));
+    break;
+  case TextBoxAnchor::Left:
+    box.moveLeft(anchor.x);
+    box.moveTop(anchor.y - box.height() / 2);
+    break;
+  case TextBoxAnchor::Center:
+    box.moveCenter(QPoint(anchor.x, anchor.y));
+    break;
+  case TextBoxAnchor::Right:
+    box.moveRight(anchor.x);
+    box.moveTop(anchor.y - box.height() / 2);
+    break;
+  case TextBoxAnchor::BottomLeft:
+    box.moveBottomLeft(QPoint(anchor.x, anchor.y));
+    break;
+  case TextBoxAnchor::Bottom:
+    box.moveBottom(anchor.y);
+    box.moveLeft(anchor.x - box.width() / 2);
+    break;
+  case TextBoxAnchor::BottomRight:
+    box.moveBottomRight(QPoint(anchor.x, anchor.y));
+    break;
+  }
+}
+
+}  // namespace
+
+//------------------------------------------------------------------
+
 Iwa_TextFx::Iwa_TextFx()
     : m_text(L"Lorem ipsum")
     , m_hAlign(new TIntEnumParam(Qt::AlignLeft, "Left"))
+    , m_anchor(new TIntEnumParam(static_cast<int>(TextBoxAnchor::Center),
+                                 "Center"))
     , m_center(TPointD(0.0, 0.0))
     , m_width(200.0)
     , m_height(60.0)
@@ -22,6 +79,17 @@ Iwa_TextFx::Iwa_TextFx()
   m_hAlign->addItem(Qt::AlignRight, "Right");
   m_hAlign->addItem(Qt::AlignHCenter, "Center");
   m_hAlign->addItem(Qt::AlignJustify, "Justify");
+
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::TopLeft), "Top Left");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::Top), "Top");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::TopRight), "Top Right");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::Left), "Left");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::Right), "Right");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::BottomLeft),
+                    "Bottom Left");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::Bottom), "Bottom");
+  m_anchor->addItem(static_cast<int>(TextBoxAnchor::BottomRight),
+                    "Bottom Right");
 
   m_text->setMultiLineEnabled(true);
 
@@ -43,6 +111,7 @@ Iwa_TextFx::Iwa_TextFx()
   bindParam(this, "columnIndex", m_columnIndex);
   bindParam(this, "text", m_text);
   bindParam(this, "hAlign", m_hAlign);
+  bindParam(this, "anchor", m_anchor);
   bindParam(this, "center", m_center);
   bindParam(this, "width", m_width);
   bindParam(this, "height", m_height);
@@ -84,7 +153,8 @@ void Iwa_TextFx::doCompute(TTile &tile, double frame,
 
   QRect textBoxRect(0, 0, fac * m_width->getValue(frame),
                     fac * m_height->getValue(frame));
-  textBoxRect.moveCenter(QPoint(center.x, center.y));
+  positionTextBox(textBoxRect, center,
+                  static_cast<TextBoxAnchor>(m_anchor->getValue()));
 
   Qt::AlignmentFlag hAlignFlag = (Qt::AlignmentFlag)m_hAlign->getValue();
 
