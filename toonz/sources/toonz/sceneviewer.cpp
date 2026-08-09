@@ -431,6 +431,8 @@ public:
       //     cm->getAction(MI_NoShift)->setChecked(false);
       TApp::instance()->getCurrentOnionSkin()->notifyOnionSkinMaskChanged();
     } else if (std::string(m_cmdId) == MI_EditShift) {
+      QAction *showShiftOrigin = cm->getAction(MI_ShowShiftOrigin);
+      if (showShiftOrigin) showShiftOrigin->setChecked(checked);
       if (checked) {
         QAction *noShiftAction =
             CommandManager::instance()->getAction(MI_NoShift);
