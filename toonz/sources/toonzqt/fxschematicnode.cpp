@@ -3634,7 +3634,7 @@ FxGroupNode::FxGroupNode(FxSchematicScene *scene, const QList<TFxP> &groupedFx,
   //-----
   m_nameItem->setDefaultTextColor(viewer->getTextColor());
   m_nameItem->setName(m_name);
-  m_renderToggle->setIsActive(m_fx->getAttributes()->isEnabled());
+  m_renderToggle->setIsActive(isEnabled());
 
   addPort(0, m_outDock->getPort());
   addPort(1, inDock->getPort());
@@ -3687,7 +3687,7 @@ QRectF FxGroupNode::boundingRect() const {
 void FxGroupNode::paint(QPainter *painter,
                         const QStyleOptionGraphicsItem *option,
                         QWidget *widget) {
-  // FxSchematicNode::paint(painter,option,widget);
+  m_renderToggle->setIsActive(isEnabled());
 }
 
 //-----------------------------------------------------
@@ -3785,13 +3785,19 @@ void FxGroupNode::onNameChanged() {
 //-----------------------------------------------------
 
 void FxGroupNode::onRenderToggleClicked(bool value) {
-  int i;
-  for (i = 0; i < m_groupedFxs.size(); i++) {
-    TFxP fx = m_groupedFxs[i];
-    if (TLevelColumnFx *lcFx = dynamic_cast<TLevelColumnFx *>(fx.getPointer()))
-      lcFx->getColumn()->setPreviewVisible(value);
-    else
+  for (const TFxP &fx : m_groupedFxs) {
+    TColumnFx *columnFx = dynamic_cast<TColumnFx *>(fx.getPointer());
+    if (columnFx) {
+      TXshColumn *column = columnFx->getXshColumn();
+      if (!column) continue;
+
+      column->setPreviewVisible(value);
+      if (dynamic_cast<TLevelColumnFx *>(columnFx) &&
+          Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled())
+        column->setCamstandVisible(value);
+    } else {
       fx->getAttributes()->enable(value);
+    }
   }
   update();
   emit sceneChanged();
@@ -3833,16 +3839,16 @@ int FxGroupNode::getOutputConnectionsCount() const {
 //-----------------------------------------------------
 
 bool FxGroupNode::isEnabled() const {
-  int i;
-  bool isEnabled = true;
-  for (i = 0; i < m_roots.size(); i++) {
-    TFx *fx = m_roots[i].getPointer();
-    if (TZeraryColumnFx *zcFx = dynamic_cast<TZeraryColumnFx *>(fx))
-      isEnabled = isEnabled && zcFx->getColumn()->isPreviewVisible();
-    else
-      isEnabled = isEnabled && fx->getAttributes()->isEnabled();
+  for (const TFxP &fx : m_groupedFxs) {
+    TColumnFx *columnFx = dynamic_cast<TColumnFx *>(fx.getPointer());
+    if (columnFx) {
+      TXshColumn *column = columnFx->getXshColumn();
+      if (column && !column->isPreviewVisible()) return false;
+    } else if (!fx->getAttributes()->isEnabled()) {
+      return false;
+    }
   }
-  return isEnabled;
+  return true;
 }
 
 //-----------------------------------------------------
