@@ -31,6 +31,7 @@
 #include "tsystem.h"
 #include "tstream.h"
 #include "tstroke.h"
+#include "tundo.h"
 #include "tenv.h"
 
 // Qt includes
@@ -663,6 +664,59 @@ QGraphicsItem *StageSchematicScene::getCurrentNode() {
 //------------------------------------------------------------------
 
 void StageSchematicScene::reorderScene() { placeNodes(); }
+
+//------------------------------------------------------------------
+
+void StageSchematicScene::insertReroute(SchematicLink *link,
+                                        const QPointF &position) {
+  if (!link || !m_xshHandle || !m_objHandle) return;
+
+  StageSchematicNodePort *firstPort =
+      dynamic_cast<StageSchematicNodePort *>(link->getStartPort());
+  StageSchematicNodePort *secondPort =
+      dynamic_cast<StageSchematicNodePort *>(link->getEndPort());
+  if (!firstPort || !secondPort) return;
+
+  StageSchematicNodePort *childPort =
+      firstPort->getType() == eStageParentPort ? firstPort : secondPort;
+  StageSchematicNodePort *parentPort =
+      firstPort->getType() == eStageChildPort ? firstPort : secondPort;
+  if (childPort->getType() != eStageParentPort ||
+      parentPort->getType() != eStageChildPort)
+    return;
+
+  StageSchematicNode *childNode =
+      dynamic_cast<StageSchematicNode *>(childPort->getNode());
+  StageSchematicNode *parentNode =
+      dynamic_cast<StageSchematicNode *>(parentPort->getNode());
+  if (!childNode || !parentNode) return;
+
+  TStageObject *childObject  = childNode->getStageObject();
+  TStageObject *parentObject = parentNode->getStageObject();
+  if (!childObject || !parentObject || childObject->isGrouped() ||
+      parentObject->isGrouped() ||
+      childObject->getParent() != parentObject->getId())
+    return;
+
+  TUndoManager::manager()->beginBlock();
+  TStageObjectTree *tree = m_xshHandle->getXsheet()->getStageObjectTree();
+  int rerouteIndex       = 0;
+  while (tree->getStageObject(TStageObjectId::PegbarId(rerouteIndex), false))
+    ++rerouteIndex;
+  TStageObjectId rerouteId = TStageObjectId::PegbarId(rerouteIndex);
+  TStageObjectCmd::addNewPegbar(m_xshHandle, m_objHandle, position);
+  TStageObject *rerouteObject =
+      m_xshHandle->getXsheet()->getStageObject(rerouteId);
+  assert(rerouteObject);
+  rerouteObject->setDagNodePos(TPointD(position.x(), position.y()));
+  TStageObjectCmd::rename(rerouteId, "Reroute", m_xshHandle);
+  TStageObjectCmd::setParent(rerouteId, parentObject->getId(),
+                             childObject->getParentHandle(), m_xshHandle);
+  TStageObjectCmd::setParent(childObject->getId(), rerouteId, "B",
+                             m_xshHandle);
+  TUndoManager::manager()->endBlock();
+  m_xshHandle->notifyXsheetChanged();
+}
 
 //------------------------------------------------------------------
 

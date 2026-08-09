@@ -115,6 +115,7 @@ public:
 
   //! Replace all nodes in the scene.
   void reorderScene() override;
+  void insertReroute(SchematicLink *link, const QPointF &position) override;
   TXsheet *getXsheet();
   TXsheetHandle *getXsheetHandle() { return m_xshHandle; }
 

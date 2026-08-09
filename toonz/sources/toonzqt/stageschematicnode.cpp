@@ -429,10 +429,14 @@ void PegbarPainter::paint(QPainter *painter,
       painter->setPen(viewer->getSelectedNodeTextColor());
     else
       painter->setPen(viewer->getTextColor());
-    // Draw the name
-    QRectF rect(18, 0, 54, 18);
-    QString elidedName = elideText(m_name, painter->font(), rect.width());
-    painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+    if (m_name == "Reroute") {
+      painter->drawText(QRectF(0, 0, m_width, m_height), Qt::AlignCenter,
+                        "R");
+    } else {
+      QRectF rect(18, 0, 54, 18);
+      QString elidedName = elideText(m_name, painter->font(), rect.width());
+      painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+    }
   }
 }
 
@@ -1609,7 +1613,8 @@ void StageSchematicNode::onHandleReleased() {
 
 StageSchematicPegbarNode::StageSchematicPegbarNode(StageSchematicScene *scene,
                                                    TStageObject *pegbar)
-    : StageSchematicNode(scene, pegbar, 90, 18) {
+    : StageSchematicNode(scene, pegbar,
+                         pegbar->getName() == "Reroute" ? 30 : 90, 18) {
   SchematicViewer *viewer = scene->getSchematicViewer();
   std::string name        = m_stageObject->getFullName();
   std::string id          = m_stageObject->getId().toString();

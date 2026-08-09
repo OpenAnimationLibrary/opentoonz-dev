@@ -796,6 +796,24 @@ void SchematicLink::mouseReleaseEvent(QGraphicsSceneMouseEvent *me) {
     QGraphicsItem::mouseReleaseEvent(me);
 }
 
+//--------------------------------------------------------
+
+void SchematicLink::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *me) {
+  if (me->button() != Qt::LeftButton) {
+    me->ignore();
+    return;
+  }
+
+  SchematicScene *schematicScene = dynamic_cast<SchematicScene *>(scene());
+  if (!schematicScene) {
+    me->ignore();
+    return;
+  }
+
+  schematicScene->insertReroute(this, me->scenePos());
+  me->accept();
+}
+
 //========================================================
 //
 // class SchematicPort

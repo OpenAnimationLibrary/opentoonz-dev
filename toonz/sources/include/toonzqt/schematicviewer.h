@@ -87,6 +87,7 @@ public:
   virtual QGraphicsItem *getCurrentNode() { return 0; }
   virtual void reorderScene() = 0;
   virtual void updateScene()  = 0;
+  virtual void insertReroute(SchematicLink *, const QPointF &) {}
 
   void showSelectedNodesOnly();
   void showAllNodes();
