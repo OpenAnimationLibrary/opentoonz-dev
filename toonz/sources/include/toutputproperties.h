@@ -5,6 +5,10 @@
 
 #include "tfilepath.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #undef DVAPI
 #undef DVVAR
 #ifdef TOONZLIB_EXPORTS
@@ -82,6 +86,9 @@ private:
   double m_frameRate;
 
   int m_from, m_to;
+  /*-- Optional non-contiguous selection. Empty means "use m_from/m_to",
+   * which keeps existing scenes and presets byte-identical. --*/
+  std::vector<std::pair<int, int>> m_frameRanges;
   int m_whichLevels;
   int m_offset, m_step;
 
@@ -173,6 +180,30 @@ Set first frame to \b r0, last frame to \b r1, step to \b step.
 \sa getRange()
 */
   void setRange(int r0, int r1, int step);
+
+  /*!
+Non-contiguous output selection, as a list of inclusive [from, to] pairs in
+the same zero-based space as getRange(). An empty list means the single
+range held by getRange() is authoritative.
+*/
+  const std::vector<std::pair<int, int>> &getFrameRanges() const {
+    return m_frameRanges;
+  }
+  void setFrameRanges(const std::vector<std::pair<int, int>> &ranges);
+  void clearFrameRanges() { m_frameRanges.clear(); }
+
+  //! Expands the selection into ascending frame numbers, honouring step.
+  std::vector<int> getFrameList(int sceneLength) const;
+
+  /*! Parses a printer-style list such as "1-3, 5, 8-10". Frame numbers are
+one-based, matching what the user types. Returns false and fills \b error
+when the text is malformed; \b ranges is then left untouched. */
+  static bool parseFrameRanges(const std::string &text,
+                               std::vector<std::pair<int, int>> &ranges,
+                               std::string *error = 0);
+  //! Inverse of parseFrameRanges(), producing one-based text.
+  static std::string formatFrameRanges(
+      const std::vector<std::pair<int, int>> &ranges);
 
   /*!
 Set output frame rate.

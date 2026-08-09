@@ -1,5 +1,8 @@
 
 
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include "toutputproperties.h"
 
 // TnzLib includes
@@ -55,6 +58,7 @@ TOutputProperties::TOutputProperties(const TOutputProperties &src)
     , m_formatProperties(src.m_formatProperties)
     , m_renderSettings(new TRenderSettings(*src.m_renderSettings))
     , m_frameRate(src.m_frameRate)
+    , m_frameRanges(src.m_frameRanges)
     , m_from(src.m_from)
     , m_to(src.m_to)
     , m_whichLevels(src.m_whichLevels)
@@ -88,6 +92,7 @@ TOutputProperties::~TOutputProperties() {
 
 TOutputProperties &TOutputProperties::operator=(const TOutputProperties &src) {
   m_path        = src.m_path;
+  m_frameRanges = src.m_frameRanges;
   m_from        = src.m_from;
   m_to          = src.m_to;
   m_frameRate   = src.m_frameRate;
@@ -130,6 +135,137 @@ void TOutputProperties::setPath(const TFilePath &fp) { m_path = fp; }
 //-------------------------------------------------------------------
 
 void TOutputProperties::setOffset(int off) { m_offset = off; }
+
+//-----------------------------------------------------------------------------
+
+void TOutputProperties::setFrameRanges(
+    const std::vector<std::pair<int, int>> &ranges) {
+  m_frameRanges = ranges;
+}
+
+//-----------------------------------------------------------------------------
+
+/*-- Expand the selection into ascending, de-duplicated frame numbers. Step is
+ * applied across the whole selection rather than restarting per range, so a
+ * step of 2 over "1-4, 7-10" behaves like a single strided pass. --*/
+std::vector<int> TOutputProperties::getFrameList(int sceneLength) const {
+  std::vector<int> frames;
+  std::vector<std::pair<int, int>> ranges = m_frameRanges;
+  if (ranges.empty()) {
+    int r0, r1, step;
+    if (!getRange(r0, r1, step)) {
+      r0 = 0;
+      r1 = sceneLength - 1;
+    }
+    ranges.push_back(std::make_pair(r0, r1));
+  }
+
+  int step = m_step > 0 ? m_step : 1;
+  std::vector<int> expanded;
+  for (int i = 0; i < (int)ranges.size(); i++) {
+    int from = std::max(0, ranges[i].first);
+    int to   = std::min(sceneLength - 1, ranges[i].second);
+    for (int f = from; f <= to; f++) expanded.push_back(f);
+  }
+  std::sort(expanded.begin(), expanded.end());
+  expanded.erase(std::unique(expanded.begin(), expanded.end()),
+                 expanded.end());
+
+  for (int i = 0; i < (int)expanded.size(); i += step)
+    frames.push_back(expanded[i]);
+  return frames;
+}
+
+//-----------------------------------------------------------------------------
+
+/*-- Frame numbers in the text are one-based because that is what the Output
+ * Settings fields show; the stored pairs are zero-based like getRange(). --*/
+bool TOutputProperties::parseFrameRanges(
+    const std::string &text, std::vector<std::pair<int, int>> &ranges,
+    std::string *error) {
+  std::vector<std::pair<int, int>> parsed;
+  std::string token;
+  std::vector<std::string> tokens;
+  for (size_t i = 0; i <= text.size(); i++) {
+    if (i == text.size() || text[i] == ',') {
+      tokens.push_back(token);
+      token.clear();
+    } else if (!isspace((unsigned char)text[i]))
+      token += text[i];
+  }
+
+  bool anyContent = false;
+  for (size_t i = 0; i < tokens.size(); i++) {
+    const std::string &tk = tokens[i];
+    if (tk.empty()) continue;
+    anyContent = true;
+
+    size_t dash = tk.find('-');
+    std::string fromStr =
+        (dash == std::string::npos) ? tk : tk.substr(0, dash);
+    std::string toStr =
+        (dash == std::string::npos) ? tk : tk.substr(dash + 1);
+    if (fromStr.empty() || toStr.empty()) {
+      if (error) *error = "Incomplete frame range: " + tk;
+      return false;
+    }
+    for (size_t c = 0; c < fromStr.size(); c++)
+      if (!isdigit((unsigned char)fromStr[c])) {
+        if (error) *error = "Frame numbers must be positive integers: " + tk;
+        return false;
+      }
+    for (size_t c = 0; c < toStr.size(); c++)
+      if (!isdigit((unsigned char)toStr[c])) {
+        if (error) *error = "Frame numbers must be positive integers: " + tk;
+        return false;
+      }
+
+    int from = std::atoi(fromStr.c_str());
+    int to   = std::atoi(toStr.c_str());
+    if (from < 1 || to < 1) {
+      if (error) *error = "Frame numbers start at 1: " + tk;
+      return false;
+    }
+    if (from > to) {
+      if (error) *error = "Range start is after its end: " + tk;
+      return false;
+    }
+    parsed.push_back(std::make_pair(from - 1, to - 1));
+  }
+
+  if (!anyContent) {
+    if (error) *error = "No frames were specified.";
+    return false;
+  }
+
+  /*-- Normalise so overlapping and unordered input still describes exactly one
+   * ascending selection. --*/
+  std::sort(parsed.begin(), parsed.end());
+  std::vector<std::pair<int, int>> merged;
+  for (size_t i = 0; i < parsed.size(); i++) {
+    if (!merged.empty() && parsed[i].first <= merged.back().second + 1)
+      merged.back().second = std::max(merged.back().second, parsed[i].second);
+    else
+      merged.push_back(parsed[i]);
+  }
+
+  ranges = merged;
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+std::string TOutputProperties::formatFrameRanges(
+    const std::vector<std::pair<int, int>> &ranges) {
+  std::string text;
+  for (size_t i = 0; i < ranges.size(); i++) {
+    if (i > 0) text += ", ";
+    text += std::to_string(ranges[i].first + 1);
+    if (ranges[i].second != ranges[i].first)
+      text += "-" + std::to_string(ranges[i].second + 1);
+  }
+  return text;
+}
 
 //-----------------------------------------------------------------------------
 

@@ -249,6 +249,11 @@ void TSceneProperties::saveData(TOStream &os) const {
     out.getRange(from, to, step);
     os.child("range") << from << to;
     os.child("step") << step;
+    /*-- Written only when a non-contiguous selection exists, so scenes that use
+     * a single range keep their previous byte-for-byte output. --*/
+    if (!out.getFrameRanges().empty())
+      os.child("frameRanges")
+          << TOutputProperties::formatFrameRanges(out.getFrameRanges());
     os.child("shrink") << rs.m_shrinkX;
     os.child("applyShrinkToViewer") << (rs.m_applyShrinkToViewer ? 1 : 0);
     os.child("fps") << out.getFrameRate();
@@ -562,6 +567,14 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
               is >> step;
               out.getRange(from, to, dummy);
               out.setRange(from, to, step);
+            } else if (tagName == "frameRanges") {
+              std::string text;
+              is >> text;
+              std::vector<std::pair<int, int>> ranges;
+              /*-- A malformed or stale list must not stop the scene loading;
+               * fall back to the single range that is always present. --*/
+              if (TOutputProperties::parseFrameRanges(text, ranges))
+                out.setFrameRanges(ranges);
             } else if (tagName == "shrink") {
               int shrink;
               is >> shrink;

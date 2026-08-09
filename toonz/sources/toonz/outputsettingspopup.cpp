@@ -367,7 +367,11 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
   // Output Camera
   m_outputCameraOm = new QComboBox();
   // Frame Start-End
-  m_startFld = new DVGui::IntLineEdit(this);
+  m_startFld        = new DVGui::IntLineEdit(this);
+  m_frameRangesFld  = new DVGui::LineEdit(this);
+  m_frameRangesFld->setToolTip(
+      tr("Render only these frames, for example 1-3, 5, 8-10.\n"
+         "Leave empty to use Frame Start and End."));
   m_endFld   = new DVGui::IntLineEdit(this);
   // Step-Shrink
   m_stepFld   = new DVGui::IntLineEdit(this);
@@ -437,6 +441,10 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
                                 Qt::AlignRight | Qt::AlignVCenter);
       frameShrinkLay->addWidget(m_stepFld, 0, 7);
 
+      frameShrinkLay->addWidget(new QLabel(tr("Frames:"), this), 2, 0,
+                                Qt::AlignRight | Qt::AlignVCenter);
+      frameShrinkLay->addWidget(m_frameRangesFld, 2, 1, 1, 7);
+
       frameShrinkLay->addWidget(new QLabel(tr("Shrink:"), this), 1, 0,
                                 Qt::AlignRight | Qt::AlignVCenter);
       frameShrinkLay->addWidget(m_shrinkFld, 1, 1);
@@ -457,6 +465,8 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
   ret      = ret &&
         connect(m_outputCameraOm, SIGNAL(currentIndexChanged(const QString &)),
                 SLOT(onCameraChanged(const QString &)));
+  ret = ret && connect(m_frameRangesFld, SIGNAL(editingFinished()), this,
+                       SLOT(onFrameRangesEditFinished()));
   ret = ret && connect(m_startFld, SIGNAL(editingFinished()),
                        SLOT(onFrameFldEditFinished()));
   ret = ret && connect(m_endFld, SIGNAL(editingFinished()),
@@ -1004,6 +1014,8 @@ void OutputSettingsPopup::updateField() {
   }
   m_startFld->setValue(r0 + 1);
   m_endFld->setValue(r1 + 1);
+  m_frameRangesFld->setText(QString::fromStdString(
+      TOutputProperties::formatFrameRanges(prop->getFrameRanges())));
   m_stepFld->setValue(step);
   m_shrinkFld->setValue(renderSettings.m_shrinkX);
   if (m_applyShrinkChk)
@@ -1319,6 +1331,42 @@ void OutputSettingsPopup::onSyncColorSettingsChecked(int state) {
 }
 
 //----------------------------------------------
+
+/*-- An empty field clears the selection and hands control back to Frame Start
+ * and End. Anything else must parse completely or nothing is applied. --*/
+void OutputSettingsPopup::onFrameRangesEditFinished() {
+  ToonzScene *scene = getCurrentScene();
+  if (!scene) return;
+  TOutputProperties *prop = getProperties();
+
+  QString text = m_frameRangesFld->text().trimmed();
+  if (text.isEmpty()) {
+    if (!prop->getFrameRanges().empty()) {
+      prop->clearFrameRanges();
+      TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+    }
+    return;
+  }
+
+  std::vector<std::pair<int, int>> ranges;
+  std::string error;
+  if (!TOutputProperties::parseFrameRanges(text.toStdString(), ranges,
+                                           &error)) {
+    DVGui::warning(tr("Invalid frame list: %1")
+                       .arg(QString::fromStdString(error)));
+    m_frameRangesFld->setText(QString::fromStdString(
+        TOutputProperties::formatFrameRanges(prop->getFrameRanges())));
+    return;
+  }
+
+  prop->setFrameRanges(ranges);
+  /*-- Echo the normalised form so the user can see merges and reordering. --*/
+  m_frameRangesFld->setText(
+      QString::fromStdString(TOutputProperties::formatFrameRanges(ranges)));
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+}
+
+//-----------------------------------------------------------------------------
 
 void OutputSettingsPopup::onFrameFldEditFinished() {
   ToonzScene *scene = getCurrentScene();
