@@ -71,6 +71,8 @@ public:
   static DragTool *makeVolumeDragTool(XsheetViewer *viewer);
 
   static DragTool *makeNavigationTagDragTool(XsheetViewer *viewer);
+  static DragTool *makePinnedCenterMarkerTool(XsheetViewer *viewer,
+                                              int sourceRow);
 };
 
 void setPlayRange(int r0, int r1, int step, bool withUndo = true);

@@ -1287,6 +1287,36 @@ void RowArea::mousePressEvent(QMouseEvent *event) {
         setDragTool(XsheetGUI::DragTool::makeKeyOnionSkinMaskModifierTool(
             m_viewer, false));
     } else {
+      bool isPinnedCenterKey = false;
+      if (row >= 0 &&
+          TApp::instance()->getCurrentTool()->getTool()->getName() ==
+              T_Skeleton &&
+          o->rect(PredefinedRect::PINNED_CENTER_KEY)
+              .translated(-frameAdj / 2)
+              .contains(mouseInCell)) {
+        int col = m_viewer->getCurrentColumn();
+        if (col >= 0 && !xsh->isColumnEmpty(col)) {
+          TStageObjectId ancestorId =
+              getAncestor(xsh, TStageObjectId::ColumnId(col));
+          int columnCount = xsh->getColumnCount();
+          int previousPinned =
+              row == 0 ? -2
+                       : getPinnedColumnId(row - 1, xsh, ancestorId,
+                                           columnCount);
+          int pinned = getPinnedColumnId(row, xsh, ancestorId, columnCount);
+          isPinnedCenterKey =
+              pinned != previousPinned && !(row == 0 && pinned == -1);
+        }
+      }
+
+      if (isPinnedCenterKey) {
+        setDragTool(
+            XsheetGUI::DragTool::makePinnedCenterMarkerTool(m_viewer, row));
+        m_viewer->dragToolClick(event);
+        event->accept();
+        return;
+      }
+
       int playR0, playR1, step;
       XsheetGUI::getPlayRange(playR0, playR1, step);
 

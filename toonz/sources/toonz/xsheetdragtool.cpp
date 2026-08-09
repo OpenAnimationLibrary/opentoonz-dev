@@ -43,6 +43,7 @@
 #include "toonz/sceneproperties.h"
 #include "toonz/tstageobjecttree.h"
 #include "toonz/tstageobjectkeyframe.h"
+#include "toonz/tpinnedrangeset.h"
 #include "toonz/onionskinmask.h"
 #include "toonz/txshsoundcolumn.h"
 #include "toonz/txshsimplelevel.h"
@@ -63,6 +64,8 @@
 #include <QMouseEvent>
 #include <QUrl>
 #include <QDropEvent>
+
+#include <memory>
 
 //=============================================================================
 // XsheetGUI DragTool
@@ -2295,4 +2298,187 @@ public:
 XsheetGUI::DragTool *XsheetGUI::DragTool::makeNavigationTagDragTool(
     XsheetViewer *viewer) {
   return new NavigationTagDragTool(viewer);
+}
+
+//=============================================================================
+// PinnedCenterMarkerDragTool
+//-----------------------------------------------------------------------------
+
+namespace {
+
+struct PinnedRangeSnapshot {
+  TStageObjectId m_id;
+  std::unique_ptr<TPinnedRangeSet> m_ranges;
+};
+
+using PinnedRangeSnapshots = std::vector<PinnedRangeSnapshot>;
+
+TStageObjectId pinnedRangeAncestor(TXsheet *xsh, TStageObjectId id) {
+  TStageObjectId parentId;
+  while ((parentId = xsh->getStageObjectParent(id)).isColumn()) id = parentId;
+  return id;
+}
+
+int pinnedColumnAt(TXsheet *xsh, const TStageObjectId &ancestor, int row) {
+  if (row < 0) return -1;
+
+  for (int col = 0; col < xsh->getColumnCount(); ++col) {
+    TStageObjectId id = TStageObjectId::ColumnId(col);
+    if (pinnedRangeAncestor(xsh, id) != ancestor) continue;
+    if (xsh->getStageObject(id)->getPinnedRangeSet()->isPinned(row)) return col;
+  }
+  return -1;
+}
+
+PinnedRangeSnapshots capturePinnedRanges(TXsheet *xsh,
+                                         const TStageObjectId &ancestor) {
+  PinnedRangeSnapshots snapshots;
+  for (int col = 0; col < xsh->getColumnCount(); ++col) {
+    TStageObjectId id = TStageObjectId::ColumnId(col);
+    if (pinnedRangeAncestor(xsh, id) != ancestor) continue;
+    snapshots.push_back(
+        {id, std::unique_ptr<TPinnedRangeSet>(
+                 xsh->getStageObject(id)->getPinnedRangeSet()->clone())});
+  }
+  return snapshots;
+}
+
+void restorePinnedRanges(const PinnedRangeSnapshots &snapshots,
+                        bool notify = true) {
+  TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+  for (const PinnedRangeSnapshot &snapshot : snapshots) {
+    TStageObject *object = xsh->getStageObject(snapshot.m_id);
+    if (!object) continue;
+    *object->getPinnedRangeSet() = *snapshot.m_ranges;
+    object->invalidate();
+  }
+  if (notify) {
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentObject()->notifyObjectIdChanged(false);
+  }
+}
+
+class PinnedCenterMarkerUndo final : public TUndo {
+  PinnedRangeSnapshots m_before;
+  PinnedRangeSnapshots m_after;
+
+public:
+  PinnedCenterMarkerUndo(PinnedRangeSnapshots before, PinnedRangeSnapshots after)
+      : m_before(std::move(before)), m_after(std::move(after)) {}
+
+  void undo() const override { restorePinnedRanges(m_before); }
+  void redo() const override { restorePinnedRanges(m_after); }
+  int getSize() const override {
+    return sizeof(*this) +
+           int((m_before.size() + m_after.size()) * sizeof(PinnedRangeSnapshot));
+  }
+  QString getHistoryString() override { return QObject::tr("Move Pinned Center"); }
+};
+
+class PinnedCenterMarkerDragTool final : public XsheetGUI::DragTool {
+  int m_sourceRow;
+  int m_targetRow;
+  int m_minRow;
+  int m_maxRow;
+  int m_previousPinnedColumn;
+  int m_currentPinnedColumn;
+  bool m_initialized;
+  TStageObjectId m_ancestor;
+  PinnedRangeSnapshots m_before;
+
+  void initialize() {
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    int currentColumn = getViewer()->getCurrentColumn();
+    if (currentColumn < 0) return;
+
+    m_ancestor = pinnedRangeAncestor(
+        xsh, TStageObjectId::ColumnId(currentColumn));
+    m_previousPinnedColumn = pinnedColumnAt(xsh, m_ancestor, m_sourceRow - 1);
+    m_currentPinnedColumn  = pinnedColumnAt(xsh, m_ancestor, m_sourceRow);
+    if (m_previousPinnedColumn == m_currentPinnedColumn) return;
+
+    int row = m_sourceRow - 1;
+    while (row >= 0 &&
+           pinnedColumnAt(xsh, m_ancestor, row) == m_previousPinnedColumn)
+      --row;
+    m_minRow = row + 2;
+
+    int lastRow = std::max(m_sourceRow, xsh->getFrameCount() - 1);
+    row         = m_sourceRow + 1;
+    while (row <= lastRow &&
+           pinnedColumnAt(xsh, m_ancestor, row) == m_currentPinnedColumn)
+      ++row;
+    m_maxRow = row - 1;
+
+    m_before      = capturePinnedRanges(xsh, m_ancestor);
+    m_initialized = true;
+  }
+
+  void setPinnedColumn(int first, int last, int pinnedColumn) {
+    if (first > last) return;
+
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    for (const PinnedRangeSnapshot &snapshot : m_before) {
+      TStageObject *object = xsh->getStageObject(snapshot.m_id);
+      if (snapshot.m_id.getIndex() == pinnedColumn)
+        object->getPinnedRangeSet()->setRange(first, last);
+      else
+        object->getPinnedRangeSet()->removeRange(first, last);
+      object->invalidate();
+    }
+  }
+
+  void applyTarget() {
+    restorePinnedRanges(m_before, false);
+    if (m_targetRow > m_sourceRow)
+      setPinnedColumn(m_sourceRow, m_targetRow - 1, m_previousPinnedColumn);
+    else if (m_targetRow < m_sourceRow)
+      setPinnedColumn(m_targetRow, m_sourceRow - 1, m_currentPinnedColumn);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentObject()->notifyObjectIdChanged(false);
+  }
+
+public:
+  PinnedCenterMarkerDragTool(XsheetViewer *viewer, int sourceRow)
+      : DragTool(viewer)
+      , m_sourceRow(sourceRow)
+      , m_targetRow(sourceRow)
+      , m_minRow(sourceRow)
+      , m_maxRow(sourceRow)
+      , m_previousPinnedColumn(-1)
+      , m_currentPinnedColumn(-1)
+      , m_initialized(false) {}
+
+  void onClick(const CellPosition &) override { initialize(); }
+
+  void onDrag(const CellPosition &position) override {
+    if (!m_initialized) return;
+
+    int row = std::max(m_minRow, std::min(m_maxRow, position.frame()));
+    if (row == m_targetRow) return;
+    m_targetRow = row;
+    applyTarget();
+    refreshRowsArea();
+  }
+
+  void onRelease(const CellPosition &) override {
+    if (!m_initialized) return;
+    if (m_targetRow == m_sourceRow) return;
+
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    PinnedRangeSnapshots after = capturePinnedRanges(xsh, m_ancestor);
+    TUndoManager::manager()->add(
+        new PinnedCenterMarkerUndo(std::move(m_before), std::move(after)));
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+    refreshRowsArea();
+  }
+};
+
+}  // namespace
+
+//-----------------------------------------------------------------------------
+
+XsheetGUI::DragTool *XsheetGUI::DragTool::makePinnedCenterMarkerTool(
+    XsheetViewer *viewer, int sourceRow) {
+  return new PinnedCenterMarkerDragTool(viewer, sourceRow);
 }
