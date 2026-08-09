@@ -125,7 +125,18 @@ TLevelWriterSprite::~TLevelWriterSprite() {
       QString path      = m_path.getQString();
       QString newEnding = "_" + QString::number(i) + ".png";
       path              = path.replace(".spritesheet", newEnding);
-      m_imagesResized[i].save(path, "PNG", -1);
+      if (horizPadding == 0 && vertPadding == 0) {
+        m_imagesResized[i].save(path, "PNG", -1);
+        continue;
+      }
+      QImage padded(m_imagesResized[i].width() + horizPadding,
+                    m_imagesResized[i].height() + vertPadding,
+                    QImage::Format_ARGB32_Premultiplied);
+      padded.fill(qRgba(0, 0, 0, 0));
+      QPainter paddingPainter(&padded);
+      paddingPainter.drawImage(m_leftPadding, m_topPadding, m_imagesResized[i]);
+      paddingPainter.end();
+      padded.save(path, "PNG", -1);
     }
   }
   if (m_format != "Individual") {
