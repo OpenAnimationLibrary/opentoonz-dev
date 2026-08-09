@@ -18,6 +18,7 @@
 #include "toonz/preferences.h"
 #include "toonz/toonzscene.h"
 #include "toonz/tscenehandle.h"
+#include "toonz/tframehandle.h"
 #include "toonz/txsheet.h"
 #include "toonz/txsheethandle.h"
 #include "toonz/fxdag.h"
@@ -214,6 +215,8 @@ public:
       , m_multimediaRender(0) {
     setCommandHandler("MI_Render", this, &RenderCommand::onRender);
     setCommandHandler("MI_FastRender", this, &RenderCommand::onFastRender);
+    setCommandHandler("MI_FastRenderFrame", this,
+                      &RenderCommand::onFastRenderFrame);
     setCommandHandler("MI_Preview", this, &RenderCommand::onPreview);
   }
 
@@ -222,6 +225,7 @@ public:
   void multimediaRender();
   void onRender();
   void onFastRender();
+  void onFastRenderFrame();
   void onPreview();
   static void resetBgColor();
   void doRender(bool isPreview);
@@ -818,6 +822,55 @@ void RenderCommand::onFastRender() {
   }
   prop->setPath(path);
   doRender(false);
+  prop->setPath(currPath);
+}
+
+//---------------------------------------------------------
+
+void RenderCommand::onFastRenderFrame() {
+  TApp *app               = TApp::instance();
+  TFrameHandle *frameHandle = app->getCurrentFrame();
+  if (!frameHandle->isEditingScene()) {
+    DVGui::warning(
+        QObject::tr("Fast Render Current Frame is available in scene mode."));
+    return;
+  }
+
+  ToonzScene *scene       = app->getCurrentScene()->getScene();
+  TOutputProperties *prop = scene->getProperties()->getOutputProperties();
+
+  QStringList formats;
+  TImageWriter::getSupportedFormats(formats, true);
+  TLevelWriter::getSupportedFormats(formats, true);
+  Tiio::Writer::getSupportedFormats(formats, true);
+  if (!formats.contains("png")) {
+    DVGui::warning(QObject::tr("The PNG format is not available."));
+    return;
+  }
+
+  int frame = frameHandle->getFrame();
+  if (frame < 0 || frame >= scene->getFrameCount()) {
+    DVGui::warning(
+        QObject::tr("The current frame is outside the scene frame range."));
+    return;
+  }
+
+  QString sceneName = QString::fromStdWString(scene->getSceneName());
+  QString location  = Preferences::instance()->getFastRenderPath();
+  if (location == "desktop" || location == "Desktop") {
+    location =
+        QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+  }
+  TFilePath path = TFilePath(location) + TFilePath(sceneName + ".png");
+
+  TFilePath currPath = prop->getPath();
+  int currR0, currR1, currStep;
+  prop->getRange(currR0, currR1, currStep);
+
+  prop->setPath(path);
+  prop->setRange(frame, frame, 1);
+  doRender(false);
+  prop->setRange(currR0, currR1, currStep);
   prop->setPath(currPath);
 }
 
