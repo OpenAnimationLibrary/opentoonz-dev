@@ -580,6 +580,8 @@ private:
   TCellSelection::Range m_range;
   bool m_selected;
   std::vector<std::pair<int, int>> emptyCells;
+  mutable std::set<std::pair<int, int>> m_changedCells;
+  mutable bool m_initialized;
 
 public:
   DrawingSubtitutionUndo(int dir, TCellSelection::Range range, int row, int col,
@@ -588,7 +590,8 @@ public:
       , m_range(range)
       , m_row(row)
       , m_col(col)
-      , m_selected(selected) {
+      , m_selected(selected)
+      , m_initialized(false) {
     TXsheet *xsh = TApp::instance()->getCurrentScene()->getScene()->getXsheet();
     int tempCol, tempRow;
     int c = m_range.m_c0;
@@ -611,6 +614,7 @@ public:
     TXsheet *xsh = TApp::instance()->getCurrentScene()->getScene()->getXsheet();
 
     if (!m_selected) {
+      if (m_changedCells.empty()) return;
       changeDrawing(-m_direction, m_row, m_col);
       TApp::instance()->getCurrentScene()->setDirtyFlag(true);
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -623,6 +627,10 @@ public:
       col = c;
       while (r <= m_range.m_r1) {
         row        = r;
+        if (!m_changedCells.count(std::make_pair(row, col))) {
+          r++;
+          continue;
+        }
         bool found = false;
         for (int i = 0; i < emptyCells.size(); i++) {
           if (emptyCells[i].first == row && emptyCells[i].second == col) {
@@ -645,29 +653,41 @@ public:
   }
 
   void redo() const override {
+    bool changed = false;
     if (!m_selected) {
-      changeDrawing(m_direction, m_row, m_col);
-      TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
-      TApp::instance()->getCurrentScene()->setDirtyFlag(true);
-      return;
+      changed = changeDrawing(m_direction, m_row, m_col);
+      if (changed && !m_initialized)
+        m_changedCells.insert(std::make_pair(m_row, m_col));
+    } else {
+      int col, row;
+      int c = m_range.m_c0;
+      int r = m_range.m_r0;
+      while (c <= m_range.m_c1) {
+        col = c;
+        while (r <= m_range.m_r1) {
+          row = r;
+          if (!m_initialized ||
+              m_changedCells.count(std::make_pair(row, col))) {
+            if (changeDrawing(m_direction, row, col)) {
+              changed = true;
+              if (!m_initialized)
+                m_changedCells.insert(std::make_pair(row, col));
+            }
+          }
+          r++;
+        }
+        r = m_range.m_r0;
+        c++;
+      }
     }
 
-    int col, row;
-    int c = m_range.m_c0;
-    int r = m_range.m_r0;
-    while (c <= m_range.m_c1) {
-      col = c;
-      while (r <= m_range.m_r1) {
-        row = r;
-        changeDrawing(m_direction, row, col);
-        r++;
-      }
-      r = m_range.m_r0;
-      c++;
-    }
+    m_initialized = true;
+    if (!changed) return;
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
   }
+
+  bool hasChanges() const { return !m_changedCells.empty(); }
 
   int getSize() const override { return sizeof(*this); }
 
@@ -698,6 +718,8 @@ private:
   std::vector<std::pair<int, int>> emptyCells;
   typedef std::map<std::pair<int, int>, int> FramesMap;
   FramesMap m_frameRanges;
+  mutable std::set<std::pair<int, int>> m_changedCells;
+  mutable bool m_initialized;
 
 public:
   DrawingSubtitutionGroupUndo(int dir, int row, int col, bool selected,
@@ -706,7 +728,8 @@ public:
       , m_col(col)
       , m_row(row)
       , m_selected(selected)
-      , m_range(range) {
+      , m_range(range)
+      , m_initialized(false) {
     TXsheet *xsh =
         TTool::getApplication()->getCurrentScene()->getScene()->getXsheet();
 
@@ -751,6 +774,10 @@ public:
       while (n < ct->second) {
         int row = ct->first.first + n;
         int col = ct->first.second;
+        if (!m_changedCells.count(std::make_pair(row, col))) {
+          n++;
+          continue;
+        }
         std::vector<std::pair<int, int>>::const_iterator it;
         bool found = false;
         for (it = emptyCells.begin(); it != emptyCells.end(); ++it) {
@@ -771,19 +798,30 @@ public:
   }
 
   void redo() const override {
+    bool changed = false;
     FramesMap::const_iterator ct;
     for (ct = m_frameRanges.begin(); ct != m_frameRanges.end(); ++ct) {
       int n = 0;
       while (n < ct->second) {
         int row = ct->first.first + n;
         int col = ct->first.second;
-        DrawingSubtitutionUndo::changeDrawing(m_direction, row, col);
+        if (!m_initialized || m_changedCells.count(std::make_pair(row, col))) {
+          if (DrawingSubtitutionUndo::changeDrawing(m_direction, row, col)) {
+            changed = true;
+            if (!m_initialized)
+              m_changedCells.insert(std::make_pair(row, col));
+          }
+        }
         n++;
       }
     }
+    m_initialized = true;
+    if (!changed) return;
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
   }
+
+  bool hasChanges() const { return !m_changedCells.empty(); }
 
   int getSize() const override { return sizeof(*this); }
 
@@ -850,12 +888,8 @@ bool DrawingSubtitutionUndo::changeDrawing(int delta, int row, int col) {
     cell = xsh->getCell(row, col);
   }
 
-  // if negative direction, add the size to the direction to avoid a negative
-  // modulo
-  while (delta < 0) delta += n;
-  // the index is the remainder
-  index = (index + delta) % n;
-  assert(index < n);
+  index += delta;
+  if (index < 0 || index >= n) return false;
 
   // sound text levels can't have a 0 index frame id
   // the index points to a qlist<qstring>
@@ -902,9 +936,11 @@ static void drawingSubstituion(int dir) {
   
   DrawingSubtitutionUndo *undo =
       new DrawingSubtitutionUndo(dir, range, row, col, selected);
-  TUndoManager::manager()->add(undo);
-
   undo->redo();
+  if (undo->hasChanges())
+    TUndoManager::manager()->add(undo);
+  else
+    delete undo;
 }
 
 static void drawingSubstituionGroup(int dir) {
@@ -921,8 +957,11 @@ static void drawingSubstituionGroup(int dir) {
 
   DrawingSubtitutionGroupUndo *undo =
       new DrawingSubtitutionGroupUndo(dir, row, col, selected, range);
-  TUndoManager::manager()->add(undo);
   undo->redo();
+  if (undo->hasChanges())
+    TUndoManager::manager()->add(undo);
+  else
+    delete undo;
 }
 
 //=============================================================================
