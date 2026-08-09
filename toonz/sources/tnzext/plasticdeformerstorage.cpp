@@ -186,6 +186,16 @@ void processHandles(DataGroup *group, double frame, const TMeshImage *meshImage,
         deformedSkeleton.vertices().begin(), deformedSkeleton.vertices().end());
     ::transformHandles(group->m_dstHandles, deformationAffine);
 
+    for (int h = 0; h < int(group->m_dstHandles.size()); ++h) {
+      const PlasticHandle &handle = group->m_handles[h];
+      const double influence = tcrop(handle.m_influence, 0.0, 1.0);
+      const double smooth = influence * influence * (3.0 - 2.0 * influence);
+      const double weight =
+          (1.0 - handle.m_falloff) * influence + handle.m_falloff * smooth;
+      group->m_dstHandles[h] =
+          handle.m_pos + weight * (group->m_dstHandles[h] - handle.m_pos);
+    }
+
     group->m_upToDate |= PlasticDeformerStorage::HANDLES;
   }
 }

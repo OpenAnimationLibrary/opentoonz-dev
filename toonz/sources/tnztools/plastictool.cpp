@@ -622,6 +622,8 @@ PlasticTool::PlasticTool()
     , m_vertexName("vertexName", L"")
     , m_interpolate("interpolate", false)
     , m_snapToMesh("snapToMesh", false)
+    , m_boneInfluence("boneInfluence", 0.0, 1.0, 1.0)
+    , m_boneFalloff("boneFalloff", 0.0, 1.0, 0.0)
     , m_thickness("Thickness", 1, 100, 5)
     , m_rigidValue("rigidValue")
     , m_globalKey("globalKeyframe", true)
@@ -659,11 +661,15 @@ PlasticTool::PlasticTool()
 
   m_propGroup[BUILD_IDX].bind(m_interpolate);
   m_propGroup[BUILD_IDX].bind(m_snapToMesh);
+  m_propGroup[BUILD_IDX].bind(m_boneInfluence);
+  m_propGroup[BUILD_IDX].bind(m_boneFalloff);
 
   m_propGroup[ANIMATE_IDX].bind(m_globalKey);
   m_propGroup[ANIMATE_IDX].bind(m_keepDistance);
   m_propGroup[ANIMATE_IDX].bind(m_minAngle);
   m_propGroup[ANIMATE_IDX].bind(m_maxAngle);
+  m_propGroup[ANIMATE_IDX].bind(m_boneInfluence);
+  m_propGroup[ANIMATE_IDX].bind(m_boneFalloff);
 
   m_relayGroup.bind(m_distanceRelay);
   m_relayGroup.bind(m_angleRelay);
@@ -673,6 +679,8 @@ PlasticTool::PlasticTool()
   m_vertexName.setId("VertexName");
   m_interpolate.setId("Interpolate");
   m_snapToMesh.setId("SnapToMesh");
+  m_boneInfluence.setId("BoneInfluence");
+  m_boneFalloff.setId("BoneFalloff");
   m_thickness.setId("Thickness");
   m_rigidValue.setId("RigidValue");
   m_globalKey.setId("GlobalKey");
@@ -726,6 +734,8 @@ void PlasticTool::updateTranslation() {
   m_vertexName.setQStringName(tr("Vertex Name:"));
   m_interpolate.setQStringName(tr("Allow Stretching"));
   m_snapToMesh.setQStringName(tr("Snap To Mesh"));
+  m_boneInfluence.setQStringName(tr("Bone Influence"));
+  m_boneFalloff.setQStringName(tr("Bone Falloff"));
   m_thickness.setQStringName(tr("Thickness"));
 
   m_rigidValue.setQStringName("");
@@ -1033,6 +1043,8 @@ void PlasticTool::onSelectionChanged() {
 
     m_vertexName.setValue(vx.name().toStdWString());
     m_interpolate.setValue(vx.m_interpolate);
+    m_boneInfluence.setValue(vx.m_influence);
+    m_boneFalloff.setValue(vx.m_falloff);
 
     m_minAngle.setValue((vx.m_minAngle == -l_dmax)
                             ? L""
@@ -1045,6 +1057,8 @@ void PlasticTool::onSelectionChanged() {
   } else {
     m_vertexName.setValue(L"");
     m_interpolate.setValue(false);
+    m_boneInfluence.setValue(1.0);
+    m_boneFalloff.setValue(0.0);
 
     m_minAngle.setValue(L"");
     m_maxAngle.setValue(L"");
@@ -1063,6 +1077,8 @@ void PlasticTool::onSelectionChanged() {
 
   m_vertexName.notifyListeners();
   m_interpolate.notifyListeners();
+  m_boneInfluence.notifyListeners();
+  m_boneFalloff.notifyListeners();
   m_minAngle.notifyListeners();
   m_maxAngle.notifyListeners();
 
@@ -1635,6 +1651,21 @@ bool PlasticTool::onPropertyChanged(std::string propertyName) {
 
       PlasticDeformerStorage::instance()->invalidateSkeleton(
           m_sd.getPointer(), skelId, PlasticDeformerStorage::ALL);
+    }
+  } else if (propertyName == "boneInfluence" ||
+             propertyName == "boneFalloff") {
+    if (m_sd && m_svSel.hasSingleObject()) {
+      int skelId = ::skeletonId();
+      PlasticSkeletonVertex &vertex =
+          m_sd->skeleton(skelId)->vertex(m_svSel);
+      vertex.m_influence = m_boneInfluence.getValue();
+      vertex.m_falloff   = m_boneFalloff.getValue();
+
+      PlasticDeformerStorage::instance()->invalidateSkeleton(
+          m_sd.getPointer(), skelId, PlasticDeformerStorage::HANDLES);
+      m_boneInfluence.notifyListeners();
+      m_boneFalloff.notifyListeners();
+      invalidate();
     }
   } else if (propertyName == "minAngle") {
     if (m_sd && m_svSel >= 0) {

@@ -30,7 +30,9 @@ PlasticSkeletonVertex::PlasticSkeletonVertex()
     , m_parent(-1)
     , m_minAngle(-(std::numeric_limits<double>::max)())
     , m_maxAngle((std::numeric_limits<double>::max)())
-    , m_interpolate(true) {}
+    , m_interpolate(true)
+    , m_influence(1.0)
+    , m_falloff(0.0) {}
 
 //-------------------------------------------------------------------------------
 
@@ -40,13 +42,17 @@ PlasticSkeletonVertex::PlasticSkeletonVertex(const TPointD &pos)
     , m_parent(-1)
     , m_minAngle(-(std::numeric_limits<double>::max)())
     , m_maxAngle((std::numeric_limits<double>::max)())
-    , m_interpolate(true) {}
+    , m_interpolate(true)
+    , m_influence(1.0)
+    , m_falloff(0.0) {}
 
 //-------------------------------------------------------------------------------
 
 PlasticSkeletonVertex::operator PlasticHandle() const {
   PlasticHandle result(P());
   result.m_interpolate = m_interpolate;
+  result.m_influence   = m_influence;
+  result.m_falloff     = m_falloff;
   return result;
 }
 
@@ -57,6 +63,8 @@ void PlasticSkeletonVertex::saveData(TOStream &os) {
   os.child("number") << m_number;
   os.child("pos") << this->P().x << this->P().y;
   os.child("interpolate") << (int)this->m_interpolate;
+  if (m_influence != 1.0) os.child("influence") << m_influence;
+  if (m_falloff != 0.0) os.child("falloff") << m_falloff;
 
   if (m_minAngle != -(std::numeric_limits<double>::max)())
     os.child("minAngle") << m_minAngle;
@@ -80,6 +88,10 @@ void PlasticSkeletonVertex::loadData(TIStream &is) {
       is >> this->P().x >> this->P().y, is.matchEndTag();
     else if (tagName == "interpolate")
       is >> val, m_interpolate = (bool)val, is.matchEndTag();
+    else if (tagName == "influence")
+      is >> m_influence, is.matchEndTag();
+    else if (tagName == "falloff")
+      is >> m_falloff, is.matchEndTag();
     else if (tagName == "minAngle")
       is >> m_minAngle, is.matchEndTag();
     else if (tagName == "maxAngle")

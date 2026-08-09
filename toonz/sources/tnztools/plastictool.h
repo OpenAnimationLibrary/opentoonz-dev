@@ -109,6 +109,8 @@ private:
 
   TBoolProperty m_interpolate;  //!< Strict vertex interpolation property
   TBoolProperty m_snapToMesh;   //!< Snap to Mesh vertexes during skeleton build
+  TDoubleProperty m_boneInfluence;
+  TDoubleProperty m_boneFalloff;
 
   TDoubleProperty m_thickness;  //!< Brush radius, from 1 to 100
   TEnumProperty

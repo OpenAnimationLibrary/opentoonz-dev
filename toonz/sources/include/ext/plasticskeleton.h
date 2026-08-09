@@ -81,6 +81,8 @@ public:
 
   bool m_interpolate;  //!< Whether the vertex needs to be interpolated (see
                        //! plasticdeformer.h)
+  double m_influence;  //!< Amount of its animated displacement applied to mesh
+  double m_falloff;    //!< Smoothness of the influence response
 
 public:
   PlasticSkeletonVertex();

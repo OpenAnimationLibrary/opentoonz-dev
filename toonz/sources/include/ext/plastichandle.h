@@ -40,15 +40,22 @@ struct PlasticHandle {
   //!< local rotational component
 
   bool m_interpolate;  //!< Whether the handle should be interpolated
+  double m_influence;  //!< Amount of the handle's animated displacement
+  double m_falloff;    //!< Easing applied to the influence amount
 
   // Interpolable data (unused by PlasticDeformer)
 
   double m_so;  //!< Local faces stacking order
 
 public:
-  PlasticHandle() : m_interpolate(true), m_so(0.0) {}
+  PlasticHandle()
+      : m_interpolate(true), m_influence(1.0), m_falloff(0.0), m_so(0.0) {}
   explicit PlasticHandle(const TPointD &pos)
-      : m_pos(pos), m_interpolate(true), m_so(0.0) {}
+      : m_pos(pos)
+      , m_interpolate(true)
+      , m_influence(1.0)
+      , m_falloff(0.0)
+      , m_so(0.0) {}
   ~PlasticHandle() {}
 };
 
