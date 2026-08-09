@@ -302,6 +302,7 @@ public:
 protected:
   void mousePressEvent(QGraphicsSceneMouseEvent *me) override;
   void mouseReleaseEvent(QGraphicsSceneMouseEvent *me) override;
+  void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *me) override;
 };
 
 //========================================================

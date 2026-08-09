@@ -1296,6 +1296,28 @@ void FxSchematicScene::reorderScene() {
 
 //------------------------------------------------------------------
 
+void FxSchematicScene::insertReroute(SchematicLink *link,
+                                     const QPointF &position) {
+  if (!link || !m_app || !m_columnHandle || !m_frameHandle) return;
+
+  TFxCommand::Link boundingFxs = m_selection->getBoundingFxs(link);
+  if (!boundingFxs.m_inputFx || !boundingFxs.m_outputFx ||
+      boundingFxs.m_index < 0)
+    return;
+
+  std::unique_ptr<TFx> passThrough(TFx::create("nothingFx"));
+  if (!passThrough) return;
+
+  passThrough->getAttributes()->setDagNodePos(
+      TPointD(position.x(), position.y()));
+  TFxCommand::insertFx(passThrough.release(), QList<TFxP>(),
+                       QList<TFxCommand::Link>() << boundingFxs, m_app,
+                       m_columnHandle->getColumnIndex(),
+                       m_frameHandle->getFrameIndex());
+}
+
+//------------------------------------------------------------------
+
 void FxSchematicScene::removeRetroLinks(TFx *fx, double &maxX) {
   if (!fx) return;
   for (int i = 0; i < fx->getInputPortCount(); i++) {

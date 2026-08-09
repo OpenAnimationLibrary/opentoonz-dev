@@ -112,6 +112,7 @@ public:
   void updateScene() override;
   QGraphicsItem *getCurrentNode() override;
   void reorderScene() override;
+  void insertReroute(SchematicLink *link, const QPointF &position) override;
   TXsheet *getXsheet();
 
   void setApplication(TApplication *app);

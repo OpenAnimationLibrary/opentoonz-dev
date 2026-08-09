@@ -398,6 +398,7 @@ class RemovePegbarNodeUndo final : public TUndo {
   TXshColumnP m_column;
   TStageObjectParams *m_params;
   QList<TStageObjectId> m_linkedObj;
+  QList<std::string> m_linkedParentHandles;
   TXsheetHandle *m_xshHandle;
 
 public:
@@ -412,8 +413,10 @@ public:
 
   ~RemovePegbarNodeUndo() { delete m_params; }
 
-  void setLinkedObjects(const QList<TStageObjectId> &linkedObj) {
+  void setLinkedObjects(const QList<TStageObjectId> &linkedObj,
+                        const QList<std::string> &linkedParentHandles) {
     m_linkedObj = linkedObj;
+    m_linkedParentHandles = linkedParentHandles;
   }
 
   void undo() const override {
@@ -430,6 +433,7 @@ public:
       TStageObject *linkedObj = xsh->getStageObject(m_linkedObj[i]);
       assert(linkedObj);
       linkedObj->setParent(m_objId);
+      linkedObj->setParentHandle(m_linkedParentHandles[i]);
     }
     m_xshHandle->notifyXsheetChanged();
     xsh->notifyStageObjectAdded(m_objId);
@@ -437,13 +441,17 @@ public:
 
   void redo() const override {
     TXsheet *xsh     = m_xshHandle->getXsheet();
+    TStageObject *obj = xsh->getStageObject(m_objId);
+    std::string parentHandle = obj->getParentHandle();
     int pegbarsCount = xsh->getStageObjectTree()->getStageObjectCount();
     int i;
     for (i = 0; i < pegbarsCount; ++i) {
       TStageObject *other = xsh->getStageObjectTree()->getStageObject(i);
       if (other->getId() == m_objId) continue;
-      if (other->getParent() == m_objId)
+      if (other->getParent() == m_objId) {
         other->setParent(xsh->getStageObjectParent(m_objId));
+        other->setParentHandle(parentHandle);
+      }
     }
     if (m_objId.isColumn())
       xsh->removeColumn(m_objId.getIndex());
@@ -800,13 +808,17 @@ void removeStageObjectNode(const TStageObjectId &id, TXsheetHandle *xshHandle,
 
   // stacco tutti i figli e li attacco al padre
   QList<TStageObjectId> linkedObjects;
+  QList<std::string> linkedParentHandles;
+  std::string parentHandle = pegbar->getParentHandle();
   int pegbarsCount = xsh->getStageObjectTree()->getStageObjectCount();
   int i;
   for (i = 0; i < pegbarsCount; ++i) {
     TStageObject *other = xsh->getStageObjectTree()->getStageObject(i);
     if (other == pegbar) continue;
     if (other->getParent() == id) {
+      linkedParentHandles.push_back(other->getParentHandle());
       other->setParent(pegbar->getParent());
+      other->setParentHandle(parentHandle);
       linkedObjects.push_back(other->getId());
     }
   }
@@ -814,7 +826,7 @@ void removeStageObjectNode(const TStageObjectId &id, TXsheetHandle *xshHandle,
     objHandle->setObjectId(TStageObjectId::TableId);
 
   RemovePegbarNodeUndo *undo = new RemovePegbarNodeUndo(id, xshHandle);
-  undo->setLinkedObjects(linkedObjects);
+  undo->setLinkedObjects(linkedObjects, linkedParentHandles);
   if (id.isColumn())
     xsh->removeColumn(id.getIndex());
   else

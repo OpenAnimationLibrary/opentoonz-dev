@@ -84,6 +84,7 @@ public:
   virtual QGraphicsItem *getCurrentNode() { return 0; }
   virtual void reorderScene() = 0;
   virtual void updateScene()  = 0;
+  virtual void insertReroute(SchematicLink *, const QPointF &) {}
 
   QPointF mousePos() { return m_mousePos; }
   void setMousePos(QPointF pos) { m_mousePos = pos; }
