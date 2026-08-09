@@ -189,6 +189,54 @@ void Ffmpeg::createIntermediateImage(const TImageP &img, int frameIndex) {
   m_cleanUpList.push_back(tempPath);
 }
 
+namespace {
+
+bool tokenizeFfmpegArgs(const QString &args, QStringList &tokens) {
+  QString current;
+  bool inQuotes = false;
+  bool started  = false;
+  for (const QChar &c : args) {
+    if (c == '"') {
+      inQuotes = !inQuotes;
+      started  = true;
+    } else if (c.isSpace() && !inQuotes) {
+      if (started) tokens << current;
+      current.clear();
+      started = false;
+    } else {
+      current += c;
+      started = true;
+    }
+  }
+  if (inQuotes) return false;
+  if (started) tokens << current;
+  return true;
+}
+
+}  // namespace
+
+bool Ffmpeg::setExtraArgs(const QString &args) {
+  QStringList tokens;
+  if (!tokenizeFfmpegArgs(args, tokens)) {
+    DVGui::warning(QObject::tr("Extra FFmpeg Args has an unmatched quote."));
+    return false;
+  }
+
+  static const QStringList reserved = {"-i", "-y", "-n"};
+  for (const QString &token : tokens) {
+    if (reserved.contains(token)) {
+      QString message = QObject::tr(
+                            "The FFmpeg argument '%1' is reserved by OpenToonz "
+                            "and cannot be overridden. It was ignored.")
+                            .arg(token);
+      DVGui::warning(message);
+      return false;
+    }
+  }
+  m_extraArgs = tokens;
+  return true;
+}
+
 void Ffmpeg::runFfmpeg(const QStringList &preInputArgs,
                        const QStringList &postInputArgs, bool inputPathIncluded,
                        bool outputPathIncluded, bool overwrite,
@@ -209,6 +257,7 @@ void Ffmpeg::runFfmpeg(const QStringList &preInputArgs,
 
   if (m_hasSoundTrack) args.append(m_audioArgs);
   args.append(postInputArgs);
+  args.append(m_extraArgs);
 
   if (overwrite && !outputPathIncluded) args << "-y";
 

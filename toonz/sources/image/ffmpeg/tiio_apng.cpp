@@ -55,6 +55,12 @@ TLevelWriterAPng::TLevelWriterAPng(const TFilePath &path, TPropertyGroup *winfo)
 
   ffmpegWriter = new Ffmpeg();
   ffmpegWriter->setPath(m_path);
+  {
+    TProperty *extraProp = m_properties->getProperty("Extra FFmpeg Args");
+    if (extraProp)
+      ffmpegWriter->setExtraArgs(
+          QString::fromStdString(extraProp->getValueAsString()));
+  }
   if (TSystem::doesExistFileOrLevel(m_path)) TSystem::deleteFile(m_path);
 }
 
@@ -215,14 +221,17 @@ TImageP TLevelReaderAPng::load(int frameIndex) {
 Tiio::APngWriterProperties::APngWriterProperties()
     : m_scale("Scale", 1, 100, 100)
     , m_looping("Looping", true)
-    , m_extPng("ExtPng", false) {
+    , m_extPng("ExtPng", false)
+    , m_extraArgs("Extra FFmpeg Args", L"") {
   bind(m_scale);
   bind(m_looping);
   bind(m_extPng);
+  bind(m_extraArgs);
 }
 
 void Tiio::APngWriterProperties::updateTranslation() {
   m_scale.setQStringName(tr("Scale"));
   m_looping.setQStringName(tr("Looping"));
   m_extPng.setQStringName(tr("Write as .png"));
+  m_extraArgs.setQStringName(tr("Extra FFmpeg Args"));
 }

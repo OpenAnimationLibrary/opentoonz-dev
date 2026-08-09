@@ -79,6 +79,7 @@ public:
   // TBoolProperty m_matte;
   TIntProperty m_vidQuality;
   TIntProperty m_scale;
+  TStringProperty m_extraArgs;
   Mp4WriterProperties();
   void updateTranslation() override;
 };

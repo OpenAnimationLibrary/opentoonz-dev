@@ -70,6 +70,8 @@ public:
   void setFrameRate(double fps);
   void setPath(const TFilePath &path);
 
+  bool setExtraArgs(const QString &args);
+
   void saveSoundTrack(TSoundTrack *soundTrack);
 
   bool checkFilesExist() const;
@@ -96,6 +98,7 @@ private:
   QString m_audioPath;
   QString m_audioFormat;
   QStringList m_audioArgs;
+  QStringList m_extraArgs;
 
   // Mutable members for caching inside const functions
   mutable double m_frameRate = 0.0;

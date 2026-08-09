@@ -51,6 +51,12 @@ TLevelWriterMp4::TLevelWriterMp4(const TFilePath &path, TPropertyGroup *winfo)
   }
   ffmpegWriter = new Ffmpeg();
   ffmpegWriter->setPath(m_path);
+  {
+    TProperty *extraProp = m_properties->getProperty("Extra FFmpeg Args");
+    if (extraProp)
+      ffmpegWriter->setExtraArgs(
+          QString::fromStdString(extraProp->getValueAsString()));
+  }
   if (TSystem::doesExistFileOrLevel(m_path)) TSystem::deleteFile(m_path);
 }
 
@@ -225,14 +231,18 @@ TImageP TLevelReaderMp4::load(int frameIndex) {
 }
 
 Tiio::Mp4WriterProperties::Mp4WriterProperties()
-    : m_vidQuality("Quality", 1, 100, 90), m_scale("Scale", 1, 100, 100) {
+    : m_vidQuality("Quality", 1, 100, 90)
+    , m_scale("Scale", 1, 100, 100)
+    , m_extraArgs("Extra FFmpeg Args", L"") {
   bind(m_vidQuality);
   bind(m_scale);
+  bind(m_extraArgs);
 }
 
 void Tiio::Mp4WriterProperties::updateTranslation() {
   m_vidQuality.setQStringName(tr("Quality"));
   m_scale.setQStringName(tr("Scale"));
+  m_extraArgs.setQStringName(tr("Extra FFmpeg Args"));
 }
 
 // Tiio::Reader* Tiio::makeMp4Reader(){ return nullptr; }

@@ -75,6 +75,7 @@ public:
   TIntProperty m_scale;
   TBoolProperty m_looping;
   TBoolProperty m_extPng;
+  TStringProperty m_extraArgs;
   APngWriterProperties();
   void updateTranslation() override;
 };
