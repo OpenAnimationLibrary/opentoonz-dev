@@ -2405,13 +2405,10 @@ void ColumnArea::mousePressEvent(QMouseEvent *event) {
     }
     // clicking on the normal columns
     else if (!isEmpty) {
-      // grabbing the left side of the column enables column move
+      // grabbing the column handle, number, or name enables column move
       if (o->rect(PredefinedRect::DRAG_LAYER).contains(mouseInCell) ||
-          (!o->flag(PredefinedFlag::DRAG_LAYER_VISIBLE)  // If dragbar hidden,
-                                                         // layer name/number
-                                                         // becomes dragbar
-           && (o->rect(PredefinedRect::LAYER_NUMBER).contains(mouseInCell) ||
-               o->rect(PredefinedRect::LAYER_NAME).contains(mouseInCell)))) {
+          o->rect(PredefinedRect::LAYER_NUMBER).contains(mouseInCell) ||
+          o->rect(PredefinedRect::LAYER_NAME).contains(mouseInCell)) {
         setDragTool(XsheetGUI::DragTool::makeColumnMoveTool(m_viewer));
       }
       // lock button
@@ -2685,10 +2682,7 @@ void ColumnArea::mouseMoveEvent(QMouseEvent *event) {
   else if (o->rect(PredefinedRect::DRAG_LAYER).contains(mouseInCell)) {
     m_tooltip = tr("Click to select column, drag to move it");
   } else if (o->rect(PredefinedRect::LAYER_NUMBER).contains(mouseInCell)) {
-    if (o->isVerticalTimeline())
-      m_tooltip = tr("Click to select column, drag to move it");
-    else
-      m_tooltip = tr("Click to select column");
+    m_tooltip = tr("Click to select column, drag to move it");
   } else if (o->rect(PredefinedRect::LAYER_NAME).contains(mouseInCell)) {
     if (o->isVerticalTimeline())
       m_tooltip =
@@ -2701,7 +2695,8 @@ void ColumnArea::mouseMoveEvent(QMouseEvent *event) {
                o->rect(PredefinedRect::VOLUME_AREA).contains(mouseInCell))
         m_tooltip = tr("Set the volume of the soundtrack");
     } else
-      m_tooltip = tr("Click to select column, double-click to edit");
+      m_tooltip =
+          tr("Click to select column, drag to move it, double-click to edit");
   } else if (o->rect(PredefinedRect::LOCK_AREA).contains(mouseInCell)) {
     m_tooltip = tr("Lock Toggle");
   } else if (o->rect(PredefinedRect::CONFIG_AREA).contains(mouseInCell)) {
