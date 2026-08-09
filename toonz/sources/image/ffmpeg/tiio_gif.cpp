@@ -55,6 +55,12 @@ TLevelWriterGif::TLevelWriterGif(const TFilePath &path, TPropertyGroup *winfo)
 
   ffmpegWriter = new Ffmpeg();
   ffmpegWriter->setPath(m_path);
+  {
+    TProperty *extraProp = m_properties->getProperty("Extra FFmpeg Args");
+    if (extraProp)
+      ffmpegWriter->setExtraArgs(
+          QString::fromStdString(extraProp->getValueAsString()));
+  }
   // m_frameCount = 0;
   if (TSystem::doesExistFileOrLevel(m_path)) TSystem::deleteFile(m_path);
 }
@@ -306,7 +312,8 @@ Tiio::GifWriterProperties::GifWriterProperties()
     , m_looping("Looping", true)
     , m_palette("Generate Palette", true)
     , m_mode("Mode")
-    , m_maxcolors("Max Colors", 2, 256, 256) {
+    , m_maxcolors("Max Colors", 2, 256, 256)
+    , m_extraArgs("Extra FFmpeg Args", L"") {
 
   // Set values for mode
   m_mode.addValue(L"GLOBAL0");
@@ -346,6 +353,7 @@ Tiio::GifWriterProperties::GifWriterProperties()
   bind(m_palette);
   bind(m_mode);
   bind(m_maxcolors);
+  bind(m_extraArgs);
 }
 
 void Tiio::GifWriterProperties::updateTranslation() {
@@ -353,6 +361,7 @@ void Tiio::GifWriterProperties::updateTranslation() {
   m_looping.setQStringName(tr("Looping"));
   m_mode.setQStringName(tr("Mode"));
   m_maxcolors.setQStringName(tr("Max Colors"));
+  m_extraArgs.setQStringName(tr("Extra FFmpeg Args"));
 }
 
 // Tiio::Reader* Tiio::makeGifReader(){ return nullptr; }

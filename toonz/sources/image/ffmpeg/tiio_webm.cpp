@@ -60,6 +60,12 @@ TLevelWriterWebm::TLevelWriterWebm(const TFilePath &path, TPropertyGroup *winfo)
 
   ffmpegWriter = new Ffmpeg();
   ffmpegWriter->setPath(m_path);
+  {
+    TProperty *extraProp = m_properties->getProperty("Extra FFmpeg Args");
+    if (extraProp)
+      ffmpegWriter->setExtraArgs(
+          QString::fromStdString(extraProp->getValueAsString()));
+  }
   if (TSystem::doesExistFileOrLevel(m_path)) TSystem::deleteFile(m_path);
 }
 
@@ -297,7 +303,9 @@ Tiio::WebmWriterProperties::WebmWriterProperties()
     , m_speed("Encoding Speed")
     , m_kf("Keyframe Interval")
     , m_preserveAlpha("Preserve Alpha", true)
-    , m_lossless("Lossless", false) {
+    , m_lossless("Lossless", false)
+    , m_extraArgs("Extra FFmpeg Args", L"") {
+  bind(m_extraArgs);
   bind(m_scale);
   bind(m_speed);
   bind(m_kf);
@@ -333,6 +341,7 @@ void Tiio::WebmWriterProperties::updateTranslation() {
   m_kf.setQStringName(tr("Keyframe Interval"));
   m_preserveAlpha.setQStringName(tr("Preserve Alpha"));
   m_lossless.setQStringName(tr("Lossless"));
+  m_extraArgs.setQStringName(tr("Extra FFmpeg Args"));
 }
 
 // Tiio::Reader* Tiio::makeWebmReader(){ return nullptr; }

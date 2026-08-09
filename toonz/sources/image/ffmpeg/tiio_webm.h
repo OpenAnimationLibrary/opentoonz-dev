@@ -90,6 +90,7 @@ public:
   TBoolProperty m_preserveAlpha;
   TBoolProperty m_lossless;
 
+  TStringProperty m_extraArgs;
   WebmWriterProperties();
   void updateTranslation() override;
 };

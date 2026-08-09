@@ -86,6 +86,7 @@ public:
   TEnumProperty m_mode;
   TIntProperty m_maxcolors;
 
+  TStringProperty m_extraArgs;
   GifWriterProperties();
 
   void updateTranslation() override;
