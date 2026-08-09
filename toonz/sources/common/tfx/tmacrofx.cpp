@@ -88,6 +88,13 @@ void collectParams(TMacroFx *macroFx) {
   }
 }
 
+bool isMemberFx(const TMacroFx *macroFx, const TFx *fx) {
+  const std::vector<TFxP> &fxs = macroFx->getFxs();
+  return std::find_if(fxs.begin(), fxs.end(), [fx](const TFxP &candidate) {
+           return candidate.getPointer() == fx;
+         }) != fxs.end();
+}
+
 }  // anonymous namespace
 
 //--------------------------------------------------
@@ -254,6 +261,7 @@ TFx *TMacroFx::clone(bool recursive) const {
   TMacroFx *clone = TMacroFx::create(clones);
   clone->setName(getName());
   clone->setFxId(getFxId());
+  clone->m_exposedParams = m_exposedParams;
 
   // Copy the index of the passive cache manager.
   clone->getAttributes()->passiveCacheDataIdx() =
@@ -334,6 +342,62 @@ std::string TMacroFx::getMacroFxType() const {
       name += m_fxs[i]->getFxType();
   }
   return name + ")";
+}
+
+//--------------------------------------------------
+
+const std::vector<TMacroFx::ExposedParam> &TMacroFx::getExposedParams() const {
+  return m_exposedParams;
+}
+
+//--------------------------------------------------
+
+bool TMacroFx::isParamExposed(const TFx *fx,
+                               const std::string &paramName) const {
+  if (!fx) return false;
+
+  return std::find_if(m_exposedParams.begin(), m_exposedParams.end(),
+                      [fx, &paramName](const ExposedParam &param) {
+                        return param.m_fxId == fx->getFxId() &&
+                               param.m_paramName == paramName;
+                      }) != m_exposedParams.end();
+}
+
+//--------------------------------------------------
+
+void TMacroFx::setParamExposed(const TFx *fx, const std::string &paramName,
+                                bool exposed) {
+  if (!fx || !isMemberFx(this, fx) || !fx->getParams()->getParam(paramName))
+    return;
+
+  std::vector<ExposedParam>::iterator found =
+      std::find_if(m_exposedParams.begin(), m_exposedParams.end(),
+                   [fx, &paramName](const ExposedParam &param) {
+                     return param.m_fxId == fx->getFxId() &&
+                            param.m_paramName == paramName;
+                   });
+  if (exposed) {
+    if (found == m_exposedParams.end())
+      m_exposedParams.push_back({fx->getFxId(), paramName});
+  } else if (found != m_exposedParams.end()) {
+    m_exposedParams.erase(found);
+  }
+}
+
+//--------------------------------------------------
+
+std::string TMacroFx::getExposedParamKey() const {
+  std::string key;
+  for (const ExposedParam &param : m_exposedParams) {
+    std::vector<TFxP>::const_iterator found =
+        std::find_if(m_fxs.begin(), m_fxs.end(), [&param](const TFxP &fx) {
+          return fx->getFxId() == param.m_fxId;
+        });
+    if (found == m_fxs.end()) continue;
+    key += std::to_string(std::distance(m_fxs.begin(), found));
+    key += ':' + param.m_paramName + ';';
+  }
+  return key;
 }
 
 //--------------------------------------------------
@@ -540,6 +604,14 @@ void TMacroFx::loadData(TIStream &is) {
         } else
           throw TException("unexpected tag " + tagName);
       }
+    } else if (tagName == "exposedparams") {
+      while (is.matchTag(tagName)) {
+        if (tagName != "param") throw TException("unexpected tag " + tagName);
+        const std::string fxId = is.getTagAttribute("fx_id");
+        const std::string paramName = is.getTagAttribute("name");
+        if (TFx *fx = getFxById(::to_wstring(fxId)))
+          setParamExposed(fx, paramName, true);
+      }
     } else if (tagName == "super") {
       TRasterFx::loadData(is);
     } else
@@ -571,6 +643,16 @@ void TMacroFx::saveData(TOStream &os) {
     os.openCloseChild("port", attr);
   }
   os.closeChild();
+  if (!m_exposedParams.empty()) {
+    os.openChild("exposedparams");
+    for (const ExposedParam &param : m_exposedParams) {
+      std::map<std::string, std::string> attr;
+      attr["fx_id"] = ::to_string(param.m_fxId);
+      attr["name"]  = param.m_paramName;
+      os.openCloseChild("param", attr);
+    }
+    os.closeChild();
+  }
   os.openChild("super");
   TRasterFx::saveData(os);
   os.closeChild();

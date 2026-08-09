@@ -14,6 +14,8 @@
 #include <QMap>
 #include <QGroupBox>
 
+#include <map>
+
 #include "tcommon.h"
 #include "tfx.h"
 #include "tabbar.h"
@@ -50,6 +52,7 @@ class TSceneHandle;
 class TXshLevelHandle;
 class TObjectHandle;
 class ToonzScene;
+class TMacroFx;
 
 //=============================================================================
 /*! \brief ParamsPage. View a page with fx params.
@@ -72,6 +75,12 @@ class DVAPI ParamsPage final : public QFrame {
   FxHistogramRender *m_fxHistogramRender;
 
   ParamViewer *m_paramViewer;
+  struct ExposedParamTarget {
+    int m_fxIndex;
+    std::string m_paramName;
+  };
+  std::vector<std::pair<ParamField *, std::string>> m_pageParams;
+  std::map<ParamField *, ExposedParamTarget> m_exposedParamTargets;
 
 public:
   ParamsPage(QWidget *parent = 0, ParamViewer *paramViewer = 0);
@@ -87,6 +96,10 @@ public:
 
   void update(int frame);
   void setPointValue(int index, const TPointD &p);
+
+  void addExposedParam(int fxIndex, const TFxP &fx,
+                       const std::string &paramName);
+  void addMacroExposureControls(TMacroFx *macroFx, TFx *memberFx);
 
   FxHistogramRender *getFxHistogramRender() const {
     return m_fxHistogramRender;
@@ -168,7 +181,8 @@ public:
 
   void updatePage(int frame, bool onlyParam);
   /*! Create a page reading xml file relating to \b fx. */
-  void createControls(const TFxP &fx, int index = -1);
+  void createControls(const TFxP &fx, int index = -1,
+                      TMacroFx *macroFx = nullptr);
 
   ParamsPage *getCurrentParamsPage() const;
   ParamsPage *getParamsPage(int index) const;
@@ -182,7 +196,8 @@ public:
   void updateWarnings(const TFxP &currentFx, bool isFloat);
 
 protected:
-  void createPage(TIStream &is, const TFxP &fx, int index);
+  void createPage(TIStream &is, const TFxP &fx, int index,
+                  TMacroFx *macroFx);
 
 protected slots:
   void setPage(int);
