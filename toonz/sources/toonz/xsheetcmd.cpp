@@ -43,6 +43,7 @@
 #include "toonz/scenefx.h"
 #include "toonz/preferences.h"
 #include "toonz/navigationtags.h"
+#include "ext/plasticskeletondeformation.h"
 
 // TnzQt includes
 #include "toonzqt/tselectionhandle.h"
@@ -424,16 +425,80 @@ void GlobalKeyframeUndo::doRemoveGlobalKeyframes(
 //*****************************************************************************
 
 class InsertGlobalKeyframeUndo final : public GlobalKeyframeUndo {
+  struct PlasticKeyframeState {
+    int m_column;
+    SkDKey m_before;
+  };
+
+  std::vector<PlasticKeyframeState> m_plasticKeyframes;
+
+  static PlasticSkeletonDeformationP plasticDeformation(int column) {
+    if (column < 0) return PlasticSkeletonDeformationP();
+
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    TXshColumn *xshColumn = xsh->getColumn(column);
+    if (!xshColumn || xshColumn->getSoundColumn())
+      return PlasticSkeletonDeformationP();
+
+    return xsh->getStageObject(TStageObjectId::ColumnId(column))
+        ->getPlasticSkeletonDeformation();
+  }
+
+  static bool canInsertPlasticKeyframe(int frame, int column) {
+    if (column < 0) return false;
+
+    TXshColumn *xshColumn =
+        TApp::instance()->getCurrentXsheet()->getXsheet()->getColumn(column);
+    return xshColumn && !xshColumn->getSoundColumn() && !xshColumn->isLocked() &&
+           !xshColumn->isCellEmpty(frame);
+  }
+
+  void insertPlasticKeyframes() const {
+    for (const PlasticKeyframeState &state : m_plasticKeyframes) {
+      PlasticSkeletonDeformationP deformation =
+          plasticDeformation(state.m_column);
+      if (deformation) deformation->setKeyframe(m_frame);
+    }
+  }
+
+  void restorePlasticKeyframes() const {
+    for (const PlasticKeyframeState &state : m_plasticKeyframes) {
+      PlasticSkeletonDeformationP deformation =
+          plasticDeformation(state.m_column);
+      if (!deformation) continue;
+
+      deformation->deleteKeyframe(m_frame);
+      deformation->setKeyframe(state.m_before);
+    }
+  }
+
 public:
   InsertGlobalKeyframeUndo(int frame, const std::vector<int> &columns)
       : GlobalKeyframeUndo(frame) {
     tcg::substitute(
         m_columns,
         columns | ba::filtered([frame](int c){ return !isKeyframe(frame, c); }));
+
+    for (const int column : columns) {
+      if (!canInsertPlasticKeyframe(frame, column)) continue;
+
+      PlasticSkeletonDeformationP deformation = plasticDeformation(column);
+      if (!deformation || deformation->isFullKeyframe(frame)) continue;
+
+      PlasticKeyframeState state;
+      state.m_column = column;
+      deformation->getKeyframeAt(frame, state.m_before);
+      m_plasticKeyframes.push_back(state);
+    }
+  }
+
+  bool isEmpty() const {
+    return m_columns.empty() && m_plasticKeyframes.empty();
   }
 
   void redo() const override {
     doInsertGlobalKeyframes(m_frame, m_columns);
+    insertPlasticKeyframes();
 
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -441,6 +506,7 @@ public:
 
   void undo() const override {
     doRemoveGlobalKeyframes(m_frame, m_columns);
+    restorePlasticKeyframes();
 
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -449,6 +515,11 @@ public:
   QString getHistoryString() override {
     return QObject::tr("Insert Multiple Keys  at Frame %1")
         .arg(QString::number(m_frame + 1));
+  }
+
+  int getSize() const override {
+    return GlobalKeyframeUndo::getSize() +
+           m_plasticKeyframes.size() * sizeof(PlasticKeyframeState);
   }
 };
 
@@ -460,7 +531,12 @@ static void insertGlobalKeyframe(int frame) {
 
   if (columns.empty()) return;
 
-  TUndo *undo = new InsertGlobalKeyframeUndo(frame, columns);
+  InsertGlobalKeyframeUndo *undo = new InsertGlobalKeyframeUndo(frame, columns);
+  if (undo->isEmpty()) {
+    delete undo;
+    return;
+  }
+
   TUndoManager::manager()->add(undo);
 
   undo->redo();
