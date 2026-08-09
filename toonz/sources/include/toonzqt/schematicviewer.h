@@ -649,7 +649,8 @@ private:
   QToolBar *m_stageToolbar, *m_commonToolbar, *m_fxToolbar, *m_swapToolbar;
 
   QAction *m_fitSchematic, *m_centerOn, *m_reorder, *m_normalize, *m_nodeSize,
-      *m_changeScene, *m_selectMode, *m_zoomMode;
+      *m_changeScene, *m_selectMode, *m_zoomMode, *m_handMode,
+      *m_compactNodes, *m_largeNodeText, *m_showFxIds;
 
   bool m_fullSchematic, m_maximizedNode;
 

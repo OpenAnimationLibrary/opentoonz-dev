@@ -1193,6 +1193,28 @@ void SchematicViewer::createActions() {
       connect(iconifyNodes, SIGNAL(toggled(bool)), m_fxScene,
               SLOT(onIconifyNodesToggled(bool)));
 
+      m_compactNodes = new QAction(tr("&Compact Wide Nodes"), m_fxToolbar);
+      m_compactNodes->setCheckable(true);
+      m_compactNodes->setChecked(m_fxScene->isCompactNodeView());
+      connect(m_compactNodes, SIGNAL(toggled(bool)), m_fxScene,
+              SLOT(onCompactNodesToggled(bool)));
+
+      m_largeNodeText = new QAction(tr("&Larger Node Text"), m_fxToolbar);
+      m_largeNodeText->setCheckable(true);
+      m_largeNodeText->setChecked(m_fxScene->usesLargeNodeText());
+      connect(m_largeNodeText, SIGNAL(toggled(bool)), m_fxScene,
+              SLOT(onLargeNodeTextToggled(bool)));
+
+      m_showFxIds = new QAction(tr("Show &FX IDs"), m_fxToolbar);
+      m_showFxIds->setCheckable(true);
+      m_showFxIds->setChecked(m_fxScene->shouldShowFxIds());
+      m_showFxIds->setEnabled(!m_compactNodes->isChecked());
+      connect(m_showFxIds, SIGNAL(toggled(bool)), m_fxScene,
+              SLOT(onShowFxIdsToggled(bool)));
+      connect(m_compactNodes, &QAction::toggled, this, [this](bool compact) {
+        m_showFxIds->setEnabled(!compact);
+      });
+
       // Swap fx/stage schematic
       QIcon changeSchematicIcon = createQIcon("swap");
       m_changeScene =
@@ -1226,6 +1248,10 @@ void SchematicViewer::createActions() {
     m_stageToolbar->addAction(addCamera);
     m_stageToolbar->addAction(addPegbar);
 
+    m_fxToolbar->addSeparator();
+    m_fxToolbar->addAction(m_showFxIds);
+    m_fxToolbar->addAction(m_largeNodeText);
+    m_fxToolbar->addAction(m_compactNodes);
     m_fxToolbar->addSeparator();
     m_fxToolbar->addAction(iconifyNodes);
     m_fxToolbar->addSeparator();
