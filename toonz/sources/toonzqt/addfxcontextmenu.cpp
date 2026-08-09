@@ -42,6 +42,40 @@ std::map<std::string, PluginInformation *> plugin_dict_;
 
 namespace {
 
+enum class FxMenuEntryType { Generator, Schematic, Plugin, Preset, Macro };
+
+QString fxMenuEntryTypeText(FxMenuEntryType type) {
+  switch (type) {
+  case FxMenuEntryType::Generator:
+    return QObject::tr("Generator");
+  case FxMenuEntryType::Schematic:
+    return QObject::tr("Schematic");
+  case FxMenuEntryType::Plugin:
+    return QObject::tr("Plugin");
+  case FxMenuEntryType::Preset:
+    return QObject::tr("Preset");
+  case FxMenuEntryType::Macro:
+    return QObject::tr("Macro");
+  }
+
+  return QObject::tr("FX");
+}
+
+FxMenuEntryType fxMenuEntryType(const std::string &fxName) {
+  std::unique_ptr<TFx> fx(TFx::create(fxName));
+  return fx && fx->isZerary() ? FxMenuEntryType::Generator
+                              : FxMenuEntryType::Schematic;
+}
+
+void identifyFxMenuAction(QAction *action, const QString &name,
+                          FxMenuEntryType type) {
+  QString typeText = fxMenuEntryTypeText(type);
+  action->setText(QString("%1 [%2]").arg(name, typeText));
+  action->setToolTip(QObject::tr("%1 FX").arg(typeText));
+}
+
+//---------------------------------------------------
+
 TFx *createFxByName(std::string fxId) {
   if (fxId.find("_ext_") == 0) return TExternFx::create(fxId.substr(5));
   if (fxId.find("_plg_") == 0) {
@@ -325,6 +359,9 @@ void AddFxContextMenu::loadFxPlugins(QMenu *insertFxGroup, QMenu *addFxGroup,
     addAction->setData(QVariant("_plg_" + QString::fromStdString(desc->id_)));
     replaceAction->setData(
         QVariant("_plg_" + QString::fromStdString(desc->id_)));
+    identifyFxMenuAction(insertAction, label, FxMenuEntryType::Plugin);
+    identifyFxMenuAction(addAction, label, FxMenuEntryType::Plugin);
+    identifyFxMenuAction(replaceAction, label, FxMenuEntryType::Plugin);
 
     (*insVendors.find(desc->vendor_)).second->addAction(insertAction);
     (*addVendors.find(desc->vendor_)).second->addAction(addAction);
@@ -380,6 +417,10 @@ void AddFxContextMenu::loadFx(TIStream *is, QMenu *insertFxGroup,
         insertAction->setData(QVariant(QString::fromStdString(fxName)));
         addAction->setData(QVariant(QString::fromStdString(fxName)));
         replaceAction->setData(QVariant(QString::fromStdString(fxName)));
+        FxMenuEntryType type = fxMenuEntryType(fxName);
+        identifyFxMenuAction(insertAction, translatedName, type);
+        identifyFxMenuAction(addAction, translatedName, type);
+        identifyFxMenuAction(replaceAction, translatedName, type);
 
         insertFxGroup->addAction(insertAction);
         addFxGroup->addAction(addAction);
@@ -436,6 +477,12 @@ bool AddFxContextMenu::loadPreset(const std::string &name, QMenu *insertFxGroup,
       insertAction->setData(QVariant(QString::fromStdString(name)));
       addAction->setData(QVariant(QString::fromStdString(name)));
       replaceAction->setData(QVariant(QString::fromStdString(name)));
+      FxMenuEntryType type = fxMenuEntryType(name);
+      QString translatedName =
+          QString::fromStdWString(TStringTable::translate(name));
+      identifyFxMenuAction(insertAction, translatedName, type);
+      identifyFxMenuAction(addAction, translatedName, type);
+      identifyFxMenuAction(replaceAction, translatedName, type);
 
       inserMenu->addAction(insertAction);
       addMenu->addAction(addAction);
@@ -460,6 +507,10 @@ bool AddFxContextMenu::loadPreset(const std::string &name, QMenu *insertFxGroup,
             QVariant(QString::fromStdWString(presetName.getWideString())));
         replaceAction->setData(
             QVariant(QString::fromStdWString(presetName.getWideString())));
+        identifyFxMenuAction(insertAction, qPresetName, FxMenuEntryType::Preset);
+        identifyFxMenuAction(addAction, qPresetName, FxMenuEntryType::Preset);
+        identifyFxMenuAction(replaceAction, qPresetName,
+                             FxMenuEntryType::Preset);
 
         inserMenu->addAction(insertAction);
         addMenu->addAction(addAction);
@@ -508,6 +559,9 @@ void AddFxContextMenu::loadMacro() {
             QVariant(QString::fromStdWString(macroPath.getWideString())));
         replaceAction->setData(
             QVariant(QString::fromStdWString(macroPath.getWideString())));
+        identifyFxMenuAction(insertAction, name, FxMenuEntryType::Macro);
+        identifyFxMenuAction(addAction, name, FxMenuEntryType::Macro);
+        identifyFxMenuAction(replaceAction, name, FxMenuEntryType::Macro);
 
         insertMacroMenu->addAction(insertAction);
         addMacroMenu->addAction(addAction);
