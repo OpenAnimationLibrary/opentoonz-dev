@@ -279,6 +279,7 @@
 #define MI_SelectFollowingKeysInColumn "MI_SelectFollowingKeysInColumn"
 #define MI_SelectPreviousKeysInRow "MI_SelectPreviousKeysInRow"
 #define MI_SelectFollowingKeysInRow "MI_SelectFollowingKeysInRow"
+#define MI_SelectKeyframesInSelectedCells "MI_SelectKeyframesInSelectedCells"
 #define MI_InvertKeyframeSelection "MI_InvertKeyframeSelection"
 
 #define MI_ShiftKeyframesDown "MI_ShiftKeyframesDown"

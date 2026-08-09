@@ -1085,6 +1085,40 @@ public:
 //    Selection  commands
 //*****************************************************************************
 
+class SelectKeyframesInSelectedCellsCommand final : public MenuItemHandler {
+public:
+  SelectKeyframesInSelectedCellsCommand()
+      : MenuItemHandler(MI_SelectKeyframesInSelectedCells) {}
+
+  void execute() override {
+    TApp *app = TApp::instance();
+    TCellSelection *cellSelection = dynamic_cast<TCellSelection *>(
+        app->getCurrentSelection()->getSelection());
+    XsheetViewer *viewer = app->getCurrentXsheetViewer();
+    if (!cellSelection || cellSelection->isEmpty() || !viewer) return;
+
+    TCellSelection::Range range = cellSelection->getSelectedCells();
+    TXsheet *xsh                = app->getCurrentXsheet()->getXsheet();
+    TKeyframeSelection *selection = viewer->getKeyframeSelection();
+    cellSelection->selectNone();
+    selection->selectNone();
+    viewer->getCellKeyframeSelection()->makeCurrent();
+
+    int firstColumn = std::max(0, range.m_c0);
+    int lastColumn = std::min(range.m_c1, xsh->getColumnCount() - 1);
+    for (int col = firstColumn; col <= lastColumn; ++col) {
+      TStageObject *object =
+          xsh->getStageObject(TStageObjectId::ColumnId(col));
+      for (int row = std::max(0, range.m_r0); row <= range.m_r1; ++row) {
+        if (object->isKeyframe(row)) selection->select(row, col);
+      }
+    }
+    app->getCurrentXsheet()->notifyXsheetChanged();
+  }
+} selectKeyframesInSelectedCellsCommand;
+
+//-----------------------------------------------------------------------------
+
 class SelectRowKeyframesCommand final : public MenuItemHandler {
 public:
   SelectRowKeyframesCommand() : MenuItemHandler(MI_SelectRowKeyframes) {}

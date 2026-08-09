@@ -3952,6 +3952,7 @@ void CellArea::createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell,
       }
 
       if (!soundCellsSelected && !soundTextCellsSelected) {
+        menu.addAction(cmdManager->getAction(MI_SelectKeyframesInSelectedCells));
         if (selectionContainTlvImage(m_viewer->getCellSelection(),
                                      m_viewer->getXsheet()))
           replaceLevelMenu->addAction(
@@ -4145,6 +4146,7 @@ void CellArea::createKeyMenu(QMenu &menu) {
   menu.addAction(cmdManager->getAction(MI_SelectFollowingKeysInColumn));
   menu.addAction(cmdManager->getAction(MI_SelectPreviousKeysInRow));
   menu.addAction(cmdManager->getAction(MI_SelectFollowingKeysInRow));
+  menu.addAction(cmdManager->getAction(MI_SelectKeyframesInSelectedCells));
   menu.addAction(cmdManager->getAction(MI_InvertKeyframeSelection));
   menu.addSeparator();
   menu.addAction(cmdManager->getAction(MI_Cut));

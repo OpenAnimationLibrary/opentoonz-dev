@@ -2908,6 +2908,8 @@ void MainWindow::defineActions() {
   createRightClickMenuAction(MI_SelectFollowingKeysInRow,
                              QT_TR_NOOP("Select Following Keys in this Frame"),
                              "");
+  createRightClickMenuAction(MI_SelectKeyframesInSelectedCells,
+                             QT_TR_NOOP("Select Keys in Selected Cells"), "");
   createRightClickMenuAction(MI_InvertKeyframeSelection,
                              QT_TR_NOOP("Invert Key Selection"), "");
   createRightClickMenuAction(MI_SetAcceleration, QT_TR_NOOP("Set Acceleration"),
