@@ -1,0 +1,23 @@
+<fxlayout>
+  <page name="Bezier Mask">
+    <vbox label="Path">
+      <control>anchor_1</control>
+      <control>outgoing_1</control>
+      <control>incoming_1</control>
+      <control>anchor_2</control>
+      <control>outgoing_2</control>
+      <control>incoming_2</control>
+      <control>anchor_3</control>
+      <control>outgoing_3</control>
+      <control>incoming_3</control>
+      <control>anchor_4</control>
+      <control>outgoing_4</control>
+      <control>incoming_4</control>
+    </vbox>
+    <separator label="Mask"/>
+    <control>inner_feather</control>
+    <control>outer_feather</control>
+    <control>opacity</control>
+    <control>invert</control>
+  </page>
+</fxlayout>
