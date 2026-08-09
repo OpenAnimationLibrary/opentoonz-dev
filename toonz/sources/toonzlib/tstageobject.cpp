@@ -603,7 +603,8 @@ void TStageObject::setParent(const TStageObjectId &parentId) {
             m_parent->m_id.isPegbar() || m_parent->m_id.isCamera()));
   } else if (m_id.isPegbar()) {
     assert(m_parent && (m_parent->m_id.isTable() || m_parent->m_id.isCamera() ||
-                        m_parent->m_id.isPegbar()));
+                        m_parent->m_id.isPegbar() ||
+                        m_parent->m_id.isColumn()));
   } else {
     assert(0);
   }

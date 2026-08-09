@@ -828,7 +828,8 @@ bool StageSchematicNodePort::linkTo(SchematicPort *port, bool checkOnly) {
     return false;
   if (pegbar->getId().isTable()) return false;
   if (pegbar->getId().isPegbar() && !parentPegbar->getId().isTable() &&
-      !parentPegbar->getId().isPegbar() && !parentPegbar->getId().isCamera())
+      !parentPegbar->getId().isPegbar() && !parentPegbar->getId().isCamera() &&
+      !parentPegbar->getId().isColumn())
     return false;
 
   if (parentPegbar == pegbar || parentPegbar->isAncestor(pegbar)) return false;
