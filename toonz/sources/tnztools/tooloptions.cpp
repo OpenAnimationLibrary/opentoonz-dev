@@ -53,6 +53,10 @@
 // Qt includes
 #include <QPainter>
 #include <QToolBar>
+#include <QLineEdit>
+
+#include <cmath>
+#include <limits>
 #include <QDockWidget>
 #include <QHBoxLayout>
 #include <QComboBox>
@@ -1615,7 +1619,10 @@ void GeometricToolOptionsBox::onJoinStyleChanged(int joinStyle) {
 TypeToolOptionsBox::TypeToolOptionsBox(QWidget *parent, TTool *tool,
                                        TPaletteHandle *pltHandle,
                                        ToolHandle *toolHandle)
-    : ToolOptionsBox(parent), m_tool(tool) {
+    : ToolOptionsBox(parent)
+    , m_tool(tool)
+    , m_toolHandle(toolHandle)
+    , m_sizeField(nullptr) {
   TPropertyGroup *props = tool->getProperties(0);
   assert(props->getPropertyCount() > 0);
 
@@ -1643,10 +1650,12 @@ TypeToolOptionsBox::TypeToolOptionsBox(QWidget *parent, TTool *tool,
                 styleField, SLOT(reloadComboBoxList(std::string)));
   // #endif
 
-  ToolOptionCombo *sizeField =
-      dynamic_cast<ToolOptionCombo *>(m_controls.value("Size:"));
-  ret &&connect(sizeField, SIGNAL(currentIndexChanged(int)), this,
+  m_sizeField = dynamic_cast<ToolOptionCombo *>(m_controls.value("Size:"));
+  ret &&connect(m_sizeField, SIGNAL(currentIndexChanged(int)), this,
                 SLOT(onFieldChanged()));
+  m_sizeField->setEditable(true);
+  ret = ret && connect(m_sizeField->lineEdit(), SIGNAL(editingFinished()),
+                       SLOT(onSizeEdited()));
 
   ToolOptionCheckbox *orientationField = dynamic_cast<ToolOptionCheckbox *>(
       m_controls.value("Vertical Orientation"));
@@ -1668,6 +1677,31 @@ void TypeToolOptionsBox::updateStatus() {
 
 void TypeToolOptionsBox::onFieldChanged() {
   assert(m_tool);
+  m_tool->getViewer()->setFocus();
+}
+
+//-----------------------------------------------------------------------------
+
+void TypeToolOptionsBox::onSizeEdited() {
+  if (!m_sizeField || !m_tool) return;
+
+  QString text = m_sizeField->currentText().trimmed();
+  bool valid   = false;
+  const double size = text.toDouble(&valid);
+  if (!valid || !std::isfinite(size) || size < 1.0 ||
+      size > std::numeric_limits<int>::max()) {
+    m_sizeField->setEditText(
+        QString::fromStdWString(m_sizeField->getProperty()->getValue()));
+    return;
+  }
+
+  const std::wstring value = QString::number(size, 'g', 12).toStdWString();
+  TEnumProperty *property  = m_sizeField->getProperty();
+  if (!property->isValue(value)) property->addValue(value);
+  property->setValue(value);
+  m_sizeField->loadEntries();
+  m_tool->onPropertyChanged(property->getName());
+  if (m_toolHandle) m_toolHandle->notifyToolChanged();
   m_tool->getViewer()->setFocus();
 }
 

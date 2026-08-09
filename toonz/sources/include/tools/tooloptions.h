@@ -455,6 +455,8 @@ class TypeToolOptionsBox final : public ToolOptionsBox {
   Q_OBJECT
 
   TTool *m_tool;
+  ToolHandle *m_toolHandle;
+  ToolOptionCombo *m_sizeField;
 
 public:
   TypeToolOptionsBox(QWidget *parent, TTool *tool, TPaletteHandle *pltHandle,
@@ -464,6 +466,7 @@ public:
 
 protected slots:
   void onFieldChanged();
+  void onSizeEdited();
 };
 
 //=============================================================================
