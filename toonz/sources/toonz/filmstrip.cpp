@@ -11,6 +11,7 @@
 #include "filmstripselection.h"
 #include "onionskinmaskgui.h"
 #include "comboviewerpane.h"
+#include "historytypes.h"
 
 // TnzQt includes
 #include "toonzqt/icongenerator.h"
@@ -27,6 +28,9 @@
 #include "toonz/tobjecthandle.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/txshcell.h"
+#include "toonz/txshcolumn.h"
+#include "toonz/txsheet.h"
 #include "toonz/stage2.h"
 #include "toonz/levelproperties.h"
 #include "toonz/palettecontroller.h"
@@ -38,6 +42,7 @@
 
 // TnzCore includes
 #include "tpalette.h"
+#include "tundo.h"
 
 // Qt includes
 #include <QPainter>
@@ -88,6 +93,40 @@ QString fidToFrameNumberWithLetter(int f) {
   }
   return str;
 }
+
+class SubstituteLevelStripCellUndo final : public TUndo {
+  const int m_row;
+  const int m_col;
+  const TXshCell m_oldCell;
+  const TXshCell m_newCell;
+
+  void setCell(const TXshCell &cell) const {
+    TApp *app    = TApp::instance();
+    TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
+    if (cell.isEmpty())
+      xsh->clearCells(m_row, m_col);
+    else
+      xsh->setCell(m_row, m_col, cell);
+    app->getCurrentXsheet()->notifyXsheetChanged();
+  }
+
+public:
+  SubstituteLevelStripCellUndo(int row, int col, const TXshCell &oldCell,
+                               const TXshCell &newCell)
+      : m_row(row), m_col(col), m_oldCell(oldCell), m_newCell(newCell) {}
+
+  void undo() const override { setCell(m_oldCell); }
+
+  void redo() const override { setCell(m_newCell); }
+
+  int getSize() const override { return sizeof(*this); }
+
+  QString getHistoryString() override {
+    return QObject::tr("Substitute Drawing in Cell");
+  }
+
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
 }  // namespace
 
 //=============================================================================
@@ -1274,6 +1313,12 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
     menu->addAction(cm->getAction(MI_Duplicate));
     menu->addAction(cm->getAction(MI_MergeFrames));
   }
+  if (canSubstituteCurrentCell()) {
+    QAction *substituteAction =
+        menu->addAction(tr("Substitute Current Cell with This Drawing"));
+    connect(substituteAction, &QAction::triggered, this,
+            &FilmstripFrames::substituteCurrentCell);
+  }
   menu->addAction(cm->getAction(MI_ExposeResource));
   if (!isSubsequenceLevel && !isReadOnly) {
     menu->addAction(cm->getAction(MI_AddFrames));
@@ -1303,6 +1348,48 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
           SLOT(navigatorToggled(bool)));
 
   menu->exec(event->globalPos());
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::canSubstituteCurrentCell() const {
+  TApp *app = TApp::instance();
+  if (m_selection->getSelectedFids().size() != 1 ||
+      app->getCurrentFrame()->isEditingLevel() || !getLevel())
+    return false;
+
+  int row = app->getCurrentFrame()->getFrame();
+  int col = app->getCurrentColumn()->getColumnIndex();
+  if (row < 0 || col < 0) return false;
+
+  TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
+  if (!xsh) return false;
+
+  TXshColumn *column = xsh->getColumn(col);
+  return !column || column->getColumnType() == TXshColumn::eLevelType;
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::substituteCurrentCell() {
+  if (!canSubstituteCurrentCell()) return;
+
+  TApp *app            = TApp::instance();
+  TXshSimpleLevel *sl  = getLevel();
+  TFrameId fid         = *m_selection->getSelectedFids().begin();
+  int row               = app->getCurrentFrame()->getFrame();
+  int col               = app->getCurrentColumn()->getColumnIndex();
+  TXsheet *xsh          = app->getCurrentXsheet()->getXsheet();
+  TXshCell oldCell      = xsh->getCell(row, col);
+  TXshCell substituteCell(sl, fid);
+
+  if (oldCell.getSimpleLevel() == sl && oldCell.getFrameId() == fid) return;
+
+  xsh->setCell(row, col, substituteCell);
+  TUndoManager::manager()->add(
+      new SubstituteLevelStripCellUndo(row, col, oldCell, substituteCell));
+  app->getCurrentXsheet()->notifyXsheetChanged();
+  app->getCurrentScene()->setDirtyFlag(true);
 }
 
 //-----------------------------------------------------------------------------

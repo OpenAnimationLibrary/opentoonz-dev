@@ -158,6 +158,8 @@ protected:
   void startDragDrop();
   void createSelectLevelMenu(QMenu *menu);
   void inbetween();
+  bool canSubstituteCurrentCell() const;
+  void substituteCurrentCell();
 
   void execNavigatorPan(const QPoint &point);
   void mouseDoubleClickEvent(QMouseEvent *event) override;
