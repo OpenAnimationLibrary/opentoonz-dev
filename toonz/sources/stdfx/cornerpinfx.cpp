@@ -59,6 +59,7 @@ private:
   TRasterFxPort m_texture;
 
   TIntEnumParamP m_distortType;
+  TBoolParamP m_simpleControls;
 
   TPointParamP m_p00_a;
   TPointParamP m_p00_b;
@@ -77,12 +78,15 @@ private:
   TDoubleParamP m_value;
 
   TAffine getPort1Affine(double frame) const;
+  void getSourceQuad(double frame, TPointD &p00, TPointD &p10, TPointD &p01,
+                     TPointD &p11) const;
 };
 
 //==============================================================================
 
 CornerPinFx::CornerPinFx()
     : m_distortType(new TIntEnumParam(PERSPECTIVE, "Perspective"))
+    , m_simpleControls(false)
     , m_deactivate(false)
     , m_string(L"1,2,3")
     , m_mode(new TIntEnumParam(SUBSTITUTE, "Texture"))
@@ -121,6 +125,7 @@ CornerPinFx::CornerPinFx()
   m_p11_a->getY()->setMeasureName("fxLength");
 
   bindParam(this, "distort_type", m_distortType);
+  bindParam(this, "simple_controls", m_simpleControls);
 
   bindParam(this, "bottom_left_b", m_p00_b);
   bindParam(this, "bottom_right_b", m_p10_b);
@@ -223,16 +228,38 @@ TAffine CornerPinFx::getPort1Affine(double frame) const {
 
 // ------------------------------------------------------------------------
 
+void CornerPinFx::getSourceQuad(double frame, TPointD &p00, TPointD &p10,
+                                TPointD &p01, TPointD &p11) const {
+  if (m_simpleControls->getValue() && m_texture.isConnected()) {
+    TRenderSettings settings;
+    TRectD sourceBox;
+    TRasterFx *texture = dynamic_cast<TRasterFx *>(m_texture.getFx());
+    if (texture && texture->getBBox(frame, sourceBox, settings) &&
+        sourceBox != TConsts::infiniteRectD && !myIsEmpty(sourceBox)) {
+      p00 = sourceBox.getP00();
+      p10 = TPointD(sourceBox.x1, sourceBox.y0);
+      p01 = TPointD(sourceBox.x0, sourceBox.y1);
+      p11 = sourceBox.getP11();
+      return;
+    }
+  }
+
+  p00 = m_p00_b->getValue(frame);
+  p10 = m_p10_b->getValue(frame);
+  p01 = m_p01_b->getValue(frame);
+  p11 = m_p11_b->getValue(frame);
+}
+
+// ------------------------------------------------------------------------
+
 void CornerPinFx::transform(double frame, int port, const TRectD &rectOnOutput,
                             const TRenderSettings &infoOnOutput,
                             TRectD &rectOnInput, TRenderSettings &infoOnInput) {
   // Build the input affine
   infoOnInput = infoOnOutput;
 
-  TPointD p00_b = m_p00_b->getValue(frame);
-  TPointD p10_b = m_p10_b->getValue(frame);
-  TPointD p01_b = m_p01_b->getValue(frame);
-  TPointD p11_b = m_p11_b->getValue(frame);
+  TPointD p00_b, p10_b, p01_b, p11_b;
+  getSourceQuad(frame, p00_b, p10_b, p01_b, p11_b);
 
   TPointD p00_a = m_p00_a->getValue(frame);
   TPointD p10_a = m_p10_a->getValue(frame);
@@ -346,10 +373,12 @@ void CornerPinFx::safeTransform(double frame, int port,
   // In case inBBox is infinite, such as with gradients, also intersect with the
   // input quadrilateral's bbox
   if (inBBox == TConsts::infiniteRectD) {
-    TPointD affP00_b(infoOnInput.m_affine * m_p00_b->getValue(frame));
-    TPointD affP10_b(infoOnInput.m_affine * m_p10_b->getValue(frame));
-    TPointD affP01_b(infoOnInput.m_affine * m_p01_b->getValue(frame));
-    TPointD affP11_b(infoOnInput.m_affine * m_p11_b->getValue(frame));
+    TPointD p00_b, p10_b, p01_b, p11_b;
+    getSourceQuad(frame, p00_b, p10_b, p01_b, p11_b);
+    TPointD affP00_b(infoOnInput.m_affine * p00_b);
+    TPointD affP10_b(infoOnInput.m_affine * p10_b);
+    TPointD affP01_b(infoOnInput.m_affine * p01_b);
+    TPointD affP11_b(infoOnInput.m_affine * p11_b);
 
     TRectD source;
     source.x0 = std::min({affP00_b.x, affP10_b.x, affP01_b.x, affP11_b.x});
@@ -488,10 +517,8 @@ void CornerPinFx::doCompute(TTile &tile, double frame,
                                   frame, riNew);
 
     // Get the source quad
-    TPointD p00_b = m_p00_b->getValue(frame);
-    TPointD p10_b = m_p10_b->getValue(frame);
-    TPointD p01_b = m_p01_b->getValue(frame);
-    TPointD p11_b = m_p11_b->getValue(frame);
+    TPointD p00_b, p10_b, p01_b, p11_b;
+    getSourceQuad(frame, p00_b, p10_b, p01_b, p11_b);
 
     // Get destination quad
     TPointD p00_a = m_p00_a->getValue(frame);
@@ -672,6 +699,17 @@ yMin=std::min(points.m_p00.y,points.m_p01.y,points.m_p10.y,points.m_p11.y);
 
 // Enables the cage UI
 void CornerPinFx::getParamUIs(TParamUIConcept *&concepts, int &length) {
+  if (m_simpleControls->getValue()) {
+    concepts         = new TParamUIConcept[length = 1];
+    concepts[0].m_type = TParamUIConcept::QUAD;
+    concepts[0].m_params.push_back(m_p01_a);
+    concepts[0].m_params.push_back(m_p11_a);
+    concepts[0].m_params.push_back(m_p10_a);
+    concepts[0].m_params.push_back(m_p00_a);
+    concepts[0].m_label = " Dst";
+    return;
+  }
+
   concepts = new TParamUIConcept[length = 6];
 
   concepts[0].m_type = TParamUIConcept::QUAD;
