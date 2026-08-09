@@ -2865,6 +2865,8 @@ void MainWindow::defineActions() {
                false, RightClickMenuCommandType);
   createRightClickMenuAction(MI_ToggleCurrentTimeIndicator,
                              QT_TR_NOOP("Toggle Current Time Indicator"), "");
+  createRightClickMenuAction(MI_SelectParentColumn,
+                             QT_TR_NOOP("Select Parent Column"), "");
   createRightClickMenuAction(MI_DuplicateFile, QT_TR_NOOP("Duplicate"), "",
                              "duplicate");
   createRightClickMenuAction(MI_ShowFolderContents,

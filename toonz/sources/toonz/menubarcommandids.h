@@ -321,6 +321,7 @@
 #define MI_FoldColumns "MI_FoldColumns"
 #define MI_ToggleXsheetCameraColumn "MI_ToggleXsheetCameraColumn"
 #define MI_ToggleCurrentTimeIndicator "MI_ToggleCurrentTimeIndicator"
+#define MI_SelectParentColumn "MI_SelectParentColumn"
 
 #define MI_LoadIntoCurrentPalette "MI_LoadIntoCurrentPalette"
 #define MI_AdjustCurrentLevelToPalette "MI_AdjustCurrentLevelToPalette"

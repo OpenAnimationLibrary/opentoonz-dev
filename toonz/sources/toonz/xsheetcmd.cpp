@@ -232,6 +232,37 @@ public:
 
 //=============================================================================
 
+class SelectParentColumnCommand final : public MenuItemHandler {
+public:
+  SelectParentColumnCommand() : MenuItemHandler(MI_SelectParentColumn) {}
+
+  void execute() override {
+    TApp *app  = TApp::instance();
+    int column = app->getCurrentColumn()->getColumnIndex();
+    if (column < 0) return;
+
+    TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
+    TStageObjectId parent =
+        xsh->getStageObjectParent(TStageObjectId::ColumnId(column));
+    if (!parent.isColumn()) return;
+
+    XsheetViewer *viewer = app->getCurrentXsheetViewer();
+    if (!viewer) {
+      app->getCurrentColumn()->setColumnIndex(parent.getIndex());
+      return;
+    }
+
+    viewer->setCurrentColumn(parent.getIndex());
+    TColumnSelection *selection = viewer->getColumnSelection();
+    selection->selectNone();
+    selection->selectColumn(parent.getIndex(), true);
+    selection->makeCurrent();
+    viewer->update();
+  }
+} selectParentColumnCommand;
+
+//=============================================================================
+
 class InsertSceneFrameCommand final : public MenuItemHandler {
 public:
   InsertSceneFrameCommand() : MenuItemHandler(MI_InsertSceneFrame) {}
