@@ -253,8 +253,16 @@ protected slots:
   void onEditGroup();
 
   void onIconifyNodesToggled(bool iconified);
+  void onCompactNodesToggled(bool compact);
+  void onLargeNodeTextToggled(bool largeText);
+  void onShowFxIdsToggled(bool showFxIds);
 
   void onNodeChangedSize();
+
+public:
+  bool isCompactNodeView() const;
+  bool usesLargeNodeText() const;
+  bool shouldShowFxIds() const;
 
 private:
   void setEnableCache(bool toggle);

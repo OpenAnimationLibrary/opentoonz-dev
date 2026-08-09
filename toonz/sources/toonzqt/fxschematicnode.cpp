@@ -674,7 +674,10 @@ void FxPainter::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
   }
 
   QFont columnFont(painter->font());
-  columnFont.setPixelSize(columnFont.pixelSize() - 1);
+  const int pixelSize = columnFont.pixelSize();
+  if (pixelSize > 0)
+    columnFont.setPixelSize(
+        pixelSize + (sceneFx->usesLargeNodeText() ? 1 : -1));
   painter->setFont(columnFont);
 
   // draw fxId in the bottom part
@@ -694,7 +697,9 @@ void FxPainter::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
       label = QString::fromStdWString(m_parent->getFx()->getFxId());
   }
 
-  if (label != m_name) {
+  const bool showFxId = sceneFx->shouldShowFxIds() &&
+                        !sceneFx->isCompactNodeView();
+  if (showFxId && label != m_name) {
     label = elideText(label, painter->font(), m_width - 21);
     painter->drawText(QRectF(3, 16, m_width - 21, 14),
                       Qt::AlignLeft | Qt::AlignVCenter, label);
@@ -707,14 +712,13 @@ void FxPainter::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
     if (!sceneFx) return;
     if (sceneFx->getCurrentFx() == m_parent->getFx())
       painter->setPen(viewer->getSelectedNodeTextColor());
-    QRectF rect(3, 2, m_width - 21, 14);
+    QRectF rect(3, 2, m_width - 21, showFxId ? 14 : m_height - 4);
     int w = rect.width();
-    if (label == m_name) {
-      rect.adjust(0, 0, 0, 14);
+    if (!showFxId || label == m_name) {
       w *= 2;
     }
     QString elidedName = elideText(m_name, painter->font(), w);
-    painter->drawText(rect, Qt::TextWrapAnywhere, elidedName);
+    painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, elidedName);
   }
 }
 
@@ -2023,8 +2027,11 @@ FxSchematicNode::FxSchematicNode(FxSchematicScene *scene, TFx *fx, qreal width,
     m_actualFx           = zfx ? zfx->getZeraryFx() : m_fx;
   }
 
-  setWidth(width);
-  setHeight(height);
+  const bool compactFxNode =
+      m_isNormalIconView && scene->isCompactNodeView() &&
+      (m_type == eNormalFx || m_type == eZeraryFx || m_type == eGroupedFx);
+  setWidth(compactFxNode ? 140 : width);
+  setHeight(compactFxNode ? 18 : height);
 }
 
 //-----------------------------------------------------
@@ -2614,9 +2621,9 @@ FxSchematicNormalFxNode::FxSchematicNormalFxNode(FxSchematicScene *scene,
 
   if (m_isNormalIconView) {
     m_nameItem->setPos(1, -1);
-    m_outDock->setPos(72, 14);
-    m_linkDock->setPos(72, 7);
-    m_renderToggle->setPos(72, 0);
+    m_outDock->setPos(m_width - 18, 14);
+    m_linkDock->setPos(m_width - 18, 7);
+    m_renderToggle->setPos(m_width - 18, 0);
   } else {
     QFont fnt = m_nameItem->font();
     fnt.setPixelSize(fnt.pixelSize() * 2);
@@ -2895,10 +2902,10 @@ FxSchematicZeraryNode::FxSchematicZeraryNode(FxSchematicScene *scene,
   // define positions
   if (m_isNormalIconView) {
     m_nameItem->setPos(1, -1);
-    m_outDock->setPos(72, 14);
-    m_linkDock->setPos(72, m_height);
-    m_renderToggle->setPos(72, 0);
-    m_cameraStandToggle->setPos(72, 7);
+    m_outDock->setPos(m_width - 18, 14);
+    m_linkDock->setPos(m_width - 18, m_height);
+    m_renderToggle->setPos(m_width - 18, 0);
+    m_cameraStandToggle->setPos(m_width - 18, 7);
 
   } else {
     QFont fnt = m_nameItem->font();
@@ -3643,8 +3650,8 @@ FxGroupNode::FxGroupNode(FxSchematicScene *scene, const QList<TFxP> &groupedFx,
   // set geometry
   if (m_isNormalIconView) {
     m_nameItem->setPos(1, -1);
-    m_renderToggle->setPos(72, 0);
-    m_outDock->setPos(72, 14);
+    m_renderToggle->setPos(m_width - 18, 0);
+    m_outDock->setPos(m_width - 18, 14);
     inDock->setPos(0, m_height);
   } else {
     QFont fnt = m_nameItem->font();

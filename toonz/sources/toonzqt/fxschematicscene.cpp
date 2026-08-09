@@ -47,6 +47,9 @@
 #include <QStack>
 
 TEnv::IntVar IconifyFxSchematicNodes("IconifyFxSchematicNodes", 0);
+TEnv::IntVar CompactFxSchematicNodes("CompactFxSchematicNodes", 0);
+TEnv::IntVar LargeFxSchematicNodeText("LargeFxSchematicNodeText", 0);
+TEnv::IntVar ShowFxSchematicNodeIds("ShowFxSchematicNodeIds", 1);
 
 namespace {
 
@@ -1590,6 +1593,45 @@ void FxSchematicScene::onIconifyNodesToggled(bool iconified) {
   m_isNormalIconView      = !iconified;
   IconifyFxSchematicNodes = (iconified) ? 1 : 0;
   updateScene();
+}
+
+//------------------------------------------------------------------
+
+void FxSchematicScene::onCompactNodesToggled(bool compact) {
+  CompactFxSchematicNodes = compact ? 1 : 0;
+  updateScene();
+}
+
+//------------------------------------------------------------------
+
+void FxSchematicScene::onLargeNodeTextToggled(bool largeText) {
+  LargeFxSchematicNodeText = largeText ? 1 : 0;
+  updateScene();
+}
+
+//------------------------------------------------------------------
+
+void FxSchematicScene::onShowFxIdsToggled(bool showFxIds) {
+  ShowFxSchematicNodeIds = showFxIds ? 1 : 0;
+  updateScene();
+}
+
+//------------------------------------------------------------------
+
+bool FxSchematicScene::isCompactNodeView() const {
+  return CompactFxSchematicNodes != 0;
+}
+
+//------------------------------------------------------------------
+
+bool FxSchematicScene::usesLargeNodeText() const {
+  return LargeFxSchematicNodeText != 0;
+}
+
+//------------------------------------------------------------------
+
+bool FxSchematicScene::shouldShowFxIds() const {
+  return ShowFxSchematicNodeIds != 0;
 }
 
 //------------------------------------------------------------------
