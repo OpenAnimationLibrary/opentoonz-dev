@@ -1203,9 +1203,9 @@ bool ChangeDrawingTool::changeDrawing(int delta) {
   int row                 = app->getCurrentFrame()->getFrame();
   int col                 = app->getCurrentColumn()->getColumnIndex();
   TXshCell cell           = xsh->getCell(row, col);
-  if (!cell.m_level || !cell.m_level->getSimpleLevel()) return false;
+  if (!cell.m_level) return false;
   std::vector<TFrameId> fids;
-  cell.m_level->getSimpleLevel()->getFids(fids);
+  cell.m_level->getFids(fids);
   int n = fids.size();
   if (n < 2) return false;
   std::vector<TFrameId>::iterator it;
