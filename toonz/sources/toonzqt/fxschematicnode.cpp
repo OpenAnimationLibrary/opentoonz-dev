@@ -73,6 +73,29 @@ bool isAInnerMacroFx(TFx *fx, TXsheet *xsh) {
 
 //-----------------------------------------------------
 
+bool hasLevelSettingsAtCurrentFrame(FxSchematicScene *scene, int column) {
+  if (!scene || column < 0) return false;
+
+  TXsheet *xsheet = scene->getXsheet();
+  if (!xsheet) return false;
+
+  TFrameHandle *frameHandle = scene->getFrameHandle();
+  if (!frameHandle) return false;
+
+  int frame       = frameHandle->getFrame();
+  if (frame < 0) return false;
+  TXshLevel *level = xsheet->getCell(frame, column).m_level.getPointer();
+  if (!level && frame > 0)
+    level = xsheet->getCell(frame - 1, column).m_level.getPointer();
+
+  if (!level) return false;
+
+  int type = level->getType();
+  return type == OVL_XSHLEVEL || type == TZP_XSHLEVEL || type == PLI_XSHLEVEL;
+}
+
+//-----------------------------------------------------
+
 // Draw a cached FX flap indicator
 void drawCachedFxFlap(QPainter *painter, const QPointF &pos) {
   painter->save();
@@ -3369,13 +3392,13 @@ void FxSchematicColumnNode::mouseDoubleClickEvent(
     m_nameItem->show();
     m_nameItem->setFocus();
     setFlag(QGraphicsItem::ItemIsSelectable, false);
-  } else {
-    QAction *fxEditorPopup =
-        CommandManager::instance()->getAction(MI_FxParamEditor);
-    fxEditorPopup->trigger();
-    // this signal cause the update the contents of the FxSettings
-    emit fxNodeDoubleClicked();
+    return;
   }
+
+  FxSchematicScene *fxScene = dynamic_cast<FxSchematicScene *>(scene());
+  if (!hasLevelSettingsAtCurrentFrame(fxScene, m_columnIndex)) return;
+
+  CommandManager::instance()->getAction(MI_LevelSettings)->trigger();
 }
 
 //-----------------------------------------------------

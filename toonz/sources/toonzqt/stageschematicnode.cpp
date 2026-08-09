@@ -49,7 +49,32 @@
 
 #include "toonzqt/stageschematicnode.h"
 
+#include "../toonz/menubarcommandids.h"
+
 namespace {
+bool hasLevelSettingsAtCurrentFrame(StageSchematicScene *scene, int column) {
+  if (!scene || column < 0) return false;
+
+  TXsheet *xsheet = scene->getXsheet();
+  if (!xsheet) return false;
+
+  TFrameHandle *frameHandle = scene->getFrameHandle();
+  if (!frameHandle) return false;
+
+  int frame       = frameHandle->getFrame();
+  if (frame < 0) return false;
+  TXshLevel *level = xsheet->getCell(frame, column).m_level.getPointer();
+  if (!level && frame > 0)
+    level = xsheet->getCell(frame - 1, column).m_level.getPointer();
+
+  if (!level) return false;
+
+  int type = level->getType();
+  return type == OVL_XSHLEVEL || type == TZP_XSHLEVEL || type == PLI_XSHLEVEL;
+}
+
+//--------------------------------------------------------
+
 void drawCamera(QPainter *painter, const QColor &color, const QPen &pen,
                 double width, double height) {
   QPointF points[3];
@@ -1960,7 +1985,8 @@ void StageSchematicColumnNode::mouseDoubleClickEvent(
       dynamic_cast<StageSchematicScene *>(scene());
   if (!stageScene) return;
   QRectF nameArea(14, 0, m_width - 15, 14);
-  if (nameArea.contains(me->pos())) {
+  if (nameArea.contains(me->pos()) &&
+      me->modifiers() == Qt::ControlModifier) {
     std::string name = m_stageObject->getName();
 
     TStageObjectId id  = m_stageObject->getId();
@@ -1977,7 +2003,13 @@ void StageSchematicColumnNode::mouseDoubleClickEvent(
     m_nameItem->show();
     m_nameItem->setFocus();
     setFlag(QGraphicsItem::ItemIsSelectable, false);
+    return;
   }
+
+  int column = m_stageObject->getId().getIndex();
+  if (!hasLevelSettingsAtCurrentFrame(stageScene, column)) return;
+
+  CommandManager::instance()->getAction(MI_LevelSettings)->trigger();
 }
 
 //--------------------------------------------------------
