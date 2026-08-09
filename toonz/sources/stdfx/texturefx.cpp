@@ -43,6 +43,7 @@ public:
     m_mode->addItem(MULTIPLY, "Multiply");
     m_mode->addItem(LIGHTEN, "Lighten");
     m_mode->addItem(DARKEN, "Darken");
+    m_mode->addItem(OVER_SOURCE, "Over Source");
   }
 
   ~TextureFx(){};
@@ -206,6 +207,10 @@ TRasterP appRas = tile.getRaster()->create(dim.lx,dim.ly);
       myOver32(tile.getRaster(), textureTile.getRaster(),
                &textureLighten<TPixel32>, v);
       break;
+    case OVER_SOURCE:
+      myOver32(tile.getRaster(), textureTile.getRaster(),
+               &textureOverSource<TPixel32>, v);
+      break;
     default:
       assert(0);
       break;
@@ -246,6 +251,10 @@ TRasterP appRas = tile.getRaster()->create(dim.lx,dim.ly);
     case LIGHTEN:
       myOver64(tile.getRaster(), textureTile.getRaster(),
                &textureLighten<TPixel64>, v);
+      break;
+    case OVER_SOURCE:
+      myOver64(tile.getRaster(), textureTile.getRaster(),
+               &textureOverSource<TPixel64>, v);
       break;
     default:
       assert(0);
