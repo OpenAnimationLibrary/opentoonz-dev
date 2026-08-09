@@ -104,6 +104,7 @@ set(SOURCES
     artcontourfx.cpp
     backlitfx.cpp
     bilateralblurfx.cpp
+    beziergradientmaskfx.cpp
     blendtzfx.cpp
     blurfx.cpp
     bodyhighlightfx.cpp
