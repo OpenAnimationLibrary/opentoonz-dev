@@ -59,6 +59,7 @@
 #include <QListWidget>
 #include <QGroupBox>
 #include <QKeySequence>
+#include <QSignalBlocker>
 
 using namespace DVGui;
 
@@ -1354,7 +1355,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       // Tools
       // {dropdownShortcutsCycleOptions, tr("Dropdown Shortcuts:")}, //
       // removed
-      {FillOnlysavebox, tr("Use the TLV Savebox to Limit Filling Operations")},
+      {FillOnlysavebox,
+       tr("Use the TLV Savebox to Limit Fill and Segment Eraser Operations")},
       {DefRegionWithPaint,
        tr("Define Filling Region Using both Lines and Areas")},
       {ReferFillPrevailing, tr("Paint Under Lines in Refer Fill")},
@@ -1683,6 +1685,13 @@ PreferencesPopup::PreferencesPopup()
 
   connect(categoryList, &QListWidget::currentRowChanged, stackedWidget,
           &QStackedWidget::setCurrentIndex);
+  connect(m_pref, &Preferences::fillOnlySaveboxChanged, this,
+          [this](bool enabled) {
+            CheckBox *saveboxCheck = getUI<CheckBox *>(FillOnlysavebox);
+            if (!saveboxCheck || saveboxCheck->isChecked() == enabled) return;
+            QSignalBlocker blocker(saveboxCheck);
+            saveboxCheck->setChecked(enabled);
+          });
 }
 
 //-----------------------------------------------------------------------------
