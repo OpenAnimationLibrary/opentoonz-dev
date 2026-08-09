@@ -200,6 +200,9 @@ class RenderCommand {
   double m_timeStretchFactor;
 
   int m_multimediaRender;
+  /*-- Frames to render, in order. Always populated, so the render loop has
+   * a single path whether or not a non-contiguous selection is in use. --*/
+  std::vector<double> m_frames;
 
 public:
   RenderCommand()
@@ -337,6 +340,30 @@ sprop->getOutputProperties()->setRenderSettings(rso);*/
 
   m_r         = stretchedR0 / m_timeStretchFactor;
   m_numFrames = (stretchedR1 - stretchedR0) / m_step + 1;
+
+  /*-- Expand the frames to render. A non-contiguous selection is only honoured
+   * at 1:1 time stretch: stretching resamples the timeline, so an arbitrary
+   * frame list has no well-defined meaning there and the contiguous range
+   * stays authoritative. --*/
+  m_frames.clear();
+  const std::vector<std::pair<int, int>> &ranges =
+      outputSettings.getFrameRanges();
+  if (!ranges.empty() && areAlmostEqual(m_timeStretchFactor, 1.0)) {
+    std::vector<int> frameList =
+        outputSettings.getFrameList(scene->getFrameCount());
+    for (int i = 0; i < (int)frameList.size(); i++)
+      m_frames.push_back((double)frameList[i]);
+    m_numFrames = (int)m_frames.size();
+    if (m_numFrames == 0) {
+      DVGui::warning(QObject::tr(
+          "The selected frames are outside the scene. Nothing to render."));
+      return false;
+    }
+    m_r = m_frames.front();
+  } else {
+    for (int i = 0; i < m_numFrames; i++)
+      m_frames.push_back(m_r + i * m_stepd);
+  }
 
   // Update the multimedia render switch
   m_multimediaRender = outputSettings.getMultimediaRendering();
@@ -560,7 +587,8 @@ void RenderCommand::rasterRender(bool isPreview) {
       QObject::tr("Building Schematic...", "RenderCommand"));
   buildSceneProgressBar->show();
 
-  for (int i = 0; i < m_numFrames; ++i, m_r += m_stepd) {
+  for (int i = 0; i < m_numFrames; ++i) {
+    m_r = m_frames[i];
     buildSceneProgressBar->setValue(i);
 
     if (rs.m_stereoscopic) scene->shiftCameraX(-rs.m_stereoscopicShift / 2);
@@ -772,8 +800,10 @@ void RenderCommand::multimediaRender() {
   multimediaRenderer.setDpi(cameraDpi.x, cameraDpi.y);
   multimediaRenderer.enablePrecomputing(true);
 
-  for (int i = 0; i < m_numFrames; ++i, m_r += m_stepd)
+  for (int i = 0; i < m_numFrames; ++i) {
+    m_r = m_frames[i];
     multimediaRenderer.addFrame(m_r);
+  }
 
   MultimediaProgressBar *listener =
       new MultimediaProgressBar(&multimediaRenderer);

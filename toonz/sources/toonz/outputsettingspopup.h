@@ -54,6 +54,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QComboBox *m_fileFormat;
   QComboBox *m_outputCameraOm;
   DVGui::IntLineEdit *m_startFld, *m_endFld;
+  DVGui::LineEdit *m_frameRangesFld;
   DVGui::IntLineEdit *m_stepFld, *m_shrinkFld;
   QComboBox *m_multimediaOm;
   QComboBox *m_resampleBalanceOm;
@@ -116,6 +117,7 @@ protected slots:
   void openSettingsPopup();
   void onCameraChanged(const QString &str);
   void onFrameFldEditFinished();
+  void onFrameRangesEditFinished();
   void onResampleChanged(int type);
   void onChannelWidthChanged(int type);
   void onLinearColorSpaceClicked(bool checked);
