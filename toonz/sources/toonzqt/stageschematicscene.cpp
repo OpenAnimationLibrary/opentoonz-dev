@@ -1156,6 +1156,14 @@ void StageSchematicScene::contextMenuEvent(
 
   menu.addSeparator();
   menu.addAction(paste);
+  menu.addSeparator();
+  QAction *showSelectedNodes =
+      menu.addAction(tr("Show Selected Nodes Only"));
+  connect(showSelectedNodes, &QAction::triggered, this,
+          &SchematicScene::showSelectedNodesOnly);
+  QAction *showAllNodes = menu.addAction(tr("Show All Nodes"));
+  connect(showAllNodes, &QAction::triggered, this,
+          &SchematicScene::showAllNodes);
   m_selection->setPastePosition(TPointD(scenePos.x(), scenePos.y()));
   menu.exec(cme->screenPos());
 }
