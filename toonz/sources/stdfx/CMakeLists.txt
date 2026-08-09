@@ -152,6 +152,7 @@ set(SOURCES
     rgbmcutfx.cpp
     rgbmfadefx.cpp
     rgbmscalefx.cpp
+    roughenedgesfx.cpp
     ripplefx.cpp
     rotationalblurfx.cpp
     saltpeppernoisefx.cpp
