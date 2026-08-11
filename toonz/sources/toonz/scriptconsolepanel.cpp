@@ -2,12 +2,58 @@
 
 #include "scriptconsolepanel.h"
 
-// The experimental Named Groups panel is currently header-only.  It originally
-// used Q_COREAPP_STARTUP_FUNCTION to register its command, but that callback can
-// run while QApplication / OpenToonz command infrastructure is still being
-// constructed.  Suppress that startup hook here and register the command below
-// through OpenToonz's AuxActionsCreator path instead.
+#include <QApplication>
 #include <QCoreApplication>
+#include <QMainWindow>
+#include <QTimer>
+
+// Forward declaration so the safe startup gate can be registered before the
+// header's original startup macro is suppressed below.
+namespace ExperimentalNamedGroups {
+inline void registerNamedGroupsCommand();
+}
+
+namespace {
+
+// Q_COREAPP_STARTUP_FUNCTION runs before OpenToonz has finished creating its
+// GUI.  Do not touch CommandManager, QAction, menus, or TApp state there.  Once
+// the event loop starts, keep checking until a real visible QMainWindow exists;
+// only then is it safe for the experimental registration code to create its
+// action/handler and attach the action to the Windows menu.
+void registerNamedGroupsWhenMainWindowReady() {
+  QApplication *application = qobject_cast<QApplication *>(qApp);
+  if (!application) return;
+
+  bool mainWindowReady = false;
+  const QWidgetList topLevels = application->topLevelWidgets();
+  for (QWidget *topLevel : topLevels) {
+    QMainWindow *mainWindow = qobject_cast<QMainWindow *>(topLevel);
+    if (mainWindow && mainWindow->isVisible()) {
+      mainWindowReady = true;
+      break;
+    }
+  }
+
+  if (!mainWindowReady) {
+    QTimer::singleShot(100, application,
+                       registerNamedGroupsWhenMainWindowReady);
+    return;
+  }
+
+  ExperimentalNamedGroups::registerNamedGroupsCommand();
+}
+
+void scheduleNamedGroupsRegistration() {
+  if (!qApp) return;
+  QTimer::singleShot(0, qApp, registerNamedGroupsWhenMainWindowReady);
+}
+
+}  // namespace
+
+// Register only the safe gate above.  The experimental header still contains
+// its earlier direct startup hook, so suppress that one in this translation
+// unit to ensure there is exactly one startup path.
+Q_COREAPP_STARTUP_FUNCTION(scheduleNamedGroupsRegistration)
 #undef Q_COREAPP_STARTUP_FUNCTION
 #define Q_COREAPP_STARTUP_FUNCTION(AFUNC)
 #include "namedgroupspanel.h"
@@ -34,40 +80,6 @@
 #include <QScriptEngine>
 #include <QFile>
 #include <QTextStream>
-
-namespace {
-
-// Do not create the QAction, OpenFloatingPanel handler, or menu event filter
-// from static initialization or from QCoreApplication construction.  The
-// previous zero-delay startup callback still ran while the main OpenToonz UI
-// was being assembled and could crash immediately after the splash screen.
-// Queue the experimental UI registration after the event loop has been running
-// long enough for MainWindow and its menus to settle.
-void scheduleNamedGroupsRegistration() {
-  if (!qApp) return;
-  QTimer::singleShot(1500, qApp, []() {
-    ExperimentalNamedGroups::registerNamedGroupsCommand();
-  });
-}
-
-// AuxActionsCreator instances can be asked to create their actions during
-// OpenToonz static command-handler initialization, before QApplication exists.
-// In that case register only a Qt pre-routine.  The pre-routine itself merely
-// schedules the delayed registration above; it does not touch CommandManager.
-class NamedGroupsAuxActionsCreator final : public AuxActionsCreator {
-public:
-  void createActions(QObject *parent) override {
-    Q_UNUSED(parent);
-    if (qApp)
-      scheduleNamedGroupsRegistration();
-    else
-      QCoreApplication::addPreRoutine(scheduleNamedGroupsRegistration);
-  }
-};
-
-NamedGroupsAuxActionsCreator namedGroupsAuxActionsCreator;
-
-}  // namespace
 
 static QScriptValue loadSceneFun(QScriptContext *context,
                                  QScriptEngine *engine) {
