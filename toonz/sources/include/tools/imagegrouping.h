@@ -60,6 +60,8 @@ public:
   }
   void group();
   void ungroup();
+  //! Recursively ungroup the selected group(s), preserving any entered outer group.
+  void ungroupSelectedAll();
   //! Remove every explicit group and subgroup from the current vector drawing.
   void ungroupAll();
   void enterGroup();
