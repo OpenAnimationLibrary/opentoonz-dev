@@ -5,6 +5,8 @@
 #include "tapp.h"
 #include "tvectorimage.h"
 
+#include "tools/strokeselection.h"
+
 #include "toonz/toonzscene.h"
 #include "toonz/tframehandle.h"
 #include "toonz/tscenehandle.h"
@@ -13,6 +15,7 @@
 #include "toonz/txshsimplelevel.h"
 
 #include "toonzqt/menubarcommand.h"
+#include "toonzqt/tselectionhandle.h"
 
 #include <QAction>
 #include <QApplication>
@@ -30,6 +33,7 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QTimer>
 #include <QTreeWidget>
@@ -303,10 +307,10 @@ public:
         new QLabel(QObject::tr("Named Group Schematic"), schematicHost);
     schematicTitle->setAlignment(Qt::AlignHCenter);
     QLabel *schematicPlaceholder = new QLabel(
-        QObject::tr("The hierarchy at left is now reconstructed directly from\n"
+        QObject::tr("The hierarchy at left is reconstructed directly from\n"
                     "the current TVectorImage without entering or modifying groups.\n\n"
-                    "The next persistence step will attach artist names to these\n"
-                    "observed group identities."),
+                    "Selecting a currently reachable group row now mirrors the\n"
+                    "native Vector Selection tool selection."),
         schematicHost);
     schematicPlaceholder->setAlignment(Qt::AlignCenter);
     schematicPlaceholder->setWordWrap(true);
@@ -337,6 +341,8 @@ public:
       else
         updateUi();
     });
+    connect(m_tree, &QTreeWidget::itemSelectionChanged, this,
+            [this]() { syncTreeSelectionToDrawing(); });
 
     TXshLevelHandle *levelHandle = TApp::instance()->getCurrentLevel();
     connect(levelHandle, &TXshLevelHandle::xshLevelSwitched, this,
@@ -352,7 +358,20 @@ public:
   }
 
 private:
+  TVectorImageP currentVectorImage() const {
+    TApp *app = TApp::instance();
+    TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
+    TFrameHandle *frameHandle = app->getCurrentFrame();
+    if (!level || level->getType() != PLI_XSHLEVEL || !frameHandle)
+      return TVectorImageP();
+
+    const TFrameId fid = frameHandle->getFid();
+    TImageP frameImage = level->getFrame(fid, false);
+    return TVectorImageP(frameImage);
+  }
+
   void clearGroupTree() {
+    QSignalBlocker blocker(m_tree);
     while (m_rootItem->childCount() > 0)
       delete m_rootItem->takeChild(0);
     m_groupCount = 0;
@@ -372,16 +391,13 @@ private:
   }
 
   void populateGroupTree() {
-    clearGroupTree();
+    QSignalBlocker blocker(m_tree);
 
-    TApp *app = TApp::instance();
-    TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
-    TFrameHandle *frameHandle = app->getCurrentFrame();
-    if (!level || level->getType() != PLI_XSHLEVEL || !frameHandle) return;
+    while (m_rootItem->childCount() > 0)
+      delete m_rootItem->takeChild(0);
+    m_groupCount = 0;
 
-    const TFrameId fid = frameHandle->getFid();
-    TImageP frameImage = level->getFrame(fid, false);
-    TVectorImageP image(frameImage);
+    TVectorImageP image = currentVectorImage();
     if (!image) return;
 
     QVector<ActiveGroup> active;
@@ -425,11 +441,101 @@ private:
 
     if (m_groupCount == 0) {
       QTreeWidgetItem *empty = new QTreeWidgetItem(
-          m_rootItem, QStringList(QObject::tr("(No vector groups in current frame)")));
+          m_rootItem,
+          QStringList(QObject::tr("(No vector groups in current frame)")));
       empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
     }
 
     m_rootItem->setExpanded(true);
+  }
+
+  void syncTreeSelectionToDrawing() {
+    const QList<QTreeWidgetItem *> selectedItems = m_tree->selectedItems();
+    if (selectedItems.size() != 1) return;
+
+    QTreeWidgetItem *item = selectedItems.front();
+    if (!item || item == m_rootItem) return;
+
+    bool firstOk = false;
+    bool depthOk = false;
+    const int firstStroke = item->data(0, Qt::UserRole).toInt(&firstOk);
+    const int groupDepth = item->data(0, Qt::UserRole + 2).toInt(&depthOk);
+    if (!firstOk || !depthOk) return;
+
+    TVectorImageP image = currentVectorImage();
+    if (!image || firstStroke < 0 ||
+        firstStroke >= static_cast<int>(image->getStrokeCount()))
+      return;
+
+    TApp *app = TApp::instance();
+    TSelectionHandle *selectionHandle = app->getCurrentSelection();
+    StrokeSelection *strokeSelection = selectionHandle
+        ? dynamic_cast<StrokeSelection *>(selectionHandle->getSelection())
+        : nullptr;
+
+    // StrokeSelection belongs to the Vector Selection tool. Do not create a
+    // parallel selection object here: without the tool's View it would not
+    // maintain bboxes, command state, or viewer invalidation correctly.
+    if (!strokeSelection) {
+      m_statusLabel->setText(QObject::tr(
+          "Activate the Vector Selection tool to synchronize a Named Groups "
+          "row with the drawing."));
+      return;
+    }
+
+    const int enteredDepth = image->isInsideGroup();
+    const int selectableDepth = enteredDepth + 1;
+
+    // Native VectorSelectionTool::selectStroke() only selects a group that is
+    // reachable at the current entered-group depth. Preserve that invariant
+    // instead of silently entering/exiting groups or injecting an otherwise
+    // unreachable nested selection.
+    if (groupDepth != selectableDepth ||
+        !image->isEnteredGroupStroke(firstStroke) ||
+        !image->selectable(firstStroke)) {
+      m_statusLabel->setText(
+          QObject::tr("This group is at depth %1, but the drawing currently "
+                      "allows direct selection at depth %2. Enter or exit "
+                      "groups in the Viewer first, then select this row again.")
+              .arg(groupDepth)
+              .arg(selectableDepth));
+      return;
+    }
+
+    if (strokeSelection->getImage() != image) {
+      strokeSelection->selectNone();
+      strokeSelection->setImage(image);
+    } else {
+      strokeSelection->selectNone();
+    }
+
+    int selectedStrokeCount = 0;
+    const int strokeCount = static_cast<int>(image->getStrokeCount());
+    for (int stroke = 0; stroke < strokeCount; ++stroke) {
+      if (image->selectable(stroke) &&
+          image->sameSubGroup(firstStroke, stroke)) {
+        strokeSelection->select(stroke, true);
+        ++selectedStrokeCount;
+      }
+    }
+
+    if (selectedStrokeCount == 0) {
+      m_statusLabel->setText(QObject::tr(
+          "The selected Named Groups row did not resolve to a selectable "
+          "vector group in the current drawing state."));
+      return;
+    }
+
+    // notifyView() runs the Vector Selection tool's normal selection-change
+    // path (bbox / invalidation). The handle notification keeps the rest of
+    // OpenToonz synchronized with the same current selection object.
+    strokeSelection->notifyView();
+    selectionHandle->notifySelectionChanged();
+
+    m_statusLabel->setText(
+        QObject::tr("Selected %1 stroke(s) through the native vector group "
+                    "selection path.")
+            .arg(selectedStrokeCount));
   }
 
   void bindCurrentPli() {
@@ -500,26 +606,31 @@ private:
     switch (m_store.state()) {
     case NamedGroupsMetadataStore::State::Missing:
       m_statusLabel->setText(
-          QObject::tr("No sidecar exists. Save Metadata will create the adjacent JSON file.") +
+          QObject::tr("No sidecar exists. Save Metadata will create the "
+                      "adjacent JSON file.") +
           topologySummary());
       m_saveButton->setEnabled(true);
       break;
     case NamedGroupsMetadataStore::State::Loaded:
       m_statusLabel->setText(
-          QObject::tr("Named Groups metadata is linked to the current PLI level.") +
+          QObject::tr("Named Groups metadata is linked to the current PLI "
+                      "level.") +
           topologySummary());
       m_saveButton->setEnabled(true);
       break;
     case NamedGroupsMetadataStore::State::Invalid:
     case NamedGroupsMetadataStore::State::Unsupported:
-      m_statusLabel->setText(m_store.errorString() + QObject::tr(
-          " The existing file is protected from overwrite.") + topologySummary());
+      m_statusLabel->setText(
+          m_store.errorString() +
+          QObject::tr(" The existing file is protected from overwrite.") +
+          topologySummary());
       m_saveButton->setEnabled(false);
       break;
     case NamedGroupsMetadataStore::State::Unbound:
     default:
-      m_statusLabel->setText(QObject::tr("Named Groups metadata is not bound.") +
-                             topologySummary());
+      m_statusLabel->setText(
+          QObject::tr("Named Groups metadata is not bound.") +
+          topologySummary());
       m_saveButton->setEnabled(false);
       break;
     }
@@ -592,7 +703,8 @@ private:
   void ensureMenu(QMenu *menu) {
     if (!isWindowsMenu(menu) || menu->actions().contains(m_action)) return;
     const QList<QAction *> actions = menu->actions();
-    if (!actions.isEmpty() && !actions.last()->isSeparator()) menu->addSeparator();
+    if (!actions.isEmpty() && !actions.last()->isSeparator())
+      menu->addSeparator();
     menu->addAction(m_action);
   }
 
