@@ -6,7 +6,7 @@
 // used Q_COREAPP_STARTUP_FUNCTION to register its command, but that callback can
 // run while QApplication / OpenToonz command infrastructure is still being
 // constructed.  Suppress that startup hook here and register the command below
-// through OpenToonz's normal AuxActionsCreator path instead.
+// through OpenToonz's AuxActionsCreator path instead.
 #include <QCoreApplication>
 #undef Q_COREAPP_STARTUP_FUNCTION
 #define Q_COREAPP_STARTUP_FUNCTION(AFUNC)
@@ -37,17 +37,31 @@
 
 namespace {
 
-// AuxActionsCreator instances are registered during static initialization, but
-// their createActions() methods are not called until CommandManager begins
-// creating actions from MainWindow::defineActions().  At that point qApp and
-// the MainWindow already exist.  This is the appropriate OpenToonz seam for the
-// experimental command and avoids touching CommandManager from a Qt startup
-// callback.
+// Do not create the QAction, OpenFloatingPanel handler, or menu event filter
+// from static initialization or from QCoreApplication construction.  The
+// previous zero-delay startup callback still ran while the main OpenToonz UI
+// was being assembled and could crash immediately after the splash screen.
+// Queue the experimental UI registration after the event loop has been running
+// long enough for MainWindow and its menus to settle.
+void scheduleNamedGroupsRegistration() {
+  if (!qApp) return;
+  QTimer::singleShot(1500, qApp, []() {
+    ExperimentalNamedGroups::registerNamedGroupsCommand();
+  });
+}
+
+// AuxActionsCreator instances can be asked to create their actions during
+// OpenToonz static command-handler initialization, before QApplication exists.
+// In that case register only a Qt pre-routine.  The pre-routine itself merely
+// schedules the delayed registration above; it does not touch CommandManager.
 class NamedGroupsAuxActionsCreator final : public AuxActionsCreator {
 public:
   void createActions(QObject *parent) override {
     Q_UNUSED(parent);
-    ExperimentalNamedGroups::registerNamedGroupsCommand();
+    if (qApp)
+      scheduleNamedGroupsRegistration();
+    else
+      QCoreApplication::addPreRoutine(scheduleNamedGroupsRegistration);
   }
 };
 
