@@ -1,7 +1,18 @@
 
 
 #include "scriptconsolepanel.h"
+
+// The experimental Named Groups panel is currently header-only.  It originally
+// used Q_COREAPP_STARTUP_FUNCTION to register its command, but that callback can
+// run while QApplication / OpenToonz command infrastructure is still being
+// constructed.  Suppress that startup hook here and register the command below
+// through OpenToonz's normal AuxActionsCreator path instead.
+#include <QCoreApplication>
+#undef Q_COREAPP_STARTUP_FUNCTION
+#define Q_COREAPP_STARTUP_FUNCTION(AFUNC)
 #include "namedgroupspanel.h"
+#undef Q_COREAPP_STARTUP_FUNCTION
+
 #include "toonzqt/scriptconsole.h"
 #include "toonz/scriptengine.h"
 #include "toonz/scriptbinding.h"
@@ -23,6 +34,26 @@
 #include <QScriptEngine>
 #include <QFile>
 #include <QTextStream>
+
+namespace {
+
+// AuxActionsCreator instances are registered during static initialization, but
+// their createActions() methods are not called until CommandManager begins
+// creating actions from MainWindow::defineActions().  At that point qApp and
+// the MainWindow already exist.  This is the appropriate OpenToonz seam for the
+// experimental command and avoids touching CommandManager from a Qt startup
+// callback.
+class NamedGroupsAuxActionsCreator final : public AuxActionsCreator {
+public:
+  void createActions(QObject *parent) override {
+    Q_UNUSED(parent);
+    ExperimentalNamedGroups::registerNamedGroupsCommand();
+  }
+};
+
+NamedGroupsAuxActionsCreator namedGroupsAuxActionsCreator;
+
+}  // namespace
 
 static QScriptValue loadSceneFun(QScriptContext *context,
                                  QScriptEngine *engine) {
