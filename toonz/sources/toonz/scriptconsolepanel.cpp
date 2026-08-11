@@ -1,6 +1,7 @@
 
 
 #include "scriptconsolepanel.h"
+#include "namedgroupspanel.h"
 #include "toonzqt/scriptconsole.h"
 #include "toonz/scriptengine.h"
 #include "toonz/scriptbinding.h"
