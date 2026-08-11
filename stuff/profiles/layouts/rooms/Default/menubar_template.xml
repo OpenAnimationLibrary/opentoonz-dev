@@ -74,6 +74,8 @@
         <menu title="Group">
             <command>MI_Group</command>
             <command>MI_Ungroup</command>
+            <command>MI_UngroupAll</command>
+            <separator/>
             <command>MI_EnterGroup</command>
             <command>MI_ExitGroup</command>
         </menu>

@@ -26,6 +26,7 @@
 
 #define MI_Group "MI_Group"
 #define MI_Ungroup "MI_Ungroup"
+#define MI_UngroupAll "MI_UngroupAll"
 #define MI_BringToFront "MI_BringToFront"
 #define MI_BringForward "MI_BringForward"
 #define MI_SendBack "MI_SendBack"
