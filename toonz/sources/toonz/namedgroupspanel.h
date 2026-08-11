@@ -3,6 +3,7 @@
 #include "floatingpanelcommand.h"
 #include "pane.h"
 #include "tapp.h"
+#include "tvectorimage.h"
 
 #include "toonz/toonzscene.h"
 #include "toonz/tframehandle.h"
@@ -34,8 +35,10 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
+#include <QVector>
 #include <QWidgetList>
 
+#include <algorithm>
 #include <cassert>
 
 namespace ExperimentalNamedGroups {
@@ -50,8 +53,8 @@ constexpr const char *kSidecarSuffix = ".namedgroups.json";
 // NamedGroupsMetadataStore
 //-----------------------------------------------------------------------------
 //
-// The PLI is authoritative for geometry, stroke order and grouping.  This
-// store owns only optional artist-facing metadata.  Group locator semantics
+// The PLI is authoritative for geometry, stroke order and grouping. This
+// store owns only optional artist-facing metadata. Group locator semantics
 // are deliberately not part of schema version 1 yet; the experiment first
 // needs to establish which OpenToonz group identities survive save/load and
 // ordinary group editing.
@@ -165,7 +168,7 @@ public:
       return false;
     }
 
-    // Never replace a file we could not understand.  The user can repair or
+    // Never replace a file we could not understand. The user can repair or
     // move it and use Reload before attempting another save.
     if (m_state == State::Invalid || m_state == State::Unsupported) {
       const QString message = QObject::tr(
@@ -247,6 +250,15 @@ class NamedGroupsPanel final : public TPanel {
   QLabel *m_statusLabel = nullptr;
   QPushButton *m_reloadButton = nullptr;
   QPushButton *m_saveButton = nullptr;
+  int m_groupCount = 0;
+
+  struct ActiveGroup {
+    QTreeWidgetItem *item = nullptr;
+    int serial = 0;
+    int depth = 0;
+    int firstStroke = -1;
+    int lastStroke = -1;
+  };
 
 public:
   explicit NamedGroupsPanel(QWidget *parent = nullptr) : TPanel(parent) {
@@ -291,8 +303,10 @@ public:
         new QLabel(QObject::tr("Named Group Schematic"), schematicHost);
     schematicTitle->setAlignment(Qt::AlignHCenter);
     QLabel *schematicPlaceholder = new QLabel(
-        QObject::tr("Schematic hierarchy will mirror the same Root/group data\n"
-                    "after the vector-group traversal layer is connected."),
+        QObject::tr("The hierarchy at left is now reconstructed directly from\n"
+                    "the current TVectorImage without entering or modifying groups.\n\n"
+                    "The next persistence step will attach artist names to these\n"
+                    "observed group identities."),
         schematicHost);
     schematicPlaceholder->setAlignment(Qt::AlignCenter);
     schematicPlaceholder->setWordWrap(true);
@@ -332,12 +346,92 @@ public:
     connect(TApp::instance()->getCurrentScene(), &TSceneHandle::sceneSwitched,
             this, [this]() { bindCurrentPli(); });
     connect(TApp::instance()->getCurrentFrame(), &TFrameHandle::frameSwitched,
-            this, [this]() { updateRootLabel(); });
+            this, [this]() { updateUi(); });
 
     QTimer::singleShot(0, this, [this]() { bindCurrentPli(); });
   }
 
 private:
+  void clearGroupTree() {
+    while (m_rootItem->childCount() > 0)
+      delete m_rootItem->takeChild(0);
+    m_groupCount = 0;
+  }
+
+  void updateGroupItem(ActiveGroup &group) {
+    if (!group.item) return;
+    group.item->setText(
+        0, QObject::tr("Group %1 — depth %2 — strokes %3–%4")
+               .arg(group.serial)
+               .arg(group.depth)
+               .arg(group.firstStroke + 1)
+               .arg(group.lastStroke + 1));
+    group.item->setData(0, Qt::UserRole, group.firstStroke);
+    group.item->setData(0, Qt::UserRole + 1, group.lastStroke);
+    group.item->setData(0, Qt::UserRole + 2, group.depth);
+  }
+
+  void populateGroupTree() {
+    clearGroupTree();
+
+    TApp *app = TApp::instance();
+    TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
+    TFrameHandle *frameHandle = app->getCurrentFrame();
+    if (!level || level->getType() != PLI_XSHLEVEL || !frameHandle) return;
+
+    const TFrameId fid = frameHandle->getFid();
+    TImageP frameImage = level->getFrame(fid, false);
+    TVectorImageP image(frameImage);
+    if (!image) return;
+
+    QVector<ActiveGroup> active;
+    int nextSerial = 1;
+    const int strokeCount = static_cast<int>(image->getStrokeCount());
+
+    for (int stroke = 0; stroke < strokeCount; ++stroke) {
+      const int depth = image->getGroupDepth(stroke);
+      int commonDepth = 0;
+      if (stroke > 0)
+        commonDepth = image->getCommonGroupDepth(stroke - 1, stroke);
+
+      commonDepth = std::max(0, commonDepth);
+      commonDepth = std::min(commonDepth, depth);
+      commonDepth = std::min(commonDepth, active.size());
+
+      while (active.size() > commonDepth) active.removeLast();
+
+      while (active.size() < depth) {
+        const int groupDepth = active.size() + 1;
+        QTreeWidgetItem *parentItem =
+            active.isEmpty() ? m_rootItem : active.last().item;
+        QTreeWidgetItem *item = new QTreeWidgetItem(parentItem);
+        item->setExpanded(true);
+
+        ActiveGroup group;
+        group.item = item;
+        group.serial = nextSerial++;
+        group.depth = groupDepth;
+        group.firstStroke = stroke;
+        group.lastStroke = stroke;
+        active.push_back(group);
+        ++m_groupCount;
+      }
+
+      for (int i = 0; i < active.size(); ++i) {
+        active[i].lastStroke = stroke;
+        updateGroupItem(active[i]);
+      }
+    }
+
+    if (m_groupCount == 0) {
+      QTreeWidgetItem *empty = new QTreeWidgetItem(
+          m_rootItem, QStringList(QObject::tr("(No vector groups in current frame)")));
+      empty->setFlags(empty->flags() & ~Qt::ItemIsSelectable);
+    }
+
+    m_rootItem->setExpanded(true);
+  }
+
   void bindCurrentPli() {
     TApp *app = TApp::instance();
     TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
@@ -376,14 +470,20 @@ private:
     m_rootItem->setText(0, rootText);
   }
 
+  QString topologySummary() const {
+    return QObject::tr(" %1 vector group(s) observed in the current frame.")
+        .arg(m_groupCount);
+  }
+
   void updateUi() {
     updateRootLabel();
+    populateGroupTree();
 
     if (!m_store.isBound()) {
       m_pliPathLabel->setText(QObject::tr("PLI: No current PLI level"));
       m_sidecarPathLabel->setText(QObject::tr("Metadata: Not bound"));
       m_statusLabel->setText(QObject::tr(
-          "Select a Toonz Vector (PLI) level to bind Named Groups metadata."));
+          "Select a Toonz Vector (PLI) level to inspect its group hierarchy."));
       m_reloadButton->setEnabled(false);
       m_saveButton->setEnabled(false);
       return;
@@ -399,24 +499,27 @@ private:
 
     switch (m_store.state()) {
     case NamedGroupsMetadataStore::State::Missing:
-      m_statusLabel->setText(QObject::tr(
-          "No sidecar exists. Save Metadata will create the adjacent JSON file."));
+      m_statusLabel->setText(
+          QObject::tr("No sidecar exists. Save Metadata will create the adjacent JSON file.") +
+          topologySummary());
       m_saveButton->setEnabled(true);
       break;
     case NamedGroupsMetadataStore::State::Loaded:
-      m_statusLabel->setText(QObject::tr(
-          "Named Groups metadata is linked to the current PLI level."));
+      m_statusLabel->setText(
+          QObject::tr("Named Groups metadata is linked to the current PLI level.") +
+          topologySummary());
       m_saveButton->setEnabled(true);
       break;
     case NamedGroupsMetadataStore::State::Invalid:
     case NamedGroupsMetadataStore::State::Unsupported:
       m_statusLabel->setText(m_store.errorString() + QObject::tr(
-          " The existing file is protected from overwrite."));
+          " The existing file is protected from overwrite.") + topologySummary());
       m_saveButton->setEnabled(false);
       break;
     case NamedGroupsMetadataStore::State::Unbound:
     default:
-      m_statusLabel->setText(QObject::tr("Named Groups metadata is not bound."));
+      m_statusLabel->setText(QObject::tr("Named Groups metadata is not bound.") +
+                             topologySummary());
       m_saveButton->setEnabled(false);
       break;
     }
@@ -538,7 +641,15 @@ inline void registerNamedGroupsCommand() {
 }  // namespace ExperimentalNamedGroups
 
 inline void registerExperimentalNamedGroupsStartup() {
-  ExperimentalNamedGroups::registerNamedGroupsCommand();
+  // Q_COREAPP_STARTUP_FUNCTION runs while QApplication construction is still
+  // in progress. CommandManager::getAction() can create auxiliary QActions,
+  // which is too early here. Queue registration until the first event-loop
+  // turn so the QApplication and normal OpenToonz command infrastructure are
+  // fully initialized before this experimental command touches them.
+  if (!qApp) return;
+  QTimer::singleShot(0, qApp, []() {
+    ExperimentalNamedGroups::registerNamedGroupsCommand();
+  });
 }
 
 Q_COREAPP_STARTUP_FUNCTION(registerExperimentalNamedGroupsStartup)
