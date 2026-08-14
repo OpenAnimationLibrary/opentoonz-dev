@@ -5,6 +5,8 @@
 
 #include "tcommon.h"
 
+#include <cassert>
+
 #undef DVAPI
 #undef DVVAR
 #ifdef TOONZLIB_EXPORTS
@@ -37,7 +39,17 @@ class DVAPI TStageObjectId {
   typedef unsigned int Code;
   Code m_id;
 
-  explicit TStageObjectId(Code id) : m_id(id) {}
+  static bool hasKnownType(Code id) {
+    // Keep this in sync with the persisted StageObjectType values used by
+    // tstageobject.cpp. Unknown type bits would otherwise stringify as
+    // "BadPegbar" and can leak into the stage-object tree in Release builds.
+    Code type = id >> 28;
+    return type == 0 || type == 1 || type == 2 || type == 5 || type == 6;
+  }
+
+  explicit TStageObjectId(Code id) : m_id(hasKnownType(id) ? id : Code(0)) {
+    assert(hasKnownType(id));
+  }
 
 public:
   TStageObjectId();
