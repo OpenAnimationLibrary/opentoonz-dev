@@ -99,7 +99,7 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     if (itL == lastRowCol.end())
       lastRowCol.insert(std::pair<int, int>(it2->second, it2->first));
     else
-      itL->second = c0;
+      itL->second = it2->first;
   }
 
   XsheetViewer *viewer = TApp::instance()->getCurrentXsheetViewer();
