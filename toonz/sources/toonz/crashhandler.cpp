@@ -13,7 +13,11 @@
 #include <signal.h>
 #include <unistd.h>
 #include <err.h>
+#ifdef MACOSX
+#include <dlfcn.h>
+#else
 #include <regex>
+#endif
 #endif
 
 #include "tgl.h"
@@ -286,15 +290,22 @@ static bool sh(std::string &out, const char *cmd) {
 
 //-----------------------------------------------------------------------------
 
-static bool addr2line(std::string &out, const char *exepath, const char *addr) {
-  char cmd[512];
 #ifdef MACOSX
-  sprintf(cmd, "atos -o \"%.400s\" %s 2>&1", exepath, addr);
-#else
-  sprintf(cmd, "addr2line -f -p -e \"%.400s\" %s 2>&1", exepath, addr);
-#endif
+static bool addr2line(std::string &out, const char *modulePath,
+                      uintptr_t addr, uintptr_t loadAddr) {
+  char cmd[512];
+  snprintf(cmd, sizeof(cmd),
+           "atos -o \"%.400s\" -l 0x%" PRIxPTR " 0x%" PRIxPTR " 2>&1",
+           modulePath, loadAddr, addr);
   return sh(out, cmd);
 }
+#else
+static bool addr2line(std::string &out, const char *exepath, const char *addr) {
+  char cmd[512];
+  sprintf(cmd, "addr2line -f -p -e \"%.400s\" %s 2>&1", exepath, addr);
+  return sh(out, cmd);
+}
+#endif
 
 //-----------------------------------------------------------------------------
 
@@ -314,6 +325,48 @@ static void printBacktrace(std::string &out) {
   const int size = 256;
   void *buffer[size];
 
+#ifdef MACOSX
+  // Resolve each frame to the Mach-O image that actually contains it. This is
+  // required for dylib frames and for ASLR-aware symbolication with atos.
+  int nptrs = backtrace(buffer, size);
+  for (int i = 0; i < nptrs; ++i) {
+    // Skip first frames since they point to this function
+    if (frameStack++ < frameSkip) continue;
+    char numStr[32];
+    memset(numStr, 0, sizeof(numStr));
+    sprintf(numStr, "%3i> ", frameStack - frameSkip);
+    out.append(numStr);
+
+    std::string line;
+    bool found = false;
+
+    Dl_info info;
+    memset(&info, 0, sizeof(info));
+    if (dladdr(buffer[i], &info) && info.dli_fname && info.dli_fbase) {
+      uintptr_t addr     = reinterpret_cast<uintptr_t>(buffer[i]);
+      uintptr_t loadAddr = reinterpret_cast<uintptr_t>(info.dli_fbase);
+
+      if (addr2line(line, info.dli_fname, addr, loadAddr)) {
+        found = !line.empty() && line.rfind("atos: ", 0) != 0;
+      }
+
+      if (!found) {
+        char addrStr[64];
+        snprintf(addrStr, sizeof(addrStr), "0x%" PRIxPTR, addr);
+        out.append(addrStr);
+        out.append(" <");
+        out.append(filenameOnly(info.dli_fname));
+        out.append(">\n");
+      }
+    } else {
+      char addrStr[64];
+      snprintf(addrStr, sizeof(addrStr), "%p\n", buffer[i]);
+      out.append(addrStr);
+    }
+
+    if (found) out.append(line);
+  }
+#else
   // Get executable path
   char exepath[512];
   memset(exepath, 0, 512);
@@ -350,6 +403,7 @@ static void printBacktrace(std::string &out) {
   }
 
   free(bts);
+#endif
 }
 
 void signalHandler(int sig) {
