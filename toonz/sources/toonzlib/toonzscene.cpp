@@ -409,7 +409,7 @@ void ToonzScene::loadNoResources(const TFilePath &fp) {
  * プログレスダイアログをGUIからの実行時でのみ表示させる。tcomposerから実行の場合は表示させない
  * --*/
 void ToonzScene::loadResources(bool withProgressDialog) {
-  /*--- m_levelSet->getLevelCount()が10個以上で表示させる　---*/
+  /*--- m_levelSet->getLevelCount()が10個以上のとき表示させる　---*/
   QProgressDialog *progressDialog = 0;
   if (withProgressDialog && m_levelSet->getLevelCount() >= 10) {
     progressDialog = new QProgressDialog("Loading Scene Resources", "", 0,
@@ -822,6 +822,8 @@ void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
 
     painter.flushRasterImages();
     glFlush();
+
+    TRop::over(ras, ogl.getRaster());
   }
   ogl.doneCurrent();
 
@@ -833,7 +835,7 @@ void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
 //! Performs a camera-stand render of the specified xsheet in the specified
 //! placedRect,
 //! with known world/placed reference change - and returns the result in a
-// 32-bit raster.
+//! 32-bit raster.
 
 void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
                              const TRectD &placedRect,
@@ -938,6 +940,7 @@ TXshLevel *ToonzScene::createNewLevel(int type, std::wstring levelName,
                                       const TDimension &dim, double dpi,
                                       TFilePath fp) {
   TLevelSet *levelSet = getLevelSet();
+
   if (type == TZI_XSHLEVEL)  // TZI type corresponds to the 'Scan Level'
     type = OVL_XSHLEVEL;     // default option. See Toonz Preferences class.
 
@@ -1284,6 +1287,7 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     if (lp->getDpiPolicy() == LevelProperties::DP_ImageDpi) {
       // We must check whether the image actually has a dpi.
       const TPointD &imageDpi = xl->getImageDpi();
+
       if (imageDpi == TPointD() ||
           Preferences::instance()->getUnits() == "pixel" ||
           Preferences::instance()->isIgnoreImageDpiEnabled()) {
