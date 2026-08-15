@@ -29,7 +29,12 @@ enum TXshLevelType {
   PLT_XSHLEVEL      = 2 << 7,
   SND_XSHLEVEL      = 3 << 7,
   SND_TXT_XSHLEVEL  = 4 << 7,
-  MESH_XSHLEVEL     = 5 << 7
+  MESH_XSHLEVEL     = 5 << 7,
+
+  // Experimental retained-source SVG level. Keep it in the high-value range
+  // used by non-legacy level kinds, while preserving level-column behavior.
+  SVG_TYPE     = 6 << 7,
+  SVG_XSHLEVEL = SVG_TYPE | LEVELCOLUMN_XSHLEVEL
 };
 
 #endif

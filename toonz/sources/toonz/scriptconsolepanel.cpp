@@ -180,3 +180,7 @@ void ScriptConsolePanel::executeCommand(const QString &cmd) {
 void ScriptConsolePanel::selectNone() {
   TApp::instance()->getCurrentSelection()->setSelection(0);
 }
+
+#ifdef _WIN32
+#include "sourceeditoractivation.h"
+#endif
