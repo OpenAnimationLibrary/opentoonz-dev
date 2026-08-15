@@ -48,7 +48,12 @@
 
 TOfflineGL *currentOfflineGL = 0;
 
+#include <QMessageBox>
 #include <QProgressDialog>
+#include <QPushButton>
+#include <QStringList>
+
+#include <algorithm>
 
 #if defined(MACOSX) || defined(LINUX) || defined(FREEBSD)
 #include <QSurfaceFormat>
@@ -277,7 +282,10 @@ static void deleteAllUntitledScenes() {
 // ToonzScene
 
 ToonzScene::ToonzScene()
-    : m_contentHistory(0), m_isUntitled(true), m_isLoading(false) {
+    : m_contentHistory(0)
+    , m_isUntitled(true)
+    , m_isLoading(false)
+    , m_unrecognizedSceneTags() {
   m_childStack = new ChildStack(this);
   m_properties = new TSceneProperties();
   m_levelSet   = new TLevelSet();
@@ -311,6 +319,7 @@ void ToonzScene::clear() {
   m_properties                 = new TSceneProperties();
   delete properties;
   m_levelSet->clear();
+  m_unrecognizedSceneTags.clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -400,7 +409,7 @@ void ToonzScene::loadNoResources(const TFilePath &fp) {
  * プログレスダイアログをGUIからの実行時でのみ表示させる。tcomposerから実行の場合は表示させない
  * --*/
 void ToonzScene::loadResources(bool withProgressDialog) {
-  /*--- m_levelSet->getLevelCount()が10個以上のとき表示させる　---*/
+  /*--- m_levelSet->getLevelCount()が10個以上で表示させる　---*/
   QProgressDialog *progressDialog = 0;
   if (withProgressDialog && m_levelSet->getLevelCount() >= 10) {
     progressDialog = new QProgressDialog("Loading Scene Resources", "", 0,
@@ -433,6 +442,7 @@ void ToonzScene::loadResources(bool withProgressDialog) {
 
 void ToonzScene::loadTnzFile(const TFilePath &fp) {
   bool reading22 = false;
+  m_unrecognizedSceneTags.clear();
   TIStream is(fp);
   if (!is) throw TException(fp.getWideString() + L": Can't open file");
   try {
@@ -495,8 +505,18 @@ void ToonzScene::loadTnzFile(const TFilePath &fp) {
           }
           TContentHistory *history = getContentHistory(true);
           history->deserialize(QString::fromStdString(historyData));
-        } else
-          throw TException(tagName + " : unexpected tag");
+        } else {
+          // Treat unknown top-level scene entries as optional extension data.
+          // The parser already knows how to skip a complete nested tag. Record
+          // the tag so a later explicit save can protect the source file from
+          // silently losing data that this version cannot round-trip.
+          if (std::find(m_unrecognizedSceneTags.begin(),
+                        m_unrecognizedSceneTags.end(),
+                        tagName) == m_unrecognizedSceneTags.end())
+            m_unrecognizedSceneTags.push_back(tagName);
+          is.skipCurrentTag();
+          continue;
+        }
 
         if (!is.matchEndTag()) throw TException(tagName + " : missing end tag");
       }
@@ -580,19 +600,76 @@ public:
 
 //-----------------------------------------------------------------------------
 
-void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
-                      bool saveSceneIcon) {
+void ToonzScene::save(TFilePath &fp, TXsheet *subxsh, bool saveSceneIcon) {
   TFilePath oldScenePath = getScenePath();
   TFilePath newScenePath = fp;
 
+  // Unknown top-level data was intentionally skipped at load time. On an
+  // explicit save back to the same scene, protect that original file by
+  // defaulting to a free incremented filename. Autosave passes
+  // saveSceneIcon=false, and sub-xsheet saves have their own target, so neither
+  // enters this modal compatibility decision.
+  if (saveSceneIcon && !subxsh && newScenePath == oldScenePath &&
+      hasUnrecognizedSceneData()) {
+    NameModifier modifier(newScenePath.getWideName());
+    TFilePath suggestedPath;
+    do {
+      suggestedPath = newScenePath.withName(modifier.getNext());
+    } while (suggestedPath == newScenePath ||
+             TSystem::doesExistFileOrLevel(decodeFilePath(suggestedPath)));
+
+    QStringList tags;
+    const int maxTags = 8;
+    for (int i = 0;
+         i < (int)m_unrecognizedSceneTags.size() && i < maxTags; ++i)
+      tags << QString("<%1>").arg(
+          QString::fromStdString(m_unrecognizedSceneTags[i]));
+    if ((int)m_unrecognizedSceneTags.size() > maxTags)
+      tags << QObject::tr("and %1 more")
+                  .arg((int)m_unrecognizedSceneTags.size() - maxTags);
+
+    QMessageBox msgBox;
+    msgBox.setIcon(QMessageBox::Warning);
+    msgBox.setWindowTitle(QObject::tr("Unrecognized Scene Data"));
+    msgBox.setText(
+        QObject::tr(
+            "This scene contains data that this version of OpenToonz does not "
+            "recognize:\n\n%1\n\n"
+            "The scene was opened by safely ignoring those entries. Saving "
+            "the scene will not write the unrecognized data back.\n\n"
+            "To preserve the original scene unchanged, save the recognized "
+            "scene data to the suggested incremented file.")
+            .arg(tags.join(", ")));
+    QPushButton *saveCopyButton = msgBox.addButton(
+        QObject::tr("Save as %1")
+            .arg(suggestedPath.withoutParentDir().getQString()),
+        QMessageBox::AcceptRole);
+    QPushButton *overwriteButton =
+        msgBox.addButton(QObject::tr("Overwrite Original"),
+                         QMessageBox::DestructiveRole);
+    Q_UNUSED(overwriteButton);
+    msgBox.setDefaultButton(saveCopyButton);
+    // This low-level save method has no cancellation result to return to its
+    // callers. For this first compatibility experiment, require one of the two
+    // explicit safe-save decisions rather than allowing the window-close path
+    // to be misreported as a successful save.
+    msgBox.setWindowFlag(Qt::WindowCloseButtonHint, false);
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == saveCopyButton) {
+      newScenePath = suggestedPath;
+      fp           = suggestedPath;
+    }
+  }
+
   if (newScenePath != oldScenePath)
-    TProjectManager::instance()->loadSceneProject(fp, &m_standAlone);
+    TProjectManager::instance()->loadSceneProject(newScenePath, &m_standAlone);
 
   CameraRedirection redir(this, subxsh);
 
   bool wasUntitled = isUntitled();
 
-  setScenePath(fp);
+  setScenePath(newScenePath);
 
   TFileStatus fs(newScenePath);
   if (fs.doesExist() && !fs.isWritable())
@@ -600,7 +677,7 @@ void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
                            "The scene cannot be saved: it is a read only "
                            "scene.\n All resources have been saved.");
 
-  TFilePath scenePath = decodeFilePath(fp);
+  TFilePath scenePath = decodeFilePath(newScenePath);
   TFilePath scenePathTemp(scenePath.getWideString() +
                           QString(".tmp").toStdWString());
 
@@ -691,6 +768,7 @@ void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
     if (wasUntitled) setUntitled();
   } else {
     if (wasUntitled) deleteUntitledScene(oldScenePath.getParentDir());
+    if (saveSceneIcon) clearUnrecognizedSceneData();
   }
   // update the last saved version
   setVersionNumber(l_currentVersion);
@@ -744,8 +822,6 @@ void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
 
     painter.flushRasterImages();
     glFlush();
-
-    TRop::over(ras, ogl.getRaster());
   }
   ogl.doneCurrent();
 
@@ -757,7 +833,7 @@ void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
 //! Performs a camera-stand render of the specified xsheet in the specified
 //! placedRect,
 //! with known world/placed reference change - and returns the result in a
-//! 32-bit raster.
+// 32-bit raster.
 
 void ToonzScene::renderFrame(const TRaster32P &ras, int row, const TXsheet *xsh,
                              const TRectD &placedRect,
@@ -862,7 +938,6 @@ TXshLevel *ToonzScene::createNewLevel(int type, std::wstring levelName,
                                       const TDimension &dim, double dpi,
                                       TFilePath fp) {
   TLevelSet *levelSet = getLevelSet();
-
   if (type == TZI_XSHLEVEL)  // TZI type corresponds to the 'Scan Level'
     type = OVL_XSHLEVEL;     // default option. See Toonz Preferences class.
 
@@ -1209,7 +1284,6 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     if (lp->getDpiPolicy() == LevelProperties::DP_ImageDpi) {
       // We must check whether the image actually has a dpi.
       const TPointD &imageDpi = xl->getImageDpi();
-
       if (imageDpi == TPointD() ||
           Preferences::instance()->getUnits() == "pixel" ||
           Preferences::instance()->isIgnoreImageDpiEnabled()) {
