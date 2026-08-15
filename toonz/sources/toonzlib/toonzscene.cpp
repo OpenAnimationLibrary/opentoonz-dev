@@ -221,8 +221,7 @@ void fixBiancoProblem(ToonzScene *scene, TXsheet *xsh) {
     visited.insert(xsh);
     tovisit.erase(xsh);
     int c0 = 0, c1 = xsh->getColumnCount() - 1;
-    for (int c = -1; c < c1 + 1; ++c) {
-      if (c < 0) continue;
+    for (int c = c0; c <= c1; c++) {
       if (xsh->isColumnEmpty(c)) continue;
       TXshColumn *column = xsh->getColumn(c);
       if (!column || !column->getLevelColumn()) continue;
