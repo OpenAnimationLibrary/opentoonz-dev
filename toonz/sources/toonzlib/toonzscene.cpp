@@ -48,6 +48,7 @@
 
 TOfflineGL *currentOfflineGL = 0;
 
+#include <QDateTime>
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QPushButton>
@@ -220,7 +221,8 @@ void fixBiancoProblem(ToonzScene *scene, TXsheet *xsh) {
     visited.insert(xsh);
     tovisit.erase(xsh);
     int c0 = 0, c1 = xsh->getColumnCount() - 1;
-    for (int c = c0; c <= c1; c++) {
+    for (int c = -1; c < c1 + 1; ++c) {
+      if (c < 0) continue;
       if (xsh->isColumnEmpty(c)) continue;
       TXshColumn *column = xsh->getColumn(c);
       if (!column || !column->getLevelColumn()) continue;
@@ -606,17 +608,22 @@ void ToonzScene::save(TFilePath &fp, TXsheet *subxsh, bool saveSceneIcon) {
 
   // Unknown top-level data was intentionally skipped at load time. On an
   // explicit save back to the same scene, protect that original file by
-  // defaulting to a free incremented filename. Autosave passes
-  // saveSceneIcon=false, and sub-xsheet saves have their own target, so neither
-  // enters this modal compatibility decision.
+  // defaulting to a timestamped copy. Autosave passes saveSceneIcon=false,
+  // and sub-xsheet saves have their own target, so neither enters this modal
+  // compatibility decision.
   if (saveSceneIcon && !subxsh && newScenePath == oldScenePath &&
       hasUnrecognizedSceneData()) {
-    NameModifier modifier(newScenePath.getWideName());
-    TFilePath suggestedPath;
-    do {
-      suggestedPath = newScenePath.withName(modifier.getNext());
-    } while (suggestedPath == newScenePath ||
-             TSystem::doesExistFileOrLevel(decodeFilePath(suggestedPath)));
+    const QString timestamp =
+        QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+    const std::wstring timestampedBaseName =
+        newScenePath.getWideName() + L"_" + timestamp.toStdWString();
+
+    TFilePath suggestedPath = newScenePath.withName(timestampedBaseName);
+    int collisionIndex      = 1;
+    while (TSystem::doesExistFileOrLevel(decodeFilePath(suggestedPath))) {
+      suggestedPath = newScenePath.withName(
+          timestampedBaseName + L"_" + std::to_wstring(collisionIndex++));
+    }
 
     QStringList tags;
     const int maxTags = 8;
@@ -638,7 +645,7 @@ void ToonzScene::save(TFilePath &fp, TXsheet *subxsh, bool saveSceneIcon) {
             "The scene was opened by safely ignoring those entries. Saving "
             "the scene will not write the unrecognized data back.\n\n"
             "To preserve the original scene unchanged, save the recognized "
-            "scene data to the suggested incremented file.")
+            "scene data to the suggested timestamped file.")
             .arg(tags.join(", ")));
     QPushButton *saveCopyButton = msgBox.addButton(
         QObject::tr("Save as %1")
