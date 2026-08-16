@@ -27,8 +27,9 @@
 #include <QActionGroup>
 
 namespace {
-constexpr int kCommandBarFloatingThickness = 36;
-constexpr int kCommandBarDockedThickness   = 26;
+constexpr int kCommandBarFloatingThickness  = 36;
+constexpr int kCommandBarDockedThickness    = 26;
+constexpr int kCommandBarFloatingFrameDelta = 10;
 }
 
 //=============================================================================
@@ -174,9 +175,6 @@ void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
     verticalAction->setChecked(orientation() == Qt::Vertical);
     orientationGroup->addAction(verticalAction);
 
-    // A docked Command Bar follows the orientation of its docking slot. Manual
-    // orientation remains available while floating; dragging to another side
-    // automatically selects the appropriate orientation before docking.
     TPanel *panel = qobject_cast<TPanel *>(parentWidget());
     orientationMenu->setEnabled(!panel || panel->isFloating());
 
@@ -223,9 +221,7 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
 
   const bool vertical = orientation == Qt::Vertical;
 
-  // The existing Command Bar QSS is horizontally biased. Keep the normal
-  // themed styling for horizontal mode, and use symmetric spacing in vertical
-  // mode so the icons remain centered in a narrow column.
+  // Vertical mode overrides horizontal-biased theme spacing.
   if (vertical) {
     setStyleSheet(
         "QToolBar#CommandBar { margin: 0; padding: 0; border: 0; }"
@@ -246,9 +242,6 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     setStyleSheet(QString());
   }
 
-  // CommandBarPanel is intentionally a very thin wrapper around this toolbar.
-  // Keep its dock/title-bar orientation and fixed thickness synchronized here
-  // so old room layouts need no special-case migration code.
   TPanel *panel = qobject_cast<TPanel *>(parentWidget());
   if (!panel) return;
 
@@ -258,18 +251,14 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   const bool floating = panel->isFloating();
   const int thickness = floating ? kCommandBarFloatingThickness
                                  : kCommandBarDockedThickness;
-  // TDockWidget removes its 5px floating frame on docking. Keep enough
-  // long-axis minimum while floating so that subtraction resolves cleanly to 0.
-  const int minimumLongSide = floating ? 10 : 0;
+  const int minimumLongSide = floating ? kCommandBarFloatingFrameDelta : 0;
 
   if (vertical) {
     panel->setMinimumHeight(minimumLongSide);
     panel->setMaximumHeight(QWIDGETSIZE_MAX);
     panel->setFixedWidth(thickness);
 
-    // The shipped Command Bar theme constrains its title bar to a narrow left
-    // strip. In vertical mode the title bar moves to the top, so release that
-    // width constraint while retaining the normal 18px title-bar thickness.
+    // Release the horizontal title-bar constraint in vertical mode.
     if (TPanelTitleBar *titleBar = panel->getTitleBar()) {
       titleBar->setStyleSheet(
           "TPanelTitleBar {"
