@@ -14,6 +14,9 @@
 #include "toonz/tstageobjectid.h"
 #include "toonzqt/colorfield.h"
 #include "toonzqt/functionviewer.h"
+
+#include <QToolBar>
+
 class PaletteViewer;
 class TPaletteHandle;
 class StyleEditor;
@@ -242,10 +245,43 @@ public:
 class CommandBarPanel final : public TPanel {
   Q_OBJECT
 
-  // ToolOptions *m_toolOption;
-
 public:
   CommandBarPanel(QWidget *parent);
+
+  // Docking candidates must not be restricted by the Command Bar's current
+  // orientation. The actual fixed thickness is applied when its orientation
+  // is selected for the target docking slot.
+  QSize getDockedMinimumSize() override { return QSize(20, 20); }
+  QSize getDockedMaximumSize() override {
+    return QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+  }
+
+  void selectDockPlaceholder(QMouseEvent *me) override {
+    DockWidget::selectDockPlaceholder(me);
+    if (!m_selectedPlace) return;
+
+    Qt::Orientation targetOrientation;
+    switch (m_selectedPlace->getAttribute()) {
+    case DockPlaceholder::left:
+    case DockPlaceholder::right:
+    case DockPlaceholder::sepVert:
+      targetOrientation = Qt::Vertical;
+      break;
+    case DockPlaceholder::top:
+    case DockPlaceholder::bottom:
+    case DockPlaceholder::sepHor:
+      targetOrientation = Qt::Horizontal;
+      break;
+    default:
+      // A root placeholder has no directional preference. Keep the user's
+      // current floating orientation in that case.
+      return;
+    }
+
+    QToolBar *toolbar = qobject_cast<QToolBar *>(widget());
+    if (toolbar && toolbar->orientation() != targetOrientation)
+      toolbar->setOrientation(targetOrientation);
+  }
 };
 
 //=========================================================

@@ -27,7 +27,8 @@
 #include <QActionGroup>
 
 namespace {
-constexpr int kCommandBarThickness = 36;
+constexpr int kCommandBarFloatingThickness = 36;
+constexpr int kCommandBarDockedThickness   = 26;
 }
 
 //=============================================================================
@@ -173,6 +174,12 @@ void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
     verticalAction->setChecked(orientation() == Qt::Vertical);
     orientationGroup->addAction(verticalAction);
 
+    // A docked Command Bar follows the orientation of its docking slot. Manual
+    // orientation remains available while floating; dragging to another side
+    // automatically selects the appropriate orientation before docking.
+    TPanel *panel = qobject_cast<TPanel *>(parentWidget());
+    orientationMenu->setEnabled(!panel || panel->isFloating());
+
     connect(horizontalAction, &QAction::triggered, this,
             [this]() { setOrientation(Qt::Horizontal); });
     connect(verticalAction, &QAction::triggered, this,
@@ -248,10 +255,17 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   panel->setOrientation(vertical ? TDockWidget::vertical
                                  : TDockWidget::horizontal);
 
+  const bool floating = panel->isFloating();
+  const int thickness = floating ? kCommandBarFloatingThickness
+                                 : kCommandBarDockedThickness;
+  // TDockWidget removes its 5px floating frame on docking. Keep enough
+  // long-axis minimum while floating so that subtraction resolves cleanly to 0.
+  const int minimumLongSide = floating ? 10 : 0;
+
   if (vertical) {
-    panel->setMinimumHeight(0);
+    panel->setMinimumHeight(minimumLongSide);
     panel->setMaximumHeight(QWIDGETSIZE_MAX);
-    panel->setFixedWidth(kCommandBarThickness);
+    panel->setFixedWidth(thickness);
 
     // The shipped Command Bar theme constrains its title bar to a narrow left
     // strip. In vertical mode the title bar moves to the top, so release that
@@ -267,9 +281,9 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
           "}");
     }
   } else {
-    panel->setMinimumWidth(0);
+    panel->setMinimumWidth(minimumLongSide);
     panel->setMaximumWidth(QWIDGETSIZE_MAX);
-    panel->setFixedHeight(kCommandBarThickness);
+    panel->setFixedHeight(thickness);
 
     if (TPanelTitleBar *titleBar = panel->getTitleBar())
       titleBar->setStyleSheet(QString());
