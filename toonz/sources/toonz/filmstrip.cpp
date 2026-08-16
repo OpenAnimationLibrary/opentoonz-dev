@@ -49,6 +49,9 @@
 #include <QMainWindow>
 #include <QMimeData>
 #include <QDrag>
+#include <QTimer>
+#include <algorithm>
+#include <string>
 
 namespace {
 QString fidToFrameNumberWithLetter(int f) {
@@ -88,6 +91,30 @@ QString fidToFrameNumberWithLetter(int f) {
   }
   return str;
 }
+
+class StripViewportResizeFilter final : public QObject {
+  FilmstripFrames *m_frames;
+  bool m_busy = false;
+
+public:
+  StripViewportResizeFilter(FilmstripFrames *frames, QObject *viewport)
+      : QObject(viewport), m_frames(frames) {
+    viewport->installEventFilter(this);
+  }
+
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    if (event->type() == QEvent::Resize && m_frames &&
+        m_frames->isResponsiveThumbnails() && !m_busy) {
+      m_busy = true;
+      m_frames->updateIconLayout();
+      m_busy = false;
+    }
+    return QObject::eventFilter(watched, event);
+  }
+};
+
+const int kResponsiveIconQuantStep    = 16;
+const int kResponsiveRenderDebounceMs = 120;
 }  // namespace
 
 //=============================================================================
@@ -101,7 +128,9 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
     , m_frameHeadGadget(0)
     , m_inbetweenDialog(0)
     , m_pos(0, 0)
-    , m_iconSize(dimension2QSize(IconGenerator::instance()->getIconSize()))
+    , m_prefIconSize(dimension2QSize(IconGenerator::instance()->getIconSize()))
+    , m_iconSize(m_prefIconSize)
+    , m_renderIconSize(m_prefIconSize)
     , m_frameLabelWidth(11)
     , m_selectingRange(0, 0)
     , m_scrollSpeed(0)
@@ -115,12 +144,10 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
   setFrameStyle(QFrame::StyledPanel);
 
   setFocusPolicy(Qt::StrongFocus);
+  applyCrossAxisDimension();
   if (m_isVertical) {
-    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
-                  fs_iconMarginLR * 2);
     setFixedHeight(parentWidget()->height());
   } else {
-    setFixedHeight(parentWidget()->height());
     setFixedWidth(parentWidget()->width());
   }
 
@@ -133,6 +160,13 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
   setMouseTracking(true);
 
   m_viewer = NULL;
+
+  m_responsiveRenderTimer = new QTimer(this);
+  m_responsiveRenderTimer->setSingleShot(true);
+  connect(m_responsiveRenderTimer, SIGNAL(timeout()), this,
+          SLOT(commitResponsiveRenderSize()));
+
+  new StripViewportResizeFilter(this, m_scrollArea->viewport());
 }
 
 //-----------------------------------------------------------------------------
@@ -147,6 +181,137 @@ FilmstripFrames::~FilmstripFrames() {
 TXshSimpleLevel *FilmstripFrames::getLevel() const {
   TXshLevel *xl = TApp::instance()->getCurrentLevel()->getLevel();
   return xl ? xl->getSimpleLevel() : 0;
+}
+
+//-----------------------------------------------------------------------------
+
+std::string FilmstripFrames::responsiveIconCacheSuffix(const QSize &size) {
+  return "_r_" + std::to_string(size.width()) + "x" +
+         std::to_string(size.height());
+}
+
+//-----------------------------------------------------------------------------
+
+QSize FilmstripFrames::quantizeResponsiveRenderSize(const QSize &layout,
+                                                    const QSize &pref,
+                                                    bool vertical) {
+  if (layout.width() <= 0 || layout.height() <= 0) return pref;
+  if (pref.width() <= 0 || pref.height() <= 0) return layout;
+
+  auto quantize = [](int v) {
+    if (v <= 0) return 1;
+    const int q =
+        ((v + kResponsiveIconQuantStep / 2) / kResponsiveIconQuantStep) *
+        kResponsiveIconQuantStep;
+    return std::max(kResponsiveIconQuantStep, q);
+  };
+
+  if (vertical) {
+    const int w = quantize(layout.width());
+    const int h = std::max(1, w * pref.height() / pref.width());
+    return QSize(w, h);
+  }
+  const int h = quantize(layout.height());
+  const int w = std::max(1, h * pref.width() / pref.height());
+  return QSize(w, h);
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::applyCrossAxisDimension() {
+  if (!m_scrollArea) return;
+  QWidget *vp = m_scrollArea->viewport();
+  if (!vp) return;
+  if (m_responsiveThumbnails) {
+    if (m_isVertical)
+      setFixedWidth(std::max(1, vp->width()));
+    else
+      setFixedHeight(std::max(1, vp->height()));
+  } else if (m_isVertical) {
+    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
+                  fs_iconMarginLR * 2);
+  } else {
+    setFixedHeight(getOneFrameHeight());
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::scheduleResponsiveRenderCommit() {
+  if (!m_responsiveRenderTimer) return;
+  m_responsiveRenderTimer->start(kResponsiveRenderDebounceMs);
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::commitResponsiveRenderSize() {
+  if (!m_responsiveThumbnails) {
+    m_renderIconSize = m_prefIconSize;
+    return;
+  }
+  const QSize next = quantizeResponsiveRenderSize(m_iconSize, m_prefIconSize,
+                                                  m_isVertical);
+  if (next == m_renderIconSize) return;
+  m_renderIconSize = next;
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::updateIconLayout() {
+  m_prefIconSize = dimension2QSize(IconGenerator::instance()->getIconSize());
+
+  QSize effective = m_prefIconSize;
+  if (m_responsiveThumbnails && m_scrollArea) {
+    QWidget *vp = m_scrollArea->viewport();
+    if (vp && m_prefIconSize.width() > 0 && m_prefIconSize.height() > 0) {
+      if (m_isVertical) {
+        const int availW = vp->width() - fs_leftMargin - fs_rightMargin -
+                           fs_iconMarginLR * 2;
+        if (availW > 0) {
+          const int w = availW;
+          const int h = std::max(
+              1, w * m_prefIconSize.height() / m_prefIconSize.width());
+          effective = QSize(w, h);
+        }
+      } else {
+        const int availH = vp->height() - fs_frameSpacing - fs_iconMarginTop -
+                           fs_iconMarginBottom;
+        if (availH > 0) {
+          const int h = availH;
+          const int w = std::max(
+              1, h * m_prefIconSize.width() / m_prefIconSize.height());
+          effective = QSize(w, h);
+        }
+      }
+    }
+  }
+
+  m_iconSize = effective;
+
+  applyCrossAxisDimension();
+  if (m_frameHeadGadget) m_frameHeadGadget->updateFrameMetrics();
+  if (m_isVertical)
+    updateContentHeight();
+  else
+    updateContentWidth();
+
+  if (m_responsiveThumbnails)
+    scheduleResponsiveRenderCommit();
+  else {
+    if (m_responsiveRenderTimer) m_responsiveRenderTimer->stop();
+    m_renderIconSize = m_prefIconSize;
+  }
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setResponsiveThumbnails(bool responsive) {
+  if (m_responsiveThumbnails == responsive) return;
+  m_responsiveThumbnails = responsive;
+  updateIconLayout();
+  if (responsive) commitResponsiveRenderSize();
 }
 
 //-----------------------------------------------------------------------------
@@ -770,11 +935,30 @@ void FilmstripFrames::drawFrameIcon(QPainter &p, const QRect &r, int index,
                                     const TFrameId &fid, int flags) {
   QPixmap pm;
   TXshSimpleLevel *sl = getLevel();
-  if (sl) {
-    pm = IconGenerator::instance()->getIcon(sl, fid);
+  TXshLevel *xl       = TApp::instance()->getCurrentLevel()->getLevel();
+  if (sl && xl) {
+    const bool needNativeSize =
+        m_responsiveThumbnails &&
+        (m_renderIconSize.width() > m_prefIconSize.width() ||
+         m_renderIconSize.height() > m_prefIconSize.height());
+    if (needNativeSize) {
+      const TDimension dim(m_renderIconSize.width(),
+                           m_renderIconSize.height());
+      pm = IconGenerator::instance()->getSizedIcon(
+          xl, fid, responsiveIconCacheSuffix(m_renderIconSize), dim);
+    }
+    if (pm.isNull()) pm = IconGenerator::instance()->getIcon(xl, fid);
   }
   if (!pm.isNull()) {
-    p.drawPixmap(r.left(), r.top(), pm);
+    if (pm.size() == r.size()) {
+      p.drawPixmap(r.topLeft(), pm);
+    } else {
+      const QPixmap scaled =
+          pm.scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+      QRect dest(scaled.rect());
+      dest.moveCenter(r.center());
+      p.drawPixmap(dest.topLeft(), scaled);
+    }
 
     if (sl && sl->getType() == PLI_XSHLEVEL && flags & F_INBETWEEN_RANGE) {
       if (m_isVertical) {
@@ -1291,16 +1475,22 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
   QAction *hideComboBox = panelMenu->addAction(tr("Show/Hide Drop Down Menu"));
   QAction *hideNavigator =
       panelMenu->addAction(tr("Show/Hide Level Navigator"));
+  QAction *responsiveThumbs =
+      panelMenu->addAction(tr("Responsive Thumbnails"));
   hideComboBox->setCheckable(true);
   hideComboBox->setChecked(m_showComboBox);
   hideNavigator->setCheckable(true);
   hideNavigator->setChecked(m_showNavigator);
+  responsiveThumbs->setCheckable(true);
+  responsiveThumbs->setChecked(m_responsiveThumbnails);
   connect(toggleOrientation, SIGNAL(triggered(bool)), this,
           SLOT(orientationToggled(bool)));
   connect(hideComboBox, SIGNAL(triggered(bool)), this,
           SLOT(comboBoxToggled(bool)));
   connect(hideNavigator, SIGNAL(triggered(bool)), this,
           SLOT(navigatorToggled(bool)));
+  connect(responsiveThumbs, SIGNAL(triggered(bool)), this,
+          SLOT(responsiveThumbnailsToggled(bool)));
 
   menu->exec(event->globalPos());
 }
@@ -1356,6 +1546,12 @@ void FilmstripFrames::navigatorToggled(bool ignore) {
 
 //-----------------------------------------------------------------------------
 
+void FilmstripFrames::responsiveThumbnailsToggled(bool ignore) {
+  emit(responsiveThumbnailsToggledSignal());
+}
+
+//-----------------------------------------------------------------------------
+
 void FilmstripFrames::orientationToggled(bool ignore) {
   m_isVertical = !m_isVertical;
   emit(orientationToggledSignal(m_isVertical));
@@ -1365,18 +1561,7 @@ void FilmstripFrames::orientationToggled(bool ignore) {
 
 void FilmstripFrames::setOrientation(bool isVertical) {
   m_isVertical = isVertical;
-  if (m_isVertical) {
-    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
-                  fs_iconMarginLR * 2);
-    setFixedHeight(parentWidget()->height());
-  } else {
-    setFixedHeight(parentWidget()->height());
-    setFixedWidth(parentWidget()->width());
-  }
-  if (m_isVertical)
-    updateContentHeight();
-  else
-    updateContentWidth();
+  updateIconLayout();
   TApp *app        = TApp::instance();
   TFrameHandle *fh = app->getCurrentFrame();
   TFrameId fid     = getCurrentFrameId();
@@ -1564,8 +1749,12 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
           SLOT(comboBoxToggled()));
   connect(m_frames, SIGNAL(navigatorToggledSignal()), this,
           SLOT(navigatorToggled()));
+  connect(m_frames, SIGNAL(responsiveThumbnailsToggledSignal()), this,
+          SLOT(responsiveThumbnailsToggled()));
   connect(m_frames, SIGNAL(levelSelectedSignal(int)), this,
           SLOT(onChooseLevelComboChanged(int)));
+
+  m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 }
 
 //-----------------------------------------------------------------------------
@@ -1798,6 +1987,7 @@ void Filmstrip::hideEvent(QHideEvent *) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::resizeEvent(QResizeEvent *e) {
+  if (m_frames->isResponsiveThumbnails()) m_frames->updateIconLayout();
   if (m_isVertical) {
     m_frames->updateContentHeight();
     m_frameArea->verticalScrollBar()->setSingleStep(
@@ -1926,6 +2116,13 @@ void Filmstrip::navigatorToggled() {
 
 //-----------------------------------------------------------------------------
 
+void Filmstrip::responsiveThumbnailsToggled() {
+  m_responsiveThumbnails = !m_responsiveThumbnails;
+  m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
+}
+
+//-----------------------------------------------------------------------------
+
 void Filmstrip::setOrientation(bool isVertical) {
   m_isVertical = isVertical;
   if (isVertical) {
@@ -1955,6 +2152,9 @@ void Filmstrip::save(QSettings &settings) const {
   UINT navigator = 0;
   navigator      = m_showNavigator ? 1 : 0;
   settings.setValue("navigator", navigator);
+
+  UINT responsive = m_responsiveThumbnails ? 1 : 0;
+  settings.setValue("responsiveThumbnails", responsive);
 }
 
 void Filmstrip::load(QSettings &settings) {
@@ -1974,6 +2174,10 @@ void Filmstrip::load(QSettings &settings) {
     m_chooseLevelCombo->hide();
   }
   m_frames->setComboBox(m_showComboBox);
+
+  UINT responsive         = settings.value("responsiveThumbnails", 0).toUInt();
+  m_responsiveThumbnails  = responsive == 1;
+  m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 }
 
 //=============================================================================

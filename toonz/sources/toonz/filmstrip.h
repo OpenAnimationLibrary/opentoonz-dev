@@ -15,6 +15,7 @@
 // STD includes
 #include <vector>
 #include <map>
+#include <string>
 
 // forward declaration
 class TFrameId;
@@ -22,6 +23,7 @@ class TFilmstripSelection;
 class FilmstripFrameHeadGadget;
 class TXshSimpleLevel;
 class QComboBox;
+class QTimer;
 class InbetweenDialog;
 class TXshLevel;
 class SceneViewer;
@@ -46,9 +48,10 @@ public:
                   Qt::WindowFlags flags = Qt::WindowFlags());
   ~FilmstripFrames();
 
-  bool m_isVertical    = true;
-  bool m_showNavigator = true;
-  bool m_showComboBox  = true;
+  bool m_isVertical           = true;
+  bool m_showNavigator        = true;
+  bool m_showComboBox         = true;
+  bool m_responsiveThumbnails = false;
 
   void setBGColor(const QColor &color) { m_bgColor = color; }
   QColor getBGColor() const { return m_bgColor; }
@@ -122,11 +125,15 @@ public:
   void setOrientation(bool isVertical);
   void setNavigator(bool showNavigator);
   void setComboBox(bool showComboBox);
+  void setResponsiveThumbnails(bool responsive);
+  bool isResponsiveThumbnails() const { return m_responsiveThumbnails; }
+  void updateIconLayout();
 
 signals:
   void orientationToggledSignal(bool);
   void comboBoxToggledSignal();
   void navigatorToggledSignal();
+  void responsiveThumbnailsToggledSignal();
   void levelSelectedSignal(int);
 
 protected:
@@ -170,8 +177,10 @@ protected slots:
   void orientationToggled(bool);
   void comboBoxToggled(bool);
   void navigatorToggled(bool);
+  void responsiveThumbnailsToggled(bool);
   void levelSelected(int);
   void onViewerAboutToBeDestroyed();
+  void commitResponsiveRenderSize();
 
 private:
   // QSS Properties
@@ -201,8 +210,18 @@ private:
 
   QPoint m_pos;  //!< Last mouse position.
 
-  const QSize m_iconSize;
+  QSize m_prefIconSize;
+  QSize m_iconSize;
+  QSize m_renderIconSize;
   const int m_frameLabelWidth;
+
+  QTimer *m_responsiveRenderTimer = nullptr;
+
+  void applyCrossAxisDimension();
+  void scheduleResponsiveRenderCommit();
+  static std::string responsiveIconCacheSuffix(const QSize &size);
+  static QSize quantizeResponsiveRenderSize(const QSize &layout,
+                                            const QSize &pref, bool vertical);
 
   std::pair<int, int> m_selectingRange;
 
@@ -233,9 +252,10 @@ class Filmstrip final : public QWidget, public SaveLoadQSettings {
 
   std::vector<TXshSimpleLevel *> m_levels;
   std::map<TXshSimpleLevel *, TFrameId> m_workingFrames;
-  bool m_isVertical    = true;
-  bool m_showNavigator = true;
-  bool m_showComboBox  = true;
+  bool m_isVertical           = true;
+  bool m_showNavigator        = true;
+  bool m_showComboBox         = true;
+  bool m_responsiveThumbnails = false;
 
 public:
   Filmstrip(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
@@ -271,6 +291,7 @@ public slots:
   void orientationToggled(bool);
   void comboBoxToggled();
   void navigatorToggled();
+  void responsiveThumbnailsToggled();
 
 private:
   void updateWindowTitle();

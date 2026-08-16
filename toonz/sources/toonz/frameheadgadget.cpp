@@ -328,6 +328,15 @@ int FilmstripFrameHeadGadget::getCurrentFrame() const {
 
 //-----------------------------------------------------------------------------
 
+void FilmstripFrameHeadGadget::updateFrameMetrics() {
+  m_dy = m_filmstrip->getIconSize().height() + fs_frameSpacing +
+         fs_iconMarginTop + fs_iconMarginBottom;
+  m_dx = m_filmstrip->getIconSize().width() + fs_frameSpacing + fs_leftMargin +
+         fs_rightMargin + fs_iconMarginLR;
+}
+
+//-----------------------------------------------------------------------------
+
 void FilmstripFrameHeadGadget::drawOnionSkinSelection(QPainter &p,
                                                       const QColor &lightColor,
                                                       const QColor &darkColor) {

@@ -101,7 +101,7 @@ public:
 
   TDimension getIconSize() const;
 
-  TOfflineGL *getOfflineGLContext();
+  TOfflineGL *getOfflineGLContext(const TDimension &minSize = TDimension());
 
   // icons from splines
   QPixmap getIcon(TStageObjectSpline *spline);

@@ -47,6 +47,7 @@
 #include "toonzqt/icongenerator.h"
 
 #include <QCoreApplication>
+#include <vector>
 
 //=============================================================================
 
@@ -165,6 +166,19 @@ void removeIcon(const std::string &iconName) {
 
 //-----------------------------------------------------------------------------
 
+void removeResponsiveSizedIcons(const std::string &baseId) {
+  const std::string prefix = baseId + "_r_";
+  std::vector<std::string> toRemove;
+  for (IconIterator it = iconsMap.lower_bound(prefix);
+       it != iconsMap.end() && it->compare(0, prefix.size(), prefix) == 0;
+       ++it) {
+    toRemove.push_back(*it);
+  }
+  for (const std::string &key : toRemove) removeIcon(key);
+}
+
+//-----------------------------------------------------------------------------
+
 bool isUnpremultiplied(const TRaster32P &r) {
   int lx = r->getLx();
   int y  = r->getLy();
@@ -225,7 +239,8 @@ TRaster32P convertToIcon(TVectorImageP vimage, int frame,
   if (!plt) return TRaster32P();
   plt->setFrame(frame);
 
-  TOfflineGL *glContext = IconGenerator::instance()->getOfflineGLContext();
+  TOfflineGL *glContext =
+      IconGenerator::instance()->getOfflineGLContext(iconSize);
 
   // Image bounding box with a small margin to prevent issues with empty images
   TRectD imageBox;
@@ -387,8 +402,9 @@ TRaster32P convertToIcon(TMeshImageP mi, int frame, const TDimension &iconSize,
                          const IconGenerator::Settings &settings) {
   if (!mi) return TRaster32P();
 
-  TOfflineGL *glContext = IconGenerator::instance()->getOfflineGLContext();
-  TRectD imageBox       = mi->getBBox().enlarge(.1);
+  TOfflineGL *glContext =
+      IconGenerator::instance()->getOfflineGLContext(iconSize);
+  TRectD imageBox = mi->getBBox().enlarge(.1);
   TPointD imageCenter(0.5 * (imageBox.getP00() + imageBox.getP11()));
 
   const int margin = 10;
@@ -616,7 +632,8 @@ public:
 TRaster32P SplineIconRenderer::generateRaster(
     const TDimension &iconSize) const {
   // get the glContext
-  TOfflineGL *glContext = IconGenerator::instance()->getOfflineGLContext();
+  TOfflineGL *glContext =
+      IconGenerator::instance()->getOfflineGLContext(iconSize);
   glContext->makeCurrent();
   glContext->clear(TPixel32::White);
 
@@ -1381,23 +1398,22 @@ TDimension IconGenerator::getIconSize() const { return FilmstripIconSize; }
 
 //-----------------------------------------------------------------------------
 
-TOfflineGL *IconGenerator::getOfflineGLContext() {
+TOfflineGL *IconGenerator::getOfflineGLContext(const TDimension &minSize) {
+  const TDimension requiredSize(
+      std::max(minSize.lx, std::max(FilmstripIconSize.lx, IconSize.lx)),
+      std::max(minSize.ly, std::max(FilmstripIconSize.ly, IconSize.ly)));
+
   TOfflineGL *context = m_contexts.localData();
   // One context per rendering thread
   if (!context) {
-    context =
-        new TOfflineGL(TDimension(std::max(FilmstripIconSize.lx, IconSize.lx),
-                                  std::max(FilmstripIconSize.ly, IconSize.ly)));
+    context = new TOfflineGL(requiredSize);
     m_contexts.setLocalData(context);
     return context;
   }
-  TDimension requiredSize(std::max(FilmstripIconSize.lx, IconSize.lx),
-                          std::max(FilmstripIconSize.ly, IconSize.ly));
-  TDimension actualSize = context->getSize();
 
+  const TDimension actualSize = context->getSize();
   if (actualSize.lx < requiredSize.lx || actualSize.ly < requiredSize.ly) {
     context = new TOfflineGL(requiredSize);
-
     m_contexts.setLocalData(context);
   }
 
@@ -1591,6 +1607,7 @@ void IconGenerator::invalidate(TXshLevel *xl, const TFrameId &fid,
 
   if (TXshSimpleLevel *sl = xl->getSimpleLevel()) {
     std::string id = sl->getIconId(fid);
+    removeResponsiveSizedIcons(id);
 
     int type = sl->getType();
 
@@ -1678,6 +1695,7 @@ void IconGenerator::remove(TXshLevel *xl, const TFrameId &fid,
     std::string id(sl->getIconId(fid));
 
     removeIcon(id);
+    removeResponsiveSizedIcons(id);
     if (!onlyFilmStrip) removeIcon(id + "_small");
   } else {
     TXshChildLevel *cl = xl->getChildLevel();
