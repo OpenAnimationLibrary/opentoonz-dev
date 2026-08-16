@@ -1714,14 +1714,12 @@ PencilTestPopup::PencilTestPopup()
   m_onionSkinGBox->setChecked(false);
   m_onionOpacityFld->setRange(1, 100);
   m_onionOpacityFld->setValue(50);
-  m_onionOpacityFld->setDisabled(true);
 
   m_timerGBox->setObjectName("CleanupSettingsFrame");
   m_timerGBox->setCheckable(true);
   m_timerGBox->setChecked(false);
   m_timerIntervalFld->setRange(0, 60);
   m_timerIntervalFld->setValue(10);
-  m_timerIntervalFld->setDisabled(true);
   // Make the interval timer single-shot. When the capture finished, restart
   // timer for next frame.
   // This is because capturing and saving the image needs some time.
