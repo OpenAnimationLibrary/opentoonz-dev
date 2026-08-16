@@ -25,11 +25,13 @@
 #include <QMenuBar>
 #include <QContextMenuEvent>
 #include <QActionGroup>
+#include <QLayout>
 
 namespace {
 constexpr int kCommandBarFloatingThickness  = 36;
 constexpr int kCommandBarDockedThickness    = 26;
 constexpr int kCommandBarFloatingFrameDelta = 10;
+constexpr int kCommandBarTitleBarThickness  = 18;
 }
 
 //=============================================================================
@@ -253,29 +255,39 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
                                  : kCommandBarDockedThickness;
   const int minimumLongSide = floating ? kCommandBarFloatingFrameDelta : 0;
 
+  TPanelTitleBar *titleBar = panel->getTitleBar();
   if (vertical) {
     panel->setMinimumHeight(minimumLongSide);
     panel->setMaximumHeight(QWIDGETSIZE_MAX);
     panel->setFixedWidth(thickness);
 
-    // Release the horizontal title-bar constraint in vertical mode.
-    if (TPanelTitleBar *titleBar = panel->getTitleBar()) {
+    if (titleBar) {
       titleBar->setStyleSheet(
           "TPanelTitleBar {"
-          "  max-width: 16777215;"
-          "  max-height: 18;"
           "  border-right: 0;"
           "  border-bottom: 0;"
           "  border-radius: 0;"
           "}");
+      titleBar->setMaximumWidth(QWIDGETSIZE_MAX);
+      titleBar->setMaximumHeight(kCommandBarTitleBarThickness);
     }
   } else {
     panel->setMinimumWidth(minimumLongSide);
     panel->setMaximumWidth(QWIDGETSIZE_MAX);
     panel->setFixedHeight(thickness);
 
-    if (TPanelTitleBar *titleBar = panel->getTitleBar())
+    if (titleBar) {
       titleBar->setStyleSheet(QString());
+      titleBar->setMaximumWidth(kCommandBarTitleBarThickness);
+      titleBar->setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+  }
+
+  if (titleBar) titleBar->updateGeometry();
+  panel->updateGeometry();
+  if (panel->layout()) {
+    panel->layout()->invalidate();
+    panel->layout()->activate();
   }
 }
 
