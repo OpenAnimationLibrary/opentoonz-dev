@@ -32,6 +32,7 @@ constexpr int kCommandBarFloatingThickness  = 36;
 constexpr int kCommandBarDockedThickness    = 26;
 constexpr int kCommandBarFloatingFrameDelta = 10;
 constexpr int kCommandBarTitleBarThickness  = 18;
+constexpr int kCommandBarHorizontalGripWidth = 40;
 }
 
 //=============================================================================
@@ -223,6 +224,9 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
 
   const bool vertical = orientation == Qt::Vertical;
 
+  // QToolBar resets its size policy when orientation changes.
+  setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
   // Vertical mode overrides horizontal-biased theme spacing.
   if (vertical) {
     setStyleSheet(
@@ -264,12 +268,17 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     if (titleBar) {
       titleBar->setStyleSheet(
           "TPanelTitleBar {"
+          "  min-width: 0;"
+          "  max-width: 16777215;"
+          "  min-height: 18;"
+          "  max-height: 18;"
           "  border-right: 0;"
           "  border-bottom: 0;"
           "  border-radius: 0;"
           "}");
+      titleBar->setMinimumWidth(0);
       titleBar->setMaximumWidth(QWIDGETSIZE_MAX);
-      titleBar->setMaximumHeight(kCommandBarTitleBarThickness);
+      titleBar->setFixedHeight(kCommandBarTitleBarThickness);
     }
   } else {
     panel->setMinimumWidth(minimumLongSide);
@@ -277,14 +286,26 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     panel->setFixedHeight(thickness);
 
     if (titleBar) {
-      titleBar->setStyleSheet(QString());
-      titleBar->setMaximumWidth(kCommandBarTitleBarThickness);
+      titleBar->setStyleSheet(
+          "TPanelTitleBar {"
+          "  min-width: 40;"
+          "  max-width: 40;"
+          "  min-height: 0;"
+          "  max-height: 16777215;"
+          "}");
+      titleBar->setFixedWidth(kCommandBarHorizontalGripWidth);
+      titleBar->setMinimumHeight(0);
       titleBar->setMaximumHeight(QWIDGETSIZE_MAX);
     }
   }
 
   if (titleBar) titleBar->updateGeometry();
+  updateGeometry();
   panel->updateGeometry();
+  if (layout()) {
+    layout()->invalidate();
+    layout()->activate();
+  }
   if (panel->layout()) {
     panel->layout()->invalidate();
     panel->layout()->activate();
