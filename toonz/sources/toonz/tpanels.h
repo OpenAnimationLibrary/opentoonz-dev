@@ -276,8 +276,23 @@ public:
     }
 
     QToolBar *commandBar = qobject_cast<QToolBar *>(widget());
-    if (commandBar && commandBar->orientation() != dockOrientation)
-      commandBar->setOrientation(dockOrientation);
+    if (!commandBar || commandBar->orientation() == dockOrientation) return;
+
+    const int floatingLength =
+        isFloating() ? (commandBar->orientation() == Qt::Horizontal ? width()
+                                                                    : height())
+                     : 0;
+
+    commandBar->setOrientation(dockOrientation);
+
+    if (floatingLength > 0) {
+      QSize panelSize = size();
+      if (dockOrientation == Qt::Vertical)
+        panelSize.setHeight(floatingLength);
+      else
+        panelSize.setWidth(floatingLength);
+      resize(panelSize);
+    }
   }
 };
 
