@@ -26,13 +26,16 @@
 #include <QContextMenuEvent>
 #include <QActionGroup>
 #include <QLayout>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QShowEvent>
 
 namespace {
-constexpr int kCommandBarFloatingThickness  = 36;
-constexpr int kCommandBarDockedThickness    = 26;
-constexpr int kCommandBarFloatingFrameDelta = 10;
-constexpr int kCommandBarTitleBarThickness  = 18;
-constexpr int kCommandBarHorizontalGripWidth = 40;
+constexpr int kCommandBarFloatingThickness   = 36;
+constexpr int kCommandBarDockedThickness     = 26;
+constexpr int kCommandBarFloatingFrameDelta  = 10;
+constexpr int kCommandBarTitleBarThickness   = 18;
+constexpr int kCommandBarHorizontalGripWidth = 20;
 }
 
 //=============================================================================
@@ -43,7 +46,9 @@ CommandBar::CommandBar(QWidget *parent, Qt::WindowFlags flags,
                        bool isCollapsible, bool isXsheetToolbar)
     : QToolBar(parent)
     , m_isCollapsible(isCollapsible)
-    , m_isXsheetToolbar(isXsheetToolbar) {
+    , m_isXsheetToolbar(isXsheetToolbar)
+    , m_roomStateLoaded(false)
+    , m_initialFloatingSizeApplied(false) {
   setObjectName("cornerWidget");
   setObjectName("CommandBar");
   fillToolbar(this, isXsheetToolbar);
@@ -206,15 +211,56 @@ void CommandBar::save(QSettings &settings) const {
 void CommandBar::load(QSettings &settings) {
   if (m_isXsheetToolbar) return;
 
+  m_roomStateLoaded = settings.contains(QStringLiteral("roomBound"));
+
   const QString savedOrientation =
       settings.value(QStringLiteral("orientation"),
                      QStringLiteral("Horizontal"))
           .toString();
+  const Qt::Orientation saved =
+      savedOrientation.compare(QStringLiteral("Vertical"), Qt::CaseInsensitive) ==
+              0
+          ? Qt::Vertical
+          : Qt::Horizontal;
 
-  setOrientation(savedOrientation.compare(QStringLiteral("Vertical"),
-                                          Qt::CaseInsensitive) == 0
-                     ? Qt::Vertical
-                     : Qt::Horizontal);
+  if (orientation() == saved)
+    onOrientationChanged(saved);
+  else
+    setOrientation(saved);
+
+  if (!m_roomStateLoaded) applyInitialFloatingSize();
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::showEvent(QShowEvent *event) {
+  QToolBar::showEvent(event);
+  if (m_roomStateLoaded || m_initialFloatingSizeApplied) return;
+  onOrientationChanged(orientation());
+  applyInitialFloatingSize();
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::applyInitialFloatingSize() {
+  if (m_initialFloatingSizeApplied || m_roomStateLoaded) return;
+
+  TPanel *panel = qobject_cast<TPanel *>(parentWidget());
+  if (!panel || !panel->isFloating()) return;
+
+  QScreen *screen = QGuiApplication::screenAt(panel->frameGeometry().center());
+  if (!screen) screen = QGuiApplication::primaryScreen();
+  if (!screen) return;
+
+  QSize panelSize       = panel->size();
+  const QRect available = screen->availableGeometry();
+  if (orientation() == Qt::Vertical)
+    panelSize.setHeight(available.height() / 2);
+  else
+    panelSize.setWidth(available.width() / 2);
+
+  panel->resize(panelSize);
+  m_initialFloatingSizeApplied = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -288,8 +334,8 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     if (titleBar) {
       titleBar->setStyleSheet(
           "TPanelTitleBar {"
-          "  min-width: 40;"
-          "  max-width: 40;"
+          "  min-width: 20;"
+          "  max-width: 20;"
           "  min-height: 0;"
           "  max-height: 16777215;"
           "}");

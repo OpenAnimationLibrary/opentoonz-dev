@@ -25,6 +25,8 @@ class CommandBar : public QToolBar, public SaveLoadQSettings {
 protected:
   bool m_isCollapsible;
   bool m_isXsheetToolbar;
+  bool m_roomStateLoaded;
+  bool m_initialFloatingSizeApplied;
 
 public:
   CommandBar(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags(),
@@ -40,6 +42,8 @@ protected:
   static void fillToolbar(CommandBar *toolbar, bool isXsheetToolbar = false);
   static void buildDefaultToolbar(CommandBar *toolbar);
   void contextMenuEvent(QContextMenuEvent *event) override;
+  void showEvent(QShowEvent *event) override;
+  void applyInitialFloatingSize();
 
 protected slots:
   void doCustomizeCommandBar();
