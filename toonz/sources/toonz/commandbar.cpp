@@ -29,6 +29,9 @@
 #include <QGuiApplication>
 #include <QScreen>
 #include <QShowEvent>
+#include <QResizeEvent>
+#include <QStyleOptionToolBar>
+#include <QToolButton>
 
 namespace {
 constexpr int kCommandBarFloatingThickness       = 36;
@@ -37,6 +40,7 @@ constexpr int kCommandBarFloatingFrameDelta      = 10;
 constexpr int kCommandBarTitleBarThickness       = 18;
 constexpr int kCommandBarHorizontalGripWidth     = 20;
 constexpr int kCommandBarVerticalExtensionHeight = 16;
+constexpr int kCommandBarCompactButtonSize       = 20;
 }
 
 //=============================================================================
@@ -49,7 +53,15 @@ CommandBar::CommandBar(QWidget *parent, Qt::WindowFlags flags,
     , m_isCollapsible(isCollapsible)
     , m_isXsheetToolbar(isXsheetToolbar)
     , m_roomStateLoaded(false)
-    , m_initialFloatingSizeApplied(false) {
+    , m_initialFloatingSizeApplied(false)
+    , m_userCompact(false)
+    , m_autoCompact(false)
+    , m_compactPresentation(false)
+    , m_compactTransition(false)
+    , m_compactThreshold(0)
+    , m_compactMenu(nullptr)
+    , m_compactButton(nullptr)
+    , m_compactWidgetAction(nullptr) {
   setObjectName("cornerWidget");
   setObjectName("CommandBar");
   fillToolbar(this, isXsheetToolbar);
@@ -162,6 +174,12 @@ void CommandBar::buildDefaultToolbar(CommandBar *toolbar) {
 //-----------------------------------------------------------------------------
 
 void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
+  showContextMenu(event->globalPos());
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::showContextMenu(const QPoint &globalPos) {
   QMenu menu(this);
   QAction *customizeCommandBar = menu.addAction(tr("Customize Command Bar"));
   connect(customizeCommandBar, SIGNAL(triggered()),
@@ -191,9 +209,15 @@ void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
             [this]() { setOrientation(Qt::Horizontal); });
     connect(verticalAction, &QAction::triggered, this,
             [this]() { setOrientation(Qt::Vertical); });
+
+    QAction *compactAction = menu.addAction(tr("Compact"));
+    compactAction->setCheckable(true);
+    compactAction->setChecked(m_userCompact);
+    connect(compactAction, &QAction::toggled, this,
+            [this](bool checked) { setUserCompact(checked); });
   }
 
-  menu.exec(event->globalPos());
+  menu.exec(globalPos);
 }
 
 //-----------------------------------------------------------------------------
@@ -205,6 +229,7 @@ void CommandBar::save(QSettings &settings) const {
                     orientation() == Qt::Vertical
                         ? QStringLiteral("Vertical")
                         : QStringLiteral("Horizontal"));
+  settings.setValue(QStringLiteral("compact"), m_userCompact);
 }
 
 //-----------------------------------------------------------------------------
@@ -213,6 +238,7 @@ void CommandBar::load(QSettings &settings) {
   if (m_isXsheetToolbar) return;
 
   m_roomStateLoaded = settings.contains(QStringLiteral("roomBound"));
+  m_userCompact = settings.value(QStringLiteral("compact"), false).toBool();
 
   const QString savedOrientation =
       settings.value(QStringLiteral("orientation"),
@@ -230,15 +256,25 @@ void CommandBar::load(QSettings &settings) {
     setOrientation(saved);
 
   if (!m_roomStateLoaded) applyInitialFloatingSize();
+  updateCompactState();
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::resizeEvent(QResizeEvent *event) {
+  QToolBar::resizeEvent(event);
+  updateCompactState();
 }
 
 //-----------------------------------------------------------------------------
 
 void CommandBar::showEvent(QShowEvent *event) {
   QToolBar::showEvent(event);
-  if (m_roomStateLoaded || m_initialFloatingSizeApplied) return;
-  onOrientationChanged(orientation());
-  applyInitialFloatingSize();
+  if (!m_roomStateLoaded && !m_initialFloatingSizeApplied) {
+    onOrientationChanged(orientation());
+    applyInitialFloatingSize();
+  }
+  updateCompactState();
 }
 
 //-----------------------------------------------------------------------------
@@ -262,6 +298,162 @@ void CommandBar::applyInitialFloatingSize() {
 
   panel->resize(panelSize);
   m_initialFloatingSizeApplied = true;
+}
+
+//-----------------------------------------------------------------------------
+
+int CommandBar::compactThreshold() const {
+  if (m_compactPresentation) return m_compactThreshold;
+
+  QStyleOptionToolBar option;
+  initStyleOption(&option);
+
+  const int margin =
+      style()->pixelMetric(QStyle::PM_ToolBarItemMargin, &option, this) +
+      style()->pixelMetric(QStyle::PM_ToolBarFrameWidth, &option, this);
+  const int spacing =
+      style()->pixelMetric(QStyle::PM_ToolBarItemSpacing, &option, this);
+  const int extension =
+      style()->pixelMetric(QStyle::PM_ToolBarExtensionExtent, &option, this);
+
+  const QList<QAction *> toolbarActions = actions();
+  int totalItems                       = 0;
+  for (QAction *action : toolbarActions) {
+    if (action->isVisible() && widgetForAction(action)) ++totalItems;
+  }
+
+  int extent   = margin * 2;
+  int items    = 0;
+  int commands = 0;
+  for (QAction *action : toolbarActions) {
+    if (!action->isVisible()) continue;
+    QWidget *widget = widgetForAction(action);
+    if (!widget) continue;
+
+    if (items) extent += spacing;
+    const QSize hint = widget->sizeHint();
+    extent += orientation() == Qt::Horizontal ? hint.width() : hint.height();
+    ++items;
+
+    if (!action->isSeparator()) ++commands;
+    if (commands == 2) {
+      if (totalItems > items) extent += spacing + extension;
+      return extent;
+    }
+  }
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::updateCompactState() {
+  if (m_isXsheetToolbar || m_compactTransition) return;
+
+  if (!m_compactPresentation) {
+    const int threshold = compactThreshold();
+    if (threshold > 0) m_compactThreshold = threshold;
+  }
+
+  const int extent =
+      orientation() == Qt::Horizontal ? width() : height();
+  m_autoCompact = !m_userCompact && m_compactThreshold > 0 &&
+                  extent < m_compactThreshold;
+
+  setCompactPresentation(m_userCompact || m_autoCompact);
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::setUserCompact(bool compact) {
+  if (m_userCompact == compact) return;
+  m_userCompact = compact;
+  if (m_compactPresentation) rebuildCompactMenu();
+  updateCompactState();
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::rebuildCompactMenu() {
+  if (!m_compactMenu) return;
+
+  m_compactMenu->clear();
+  for (QAction *action : m_compactActions) m_compactMenu->addAction(action);
+
+  if (!m_compactActions.isEmpty() &&
+      !m_compactActions.last()->isSeparator())
+    m_compactMenu->addSeparator();
+
+  if (m_userCompact) {
+    QAction *expandAction = m_compactMenu->addAction(tr("Expand"));
+    connect(expandAction, &QAction::triggered, this,
+            [this]() { setUserCompact(false); });
+  }
+
+  QAction *customizeAction =
+      m_compactMenu->addAction(tr("Customize Command Bar"));
+  connect(customizeAction, &QAction::triggered, this,
+          &CommandBar::doCustomizeCommandBar);
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::setCompactPresentation(bool compact) {
+  if (m_compactPresentation == compact || m_compactTransition) return;
+
+  m_compactTransition   = true;
+  m_compactPresentation = compact;
+
+  if (compact) {
+    if (m_compactThreshold <= 0) m_compactThreshold = compactThreshold();
+
+    m_compactActions = actions();
+    m_compactMenu    = new QMenu(this);
+    rebuildCompactMenu();
+
+    for (QAction *action : m_compactActions) removeAction(action);
+
+    m_compactButton = new QToolButton(this);
+    m_compactButton->setObjectName(QStringLiteral("CommandBarCompactButton"));
+    m_compactButton->setArrowType(Qt::DownArrow);
+    m_compactButton->setPopupMode(QToolButton::InstantPopup);
+    m_compactButton->setMenu(m_compactMenu);
+    m_compactButton->setAutoRaise(true);
+    m_compactButton->setFixedSize(kCommandBarCompactButtonSize,
+                                  kCommandBarCompactButtonSize);
+    m_compactButton->setToolTip(tr("Command Bar"));
+    m_compactButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_compactButton, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &pos) {
+              if (m_compactButton)
+                showContextMenu(m_compactButton->mapToGlobal(pos));
+            });
+
+    m_compactWidgetAction = addWidget(m_compactButton);
+  } else {
+    const QList<QAction *> restoreActions = m_compactActions;
+    m_compactActions.clear();
+
+    if (m_compactWidgetAction) {
+      removeAction(m_compactWidgetAction);
+      m_compactWidgetAction->deleteLater();
+      m_compactWidgetAction = nullptr;
+      m_compactButton       = nullptr;
+    }
+    if (m_compactMenu) {
+      m_compactMenu->deleteLater();
+      m_compactMenu = nullptr;
+    }
+
+    for (QAction *action : restoreActions) addAction(action);
+  }
+
+  if (layout()) {
+    layout()->invalidate();
+    layout()->activate();
+  }
+  updateGeometry();
+  m_compactTransition = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -369,6 +561,7 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     panel->layout()->invalidate();
     panel->layout()->activate();
   }
+  updateCompactState();
 }
 
 //-----------------------------------------------------------------------------
@@ -377,7 +570,10 @@ void CommandBar::doCustomizeCommandBar() {
   CommandBarPopup *cbPopup = new CommandBarPopup();
 
   if (cbPopup->exec()) {
+    if (m_compactPresentation) setCompactPresentation(false);
     fillToolbar(this);
+    m_compactThreshold = 0;
+    updateCompactState();
   }
   delete cbPopup;
 }
