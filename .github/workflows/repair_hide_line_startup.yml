@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/fix-hide-line-startup
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
