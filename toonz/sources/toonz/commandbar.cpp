@@ -42,6 +42,7 @@ constexpr int kCommandBarTitleBarThickness       = 18;
 constexpr int kCommandBarHorizontalGripWidth     = 20;
 constexpr int kCommandBarVerticalExtensionHeight = 16;
 constexpr int kCommandBarCompactButtonSize       = 20;
+constexpr int kCommandBarCompactGripSize         = 4;
 }
 
 //=============================================================================
@@ -61,6 +62,7 @@ CommandBar::CommandBar(QWidget *parent, Qt::WindowFlags flags,
     , m_compactTransition(false)
     , m_compactUpdatePending(false)
     , m_compactThreshold(0)
+    , m_expandedLongSide(0)
     , m_compactMenu(nullptr)
     , m_compactButton(nullptr)
     , m_compactWidgetAction(nullptr) {
@@ -232,6 +234,11 @@ void CommandBar::save(QSettings &settings) const {
                         ? QStringLiteral("Vertical")
                         : QStringLiteral("Horizontal"));
   settings.setValue(QStringLiteral("compact"), m_userCompact);
+  if (m_expandedLongSide > 0)
+    settings.setValue(QStringLiteral("compactExpandedLength"),
+                      m_expandedLongSide);
+  else
+    settings.remove(QStringLiteral("compactExpandedLength"));
 }
 
 //-----------------------------------------------------------------------------
@@ -241,6 +248,8 @@ void CommandBar::load(QSettings &settings) {
 
   m_roomStateLoaded = settings.contains(QStringLiteral("roomBound"));
   m_userCompact = settings.value(QStringLiteral("compact"), false).toBool();
+  m_expandedLongSide =
+      settings.value(QStringLiteral("compactExpandedLength"), 0).toInt();
 
   const QString savedOrientation =
       settings.value(QStringLiteral("orientation"),
@@ -300,6 +309,53 @@ void CommandBar::applyInitialFloatingSize() {
 
   panel->resize(panelSize);
   m_initialFloatingSizeApplied = true;
+}
+
+//-----------------------------------------------------------------------------
+
+void CommandBar::applyCompactPanelSize(bool compact) {
+  TPanel *panel = qobject_cast<TPanel *>(parentWidget());
+  if (!panel) return;
+
+  const bool vertical = orientation() == Qt::Vertical;
+  const int frameDelta = panel->isFloating() ? kCommandBarFloatingFrameDelta : 0;
+  const int compactLongSide = kCommandBarCompactButtonSize +
+                              kCommandBarCompactGripSize + frameDelta;
+  const int currentLongSide = vertical ? panel->height() : panel->width();
+
+  if (compact) {
+    if (m_expandedLongSide <= 0 && currentLongSide > compactLongSide)
+      m_expandedLongSide = currentLongSide;
+
+    if (vertical)
+      panel->setFixedHeight(compactLongSide);
+    else
+      panel->setFixedWidth(compactLongSide);
+    return;
+  }
+
+  const int minimumLongSide = panel->isFloating() ? kCommandBarFloatingFrameDelta : 0;
+  if (vertical) {
+    panel->setMinimumHeight(minimumLongSide);
+    panel->setMaximumHeight(QWIDGETSIZE_MAX);
+  } else {
+    panel->setMinimumWidth(minimumLongSide);
+    panel->setMaximumWidth(QWIDGETSIZE_MAX);
+  }
+
+  int restoreLongSide = m_expandedLongSide;
+  if (restoreLongSide <= compactLongSide)
+    restoreLongSide = qMax(m_compactThreshold, compactLongSide + 1);
+
+  if (restoreLongSide > 0) {
+    QSize panelSize = panel->size();
+    if (vertical)
+      panelSize.setHeight(restoreLongSide);
+    else
+      panelSize.setWidth(restoreLongSide);
+    panel->resize(panelSize);
+  }
+  m_expandedLongSide = 0;
 }
 
 //-----------------------------------------------------------------------------
@@ -375,6 +431,7 @@ void CommandBar::updateCompactState() {
                   extent < m_compactThreshold;
 
   setCompactPresentation(m_userCompact || m_autoCompact);
+  if (m_userCompact && m_compactPresentation) applyCompactPanelSize(true);
 }
 
 //-----------------------------------------------------------------------------
@@ -382,8 +439,15 @@ void CommandBar::updateCompactState() {
 void CommandBar::setUserCompact(bool compact) {
   if (m_userCompact == compact) return;
   m_userCompact = compact;
-  if (m_compactPresentation) rebuildCompactMenu();
-  updateCompactState();
+
+  if (compact) {
+    updateCompactState();
+    applyCompactPanelSize(true);
+    if (m_compactPresentation) rebuildCompactMenu();
+  } else {
+    applyCompactPanelSize(false);
+    updateCompactState();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -462,6 +526,8 @@ void CommandBar::setCompactPresentation(bool compact) {
     for (QAction *action : restoreActions) addAction(action);
   }
 
+  onOrientationChanged(orientation());
+
   if (layout()) {
     layout()->invalidate();
     layout()->activate();
@@ -515,6 +581,12 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   const int thickness = floating ? kCommandBarFloatingThickness
                                  : kCommandBarDockedThickness;
   const int minimumLongSide = floating ? kCommandBarFloatingFrameDelta : 0;
+  const int titleBarThickness =
+      m_compactPresentation ? kCommandBarCompactGripSize
+                            : kCommandBarTitleBarThickness;
+  const int horizontalGripWidth =
+      m_compactPresentation ? kCommandBarCompactGripSize
+                            : kCommandBarHorizontalGripWidth;
 
   TPanelTitleBar *titleBar = panel->getTitleBar();
   if (vertical) {
@@ -535,11 +607,11 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
               "  border-radius: 0;"
               "}")
               .arg(QWIDGETSIZE_MAX)
-              .arg(kCommandBarTitleBarThickness));
+              .arg(titleBarThickness));
       titleBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
       titleBar->setMinimumWidth(0);
       titleBar->setMaximumWidth(QWIDGETSIZE_MAX);
-      titleBar->setFixedHeight(kCommandBarTitleBarThickness);
+      titleBar->setFixedHeight(titleBarThickness);
     }
   } else {
     panel->setMinimumWidth(minimumLongSide);
@@ -555,10 +627,10 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
               "  min-height: 0;"
               "  max-height: %2;"
               "}")
-              .arg(kCommandBarHorizontalGripWidth)
+              .arg(horizontalGripWidth)
               .arg(QWIDGETSIZE_MAX));
       titleBar->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
-      titleBar->setFixedWidth(kCommandBarHorizontalGripWidth);
+      titleBar->setFixedWidth(horizontalGripWidth);
       titleBar->setMinimumHeight(0);
       titleBar->setMaximumHeight(QWIDGETSIZE_MAX);
     }
@@ -575,6 +647,7 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     panel->layout()->invalidate();
     panel->layout()->activate();
   }
+  if (m_userCompact && m_compactPresentation) applyCompactPanelSize(true);
   scheduleCompactUpdate();
 }
 
