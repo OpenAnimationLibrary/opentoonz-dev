@@ -35,6 +35,7 @@ protected:
   bool m_autoCompact;
   bool m_compactPresentation;
   bool m_compactTransition;
+  bool m_compactUpdatePending;
   int m_compactThreshold;
   QList<QAction *> m_compactActions;
   QMenu *m_compactMenu;
@@ -59,6 +60,7 @@ protected:
   void showEvent(QShowEvent *event) override;
   void applyInitialFloatingSize();
   void showContextMenu(const QPoint &globalPos);
+  void scheduleCompactUpdate();
   void updateCompactState();
   void setCompactPresentation(bool compact);
   void rebuildCompactMenu();
