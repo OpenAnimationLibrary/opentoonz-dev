@@ -31,11 +31,12 @@
 #include <QShowEvent>
 
 namespace {
-constexpr int kCommandBarFloatingThickness   = 36;
-constexpr int kCommandBarDockedThickness     = 26;
-constexpr int kCommandBarFloatingFrameDelta  = 10;
-constexpr int kCommandBarTitleBarThickness   = 18;
-constexpr int kCommandBarHorizontalGripWidth = 20;
+constexpr int kCommandBarFloatingThickness       = 36;
+constexpr int kCommandBarDockedThickness         = 26;
+constexpr int kCommandBarFloatingFrameDelta      = 10;
+constexpr int kCommandBarTitleBarThickness       = 18;
+constexpr int kCommandBarHorizontalGripWidth     = 20;
+constexpr int kCommandBarVerticalExtensionHeight = 16;
 }
 
 //=============================================================================
@@ -276,20 +277,24 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   // Vertical mode overrides horizontal-biased theme spacing.
   if (vertical) {
     setStyleSheet(
-        "QToolBar#CommandBar { margin: 0; padding: 0; border: 0; }"
-        "QToolBar#CommandBar::separator:vertical {"
-        "  margin: 2px 2px 0 2px;"
-        "}"
-        "QToolBar#CommandBar QToolButton {"
-        "  margin: 2px 0 0 0;"
-        "  padding: 0;"
-        "  min-width: 20px;"
-        "  min-height: 20px;"
-        "}"
-        "QToolBar#CommandBar QToolButton#qt_toolbar_ext_button {"
-        "  margin: 0;"
-        "  padding: 0;"
-        "}");
+        QStringLiteral(
+            "QToolBar#CommandBar { margin: 0; padding: 0; border: 0; }"
+            "QToolBar#CommandBar::separator:vertical {"
+            "  margin: 2px 2px 0 2px;"
+            "}"
+            "QToolBar#CommandBar QToolButton {"
+            "  margin: 2px 0 0 0;"
+            "  padding: 0;"
+            "  min-width: 20px;"
+            "  min-height: 20px;"
+            "}"
+            "QToolBar#CommandBar QToolButton#qt_toolbar_ext_button {"
+            "  margin: 0;"
+            "  padding: 0;"
+            "  min-height: %1px;"
+            "  max-height: %1px;"
+            "}")
+            .arg(kCommandBarVerticalExtensionHeight));
   } else {
     setStyleSheet(QString());
   }
