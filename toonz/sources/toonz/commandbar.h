@@ -37,6 +37,7 @@ protected:
   bool m_compactTransition;
   bool m_compactUpdatePending;
   int m_compactThreshold;
+  int m_expandedLongSide;
   QList<QAction *> m_compactActions;
   QMenu *m_compactMenu;
   QToolButton *m_compactButton;
@@ -59,6 +60,7 @@ protected:
   void resizeEvent(QResizeEvent *event) override;
   void showEvent(QShowEvent *event) override;
   void applyInitialFloatingSize();
+  void applyCompactPanelSize(bool compact);
   void showContextMenu(const QPoint &globalPos);
   void scheduleCompactUpdate();
   void updateCompactState();
