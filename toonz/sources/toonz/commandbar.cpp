@@ -313,15 +313,19 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
 
     if (titleBar) {
       titleBar->setStyleSheet(
-          "TPanelTitleBar {"
-          "  min-width: 0;"
-          "  max-width: 16777215;"
-          "  min-height: 18;"
-          "  max-height: 18;"
-          "  border-right: 0;"
-          "  border-bottom: 0;"
-          "  border-radius: 0;"
-          "}");
+          QStringLiteral(
+              "TPanelTitleBar {"
+              "  min-width: 0;"
+              "  max-width: %1;"
+              "  min-height: %2;"
+              "  max-height: %2;"
+              "  border-right: 0;"
+              "  border-bottom: 0;"
+              "  border-radius: 0;"
+              "}")
+              .arg(QWIDGETSIZE_MAX)
+              .arg(kCommandBarTitleBarThickness));
+      titleBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
       titleBar->setMinimumWidth(0);
       titleBar->setMaximumWidth(QWIDGETSIZE_MAX);
       titleBar->setFixedHeight(kCommandBarTitleBarThickness);
@@ -333,12 +337,16 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
 
     if (titleBar) {
       titleBar->setStyleSheet(
-          "TPanelTitleBar {"
-          "  min-width: 20;"
-          "  max-width: 20;"
-          "  min-height: 0;"
-          "  max-height: 16777215;"
-          "}");
+          QStringLiteral(
+              "TPanelTitleBar {"
+              "  min-width: %1;"
+              "  max-width: %1;"
+              "  min-height: 0;"
+              "  max-height: %2;"
+              "}")
+              .arg(kCommandBarHorizontalGripWidth)
+              .arg(QWIDGETSIZE_MAX));
+      titleBar->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
       titleBar->setFixedWidth(kCommandBarHorizontalGripWidth);
       titleBar->setMinimumHeight(0);
       titleBar->setMaximumHeight(QWIDGETSIZE_MAX);
