@@ -325,7 +325,7 @@ void CommandBar::applyCompactPanelSize(bool compact) {
 
   if (compact) {
     if (m_expandedLongSide <= 0 && currentLongSide > compactLongSide)
-      m_expandedLongSide = currentLongSide;
+      m_expandedLongSide = qMax(currentLongSide, m_compactThreshold);
 
     if (vertical)
       panel->setFixedHeight(compactLongSide);
@@ -425,8 +425,15 @@ void CommandBar::updateCompactState() {
     if (threshold > 0) m_compactThreshold = threshold;
   }
 
-  const int extent =
-      orientation() == Qt::Horizontal ? width() : height();
+  int extent = orientation() == Qt::Horizontal ? width() : height();
+  if (m_compactPresentation && !m_userCompact) {
+    const int normalGripDelta =
+        orientation() == Qt::Horizontal
+            ? kCommandBarHorizontalGripWidth - kCommandBarCompactGripSize
+            : kCommandBarTitleBarThickness - kCommandBarCompactGripSize;
+    extent = qMax(0, extent - normalGripDelta);
+  }
+
   m_autoCompact = !m_userCompact && m_compactThreshold > 0 &&
                   extent < m_compactThreshold;
 
@@ -499,6 +506,8 @@ void CommandBar::setCompactPresentation(bool compact) {
     m_compactButton->setAutoRaise(true);
     m_compactButton->setFixedSize(kCommandBarCompactButtonSize,
                                   kCommandBarCompactButtonSize);
+    m_compactButton->setStyleSheet(
+        "QToolButton#CommandBarCompactButton { margin: 0; padding: 0; }");
     m_compactButton->setToolTip(tr("Command Bar"));
     m_compactButton->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_compactButton, &QWidget::customContextMenuRequested, this,
