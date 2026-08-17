@@ -32,6 +32,7 @@ protected:
   bool m_roomStateLoaded;
   bool m_initialFloatingSizeApplied;
   bool m_userCompact;
+  bool m_autoCompact;
   bool m_compactPresentation;
   bool m_compactTransition;
   bool m_compactUpdatePending;
