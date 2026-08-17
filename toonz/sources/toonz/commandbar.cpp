@@ -31,6 +31,7 @@
 #include <QShowEvent>
 #include <QResizeEvent>
 #include <QStyleOptionToolBar>
+#include <QTimer>
 #include <QToolButton>
 
 namespace {
@@ -58,6 +59,7 @@ CommandBar::CommandBar(QWidget *parent, Qt::WindowFlags flags,
     , m_autoCompact(false)
     , m_compactPresentation(false)
     , m_compactTransition(false)
+    , m_compactUpdatePending(false)
     , m_compactThreshold(0)
     , m_compactMenu(nullptr)
     , m_compactButton(nullptr)
@@ -256,14 +258,14 @@ void CommandBar::load(QSettings &settings) {
     setOrientation(saved);
 
   if (!m_roomStateLoaded) applyInitialFloatingSize();
-  updateCompactState();
+  scheduleCompactUpdate();
 }
 
 //-----------------------------------------------------------------------------
 
 void CommandBar::resizeEvent(QResizeEvent *event) {
   QToolBar::resizeEvent(event);
-  updateCompactState();
+  scheduleCompactUpdate();
 }
 
 //-----------------------------------------------------------------------------
@@ -274,7 +276,7 @@ void CommandBar::showEvent(QShowEvent *event) {
     onOrientationChanged(orientation());
     applyInitialFloatingSize();
   }
-  updateCompactState();
+  scheduleCompactUpdate();
 }
 
 //-----------------------------------------------------------------------------
@@ -347,6 +349,18 @@ int CommandBar::compactThreshold() const {
 
 //-----------------------------------------------------------------------------
 
+void CommandBar::scheduleCompactUpdate() {
+  if (m_isXsheetToolbar || m_compactUpdatePending) return;
+
+  m_compactUpdatePending = true;
+  QTimer::singleShot(0, this, [this]() {
+    m_compactUpdatePending = false;
+    updateCompactState();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
 void CommandBar::updateCompactState() {
   if (m_isXsheetToolbar || m_compactTransition) return;
 
@@ -387,7 +401,7 @@ void CommandBar::rebuildCompactMenu() {
   if (m_userCompact) {
     QAction *expandAction = m_compactMenu->addAction(tr("Expand"));
     connect(expandAction, &QAction::triggered, this,
-            [this]() { setUserCompact(false); });
+            [this]() { setUserCompact(false); }, Qt::QueuedConnection);
   }
 
   QAction *customizeAction =
@@ -561,7 +575,7 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
     panel->layout()->invalidate();
     panel->layout()->activate();
   }
-  updateCompactState();
+  scheduleCompactUpdate();
 }
 
 //-----------------------------------------------------------------------------
