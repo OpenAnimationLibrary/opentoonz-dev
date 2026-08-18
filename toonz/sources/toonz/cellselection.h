@@ -79,6 +79,7 @@ public:
 
   // commands
   void reverseCells();
+  void transposeCells();
   void swingCells();
   void incrementCells();
   void randomCells();
