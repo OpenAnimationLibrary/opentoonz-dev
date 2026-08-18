@@ -14,6 +14,7 @@
 class DVAPI TXshSvgLevel final : public TXshSimpleLevel {
   PERSIST_DECLARATION(TXshSvgLevel)
 
+private:
   TPointD m_sourceDpi;
 
 public:
