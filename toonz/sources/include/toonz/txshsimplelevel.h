@@ -59,7 +59,7 @@ class TRasterImageP;
   \todo Substitute m_frames with a sorted vector or a boost flat_set.
 */
 
-class DVAPI TXshSimpleLevel final : public TXshLevel {
+class DVAPI TXshSimpleLevel : public TXshLevel {
   Q_OBJECT
 
   PERSIST_DECLARATION(TXshSimpleLevel)
@@ -264,8 +264,9 @@ public:
     Save the level in the specified fp.
     The oldFp is used when the current scene path change...
   */
-  void save(const TFilePath &fp, const TFilePath &oldFp = TFilePath(),
-            bool overwritePalette = true);
+  virtual void save(const TFilePath &fp,
+                    const TFilePath &oldFp = TFilePath(),
+                    bool overwritePalette = true);
 
   // Content history management
   const TContentHistory *getContentHistory() const {
@@ -326,7 +327,7 @@ public:
 
   /*!
     \brief Returns the path of the newest \a existing hook file associated to
-    the specified \b decoded level path - or an empty path if none was found.
+           specified \b decoded level path - or an empty path if none was found.
 
     \note In case there are more than one hook file (ie files from older
           Toonz version), the latest file version is used.
