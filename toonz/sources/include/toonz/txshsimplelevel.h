@@ -327,7 +327,7 @@ public:
 
   /*!
     \brief Returns the path of the newest \a existing hook file associated to
-           specified \b decoded level path - or an empty path if none was found.
+           the specified \b decoded level path - or an empty path if none was found.
 
     \note In case there are more than one hook file (ie files from older
           Toonz version), the latest file version is used.
