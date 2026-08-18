@@ -395,7 +395,7 @@ bool TFilePath::operator<(const TFilePath &fp) const {
   }
   while (i2 != -1 || j2 != -1) {
     iName = (i2 != -1) ? m_path.substr(i1, i2 - i1) : m_path;
-    jName = (j2 != -1) ? m_path.substr(j1, j2 - j1) : fp.m_path;
+    jName = (j2 != -1) ? fp.m_path.substr(j1, j2 - j1) : fp.m_path;
 // if the two path parts, between slashes, are equal
 // iterate the comparison process otherwise return
 #ifdef _WIN32
@@ -415,7 +415,7 @@ bool TFilePath::operator<(const TFilePath &fp) const {
   iName = m_path.substr(i1, m_path.size() - i1);
   jName = fp.m_path.substr(j1, fp.m_path.size() - j1);
 #ifdef _WIN32
-  return _wcsicmp(iName.c_str(), fp.m_path.substr(j1, fp.m_path.size() - j1).c_str()) < 0;
+  return _wcsicmp(iName.c_str(), jName.c_str()) < 0;
 #else
   return TFilePath(iName) < TFilePath(jName);
 #endif
@@ -591,7 +591,7 @@ std::string TFilePath::getDots() const {
     TFilePathInfo info = analyzePath();
     if (info.extension.isEmpty()) return "";
     if (info.sepChar.isNull()) return ".";
-    // return ".." regardless of separator type
+    // return ".." regardless of separator type (".", "_" or "-")
     return "..";
   }
   //-----
@@ -1118,14 +1118,14 @@ TFilePath::TFilePathInfo TFilePath::analyzePath() const {
 
   QString fileName = QString::fromStdWString(str);
 
-  // Level Name : letters other than  \\/:,;*?"<>|
+  // Level Name : letters other than  \/:,;*?"<>|
   const QString levelNameRegExp("([^\\\\/:,;*?\"<>|]+)");
   // Sep Char : period, underscore or hyphen
   const QString sepCharRegExp("([\\._-])");
   // Frame Number and Suffix
   QString fIdRegExp = TFilePath::fidRegExpStr();
 
-  // Extension: letters other than "._" or  \\/:,;*?"<>|  or " "(space)
+  // Extension: letters other than "._" or  \/:,;*?"<>|  or " "(space)
   const QString extensionRegExp("([^\\._ \\\\/:,;*?\"<>|]+)");
 
   // Modern QRegularExpression implementation
