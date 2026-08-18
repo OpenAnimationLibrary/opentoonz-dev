@@ -31,8 +31,8 @@ enum TXshLevelType {
   SND_TXT_XSHLEVEL  = 4 << 7,
   MESH_XSHLEVEL     = 5 << 7,
 
-  // Retained-source SVG is its own Xsheet level identity. Raster images
-  // generated from it are disposable representations, not the level itself.
+  // Retained-source SVG level. The level identity remains SVG while pixel
+  // representations are generated separately through ImageManager.
   SVG_TYPE     = 6 << 7,
   SVG_XSHLEVEL = SVG_TYPE | LEVELCOLUMN_XSHLEVEL
 };
