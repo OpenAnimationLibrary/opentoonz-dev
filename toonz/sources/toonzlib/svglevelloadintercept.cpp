@@ -4,25 +4,62 @@
 
 #include "../toonz/svglevelloader.h"
 
-#include <QByteArray>
-#include <QtGlobal>
+#include <QApplication>
+#include <QMessageBox>
+#include <QObject>
+#include <QPushButton>
 
 namespace {
 
-bool retainedSvgTestPathEnabled() {
-  const QByteArray value = qgetenv("OPENTOONZ_RETAINED_SVG").trimmed().toLower();
-  return value == "1" || value == "true" || value == "yes" || value == "on";
+enum class SvgOpenMode {
+  RetainSvg,
+  ConvertToToonzVector,
+  Cancel
+};
+
+SvgOpenMode askSvgOpenMode() {
+  QMessageBox dialog(QApplication::activeWindow());
+  dialog.setIcon(QMessageBox::Question);
+  dialog.setWindowTitle(QObject::tr("Open SVG"));
+  dialog.setText(QObject::tr("How should OpenToonz open this SVG file?"));
+  dialog.setInformativeText(QObject::tr(
+      "Open as SVG Level keeps the original SVG as the source and creates a "
+      "read-only raster representation for display. Convert to Toonz Vector "
+      "Level uses the existing editable SVG-to-PLI conversion path."));
+
+  QPushButton *retainButton = dialog.addButton(
+      QObject::tr("Open as SVG Level"), QMessageBox::AcceptRole);
+  QPushButton *convertButton = dialog.addButton(
+      QObject::tr("Convert to Toonz Vector Level"), QMessageBox::ActionRole);
+  QPushButton *cancelButton =
+      dialog.addButton(QObject::tr("Cancel"), QMessageBox::RejectRole);
+
+  dialog.setDefaultButton(retainButton);
+  dialog.setEscapeButton(cancelButton);
+  dialog.exec();
+
+  if (dialog.clickedButton() == retainButton) return SvgOpenMode::RetainSvg;
+  if (dialog.clickedButton() == convertButton)
+    return SvgOpenMode::ConvertToToonzVector;
+  return SvgOpenMode::Cancel;
 }
 
-TXshLevel *loadLevelWithRetainedSvgTestPath(
-    ToonzScene *scene, const TFilePath &actualPath,
-    const LevelOptions *levelOptions, std::wstring levelName,
-    const std::vector<TFrameId> &fIds) {
-  // Keep ordinary SVG behavior unchanged. The retained-source path is exposed
-  // only for foundation testing until identity/persistence is fully hardened.
-  if (!scene->isLoading() && actualPath.getType() == "svg" &&
-      retainedSvgTestPathEnabled()) {
-    return SvgLevel::loadRetainedLevel(scene, actualPath, levelName);
+TXshLevel *loadLevelWithSvgChoice(ToonzScene *scene,
+                                  const TFilePath &actualPath,
+                                  const LevelOptions *levelOptions,
+                                  std::wstring levelName,
+                                  const std::vector<TFrameId> &fIds) {
+  // Scene resource loading must remain non-interactive. The choice is only
+  // offered when the user explicitly opens an SVG outside scene loading.
+  if (!scene->isLoading() && actualPath.getType() == "svg") {
+    switch (askSvgOpenMode()) {
+    case SvgOpenMode::RetainSvg:
+      return SvgLevel::loadRetainedLevel(scene, actualPath, levelName);
+    case SvgOpenMode::Cancel:
+      return nullptr;
+    case SvgOpenMode::ConvertToToonzVector:
+      break;
+    }
   }
 
   return scene->loadLevel(actualPath, levelOptions, levelName, fIds);
@@ -31,22 +68,21 @@ TXshLevel *loadLevelWithRetainedSvgTestPath(
 }  // namespace
 
 TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath) {
-  return loadLevelWithRetainedSvgTestPath(this, actualPath, nullptr, L"",
-                                          std::vector<TFrameId>());
+  return loadLevelWithSvgChoice(this, actualPath, nullptr, L"",
+                                std::vector<TFrameId>());
 }
 
 TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
                                  const LevelOptions *levelOptions) {
-  return loadLevelWithRetainedSvgTestPath(this, actualPath, levelOptions, L"",
-                                          std::vector<TFrameId>());
+  return loadLevelWithSvgChoice(this, actualPath, levelOptions, L"",
+                                std::vector<TFrameId>());
 }
 
 TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
                                  const LevelOptions *levelOptions,
                                  std::wstring levelName) {
-  return loadLevelWithRetainedSvgTestPath(this, actualPath, levelOptions,
-                                          levelName,
-                                          std::vector<TFrameId>());
+  return loadLevelWithSvgChoice(this, actualPath, levelOptions, levelName,
+                                std::vector<TFrameId>());
 }
 
 #endif
