@@ -11,6 +11,7 @@
 #include "toonz/toonzscene.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/txshsvglevel.h"
 #include "tpixel.h"
 #include "trasterimage.h"
 #include "tsystem.h"
@@ -297,7 +298,52 @@ bool bindDisplayFrame(TXshSimpleLevel *level, const SvgSourceFrame &source,
   return true;
 }
 
+void throwReadOnlySource(const TFilePath &path) {
+  throw TSystemException(
+      path,
+      "SVG Levels retain a read-only authoritative SVG source and cannot "
+      "overwrite it from OpenToonz. Edit the SVG in an external editor, or "
+      "use Save Level As to create a new SVG source copy.");
+}
+
 }  // namespace
+
+bool restoreRetainedLevel(TXshSvgLevel *level) {
+  if (!level || !level->getScene()) return false;
+
+  ToonzScene *scene = level->getScene();
+  const std::vector<SvgSourceFrame> sources =
+      collectSourceFrames(scene, level->getPath());
+  if (sources.empty()) return false;
+
+  TPointD baseDpi = level->getSourceDpi();
+  if (baseDpi.x <= 0.0 || baseDpi.y <= 0.0) {
+    baseDpi = baseLevelDpi(scene);
+    level->setSourceDpi(baseDpi);
+  }
+
+  level->clearFrames();
+  level->setType(SVG_XSHLEVEL);
+  level->setPalette(FullColorPalette::instance()->getPalette(scene));
+
+  bool firstFrame = true;
+  for (const SvgSourceFrame &source : sources) {
+    if (!bindDisplayFrame(level, source, baseDpi, firstFrame)) {
+      level->clearFrames();
+      level->setType(SVG_XSHLEVEL);
+      level->setIsReadOnly(true);
+      level->setDirtyFlag(false);
+      return false;
+    }
+    firstFrame = false;
+  }
+
+  level->setRenumberTable();
+  level->setType(SVG_XSHLEVEL);
+  level->setIsReadOnly(true);
+  level->setDirtyFlag(false);
+  return true;
+}
 
 TXshLevel *loadRetainedLevel(ToonzScene *scene, const TFilePath &actualSvgPath,
                              const std::wstring &requestedName) {
@@ -310,28 +356,15 @@ TXshLevel *loadRetainedLevel(ToonzScene *scene, const TFilePath &actualSvgPath,
   const std::wstring name =
       uniqueLevelName(scene, actualSvgPath, requestedName);
 
-  TXshSimpleLevel *level = new TXshSimpleLevel(name);
+  TXshSvgLevel *level = new TXshSvgLevel(name);
   level->setScene(scene);
-
-  // The Xsheet retains SVG identity. Raster data generated below is only a
-  // disposable representation used by consumers that require pixels.
-  level->setType(SVG_XSHLEVEL);
   level->setPath(scene->codeFilePath(actualSvgPath), true);
-  level->setPalette(FullColorPalette::instance()->getPalette(scene));
+  level->setSourceDpi(baseLevelDpi(scene));
 
-  const TPointD baseDpi = baseLevelDpi(scene);
-  bool firstFrame       = true;
-  for (const SvgSourceFrame &source : sources) {
-    if (!bindDisplayFrame(level, source, baseDpi, firstFrame)) {
-      delete level;
-      return nullptr;
-    }
-    firstFrame = false;
+  if (!restoreRetainedLevel(level)) {
+    delete level;
+    return nullptr;
   }
-
-  level->setRenumberTable();
-  level->setIsReadOnly(true);
-  level->setDirtyFlag(false);
 
   if (!scene->getLevelSet()->insertLevel(level)) {
     delete level;
@@ -339,6 +372,60 @@ TXshLevel *loadRetainedLevel(ToonzScene *scene, const TFilePath &actualSvgPath,
   }
 
   return level;
+}
+
+void saveRetainedCopy(TXshSvgLevel *level,
+                      const TFilePath &destinationPath) {
+  if (!level || !level->getScene())
+    throw TSystemException("Cannot save an SVG Level that is not in a scene.");
+
+  ToonzScene *scene = level->getScene();
+  const TFilePath sourcePattern = scene->decodeFilePath(level->getPath());
+  TFilePath destination = scene->decodeFilePath(destinationPath);
+
+  if (destination.getType().empty()) destination = destination.withType("svg");
+  if (destination.getType() != "svg") {
+    throw TSystemException(
+        destination,
+        "Retained SVG Levels can only be saved as SVG source copies. Choose "
+        "an .svg filename.");
+  }
+
+  const std::vector<SvgSourceFrame> sources =
+      collectSourceFrames(scene, sourcePattern);
+  if (sources.empty()) {
+    throw TSystemException(sourcePattern,
+                           "The retained SVG source could not be found.");
+  }
+
+  const bool sequence = sourcePattern.isLevelName() || sources.size() > 1;
+  if (!sequence) {
+    TFilePath dst = destination.isLevelName() ? destination.withNoFrame()
+                                              : destination;
+    if (dst == sources.front().path) throwReadOnlySource(dst);
+    if (!TSystem::touchParentDir(dst))
+      throw TSystemException(dst,
+                             "The destination folder could not be created.");
+    TSystem::copyFile(dst, sources.front().path, true);
+    return;
+  }
+
+  TFilePath destinationPattern =
+      destination.isLevelName() ? destination : destination.withFrame();
+
+  for (const SvgSourceFrame &source : sources) {
+    const TFilePath dst = destinationPattern.withFrame(source.fid);
+    if (dst == source.path) throwReadOnlySource(dst);
+  }
+
+  if (!TSystem::touchParentDir(destinationPattern))
+    throw TSystemException(destinationPattern,
+                           "The destination folder could not be created.");
+
+  for (const SvgSourceFrame &source : sources) {
+    const TFilePath dst = destinationPattern.withFrame(source.fid);
+    TSystem::copyFile(dst, source.path, true);
+  }
 }
 
 }  // namespace SvgLevel
