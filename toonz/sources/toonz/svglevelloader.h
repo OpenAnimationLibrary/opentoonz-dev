@@ -21,9 +21,9 @@ namespace SvgLevel {
 
 // Foundation-only retained SVG creation path.
 //
-// This deliberately exposes no reload, relink, validation, editor, or UI
-// services. The SVG remains authoritative and OpenToonz binds a disposable
-// read-only raster representation for display.
+// The Xsheet level retains SVG identity. Raster images are disposable
+// representations supplied to consumers through ImageManager; they are not
+// the level's source type.
 SVGLEVEL_API TXshLevel *loadRetainedLevel(
     ToonzScene *scene, const TFilePath &actualSvgPath,
     const std::wstring &requestedName = L"");
