@@ -50,9 +50,10 @@ TXshLevel *loadLevelWithSvgChoice(ToonzScene *scene,
                                   const LevelOptions *levelOptions,
                                   std::wstring levelName,
                                   const std::vector<TFrameId> &fIds) {
-  // The foundation needs a minimal user path into retained SVG levels, but
-  // scene resource loading must remain non-interactive. The choice is offered
-  // only when an SVG is explicitly opened outside scene loading.
+  // The retained-SVG foundation is not usable unless the user can select it.
+  // Keep this access point deliberately small: choose retained SVG, use the
+  // existing SVG-to-PLI conversion path, or cancel. Scene resource loading must
+  // remain non-interactive.
   if (!scene->isLoading() && actualPath.getType() == "svg") {
     switch (askSvgOpenMode()) {
     case SvgOpenMode::RetainSvg:
