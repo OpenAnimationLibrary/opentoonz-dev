@@ -2,10 +2,10 @@
 
 #include "../toonz/svglevelloader.h"
 
-#include "toonz/levelproperties.h"
 #include "toonz/txshleveltypes.h"
 #include "tstream.h"
 
+#include <map>
 #include <string>
 
 PERSIST_IDENTIFIER(TXshSvgLevel, "svgLevel")
