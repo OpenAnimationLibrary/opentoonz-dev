@@ -5,10 +5,6 @@
 #include "tcommon.h"
 #include "tfilepath.h"
 
-#include <QByteArray>
-#include <QSize>
-#include <QString>
-
 #include <string>
 
 #undef SVGLEVEL_API
@@ -20,32 +16,15 @@
 
 class ToonzScene;
 class TXshLevel;
-class TXshSimpleLevel;
-class QWidget;
 
 namespace SvgLevel {
 
-enum class OpenMode {
-  Cancel,
-  OpenExperimentalSvgLevel,
-  ConvertToToonzVector
-};
-
-SVGLEVEL_API OpenMode askOpenMode(QWidget *parent = nullptr);
-SVGLEVEL_API bool validateSource(const QByteArray &source,
-                                 QString *error = nullptr,
-                                 int *line = nullptr,
-                                 int *column = nullptr,
-                                 QSize *naturalSize = nullptr);
-SVGLEVEL_API TFilePath sourcePathForLevel(const TXshSimpleLevel *level);
-SVGLEVEL_API bool restoreExperimentalLevel(TXshSimpleLevel *level,
-                                           QString *error = nullptr);
-SVGLEVEL_API bool reloadExperimentalLevel(TXshSimpleLevel *level,
-                                          QString *error = nullptr);
-SVGLEVEL_API bool relinkExperimentalLevel(TXshSimpleLevel *level,
-                                          const TFilePath &newSourcePath,
-                                          QString *error = nullptr);
-SVGLEVEL_API TXshLevel *loadExperimentalLevel(
+// Foundation-only retained SVG creation path.
+//
+// This deliberately exposes no reload, relink, validation, editor, or UI
+// services. The SVG remains authoritative and OpenToonz binds a disposable
+// read-only raster representation for display.
+SVGLEVEL_API TXshLevel *loadRetainedLevel(
     ToonzScene *scene, const TFilePath &actualSvgPath,
     const std::wstring &requestedName = L"");
 

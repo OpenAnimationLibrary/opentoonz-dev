@@ -100,14 +100,7 @@ void initImageIo(bool lightVersion) {
     TFileType::declare("pli", TFileType::VECTOR_LEVEL);
 
     TLevelReader::define("svg", 0, TLevelReaderSvg::create);
-#ifdef _WIN32
-    // The Windows SVG experiment is a true level-loading path. Registering SVG
-    // as a level also prevents the File Browser from treating numbered SVG
-    // filenames as ordinary image-sequence members.
-    TFileType::declare("svg", TFileType::VECTOR_LEVEL);
-#else
     TFileType::declare("svg", TFileType::VECTOR_IMAGE);
-#endif
     TLevelWriter::define("svg", TLevelWriterSvg::create, false);
     Tiio::defineWriterProperties("svg", new Tiio::SvgWriterProperties());
 
