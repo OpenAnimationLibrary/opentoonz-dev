@@ -313,10 +313,9 @@ TXshLevel *loadRetainedLevel(ToonzScene *scene, const TFilePath &actualSvgPath,
   TXshSimpleLevel *level = new TXshSimpleLevel(name);
   level->setScene(scene);
 
-  // The display representation uses normal raster-level semantics. The path is
-  // retained as the SVG file or SVG sequence pattern; each frame is bound to
-  // its corresponding physical SVG source rather than being converted to PLI.
-  level->setType(OVL_XSHLEVEL);
+  // The Xsheet retains SVG identity. Raster data generated below is only a
+  // disposable representation used by consumers that require pixels.
+  level->setType(SVG_XSHLEVEL);
   level->setPath(scene->codeFilePath(actualSvgPath), true);
   level->setPalette(FullColorPalette::instance()->getPalette(scene));
 
