@@ -23,9 +23,10 @@ SvgOpenMode askSvgOpenMode() {
   dialog.setWindowTitle(QObject::tr("Open SVG"));
   dialog.setText(QObject::tr("How should OpenToonz open this SVG file?"));
   dialog.setInformativeText(QObject::tr(
-      "Open as SVG Level keeps the original SVG as the source and creates a "
-      "read-only raster representation for display. Convert to Toonz Vector "
-      "Level uses the existing editable SVG-to-PLI conversion path."));
+      "Open as SVG Level keeps the original SVG as the authoritative source "
+      "and creates a read-only raster representation for display. Convert to "
+      "Toonz Vector Level uses the existing editable SVG-to-PLI conversion "
+      "path."));
 
   QPushButton *retainButton = dialog.addButton(
       QObject::tr("Open as SVG Level"), QMessageBox::AcceptRole);
@@ -49,8 +50,9 @@ TXshLevel *loadLevelWithSvgChoice(ToonzScene *scene,
                                   const LevelOptions *levelOptions,
                                   std::wstring levelName,
                                   const std::vector<TFrameId> &fIds) {
-  // Scene resource loading must remain non-interactive. The choice is only
-  // offered when the user explicitly opens an SVG outside scene loading.
+  // The foundation needs a minimal user path into retained SVG levels, but
+  // scene resource loading must remain non-interactive. The choice is offered
+  // only when an SVG is explicitly opened outside scene loading.
   if (!scene->isLoading() && actualPath.getType() == "svg") {
     switch (askSvgOpenMode()) {
     case SvgOpenMode::RetainSvg:
