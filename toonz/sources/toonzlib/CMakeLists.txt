@@ -330,10 +330,12 @@ set(SOURCES
 
 if(BUILD_TARGET_WIN)
     set(HEADERS ${HEADERS}
+        ../include/toonz/txshsvglevel.h
         ../toonz/svglevelloader.h
     )
     set(SOURCES ${SOURCES}
         avicodecrestrictions.cpp
+        txshsvglevel.cpp
         svglevelloadintercept.cpp
         ../toonz/svglevelloader.cpp
     )
