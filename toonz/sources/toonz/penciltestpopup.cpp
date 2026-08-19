@@ -1626,8 +1626,6 @@ PencilTestPopup::PencilTestPopup()
 
   m_saveOnCaptureCB =
       new QCheckBox(tr("Save images as they are captured"), this);
-  QCheckBox* playCaptureSoundCB =
-      new QCheckBox(tr("Play Sound on Capture"), this);
 
   QGroupBox* imageFrame        = new QGroupBox(tr("Image adjust"), this);
   m_colorTypeCombo             = new QComboBox(this);
@@ -1652,8 +1650,9 @@ PencilTestPopup::PencilTestPopup()
   m_captureButton          = new QPushButton(tr("Capture\n[Return key]"), this);
   QPushButton* closeButton = new QPushButton(tr("Close"), this);
 
+  QPushButton* captureOptionsButton = new QPushButton(this);
 #ifdef WIN32
-  m_captureFilterSettingsBtn = new QPushButton(this);
+  m_captureFilterSettingsBtn = captureOptionsButton;
 #else
   m_captureFilterSettingsBtn = nullptr;
 #endif
@@ -1697,7 +1696,6 @@ PencilTestPopup::PencilTestPopup()
   m_previousLevelButton->setArrowType(Qt::LeftArrow);
   m_previousLevelButton->setToolTip(tr("Previous Level"));
   m_saveOnCaptureCB->setChecked(true);
-  playCaptureSoundCB->setChecked(CamCapPlayCaptureSound != 0);
 
   imageFrame->setObjectName("CleanupSettingsFrame");
   m_colorTypeCombo->addItems(
@@ -1737,14 +1735,12 @@ PencilTestPopup::PencilTestPopup()
   QCommonStyle style;
   m_captureButton->setIcon(style.standardIcon(QStyle::SP_DialogOkButton));
   m_captureButton->setIconSize(QSize(30, 30));
-  if (m_captureFilterSettingsBtn) {
-    m_captureFilterSettingsBtn->setObjectName("GearButton");
-    m_captureFilterSettingsBtn->setFixedSize(24, 24);
-    m_captureFilterSettingsBtn->setIconSize(QSize(16, 16));
-    m_captureFilterSettingsBtn->setIcon(createQIcon("gear"));
-    m_captureFilterSettingsBtn->setToolTip(tr("Options"));
-    m_captureFilterSettingsBtn->setMenu(createOptionsMenu());
-  }
+  captureOptionsButton->setObjectName("GearButton");
+  captureOptionsButton->setFixedSize(24, 24);
+  captureOptionsButton->setIconSize(QSize(16, 16));
+  captureOptionsButton->setIcon(createQIcon("gear"));
+  captureOptionsButton->setToolTip(tr("Options"));
+  captureOptionsButton->setMenu(createOptionsMenu());
 
   subfolderButton->setObjectName("SubfolderButton");
   subfolderButton->setIconSize(QSize(16, 16));
@@ -1792,10 +1788,8 @@ PencilTestPopup::PencilTestPopup()
       camLay->addWidget(new QLabel(tr("Resolution:"), this), 0);
       camLay->addWidget(m_resolutionCombo, 1);
 
-      if (m_captureFilterSettingsBtn) {
-        camLay->addSpacing(10);
-        camLay->addWidget(m_captureFilterSettingsBtn);
-      }
+      camLay->addSpacing(10);
+      camLay->addWidget(captureOptionsButton);
 
       camLay->addSpacing(10);
       camLay->addWidget(m_subcameraButton, 0);
@@ -1893,7 +1887,6 @@ PencilTestPopup::PencilTestPopup()
           fileLay->addLayout(fileTypeLay, 0);
 
           fileLay->addWidget(m_saveOnCaptureCB, 0);
-          fileLay->addWidget(playCaptureSoundCB, 0);
         }
         fileFrame->setLayout(fileLay);
         rightLay->addWidget(fileFrame, 0);
@@ -2012,9 +2005,6 @@ PencilTestPopup::PencilTestPopup()
 
   connect(m_saveImgAdjustDefaultButton, &QPushButton::pressed, this,
           &PencilTestPopup::saveImageAdjustDefault);
-
-  connect(playCaptureSoundCB, &QCheckBox::toggled,
-          [](bool checked) { CamCapPlayCaptureSound = checked ? 1 : 0; });
 
   connect(m_captureWhiteBGButton, &QPushButton::pressed, this,
           &PencilTestPopup::onCaptureWhiteBGButtonPressed);
@@ -2209,6 +2199,15 @@ QMenu* PencilTestPopup::createOptionsMenu() {
     m_useMjpg     = checked;
     CamCapUseMjpg = checked;
     m_timer->start(40);
+  });
+
+  menu->addSeparator();
+
+  QAction* playSoundAct = menu->addAction(tr("Play Sound on Capture"));
+  playSoundAct->setCheckable(true);
+  playSoundAct->setChecked(CamCapPlayCaptureSound != 0);
+  connect(playSoundAct, &QAction::toggled, [](bool checked) {
+    CamCapPlayCaptureSound = checked ? 1 : 0;
   });
 
   return menu;
