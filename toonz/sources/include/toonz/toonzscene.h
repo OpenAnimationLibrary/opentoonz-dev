@@ -138,12 +138,25 @@ public:
 
 \return   A Pointer to the loaded level.                                      */
 
+#ifdef _WIN32
+  TXshLevel *loadLevel(const TFilePath &actualPath);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options,
+                       std::wstring levelName);
+  TXshLevel *loadLevel(const TFilePath &actualPath,
+                       const LevelOptions *options,
+                       std::wstring levelName,
+                       const std::vector<TFrameId> &fIds);
+#else
   TXshLevel *loadLevel(
       const TFilePath &actualPath,
       const LevelOptions *options =
           0,  //!< Loads a level from the specified \a decoded path.
       std::wstring levelName            = L"",
       const std::vector<TFrameId> &fIds = std::vector<TFrameId>());
+#endif
 
   /*!
 Performs a camera-stand render of the specified xsheet (or the main one in case

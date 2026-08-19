@@ -329,8 +329,15 @@ set(SOURCES
 )
 
 if(BUILD_TARGET_WIN)
+    set(HEADERS ${HEADERS}
+        ../include/toonz/txshsvglevel.h
+        ../toonz/svglevelloader.h
+    )
     set(SOURCES ${SOURCES}
         avicodecrestrictions.cpp
+        txshsvglevel.cpp
+        svglevelloadintercept.cpp
+        ../toonz/svglevelloader.cpp
     )
 endif()
 
@@ -369,9 +376,15 @@ include_directories(
     ../toonzfarm/include
 )
 
+set(SVG_LEVEL_LIBS)
+if(BUILD_TARGET_WIN)
+    set(SVG_LEVEL_LIBS Qt5::Svg Qt5::Widgets)
+endif()
+
 if(BUILD_ENV_MSVC)
     target_link_libraries(toonzlib
         Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia
+        ${SVG_LEVEL_LIBS}
         ${GLUT_LIB} ${GL_LIB} ${MYPAINT_LIB_LDFLAGS} ${GLEW_LIB} vfw32.lib
         tnzcore tnzbase tnzext
     )
@@ -384,7 +397,7 @@ elseif(BUILD_ENV_APPLE)
         ${MYPAINT_LIB_LDFLAGS}
     )
 
-    target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS})
+    target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${SVG_LEVEL_LIBS} ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS})
 elseif(BUILD_ENV_UNIXLIKE)
     _find_toonz_library(EXTRA_LIBS "tnzcore;tnzbase;tnzext")
 
@@ -392,5 +405,5 @@ elseif(BUILD_ENV_UNIXLIKE)
         set(EXTRA_LIBS ${EXTRA_LIBS} -lvfw32)
     endif()
 
-    target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS} ${MYPAINT_LIB_LDFLAGS})
+    target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${SVG_LEVEL_LIBS} ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS} ${MYPAINT_LIB_LDFLAGS})
 endif()
