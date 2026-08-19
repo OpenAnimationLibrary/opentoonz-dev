@@ -286,7 +286,8 @@ ToonzScene::ToonzScene()
     : m_contentHistory(0)
     , m_isUntitled(true)
     , m_isLoading(false)
-    , m_unrecognizedSceneTags() {
+    , m_unrecognizedSceneTags()
+    , m_loadedSceneGenerator() {
   m_childStack = new ChildStack(this);
   m_properties = new TSceneProperties();
   m_levelSet   = new TLevelSet();
@@ -321,6 +322,7 @@ void ToonzScene::clear() {
   delete properties;
   m_levelSet->clear();
   m_unrecognizedSceneTags.clear();
+  m_loadedSceneGenerator.clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -444,6 +446,7 @@ void ToonzScene::loadResources(bool withProgressDialog) {
 void ToonzScene::loadTnzFile(const TFilePath &fp) {
   bool reading22 = false;
   m_unrecognizedSceneTags.clear();
+  m_loadedSceneGenerator.clear();
   TIStream is(fp);
   if (!is) throw TException(fp.getWideString() + L": Can't open file");
   try {
@@ -465,10 +468,10 @@ void ToonzScene::loadTnzFile(const TFilePath &fp) {
       is.setVersion(versionNumber);
       while (is.matchTag(tagName)) {
         if (tagName == "generator") {
-          std::string program = is.getString();
+          m_loadedSceneGenerator = is.getString();
           // TODO: This obsolete condition should be removed before releasing OT
           // v2.2 !
-          reading22 = program.find("2.2") != std::string::npos;
+          reading22 = m_loadedSceneGenerator.find("2.2") != std::string::npos;
         } else if (tagName == "properties")
           m_properties->loadData(is, false);
         else if (tagName == "palette")  // per compatibilita' beta1
@@ -634,18 +637,27 @@ void ToonzScene::save(TFilePath &fp, TXsheet *subxsh, bool saveSceneIcon) {
       tags << QObject::tr("and %1 more")
                   .arg((int)m_unrecognizedSceneTags.size() - maxTags);
 
+    QString generatorInfo;
+    if (!m_loadedSceneGenerator.empty())
+      generatorInfo =
+          QObject::tr(
+              "\n\nThe scene was created or last saved with %1. For full "
+              "compatibility, open the original scene with that application/"
+              "version or a release known to support its features.")
+              .arg(QString::fromStdString(m_loadedSceneGenerator));
+
     QMessageBox msgBox;
     msgBox.setIcon(QMessageBox::Warning);
     msgBox.setWindowTitle(QObject::tr("Unrecognized Scene Data"));
     msgBox.setText(
         QObject::tr(
-            "This scene contains data that this version of OpenToonz does not "
-            "recognize:\n\n%1\n\n"
-            "The scene was opened by safely ignoring those entries. Saving "
-            "the scene will not write the unrecognized data back.\n\n"
+            "This scene contains data OpenToonz does not recognize.%1\n\n"
+            "Unrecognized entries: %2\n\n"
+            "OpenToonz can continue loading recognized data. Saving will not "
+            "write the unrecognized data back.\n\n"
             "To preserve the original scene unchanged, save the recognized "
             "scene data to the suggested timestamped file.")
-            .arg(tags.join(", ")));
+            .arg(generatorInfo, tags.join(", ")));
     QPushButton *saveCopyButton = msgBox.addButton(
         QObject::tr("Save as %1")
             .arg(suggestedPath.withoutParentDir().getQString()),
@@ -1293,7 +1305,6 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     if (lp->getDpiPolicy() == LevelProperties::DP_ImageDpi) {
       // We must check whether the image actually has a dpi.
       const TPointD &imageDpi = xl->getImageDpi();
-
       if (imageDpi == TPointD() ||
           Preferences::instance()->getUnits() == "pixel" ||
           Preferences::instance()->isIgnoreImageDpiEnabled()) {
