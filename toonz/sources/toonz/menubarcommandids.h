@@ -245,6 +245,7 @@
 #define MI_ZeroThick "MI_ZeroThick"
 #define MI_CursorOutline "MI_CursorOutline"
 #define MI_ViewerIndicator "MI_ViewerIndicator"
+#define MI_ShowHideLineStrokes "MI_ShowHideLineStrokes"
 
 // #define MI_LoadResourceFile       "MI_LoadResourceFile"
 #define MI_DuplicateFile "MI_DuplicateFile"
@@ -334,6 +335,9 @@
 #define MI_OpenComboViewer "MI_OpenComboViewer"
 #define MI_OpenHistoryPanel "MI_OpenHistoryPanel"
 #define MI_OpenBrushPresetPanel "MI_OpenBrushPresetPanel"
+#define MI_AddBrushPreset "MI_AddBrushPreset"
+#define MI_RemoveBrushPreset "MI_RemoveBrushPreset"
+#define MI_RemoveBrushPresetByName "MI_RemoveBrushPresetByName"
 #define MI_OpenToolPropertiesPanel "MI_OpenToolPropertiesPanel"
 #define MI_ReplaceParentDirectory "MI_ReplaceParentDirectory"
 #define MI_Reframe1 "MI_Reframe1"
@@ -406,6 +410,15 @@
 #define MI_EraserPolyline "MI_EraserPolyline"
 #define MI_EraserSegment "MI_EraserSegment"
 #define MI_EraserMultiArc "MI_EraserMultiArc"
+
+#define MI_HideLineNextType "MI_HideLineNextType"
+#define MI_HideLineNormal "MI_HideLineNormal"
+#define MI_HideLineSegment "MI_HideLineSegment"
+#define MI_HideLineFreehand "MI_HideLineFreehand"
+#define MI_HideLineNextMode "MI_HideLineNextMode"
+#define MI_HideLineInvisible "MI_HideLineInvisible"
+#define MI_HideLineHidden "MI_HideLineHidden"
+#define MI_HideLineToggleUnhide "MI_HideLineToggleUnhide"
 
 #define MI_TapeNextType "MI_TapeNextType"
 #define MI_TapeNormal "MI_TapeNormal"
