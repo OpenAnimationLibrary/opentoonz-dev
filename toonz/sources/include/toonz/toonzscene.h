@@ -216,7 +216,7 @@ Code file path \b TFilePath.
   TFilePath codeFilePath(const TFilePath &) const;
   /*!
 Decode file path \b TFilePath.
-\sa codeFilePath()
+\sa decodeFilePath()
 */
   TFilePath decodeFilePath(const TFilePath &) const;
   /*!
@@ -310,6 +310,7 @@ private:
                      // TXshSimpleLevel::load().
 
   std::vector<std::string> m_unrecognizedSceneTags;
+  std::string m_loadedSceneGenerator;
 
 private:
   // noncopyable
