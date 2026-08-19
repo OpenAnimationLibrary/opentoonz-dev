@@ -85,6 +85,7 @@
 #include <QKeyEvent>
 #include <QCommonStyle>
 #include <QTimer>
+#include <QSound>
 #include <QIntValidator>
 #include <QRegularExpressionValidator>
 
@@ -127,6 +128,7 @@ TEnv::RectVar CamCapSubCameraRect("CamCapSubCameraRect", TRect());
 TEnv::IntVar CamCapDoAutoDpi("CamCapDoAutoDpi", 1);
 TEnv::DoubleVar CamCapCustomDpi("CamCapDpiForNewLevel", 120.0);
 TEnv::StringVar CamCapFileType("CamCapFileType", "jpg");
+TEnv::IntVar CamCapPlayCaptureSound("CamCapPlayCaptureSound", 0);
 
 namespace {
 
@@ -1624,6 +1626,8 @@ PencilTestPopup::PencilTestPopup()
 
   m_saveOnCaptureCB =
       new QCheckBox(tr("Save images as they are captured"), this);
+  QCheckBox* playCaptureSoundCB =
+      new QCheckBox(tr("Play Sound on Capture"), this);
 
   QGroupBox* imageFrame        = new QGroupBox(tr("Image adjust"), this);
   m_colorTypeCombo             = new QComboBox(this);
@@ -1693,6 +1697,7 @@ PencilTestPopup::PencilTestPopup()
   m_previousLevelButton->setArrowType(Qt::LeftArrow);
   m_previousLevelButton->setToolTip(tr("Previous Level"));
   m_saveOnCaptureCB->setChecked(true);
+  playCaptureSoundCB->setChecked(CamCapPlayCaptureSound != 0);
 
   imageFrame->setObjectName("CleanupSettingsFrame");
   m_colorTypeCombo->addItems(
@@ -1886,6 +1891,7 @@ PencilTestPopup::PencilTestPopup()
           fileLay->addLayout(fileTypeLay, 0);
 
           fileLay->addWidget(m_saveOnCaptureCB, 0);
+          fileLay->addWidget(playCaptureSoundCB, 0);
         }
         fileFrame->setLayout(fileLay);
         rightLay->addWidget(fileFrame, 0);
@@ -2004,6 +2010,9 @@ PencilTestPopup::PencilTestPopup()
 
   connect(m_saveImgAdjustDefaultButton, &QPushButton::pressed, this,
           &PencilTestPopup::saveImageAdjustDefault);
+
+  connect(playCaptureSoundCB, &QCheckBox::toggled,
+          [](bool checked) { CamCapPlayCaptureSound = checked ? 1 : 0; });
 
   connect(m_captureWhiteBGButton, &QPushButton::pressed, this,
           &PencilTestPopup::onCaptureWhiteBGButtonPressed);
@@ -2658,6 +2667,8 @@ void PencilTestPopup::onFrameCaptured(cv::Mat& image) {
     m_captureCue = false;
 
     if (importImage(qimg)) {
+      if (CamCapPlayCaptureSound != 0)
+        QSound::play(":Resources/camera_snap.wav");
       m_videoWidget->setPreviousImage(qimg.copy());
       if (Preferences::instance()->isShowFrameNumberWithLettersEnabled()) {
         TFrameId fId = m_frameNumberEdit->getValue();
