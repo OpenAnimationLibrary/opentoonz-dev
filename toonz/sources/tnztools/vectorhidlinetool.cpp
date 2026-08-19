@@ -17,6 +17,7 @@
 #include "tstroke.h"
 #include "tvectorimage.h"
 #include "tproperty.h"
+#include "tinbetween.h"
 #include "tgl.h"
 #include "drawutil.h"
 #include "thidelinesegment.h"
@@ -30,6 +31,7 @@ TEnv::StringVar HideLineType("InknpaintHideLineType", "Segment");
 TEnv::StringVar HideLineMode("InknpaintHideLineMode", "Invisible");
 TEnv::IntVar HideLineSelective("InknpaintHideLineSelective", 0);
 TEnv::IntVar HideLineUnhide("InknpaintHideLineUnhide", 0);
+TEnv::IntVar HideLineRange("InknpaintHideLineRange", 0);
 TEnv::DoubleVar HideLineSize("InknpaintHideLineSize", 10);
 
 namespace {
@@ -118,16 +120,25 @@ public:
 class HideLineTool final : public TTool {
   Q_DECLARE_TR_FUNCTIONS(HideLineTool)
 
+  enum class FrameRangeOperation { Segment, Region };
+
   TPropertyGroup m_prop;
   TEnumProperty m_hideType;
   TEnumProperty m_hideMode;
   TBoolProperty m_unhide;
   TBoolProperty m_selective;
+  TBoolProperty m_frameRange;
   TDoubleProperty m_toolSize;
 
   StrokeGenerator m_track;
   TStroke *m_stroke;
   UndoHideLine *m_undo;
+
+  TStroke *m_firstRangeStroke;
+  TFrameId m_firstRangeFrameId;
+  TXshSimpleLevelP m_rangeLevel;
+  bool m_useExplicitUndoFid;
+  TFrameId m_explicitUndoFid;
 
   bool m_active;
   bool m_firstTime;
@@ -151,14 +162,29 @@ class HideLineTool final : public TTool {
     m_hideMode.setValue(::to_wstring(HideLineMode.getValue()));
     m_unhide.setValue(HideLineUnhide ? 1 : 0);
     m_selective.setValue(HideLineSelective ? 1 : 0);
+    m_frameRange.setValue(HideLineRange ? 1 : 0);
     m_firstTime = false;
+  }
+
+  void resetFrameRange() {
+    if (m_firstRangeStroke) {
+      delete m_firstRangeStroke;
+      m_firstRangeStroke = nullptr;
+    }
+    m_rangeLevel = nullptr;
+    m_useExplicitUndoFid = false;
   }
 
   UndoHideLine *ensureUndo() {
     if (m_undo) return m_undo;
     TXshSimpleLevel *level =
         TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
-    m_undo = new UndoHideLine(level, getCurrentFid());
+    if (!level && m_rangeLevel) level = m_rangeLevel.getPointer();
+    if (!level) return nullptr;
+
+    const TFrameId fid =
+        m_useExplicitUndoFid ? m_explicitUndoFid : getCurrentFid();
+    m_undo = new UndoHideLine(level, fid);
     return m_undo;
   }
 
@@ -182,8 +208,11 @@ class HideLineTool final : public TTool {
     } else {
       vi->appendHideLineSegmentsDuringEdit(strokeIndex, ranges, mode);
     }
-    ensureUndo()->addStrokeChange(strokeIndex, oldSegs,
-                                  vi->getHideLineSegments(strokeIndex));
+
+    UndoHideLine *undo = ensureUndo();
+    if (undo)
+      undo->addStrokeChange(strokeIndex, oldSegs,
+                            vi->getHideLineSegments(strokeIndex));
   }
 
   void applyRangesToStroke(const TVectorImageP &vi, int strokeIndex,
@@ -196,6 +225,11 @@ class HideLineTool final : public TTool {
 
   bool isNormalType() const {
     return m_hideType.getValue() == NORMAL_HIDE;
+  }
+
+  bool isFrameRangeType() const {
+    return m_hideType.getValue() == SEGMENT_HIDE ||
+           m_hideType.getValue() == FREEHAND_HIDE;
   }
 
   void hideAtBrush(const TVectorImageP &vi, const TPointD &pos) {
@@ -251,6 +285,109 @@ class HideLineTool final : public TTool {
       applyRangesToStroke(vi, index, fullStrokeRange, mode, isUnhideMode());
   }
 
+  void applyFrameRange(TStroke *lastStroke, const TFrameId &lastFrameId,
+                       FrameRangeOperation operation) {
+    if (!m_rangeLevel || !m_firstRangeStroke || !lastStroke) return;
+
+    TFrameId firstFrameId = m_firstRangeFrameId;
+    TFrameId endFrameId   = lastFrameId;
+    bool backward         = firstFrameId > endFrameId;
+    TFrameId low          = backward ? endFrameId : firstFrameId;
+    TFrameId high         = backward ? firstFrameId : endFrameId;
+
+    std::vector<TFrameId> allFids;
+    m_rangeLevel->getFids(allFids);
+
+    std::vector<TFrameId> fids;
+    for (const TFrameId &fid : allFids) {
+      if (fid >= low && fid <= high) fids.push_back(fid);
+    }
+    if (fids.empty()) return;
+
+    TVectorImageP firstGuide = new TVectorImage();
+    TVectorImageP lastGuide  = new TVectorImage();
+    firstGuide->addStroke(new TStroke(*m_firstRangeStroke));
+    lastGuide->addStroke(new TStroke(*lastStroke));
+
+    TUndoManager::manager()->beginBlock();
+
+    const int count = (int)fids.size();
+    for (int i = 0; i < count; ++i) {
+      const TFrameId fid = fids[i];
+      TVectorImageP image = m_rangeLevel->getFrame(fid, true);
+      if (!image) continue;
+
+      double t = count > 1 ? (double)i / (double)(count - 1) : 0.5;
+      if (backward) t = 1.0 - t;
+
+      TStroke *guideStroke = nullptr;
+      TVectorImageP tweenGuide;
+      if (t <= 0.0) {
+        guideStroke = firstGuide->getStroke(0);
+      } else if (t >= 1.0) {
+        guideStroke = lastGuide->getStroke(0);
+      } else {
+        tweenGuide  = TInbetween(firstGuide, lastGuide).tween(t);
+        guideStroke = tweenGuide ? tweenGuide->getStroke(0) : nullptr;
+      }
+      if (!guideStroke) continue;
+
+      m_useExplicitUndoFid = true;
+      m_explicitUndoFid    = fid;
+
+      if (operation == FrameRangeOperation::Segment)
+        hideSegments(image, guideStroke);
+      else
+        hideRegion(image, guideStroke);
+
+      if (m_undo && !m_undo->empty())
+        image->notifyHideLineFillChanged(m_undo->changedStrokeIndices());
+      commitUndo();
+
+      // Explicitly store the modified frame. This also makes the experiment
+      // robust when getFrame() had to uncompress the drawing.
+      m_rangeLevel->setFrame(fid, image);
+    }
+
+    m_useExplicitUndoFid = false;
+    TUndoManager::manager()->endBlock();
+
+    notifyImageChanged();
+    invalidate();
+  }
+
+  void handleFrameRange(TStroke *stroke, FrameRangeOperation operation) {
+    if (!stroke) return;
+
+    TTool::Application *application = TTool::getApplication();
+    if (!application) return;
+
+    TXshSimpleLevelP level =
+        application->getCurrentLevel()->getSimpleLevel();
+    if (!level) {
+      resetFrameRange();
+      return;
+    }
+
+    const TFrameId fid = getCurrentFid();
+
+    // First click stores the guide. Drawing again on the same frame replaces
+    // the first guide, which is useful while experimenting with the range.
+    if (!m_firstRangeStroke || !m_rangeLevel ||
+        m_rangeLevel.getPointer() != level.getPointer() ||
+        fid == m_firstRangeFrameId) {
+      resetFrameRange();
+      m_firstRangeStroke = new TStroke(*stroke);
+      m_firstRangeFrameId = fid;
+      m_rangeLevel         = level;
+      invalidate();
+      return;
+    }
+
+    applyFrameRange(stroke, fid, operation);
+    resetFrameRange();
+  }
+
   void startFreehandTrack(const TPointD &pos) {
     m_track.clear();
     m_firstPos = pos;
@@ -299,9 +436,12 @@ public:
       , m_hideMode("Mode:")
       , m_unhide("Unhide", false)
       , m_selective("Selective", false)
+      , m_frameRange("Frame Range", false)
       , m_toolSize("Size:", 1, 100, 10)
       , m_stroke(nullptr)
       , m_undo(nullptr)
+      , m_firstRangeStroke(nullptr)
+      , m_useExplicitUndoFid(false)
       , m_active(false)
       , m_firstTime(true)
       , m_thick(1.0)
@@ -321,17 +461,20 @@ public:
     m_hideMode.addValue(HIDDEN_MODE);
     m_prop.bind(m_unhide);
     m_prop.bind(m_selective);
+    m_prop.bind(m_frameRange);
 
     m_hideType.setId("Type");
     m_hideMode.setId("Mode");
     m_unhide.setId("Unhide");
     m_selective.setId("Selective");
+    m_frameRange.setId("FrameRange");
     m_toolSize.setId("Size");
 
     updateBrushSize();
   }
 
   ~HideLineTool() {
+    resetFrameRange();
     if (m_stroke) delete m_stroke;
     if (m_undo) delete m_undo;
   }
@@ -343,11 +486,16 @@ public:
   int getCursorId() const override { return ToolCursor::HideLineCursor; }
 
   bool onPropertyChanged(std::string propertyName) override {
-    HideLineSize         = m_toolSize.getValue();
-    HideLineType         = ::to_string(m_hideType.getValue());
-    HideLineMode         = ::to_string(m_hideMode.getValue());
-    HideLineSelective    = m_selective.getValue();
-    HideLineUnhide       = m_unhide.getValue();
+    // A pending range must use one consistent set of tool options.
+    if (m_firstRangeStroke) resetFrameRange();
+
+    HideLineSize      = m_toolSize.getValue();
+    HideLineType      = ::to_string(m_hideType.getValue());
+    HideLineMode      = ::to_string(m_hideMode.getValue());
+    HideLineSelective = m_selective.getValue();
+    HideLineUnhide    = m_unhide.getValue();
+    HideLineRange     = m_frameRange.getValue();
+
     updateBrushSize();
     invalidate();
     return true;
@@ -380,6 +528,7 @@ public:
     m_hideMode.setItemUIName(HIDDEN_MODE, tr("Hidden"));
     m_unhide.setQStringName(tr("Unhide"));
     m_selective.setQStringName(tr("Selective"));
+    m_frameRange.setQStringName(tr("Frame Range"));
   }
 
   void draw() override {
@@ -397,6 +546,11 @@ public:
       tglColor(TPixel32(255, 0, 255));
       tglDrawCircle(m_brushPos, m_pointSize);
       return;
+    }
+
+    if (m_frameRange.getValue() && m_firstRangeStroke) {
+      tglColor(TPixel32(255, 0, 0));
+      drawStrokeCenterline(*m_firstRangeStroke, 1);
     }
 
     if (m_track.isEmpty()) return;
@@ -439,7 +593,7 @@ public:
   }
 
   void leftButtonDown(const TPointD &pos, const TMouseEvent &) override {
-    m_active              = true;
+    m_active = true;
     m_brushPos = m_mousePos = pos;
 
     if (isNormalType()) {
@@ -473,7 +627,7 @@ public:
 
   void leftButtonUp(const TPointD &pos, const TMouseEvent &) override {
     if (!m_active) return;
-    m_active              = false;
+    m_active = false;
     m_brushPos = m_mousePos = pos;
 
     TVectorImageP vi = getImage(true);
@@ -492,6 +646,14 @@ public:
     if (m_hideType.getValue() == SEGMENT_HIDE) {
       if (m_stroke) delete m_stroke;
       m_stroke = makeTrackStroke(false);
+
+      if (m_stroke && m_frameRange.getValue() && isFrameRangeType()) {
+        handleFrameRange(m_stroke, FrameRangeOperation::Segment);
+        m_track.clear();
+        invalidate();
+        return;
+      }
+
       if (m_stroke) hideSegments(vi, m_stroke);
       finishEdit(vi);
       return;
@@ -500,6 +662,14 @@ public:
     if (m_hideType.getValue() == FREEHAND_HIDE) {
       if (m_stroke) delete m_stroke;
       m_stroke = makeTrackStroke(true);
+
+      if (m_stroke && m_frameRange.getValue() && isFrameRangeType()) {
+        handleFrameRange(m_stroke, FrameRangeOperation::Region);
+        m_track.clear();
+        invalidate();
+        return;
+      }
+
       if (m_stroke) hideRegion(vi, m_stroke);
       finishEdit(vi);
     }
@@ -508,6 +678,7 @@ public:
   void onDeactivate() override {
     m_active = false;
     m_track.clear();
+    resetFrameRange();
     if (m_undo) {
       delete m_undo;
       m_undo = nullptr;
