@@ -1305,6 +1305,7 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     if (lp->getDpiPolicy() == LevelProperties::DP_ImageDpi) {
       // We must check whether the image actually has a dpi.
       const TPointD &imageDpi = xl->getImageDpi();
+
       if (imageDpi == TPointD() ||
           Preferences::instance()->getUnits() == "pixel" ||
           Preferences::instance()->isIgnoreImageDpiEnabled()) {
