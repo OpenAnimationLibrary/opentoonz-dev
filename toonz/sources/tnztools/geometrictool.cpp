@@ -5,6 +5,7 @@
 #include "tools/toolhandle.h"
 #include "tools/toolcommandids.h"
 #include "toonz/tobjecthandle.h"
+#include "toonz/tcolumnhandle.h"
 #include "toonz/txsheethandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tframehandle.h"
@@ -40,6 +41,7 @@
 #include "toonz/tcamera.h"
 #include "toonz/stage.h"
 #include "toonz/tlog.h"
+#include "tinbetween.h"
 // For Qt translation support
 #include <QCoreApplication>
 #include <QKeyEvent>
@@ -71,6 +73,7 @@ TEnv::IntVar GeometricJoinStyle("InknpaintGeometricJoinStyle", 0);
 TEnv::IntVar GeometricMiterValue("InknpaintGeometricMiterValue", 4);
 TEnv::IntVar GeometricSnap("InknpaintGeometricSnap", 0);
 TEnv::IntVar GeometricSnapSensitivity("InknpaintGeometricSnapSensitivity", 0);
+TEnv::IntVar GeometricRange("InknpaintGeometricRange", 0);
 
 //-------------------------------------------------------------------
 
@@ -83,6 +86,10 @@ TEnv::IntVar GeometricSnapSensitivity("InknpaintGeometricSnapSensitivity", 0);
 #define LOW_WSTR L"Low"
 #define MEDIUM_WSTR L"Medium"
 #define HIGH_WSTR L"High"
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
 
 const double SNAPPING_LOW    = 5.0;
 const double SNAPPING_MEDIUM = 25.0;
@@ -496,6 +503,7 @@ PrimitiveParam::PrimitiveParam(int targetType)
     , m_snapSensitivity("Sensitivity:")
     , m_modifierSize("ModifierSize", -3, 3, 0, true)
     , m_modifierOpacity("ModifierOpacity", 0, 100, 100, true)
+    , m_frameRange("Range:")
     , m_targetType(targetType) {
   if (targetType & TTool::Vectors) m_prop[0].bind(m_toolSize);
   if (targetType & TTool::ToonzImage || targetType & TTool::RasterImage) {
@@ -528,6 +536,13 @@ PrimitiveParam::PrimitiveParam(int targetType)
     m_pencil.setId("PencilMode");
   }
   m_prop[0].bind(m_smooth);
+  m_prop[0].bind(m_frameRange);
+  m_frameRange.addValue(L"Off");
+  m_frameRange.addValue(LINEAR_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_INTERPOLATION);
+  m_frameRange.addValue(EASE_OUT_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_OUT_INTERPOLATION);
+  m_frameRange.setId("FrameRange");
 
   m_capStyle.addValue(BUTT_WSTR, QString::fromStdWString(BUTT_WSTR));
   m_capStyle.addValue(ROUNDC_WSTR, QString::fromStdWString(ROUNDC_WSTR));
@@ -575,6 +590,12 @@ void PrimitiveParam::updateTranslation() {
   m_autogroup.setQStringName(tr("Auto Group"));
   m_autofill.setQStringName(tr("Auto Fill"));
   m_smooth.setQStringName(tr("Smooth"));
+  m_frameRange.setQStringName(tr("Range:"));
+  m_frameRange.setItemUIName(L"Off", tr("Off"));
+  m_frameRange.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+  m_frameRange.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+  m_frameRange.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+  m_frameRange.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
   m_emptyOnly.setQStringName(tr("Empty Only"));
   m_pencil.setQStringName(tr("Pencil Mode"));
   m_modifierSize.setQStringName(tr("Size"));
@@ -1073,7 +1094,12 @@ GeometricTool::GeometricTool(int targetType)
     , m_firstTime(true)
     , m_notifier(nullptr)
     , m_tileSaver(nullptr)
-    , m_tileSaverCM(nullptr) {
+    , m_tileSaverCM(nullptr)
+    , m_firstRow(-1)
+    , m_firstColumn(-1)
+    , m_frameRangeLevel(nullptr)
+    , m_pendingFrameRangeStroke(nullptr)
+    , m_shiftPressed(false) {
   bind(targetType);
   if ((targetType & TTool::RasterImage) || (targetType & TTool::ToonzImage)) {
     addPrimitive(new RectanglePrimitive(&m_param, this, true));
@@ -1101,6 +1127,8 @@ GeometricTool::GeometricTool(int targetType)
 //--------------------------------------------------------------------------------------------------
 GeometricTool::~GeometricTool() {
   delete m_rotatedStroke;
+  delete m_pendingFrameRangeStroke;
+  resetFrameRange();
   std::map<std::wstring, Primitive *>::iterator it;
   for (it = m_primitiveTable.begin(); it != m_primitiveTable.end(); ++it)
     delete it->second;
@@ -1154,6 +1182,7 @@ void GeometricTool::leftButtonDown(const TPointD &p, const TMouseEvent &e) {
   }
 
   if (m_isRotatingOrMoving) {
+    m_shiftPressed = e.isShiftPressed();
     addStroke();
     return;
   }
@@ -1170,6 +1199,7 @@ void GeometricTool::leftButtonDrag(const TPointD &p, const TMouseEvent &e) {
 //--------------------------------------------------------------------------------------------------
 void GeometricTool::leftButtonUp(const TPointD &p, const TMouseEvent &e) {
   if (!m_active) return;
+  m_shiftPressed = e.isShiftPressed();
   if (m_primitive) m_primitive->leftButtonUp(p, e);
   invalidate();
 }
@@ -1177,6 +1207,7 @@ void GeometricTool::leftButtonUp(const TPointD &p, const TMouseEvent &e) {
 void GeometricTool::leftButtonDoubleClick(const TPointD &p,
                                           const TMouseEvent &e) {
   if (!m_active) return;
+  m_shiftPressed = e.isShiftPressed();
   if (m_primitive) m_primitive->leftButtonDoubleClick(p, e);
   invalidate();
 }
@@ -1295,6 +1326,7 @@ void GeometricTool::onActivate() {
     m_param.m_capStyle.setIndex(GeometricCapStyle);
     m_param.m_joinStyle.setIndex(GeometricJoinStyle);
     m_param.m_miterJoinLimit.setValue(GeometricMiterValue);
+    m_param.m_frameRange.setIndex(GeometricRange);
     m_firstTime = false;
     m_param.m_snap.setValue(GeometricSnap);
     if (m_targetType & TTool::Vectors) {
@@ -1333,6 +1365,7 @@ void GeometricTool::onDeactivate() {
   m_isRotatingOrMoving = false;
   delete m_rotatedStroke;
   m_rotatedStroke = 0;
+  resetFrameRange();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1343,6 +1376,11 @@ void GeometricTool::onEnter() {
 
 //--------------------------------------------------------------------------------------------------
 void GeometricTool::draw() {
+  if (m_param.m_frameRange.getIndex() && !m_firstStrokes.empty()) {
+    tglColor(m_color);
+    for (TStroke *stroke : m_firstStrokes)
+      drawStrokeCenterline(*stroke, sqrt(tglGetPixelSize2()));
+  }
   if (m_isRotatingOrMoving) {
     tglColor(m_color);
     drawStrokeCenterline(*m_rotatedStroke, sqrt(tglGetPixelSize2()));
@@ -1439,9 +1477,109 @@ bool GeometricTool::onPropertyChanged(std::string propertyName) {
       m_param.m_minDistance2 = SNAPPING_HIGH;
       break;
     }
+  } else if (propertyName == m_param.m_frameRange.getName()) {
+    GeometricRange = m_param.m_frameRange.getIndex();
+    resetFrameRange();
   }
 
   return false;
+}
+
+//--------------------------------------------------------------------------------------------------
+void GeometricTool::resetFrameRange() {
+  for (TStroke *stroke : m_firstStrokes) delete stroke;
+  m_firstStrokes.clear();
+  m_firstFrameId = TFrameId();
+  m_firstRow = -1;
+  m_firstColumn = -1;
+  m_frameRangeLevel = nullptr;
+}
+
+//--------------------------------------------------------------------------------------------------
+void GeometricTool::applyFrameRange(const TStroke *lastStroke) {
+  TTool::Application *app = TTool::getApplication();
+  if (!app || !m_frameRangeLevel || m_firstStrokes.empty()) return;
+
+  std::vector<std::pair<int, TFrameId>> frames;
+  if (app->getCurrentFrame()->isEditingScene()) {
+    int lastRow = getFrame();
+    int step = m_firstRow <= lastRow ? 1 : -1;
+    TFrameId previousFid;
+    bool hasPrevious = false;
+    TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
+    for (int row = m_firstRow; row != lastRow + step; row += step) {
+      TXshCell cell = xsheet->getCell(row, m_firstColumn);
+      TFrameId fid = cell.getFrameId();
+      if (cell.getSimpleLevel() != m_frameRangeLevel ||
+          (hasPrevious && fid == previousFid))
+        continue;
+      frames.emplace_back(row, fid);
+      previousFid = fid;
+      hasPrevious = true;
+    }
+  } else {
+    int firstIndex = m_frameRangeLevel->fid2index(m_firstFrameId);
+    int lastIndex = m_frameRangeLevel->fid2index(getCurrentFid());
+    if (firstIndex < 0 || lastIndex < 0) return;
+    int step = firstIndex <= lastIndex ? 1 : -1;
+    for (int index = firstIndex; index != lastIndex + step; index += step)
+      frames.emplace_back(-1, m_frameRangeLevel->index2fid(index));
+  }
+  if (frames.empty()) return;
+
+  TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (m_param.m_frameRange.getIndex() == 2)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (m_param.m_frameRange.getIndex() == 3)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (m_param.m_frameRange.getIndex() == 4)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
+  TVectorImageP firstImage = new TVectorImage();
+  TVectorImageP lastImage = new TVectorImage();
+  for (TStroke *stroke : m_firstStrokes)
+    firstImage->addStroke(new TStroke(*stroke), false);
+  lastImage->addStroke(new TStroke(*lastStroke), false);
+
+  bool editingScene = app->getCurrentFrame()->isEditingScene();
+  if (editingScene) app->getCurrentColumn()->setColumnIndex(m_firstColumn);
+  TUndoManager::manager()->beginBlock();
+  int count = static_cast<int>(frames.size());
+  for (int index = 0; index < count; ++index) {
+    int row = frames[index].first;
+    TFrameId fid = frames[index].second;
+    if (editingScene)
+      app->getCurrentFrame()->setFrame(row);
+    else
+      app->getCurrentFrame()->setFid(fid);
+    double t = count > 1 ? static_cast<double>(index) / (count - 1) : 0.5;
+    TVectorImageP tween = TInbetween(firstImage, lastImage).tween(
+        TInbetween::interpolation(t, algorithm));
+    for (int strokeIndex = 0; strokeIndex < tween->getStrokeCount(); ++strokeIndex) {
+      m_pendingFrameRangeStroke = new TStroke(*tween->getStroke(strokeIndex));
+      addStroke();
+    }
+  }
+  TUndoManager::manager()->endBlock();
+  app->getCurrentXsheet()->notifyXsheetChanged();
+
+  if (m_shiftPressed) {
+    resetFrameRange();
+    m_firstStrokes.push_back(new TStroke(*lastStroke));
+    m_firstFrameId = getCurrentFid();
+    m_firstRow = getFrame();
+    m_firstColumn = getColumnIndex();
+    m_frameRangeLevel = app->getCurrentLevel()->getSimpleLevel();
+  } else {
+    if (editingScene) {
+      app->getCurrentColumn()->setColumnIndex(m_firstColumn);
+      app->getCurrentFrame()->setFrame(m_firstRow);
+    } else {
+      app->getCurrentFrame()->setFid(m_firstFrameId);
+    }
+    resetFrameRange();
+  }
+  invalidate();
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1625,8 +1763,10 @@ void GeometricTool::addFullColorMyPaintStroke(const TRasterImageP &ri,
 void GeometricTool::addStroke() {
   if (!m_primitive) return;
 
-  TStroke *stroke = 0;
-  if (!m_isRotatingOrMoving) {
+  TStroke *stroke = m_pendingFrameRangeStroke;
+  bool isFrameRangeStroke = stroke != nullptr;
+  m_pendingFrameRangeStroke = nullptr;
+  if (!isFrameRangeStroke && !m_isRotatingOrMoving) {
     stroke = m_primitive->makeStroke();
     if (!stroke) return;  // Exit if stroke is null
 
@@ -1656,7 +1796,7 @@ void GeometricTool::addStroke() {
 
       return;
     }
-  } else {
+  } else if (!isFrameRangeStroke) {
     stroke               = m_rotatedStroke;
     m_isRotatingOrMoving = false;
     m_rotatedStroke      = 0;
@@ -1668,6 +1808,33 @@ void GeometricTool::addStroke() {
   options.m_capStyle               = m_param.m_capStyle.getIndex();
   options.m_joinStyle              = m_param.m_joinStyle.getIndex();
   options.m_miterUpper             = m_param.m_miterJoinLimit.getValue();
+
+  if (m_param.m_frameRange.getIndex() && !isFrameRangeStroke) {
+    TTool::Application *app = TTool::getApplication();
+    if (!app) {
+      delete stroke;
+      return;
+    }
+    if (m_firstStrokes.empty()) {
+      TXshLevel *level = app->getCurrentLevel()->getLevel();
+      m_frameRangeLevel = level ? level->getSimpleLevel() : nullptr;
+      if (!m_frameRangeLevel) {
+        delete stroke;
+        return;
+      }
+      m_firstStrokes.push_back(new TStroke(*stroke));
+      m_firstFrameId = getCurrentFid();
+      m_firstRow = getFrame();
+      m_firstColumn = getColumnIndex();
+      m_color = TPixel32::Red;
+      delete stroke;
+      invalidate();
+      return;
+    }
+    applyFrameRange(stroke);
+    delete stroke;
+    return;
+  }
 
   // Use TImageP to maintain the reference
   TImageP image = getImage(true);

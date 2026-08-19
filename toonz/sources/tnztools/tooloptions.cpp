@@ -1785,7 +1785,7 @@ FillToolOptionsBox::FillToolOptionsBox(QWidget *parent, TTool *tool,
   m_onionMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Onion Skin"));
   m_multiFrameMode =
-      dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Frame Range"));
+      dynamic_cast<ToolOptionCombo *>(m_controls.value("Frame Range:"));
   m_autopaintMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Autopaint Lines"));
   m_closeGap =
@@ -1803,8 +1803,8 @@ FillToolOptionsBox::FillToolOptionsBox(QWidget *parent, TTool *tool,
                             SLOT(onToolTypeChanged(int)));
   ret      = ret && connect(m_onionMode, SIGNAL(toggled(bool)), this,
                             SLOT(onOnionModeToggled(bool)));
-  ret      = ret && connect(m_multiFrameMode, SIGNAL(toggled(bool)), this,
-                            SLOT(onMultiFrameModeToggled(bool)));
+  ret      = ret && connect(m_multiFrameMode, SIGNAL(currentIndexChanged(int)),
+                            this, SLOT(onMultiFrameModeChanged(int)));
   if (m_closeGap)
     ret = ret && connect(m_closeGap, &ToolOptionCheckbox::toggled,
                          m_gapCloseDistance, &QWidget::setEnabled);
@@ -1839,7 +1839,7 @@ void FillToolOptionsBox::onColorModeChanged(int index) {
     m_segmentMode->setEnabled(
         enabled ? m_toolType->getProperty()->getValue() == L"Normal" : false);
   }
-  enabled = range[index] != L"Lines" && !m_multiFrameMode->isChecked();
+  enabled = range[index] != L"Lines" && !m_multiFrameMode->getProperty()->getIndex();
   m_onionMode->setEnabled(enabled);
 }
 
@@ -1852,7 +1852,7 @@ void FillToolOptionsBox::onToolTypeChanged(int index) {
     m_segmentMode->setEnabled(
         enabled ? m_colorMode->getProperty()->getValue() != L"Areas" : false);
   enabled = enabled || (m_colorMode->getProperty()->getValue() != L"Lines" &&
-                        !m_multiFrameMode->isChecked());
+                        !m_multiFrameMode->getProperty()->getIndex());
   m_onionMode->setEnabled(enabled);
 }
 
@@ -1866,8 +1866,8 @@ void FillToolOptionsBox::onOnionModeToggled(bool value) {
 
 //-----------------------------------------------------------------------------
 
-void FillToolOptionsBox::onMultiFrameModeToggled(bool value) {
-  m_onionMode->setEnabled(!value);
+void FillToolOptionsBox::onMultiFrameModeChanged(int index) {
+  m_onionMode->setEnabled(index == 0);
 }
 
 //=============================================================================
@@ -2149,7 +2149,7 @@ EraserToolOptionsBox::EraserToolOptionsBox(QWidget *parent, TTool *tool,
   m_colorMode  = dynamic_cast<ToolOptionCombo *>(m_controls.value("Mode:"));
   m_invertMode = dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Invert"));
   m_multiFrameMode =
-      dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Frame Range"));
+      dynamic_cast<ToolOptionCombo *>(m_controls.value("Frame Range:"));
   m_pencilMode =
       dynamic_cast<ToolOptionCheckbox *>(m_controls.value("Pencil Mode"));
 
@@ -2429,6 +2429,7 @@ TapeToolOptionsBox::TapeToolOptionsBox(QWidget *parent, TTool *tool,
     , m_smoothMode(0)
     , m_joinStrokesMode(0)
     , m_toolMode(0)
+    , m_multiFrameMode(0)
     , m_autocloseLabel(0)
     , m_autocloseField(0) {
   TPropertyGroup *props = tool->getProperties(0);
@@ -2449,11 +2450,14 @@ TapeToolOptionsBox::TapeToolOptionsBox(QWidget *parent, TTool *tool,
       dynamic_cast<ToolOptionSlider *>(m_controls.value("Distance"));
   if (m_autocloseField)
     m_autocloseLabel = m_labels.value(m_autocloseField->propertyName());
+  m_multiFrameMode =
+      dynamic_cast<ToolOptionCombo *>(m_controls.value("Frame Range:"));
 
   bool isNormalType = m_typeMode->getProperty()->getValue() == L"Normal";
   m_toolMode->setEnabled(isNormalType);
   m_autocloseField->setEnabled(!isNormalType);
   m_autocloseLabel->setEnabled(!isNormalType);
+  m_multiFrameMode->setEnabled(!isNormalType);
 
   bool isLineToLineMode =
       m_toolMode->getProperty()->getValue() == L"Line to Line";
@@ -2487,6 +2491,7 @@ void TapeToolOptionsBox::onToolTypeChanged(int index) {
   m_toolMode->setEnabled(isNormalType);
   m_autocloseField->setEnabled(!isNormalType);
   m_autocloseLabel->setEnabled(!isNormalType);
+  m_multiFrameMode->setEnabled(!isNormalType);
 }
 
 //-----------------------------------------------------------------------------
