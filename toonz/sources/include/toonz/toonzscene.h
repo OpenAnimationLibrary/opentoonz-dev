@@ -216,7 +216,7 @@ Code file path \b TFilePath.
   TFilePath codeFilePath(const TFilePath &) const;
   /*!
 Decode file path \b TFilePath.
-\sa decodeFilePath()
+\sa codeFilePath()
 */
   TFilePath decodeFilePath(const TFilePath &) const;
   /*!
