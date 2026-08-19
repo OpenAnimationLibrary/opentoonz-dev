@@ -791,6 +791,8 @@ void StrokeSelection::enableCommands() {
 
   enableCommand(m_groupCommand.get(), MI_Group, &TGroupCommand::group);
   enableCommand(m_groupCommand.get(), MI_Ungroup, &TGroupCommand::ungroup);
+  enableCommand(m_groupCommand.get(), MI_UngroupAll,
+                &TGroupCommand::ungroupAll);
   enableCommand(m_groupCommand.get(), MI_BringToFront, &TGroupCommand::front);
   enableCommand(m_groupCommand.get(), MI_BringForward, &TGroupCommand::forward);
   enableCommand(m_groupCommand.get(), MI_SendBack, &TGroupCommand::back);
