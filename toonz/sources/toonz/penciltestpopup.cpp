@@ -1650,7 +1650,11 @@ PencilTestPopup::PencilTestPopup()
   m_captureButton          = new QPushButton(tr("Capture\n[Return key]"), this);
   QPushButton* closeButton = new QPushButton(tr("Close"), this);
 
+#if defined(WIN32) || defined(MACOSX)
   QPushButton* captureOptionsButton = new QPushButton(this);
+#else
+  QPushButton* captureOptionsButton = nullptr;
+#endif
 #ifdef WIN32
   m_captureFilterSettingsBtn = captureOptionsButton;
 #else
@@ -1735,12 +1739,14 @@ PencilTestPopup::PencilTestPopup()
   QCommonStyle style;
   m_captureButton->setIcon(style.standardIcon(QStyle::SP_DialogOkButton));
   m_captureButton->setIconSize(QSize(30, 30));
-  captureOptionsButton->setObjectName("GearButton");
-  captureOptionsButton->setFixedSize(24, 24);
-  captureOptionsButton->setIconSize(QSize(16, 16));
-  captureOptionsButton->setIcon(createQIcon("gear"));
-  captureOptionsButton->setToolTip(tr("Options"));
-  captureOptionsButton->setMenu(createOptionsMenu());
+  if (captureOptionsButton) {
+    captureOptionsButton->setObjectName("GearButton");
+    captureOptionsButton->setFixedSize(24, 24);
+    captureOptionsButton->setIconSize(QSize(16, 16));
+    captureOptionsButton->setIcon(createQIcon("gear"));
+    captureOptionsButton->setToolTip(tr("Options"));
+    captureOptionsButton->setMenu(createOptionsMenu());
+  }
 
   subfolderButton->setObjectName("SubfolderButton");
   subfolderButton->setIconSize(QSize(16, 16));
@@ -1788,8 +1794,10 @@ PencilTestPopup::PencilTestPopup()
       camLay->addWidget(new QLabel(tr("Resolution:"), this), 0);
       camLay->addWidget(m_resolutionCombo, 1);
 
-      camLay->addSpacing(10);
-      camLay->addWidget(captureOptionsButton);
+      if (captureOptionsButton) {
+        camLay->addSpacing(10);
+        camLay->addWidget(captureOptionsButton);
+      }
 
       camLay->addSpacing(10);
       camLay->addWidget(m_subcameraButton, 0);
@@ -2168,8 +2176,8 @@ PencilTestPopup::~PencilTestPopup() { m_cvWebcam.release(); }
 
 QMenu* PencilTestPopup::createOptionsMenu() {
   QMenu* menu = new QMenu();
-  bool ret    = true;
 #ifdef _WIN32
+  bool ret = true;
   auto* settingsAct = menu->addAction(tr("Video Capture Filter Settings..."));
   connect(settingsAct, &QAction::triggered, this,
           &PencilTestPopup::onCaptureFilterSettingsBtnPressed);
@@ -2186,7 +2194,7 @@ QMenu* PencilTestPopup::createOptionsMenu() {
           CamCapUseDirectShow = checked;
           m_timer->start(40);
         });
-#endif
+
   QAction* useMjpgAct = menu->addAction(tr("Use MJPG with Webcam"));
   useMjpgAct->setCheckable(true);
   useMjpgAct->setChecked(m_useMjpg);
@@ -2202,6 +2210,7 @@ QMenu* PencilTestPopup::createOptionsMenu() {
   });
 
   menu->addSeparator();
+#endif
 
   QAction* playSoundAct = menu->addAction(tr("Play Sound on Capture"));
   playSoundAct->setCheckable(true);
