@@ -24,6 +24,7 @@ TKeyframeData::TKeyframeData() {}
 
 TKeyframeData::TKeyframeData(const TKeyframeData *src)
     : m_keyData(src->m_keyData)
+    , m_centerData(src->m_centerData)
     , m_isPegbarsCycleEnabled(src->m_isPegbarsCycleEnabled)
     , m_offset(src->m_offset) {}
 
@@ -73,7 +74,10 @@ void TKeyframeData::setKeyframes(std::set<Position> positions, TXsheet *xsh,
     if (pegbar->isKeyframe(row)) {
       Position p(row - r0, col - c0);
       TStageObject::Keyframe k = pegbar->getKeyframe(row);
-      m_keyData[p]             = k;
+      TPointD center, offset;
+      pegbar->getCenterAndOffset(center, offset);
+      m_keyData[p]    = k;
+      m_centerData[p] = CenterInfo(center, offset);
     }
   }
 }
@@ -99,7 +103,7 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     if (itL == lastRowCol.end())
       lastRowCol.insert(std::pair<int, int>(it2->second, it2->first));
     else
-      itL->second = c0;
+      itL->second = it2->first;
   }
 
   XsheetViewer *viewer = TApp::instance()->getCurrentXsheetViewer();
@@ -126,6 +130,10 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     double e0, e1;
     pegbar->getKeyframeRange(kF, kL);
     pegbar->setKeyframeWithoutUndo(row, it->second);
+    CenterData::const_iterator centerIt = m_centerData.find(pos);
+    if (centerIt != m_centerData.end())
+      pegbar->setCenterAndOffset(centerIt->second.first,
+                                 centerIt->second.second);
 
     std::map<int, int>::iterator itF = firstRowCol.find(col);
     std::map<int, int>::iterator itL = lastRowCol.find(col);
