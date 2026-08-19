@@ -18,6 +18,10 @@
 // why (it would be included anyway though)
 #include <math.h>
 
+#include <QDateTime>
+#include <QProcess>
+#include <QStringList>
+
 // Common includes
 #include "./quantel/tiio_quantel.h"
 #include "./sgi/tiio_sgi.h"
@@ -36,6 +40,7 @@
 #include "./tzl/tiio_tzl.h"
 #include "./tzm/tiio_tzm.h"
 #include "./svg/tiio_svg.h"
+#include "./ffmpeg/tiio_webp.h"
 #include "./ffmpeg/tiio_gif.h"
 #include "./ffmpeg/tiio_webm.h"
 #include "./ffmpeg/tiio_mp4.h"
@@ -87,6 +92,48 @@
 #include "./mov/tiio_mov_proxy.h"
 #include "./3gp/tiio_3gp_proxy.h"
 #endif
+
+namespace {
+
+bool hasFFmpegDecoder(const QString &decoderName) {
+  // Cache with reload every hour, matching Ffmpeg::checkFormat().
+  static QString cachedDecoders;
+  static QDateTime lastCheck;
+
+  const QDateTime now = QDateTime::currentDateTime();
+  if (cachedDecoders.isEmpty() || lastCheck.secsTo(now) > 3600) {
+    QStringList args;
+    args << "-hide_banner" << "-decoders";
+
+    QProcess ffmpeg;
+    ThirdParty::runFFmpeg(ffmpeg, args);
+    if (!ffmpeg.waitForFinished(8000) ||
+        ffmpeg.exitStatus() != QProcess::NormalExit || ffmpeg.exitCode() != 0) {
+      ffmpeg.kill();
+      ffmpeg.waitForFinished(1000);
+      return false;
+    }
+
+    cachedDecoders =
+        ffmpeg.readAllStandardError() + ffmpeg.readAllStandardOutput();
+    ffmpeg.close();
+    lastCheck = now;
+  }
+
+  const QStringList lines = cachedDecoders.split('\n');
+  for (const QString &line : lines) {
+    const QStringList columns =
+        line.simplified().split(' ', Qt::SkipEmptyParts);
+    if (columns.size() >= 2 &&
+        columns.at(1).compare(decoderName, Qt::CaseInsensitive) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+}  // namespace
 
 //-------------------------------------------------------------------
 
@@ -221,8 +268,12 @@ void initImageIo(bool lightVersion) {
       TFileType::declare("apng", TFileType::RASTER_LEVEL);
       Tiio::defineWriterProperties("apng", new Tiio::APngWriterProperties());
     }
-    TLevelReader::define("webp", TLevelReaderFFmpeg::create);
-    TFileType::declare("webp", TFileType::RASTER_LEVEL);
+    // Still WebP only requires a WebP decoder. Animated WebP support follows
+    // the demuxing and decoding capabilities of the selected FFmpeg build.
+    if (hasFFmpegDecoder("webp")) {
+      TLevelReader::define("webp", TLevelReaderWebP::create);
+      TFileType::declare("webp", TFileType::RASTER_LEVEL);
+    }
     TLevelReader::define("ffvideo", TLevelReaderFFmpeg::create);
     TFileType::declare("ffvideo", TFileType::RASTER_LEVEL);
   }
