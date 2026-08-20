@@ -261,8 +261,20 @@ void ToolOptionControlBuilder::visit(TIntProperty *p) {
 //-----------------------------------------------------------------------------
 
 void ToolOptionControlBuilder::visit(TBoolProperty *p) {
-  ToolOptionCheckbox *control = new ToolOptionCheckbox(m_tool, p, m_toolHandle);
-  hLayout()->addWidget(control, 0);
+  ToolOptionControl *control;
+  QWidget *widget;
+  if (p->getId() == "FillOnlySavebox") {
+    ToolOptionSaveboxButton *saveboxControl =
+        new ToolOptionSaveboxButton(m_tool, p, m_toolHandle);
+    control = saveboxControl;
+    widget  = saveboxControl;
+  } else {
+    ToolOptionCheckbox *checkbox =
+        new ToolOptionCheckbox(m_tool, p, m_toolHandle);
+    control = checkbox;
+    widget  = checkbox;
+  }
+  hLayout()->addWidget(widget, 0);
 
   m_panel->addControl(control);
   hLayout()->addSpacing(5);

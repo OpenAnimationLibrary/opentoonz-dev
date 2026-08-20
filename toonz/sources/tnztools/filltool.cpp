@@ -24,6 +24,8 @@
 #include "tproperty.h"
 #include "tenv.h"
 #include "tools/stylepicker.h"
+#include "setsaveboxtool.h"
+#include "fillsaveboxcommands.h"
 
 #include "toonz/tstageobject.h"
 #include "toonz/dpiscale.h"
@@ -89,6 +91,35 @@ TEnv::IntVar FillOnlySavebox("InknpaintFillOnlySavebox", -1);
 //-----------------------------------------------------------------------------
 
 namespace {
+
+class FitSaveboxUndo final : public TToolUndo {
+  TRect m_oldSavebox;
+  TRect m_newSavebox;
+
+  void apply(const TRect &savebox) const {
+    TToonzImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+    image->setSavebox(savebox);
+    TTool::Application *app = TTool::getApplication();
+    if (app) app->getCurrentXsheet()->notifyXsheetChanged();
+    notifyImageChanged();
+  }
+
+public:
+  FitSaveboxUndo(const TRect &oldSavebox, const TRect &newSavebox,
+                 TXshSimpleLevel *level, const TFrameId &fid)
+      : TToolUndo(level, fid)
+      , m_oldSavebox(oldSavebox)
+      , m_newSavebox(newSavebox) {}
+
+  void undo() const override { apply(m_oldSavebox); }
+  void redo() const override { apply(m_newSavebox); }
+  int getSize() const override { return sizeof(*this); }
+  QString getToolName() override {
+    return QObject::tr("Fit Savebox to Drawing");
+  }
+  int getHistoryType() override { return HistoryType::FillTool; }
+};
 
 inline int vectorFill(const TVectorImageP &img, const std::wstring &type,
                       const TPointD &point, int style, bool emptyOnly = false) {
@@ -1999,9 +2030,12 @@ FillTool::FillTool(int targetType)
     , m_autopaintLines("Autopaint Lines", true)
     , m_referFill("Refer Fill", false)
     , m_extendFill("Extend Fill", true)
-    , m_fillOnlySavebox("Savebox", false) {
+    , m_fillOnlySavebox("Savebox", false)
+    , m_setSaveboxTool(nullptr)
+    , m_editSavebox(false) {
   m_areaFillTool       = new AreaFillTool(this);
   m_normalLineFillTool = new NormalLineFillTool(this);
+  if (targetType == TTool::ToonzImage) m_setSaveboxTool = new SetSaveboxTool(this);
 
   bind(targetType);
   m_prop.bind(m_fillType);
@@ -2050,7 +2084,67 @@ FillTool::FillTool(int targetType)
 }
 //-----------------------------------------------------------------------------
 
+void FillTool::setSaveboxEditMode(bool enabled) {
+  if (m_targetType != TTool::ToonzImage || !m_setSaveboxTool) enabled = false;
+  if (m_editSavebox == enabled) return;
+  m_editSavebox = enabled;
+  resetMulti(true);
+  invalidate();
+  if (getApplication() && getApplication()->getCurrentTool())
+    getApplication()->getCurrentTool()->notifyToolChanged();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FillTool::fitSaveboxToDrawing() {
+  if (m_targetType != TTool::ToonzImage) return false;
+  TToonzImageP image = getImage(true);
+  if (!image || !image->getRaster()) return false;
+
+  TRect oldSavebox = image->getSavebox();
+  TRect fittedSavebox;
+  TRop::computeBBox(image->getRaster(), fittedSavebox);
+  if (oldSavebox == fittedSavebox) return false;
+
+  TTool::Application *app = getApplication();
+  TXshSimpleLevel *level =
+      app && app->getCurrentLevel() ? app->getCurrentLevel()->getSimpleLevel()
+                                    : nullptr;
+  if (!level) return false;
+
+  image->setSavebox(fittedSavebox);
+  level->setDirtyFlag(true);
+  TUndoManager::manager()->add(new FitSaveboxUndo(
+      oldSavebox, fittedSavebox, level, getCurrentFid()));
+  notifyImageChanged();
+  invalidate();
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+namespace FillSaveboxCommands {
+bool isEditMode(TTool *tool) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  return fillTool && fillTool->isSaveboxEditMode();
+}
+
+void setEditMode(TTool *tool, bool enabled) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  if (fillTool) fillTool->setSaveboxEditMode(enabled);
+}
+
+bool fitToDrawing(TTool *tool) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  return fillTool && fillTool->fitSaveboxToDrawing();
+}
+}  // namespace FillSaveboxCommands
+
+//-----------------------------------------------------------------------------
+
 int FillTool::getCursorId() const {
+  if (m_editSavebox && m_setSaveboxTool)
+    return m_setSaveboxTool->getCursorId(m_mousePos);
   int ret;
   if (m_colorType.getValue() == LINES)
     ret = ToolCursor::FillCursorL;
@@ -2244,6 +2338,10 @@ FillParameters FillTool::getFillParameters() const {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonDown(pos);
+    return;
+  }
   m_isAltPressed = e.isAltPressed();
   if (m_isAltPressed)
     Preferences::instance()->setValue(PreferencesItemId::DefRegionWithPaint,
@@ -2321,6 +2419,7 @@ void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDoubleClick(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox) return;
   if (m_fillType.getValue() != NORMALFILL) {
     buildFillInfo(getFillParameters());
     m_areaFillTool->leftButtonDoubleClick(pos, e);
@@ -2331,6 +2430,11 @@ void FillTool::leftButtonDoubleClick(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonDrag(pos);
+    invalidate();
+    return;
+  }
   // Area mode
   if (m_fillType.getValue() != NORMALFILL) {
     m_areaFillTool->leftButtonDrag(pos, e);
@@ -2381,6 +2485,11 @@ void FillTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonUp(pos);
+    invalidate();
+    return;
+  }
   FillParameters params = getFillParameters();
   // Area mode
   if (m_fillType.getValue() != NORMALFILL) {
@@ -2418,6 +2527,10 @@ void FillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
 
 bool FillTool::keyDown(QKeyEvent *e) {
   if (e && e->key() == Qt::Key_Escape) {
+    if (m_editSavebox) {
+      setSaveboxEditMode(false);
+      return true;
+    }
     if (m_fillType.getValue() != NORMALFILL)
       m_areaFillTool->resetMulti();
     else
@@ -2584,8 +2697,12 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
 //-----------------------------------------------------------------------------
 
 void FillTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
-  if (m_fillType.getValue() != NORMALFILL) m_areaFillTool->mouseMove(pos, e);
   m_mousePos = pos;
+  if (m_editSavebox) {
+    invalidate();
+    return;
+  }
+  if (m_fillType.getValue() != NORMALFILL) m_areaFillTool->mouseMove(pos, e);
 }
 
 //-----------------------------------------------------------------------------
@@ -2623,6 +2740,10 @@ void FillTool::onFrameSwitched() {
 //-----------------------------------------------------------------------------
 
 void FillTool::draw() {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->draw();
+    return;
+  }
   if (m_fillOnlySavebox.getValue()) {
     TToonzImageP ti = (TToonzImageP)getImage(false);
     if (ti) {
@@ -2836,6 +2957,7 @@ void FillTool::onActivate() {
 //-----------------------------------------------------------------------------
 
 void FillTool::onDeactivate() {
+  m_editSavebox = false;
   disconnect(TTool::m_application->getCurrentFrame(),
              &TFrameHandle::frameSwitched, this, &FillTool::onFrameSwitched);
   disconnect(TTool::m_application->getCurrentScene(),
