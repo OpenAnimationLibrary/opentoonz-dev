@@ -124,6 +124,7 @@ public:
   ~TUndoManagerImp() {}
 
   void add(TUndo *undo);
+  void discardRedoHistory();
 
 public:
   static struct ManagerPtr {
@@ -140,7 +141,6 @@ public:
 
 private:
   void doAdd(TUndo *undo);
-  void discardRedoHistory();
 };
 
 //=============================================================================
@@ -268,7 +268,7 @@ bool TUndoManager::undo() {
     if (!m_imp->m_skipped) break;
   }
 
-  m_imp->m_skipped   = false;
+  m_imp->m_skipped    = false;
   m_imp->m_inUndoRedo = false;
   return changed;
 }
@@ -292,7 +292,7 @@ bool TUndoManager::redo() {
     if (!m_imp->m_skipped) break;
   }
 
-  m_imp->m_skipped   = false;
+  m_imp->m_skipped    = false;
   m_imp->m_inUndoRedo = false;
   return changed;
 }
