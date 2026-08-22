@@ -4,6 +4,8 @@
 #define TOONZSCENE_H
 
 #include <memory>
+#include <string>
+#include <vector>
 
 // TnzCore includes
 #include "tfilepath.h"
@@ -99,10 +101,19 @@ public:
 
   void clear();  //!< Clears the scene.
 
+  // The mutable-path overload allows save-time compatibility safeguards to
+  // redirect a save to a protected copy while keeping the caller's path in
+  // sync. The const overload preserves the existing API for callers that do
+  // not need path redirection.
   void save(
-      const TFilePath &path, TXsheet *subxsheet = 0,
+      TFilePath &path, TXsheet *subxsheet = 0,
       bool saveSceneIcon = true);  //!< Saves the scene (or a sub-xsheet) at the
                                     //!  specified path.
+  void save(const TFilePath &path, TXsheet *subxsheet = 0,
+            bool saveSceneIcon = true) {
+    TFilePath mutablePath(path);
+    save(mutablePath, subxsheet, saveSceneIcon);
+  }
   void loadTnzFile(
       const TFilePath &path);  //!< Loads scene data from file, \a excluding the
                                //!  associated project and the scene resources.
@@ -112,6 +123,17 @@ public:
       bool withProgressDialog = false);  //!< Loads the scene resources.
   void load(const TFilePath &path,
             bool withProgressDialog = false);  //!  Loads a scene from file.
+
+  // Unknown top-level scene tags are skipped during load rather than treated
+  // as malformed data. They are recorded so saving can warn that the skipped
+  // data cannot be round-tripped by this version of OpenToonz.
+  bool hasUnrecognizedSceneData() const {
+    return !m_unrecognizedSceneTags.empty();
+  }
+  const std::vector<std::string> &getUnrecognizedSceneTags() const {
+    return m_unrecognizedSceneTags;
+  }
+  void clearUnrecognizedSceneData() { m_unrecognizedSceneTags.clear(); }
 
   /*! \return   The \a coded path to be used for import. */
 
@@ -286,6 +308,9 @@ private:
                      // is used when loading PSD levels, for defining whether to
                      // convert a layerId in the path to the layer name. See
                      // TXshSimpleLevel::load().
+
+  std::vector<std::string> m_unrecognizedSceneTags;
+  std::string m_loadedSceneGenerator;
 
 private:
   // noncopyable
