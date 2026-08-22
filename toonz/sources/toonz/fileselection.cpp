@@ -33,6 +33,7 @@
 #include "toonz/palettecontroller.h"
 #include "toonz/tpalettehandle.h"
 #include "toonz/tscenehandle.h"
+#include "toonz/txshsimplelevel.h"
 
 // TnzCore includes
 #include "tfiletype.h"
@@ -212,6 +213,53 @@ private:
 //=============================================================================
 TPaletteP viewedPalette;
 
+//-----------------------------------------------------------------------------
+
+bool isSimpleLevelPath(const TFilePath &path) {
+  const TFileType::Type fileType = TFileType::getInfo(path);
+  return fileType == TFileType::RASTER_LEVEL ||
+         fileType == TFileType::VECTOR_LEVEL ||
+         fileType == TFileType::CMAPPED_LEVEL ||
+         fileType == TFileType::MESH_LEVEL;
+}
+
+//-----------------------------------------------------------------------------
+
+void appendAssociatedPath(std::vector<TFilePath> &paths,
+                          const TFilePath &path) {
+  if (!TFileStatus(path).doesExist()) return;
+  if (std::find(paths.begin(), paths.end(), path) == paths.end())
+    paths.push_back(path);
+}
+
+//-----------------------------------------------------------------------------
+
+void appendAssociatedLevelFiles(const TFilePath &levelPath,
+                                std::vector<TFilePath> &paths) {
+  if (!isSimpleLevelPath(levelPath)) return;
+
+  const std::string type = levelPath.getType();
+  if (type == "tlv") {
+    appendAssociatedPath(
+        paths, levelPath.getParentDir() +
+                   TFilePath(levelPath.getWideName() + L".tpl"));
+  } else if (type == "tzp" || type == "tzu") {
+    appendAssociatedPath(
+        paths, levelPath.getParentDir() +
+                   TFilePath(levelPath.getWideName() + L".plt"));
+  }
+
+  const QStringList hookFiles = TXshSimpleLevel::getHookFiles(levelPath);
+  for (const QString &hookFile : hookFiles) {
+    appendAssociatedPath(
+        paths, levelPath.getParentDir() +
+                   TFilePath(hookFile.toStdWString()));
+  }
+
+  appendAssociatedPath(
+      paths, levelPath.getParentDir() + (levelPath.getName() + "_files"));
+}
+
 }  // namespace
 
 //------------------------------------------------------------------------
@@ -306,25 +354,50 @@ void FileSelection::deleteFiles() {
   getSelectedFiles(files);
   if (files.empty()) return;
 
-  QString question;
-  if (files.size() == 1) {
-    TFileStatus fs(files[0]);
-    if (fs.isDirectory()) {
-      if (!fs.isWritable()) return;
-      question = QObject::tr("Deleting folder %1. Are you sure?")
-                     .arg(files[0].getQString());
-    } else {
-      question = QObject::tr("Deleting %1. Are you sure?")
-                     .arg(QString::fromStdWString(files[0].getWideString()));
-    }
-  } else {
-    question = QObject::tr("Deleting %n files. Are you sure?", "",
-                           static_cast<int>(files.size()));
-  }
+  std::vector<TFilePath> associatedFiles;
+  for (const TFilePath &fp : files)
+    appendAssociatedLevelFiles(fp, associatedFiles);
 
-  int ret =
-      DVGui::MsgBox(question, QObject::tr("Delete"), QObject::tr("Cancel"), 1);
-  if (ret == 2 || ret == 0) return;
+  bool deleteAssociatedFiles = false;
+  QString question;
+  if (!associatedFiles.empty()) {
+    if (files.size() == 1) {
+      question = QObject::tr(
+                     "Deleting %1. Associated level files were found. Do you "
+                     "want to delete them too?")
+                     .arg(QString::fromStdWString(files[0].getWideString()));
+    } else {
+      question = QObject::tr(
+          "Deleting %n files. Associated level files were found. Do you want "
+          "to delete them too?",
+          "", static_cast<int>(files.size()));
+    }
+
+    int ret = DVGui::MsgBox(question, QObject::tr("Delete All"),
+                            QObject::tr("Keep Associated Files"),
+                            QObject::tr("Cancel"), 1);
+    if (ret == 3 || ret == 0) return;
+    deleteAssociatedFiles = (ret == 1);
+  } else {
+    if (files.size() == 1) {
+      TFileStatus fs(files[0]);
+      if (fs.isDirectory()) {
+        if (!fs.isWritable()) return;
+        question = QObject::tr("Deleting folder %1. Are you sure?")
+                       .arg(files[0].getQString());
+      } else {
+        question = QObject::tr("Deleting %1. Are you sure?")
+                       .arg(QString::fromStdWString(files[0].getWideString()));
+      }
+    } else {
+      question = QObject::tr("Deleting %n files. Are you sure?", "",
+                             static_cast<int>(files.size()));
+    }
+
+    int ret = DVGui::MsgBox(question, QObject::tr("Delete"),
+                            QObject::tr("Cancel"), 1);
+    if (ret == 2 || ret == 0) return;
+  }
 
   for (const TFilePath &fp : files) {
     if (TFileStatus(fp).isDirectory())
@@ -334,6 +407,18 @@ void FileSelection::deleteFiles() {
       IconGenerator::instance()->remove(fp);
     }
   }
+
+  if (deleteAssociatedFiles) {
+    for (const TFilePath &fp : associatedFiles) {
+      TFileStatus fs(fp);
+      if (!fs.doesExist()) continue;
+      if (fs.isDirectory())
+        QFile(fp.getQString()).moveToTrash();
+      else
+        TSystem::moveFileToRecycleBin(fp);
+    }
+  }
+
   selectNone();
   FileBrowser::refreshFolder(files[0].getParentDir());
 }
