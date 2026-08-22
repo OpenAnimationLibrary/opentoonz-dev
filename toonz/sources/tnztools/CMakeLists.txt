@@ -115,7 +115,6 @@ set(SOURCES
     tooloptionscontrols.cpp
     tooloptions.cpp
     vectorerasertool.cpp
-    vectorhidlinetool.cpp
     vectorselectiontool.cpp
     vectortapetool.cpp
     viewtools.cpp

@@ -241,9 +241,6 @@ public:
 
   // Visualization  tab
   bool getShow0ThickLines() const { return getBoolValue(show0ThickLines); }
-  bool getShowHideLineStrokes() const {
-    return getBoolValue(showHideLineStrokes);
-  }
   bool getRegionAntialias() const { return getBoolValue(regionAntialias); }
   bool getRasterizeAntialias() const {
     return getBoolValue(rasterizeAntialias);

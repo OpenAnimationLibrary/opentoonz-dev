@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "tcurveutil.h"
-#include "thidelinesegment.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -910,42 +909,7 @@ void TVectorImage::Imp::eraseIntersection(int index) {
 }
 //-----------------------------------------------------------------------------
 
-static void findNearestIntersection(VIList<Intersection> &interList,
-                                    const vector<VIStroke *> &strokeArray,
-                                    int strokeSize);
-
-static void injectHideLineFillBoundaries(IntersectionData &intData,
-                                         const vector<VIStroke *> &strokeArray,
-                                         int strokeSize, bool isVectorized) {
-  for (int i = 0; i < strokeSize; ++i) {
-    const std::vector<THideLineSegment> &hideSegs =
-        strokeArray[i]->m_hideLineSegments;
-    if (getHiddenModeRanges(hideSegs).empty()) continue;
-
-    strokeArray[i]->m_isNewForFill = true;
-
-    std::vector<double> boundaryWs;
-    for (const THideLineSegment &seg : hideSegs) {
-      if (seg.m_mode != THideLineMode::Hidden) continue;
-      if (seg.m_w0 > 1e-6) boundaryWs.push_back(seg.m_w0);
-      if (seg.m_w1 < 1.0 - 1e-6) boundaryWs.push_back(seg.m_w1);
-    }
-    std::sort(boundaryWs.begin(), boundaryWs.end());
-    boundaryWs.erase(std::unique(boundaryWs.begin(), boundaryWs.end(),
-                                 [](double a, double b) {
-                                   return areAlmostEqual(a, b, 1e-4);
-                                 }),
-                     boundaryWs.end());
-
-    for (double w : boundaryWs)
-      addIntersection(intData, strokeArray, i, i, DoublePair(w, w), strokeSize,
-                      isVectorized);
-  }
-}
-
-static void findNearestIntersection(VIList<Intersection> &interList,
-                                    const vector<VIStroke *> &strokeArray,
-                                    int strokeSize) {
+static void findNearestIntersection(VIList<Intersection> &interList) {
   Intersection *p1;
   IntersectedStroke *p2;
 
@@ -971,14 +935,6 @@ static void findNearestIntersection(VIList<Intersection> &interList,
             double delta = versus * (pp2->m_edge.m_w0 - p2->m_edge.m_w0);
 
             if (delta > 0 && delta < minDelta) {
-              if (p2->m_edge.m_index >= 0 &&
-                  p2->m_edge.m_index < strokeSize &&
-                  p2->m_edge.m_index == pp2->m_edge.m_index &&
-                  isIntervalFullyHiddenForFill(
-                      p2->m_edge.m_w0, pp2->m_edge.m_w0,
-                      strokeArray[p2->m_edge.m_index]->m_hideLineSegments))
-                continue;
-
               p1Res    = pp1;
               p2Res    = pp2;
               minDelta = delta;
@@ -2286,7 +2242,6 @@ void TVectorImage::Imp::findIntersections() {
   for (i = 0; i < strokeSize; i++) {
     TStroke *s1 = strokeArray[i]->m_s;
     if (!strokeArray[i]->m_isNewForFill || strokeArray[i]->m_isPoint) continue;
-    if (!strokeParticipatesInFill(strokeArray[i]->m_hideLineSegments)) continue;
 
     TRectD bBox   = s1->getBBox();
     double thick2 = s1->getThickPoint(0).thick *
@@ -2318,7 +2273,6 @@ void TVectorImage::Imp::findIntersections() {
   for (i = 0; i < strokeSize; i++) {
     TStroke *s1 = strokeArray[i]->m_s;
     if (strokeArray[i]->m_isPoint) continue;
-    if (!strokeParticipatesInFill(strokeArray[i]->m_hideLineSegments)) continue;
     for (j = i; j < strokeSize /*&& (strokeArray[i]->getBBox().x1>=
                                   strokeArray[j]->getBBox().x0)*/
          ;
@@ -2329,8 +2283,6 @@ void TVectorImage::Imp::findIntersections() {
           !(strokeArray[i]->m_isNewForFill || strokeArray[j]->m_isNewForFill))
         continue;
       if (strokeArray[i]->m_groupId != strokeArray[j]->m_groupId) continue;
-      if (!strokeParticipatesInFill(strokeArray[j]->m_hideLineSegments))
-        continue;
 
       vector<DoublePair> parIntersections;
       if (s1->getBBox().overlaps(s2->getBBox())) {
@@ -2366,14 +2318,11 @@ void TVectorImage::Imp::findIntersections() {
   for (i = 0; i < strokeSize; i++) {
     TStroke *s1 = strokeArray[i]->m_s;
     if (strokeArray[i]->m_isPoint) continue;
-    if (!strokeParticipatesInFill(strokeArray[i]->m_hideLineSegments)) continue;
     for (j = i; j < strokeSize; j++) {
       if (strokeArray[i]->m_groupId != strokeArray[j]->m_groupId) continue;
 
       TStroke *s2 = strokeArray[j]->m_s;
       if (strokeArray[j]->m_isPoint) continue;
-      if (!strokeParticipatesInFill(strokeArray[j]->m_hideLineSegments))
-        continue;
       if (!(strokeArray[i]->m_isNewForFill || strokeArray[j]->m_isNewForFill))
         continue;
 
@@ -2468,10 +2417,7 @@ int TVectorImage::Imp::computeIntersections() {
 
   findIntersections();
 
-  injectHideLineFillBoundaries(intData, m_strokes, strokeSize,
-                               m_autocloseTolerance < 0);
-
-  findNearestIntersection(intData.m_intList, m_strokes, strokeSize);
+  findNearestIntersection(intData.m_intList);
 
   // for (it1=intData.m_intList.begin(); it1!=intData.m_intList.end();) //la
   // faccio qui, e non nella eraseIntersection. vedi commento li'.

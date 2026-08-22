@@ -169,7 +169,6 @@ set(SOURCES
     ../common/tvectorimage/tsegmentadjuster.cpp
     ../common/tvectorimage/tsweepboundary.cpp
     ../common/tvectorimage/tvectorimage.cpp
-    ../common/tvectorimage/thidelinesegment.cpp
     ../common/tgl/tgl.cpp
     ../common/tgl/tstencilcontrol.cpp
     ../common/tgl/tgldisplaylistsmanager.cpp

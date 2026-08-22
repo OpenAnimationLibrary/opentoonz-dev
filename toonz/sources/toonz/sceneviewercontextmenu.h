@@ -6,7 +6,6 @@
 #include <QMenu>
 #include "tgeometry.h"
 
-class QMenuBar;
 class TStageObjectId;
 class SceneViewer;
 class TXshColumn;
@@ -74,11 +73,5 @@ public slots:
   void deactivate();
 };
 }  // namespace ViewerIndicatorToggleGui
-
-namespace HideLineStrokeGui {
-void syncCommandActionLabel();
-void setShowEnabled(bool on, SceneViewer *viewer = nullptr);
-void ensureViewMenuEntry(QMenuBar *menuBar);
-}  // namespace HideLineStrokeGui
 
 #endif

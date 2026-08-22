@@ -7,7 +7,6 @@
 #include "tvectorimage.h"
 #include "tregion.h"
 #include "tcurves.h"
-#include "thidelinesegment.h"
 
 //-----------------------------------------------------------------------------
 
@@ -67,7 +66,6 @@ public:
   bool m_isNewForFill;
   std::list<TEdge *> m_edgeList;
   TGroupId m_groupId;
-  std::vector<THideLineSegment> m_hideLineSegments;
 
   VIStroke(TStroke *s, const TGroupId &StrokeId)
       : m_s(s), m_isPoint(false), m_isNewForFill(true), m_groupId(StrokeId){};
