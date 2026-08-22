@@ -14,6 +14,16 @@ Before merging a pull request:
 - [ ] Consider whether a change that benefits one workflow could disadvantage another workflow.
 - [ ] Where workflows may conflict, consider making the behavior **optional or user-selectable**, preferably through user profiles or appropriate settings.
 
+## Exceptions and Escalation
+
+A checklist conflict does not automatically reject a change. It identifies a decision that requires explicit approval.
+
+Changes that break existing usage, compatibility, licensing expectations, or other policy may require maintainer or owner approval before acceptance. Approval may take time; identify these conflicts early.
+
+Major changes may require a working demonstration in OT-Dev or a separate fork before approval. Use the demonstration to compare benefits, regressions, migration costs, and affected workflows.
+
+Do not treat an exception as implicit approval. Record the exception, its impact, and the decision that permits it.
+
 ## 2. License Review
 
 - [ ] Check whether the PR introduces code, libraries, assets, algorithms, or other material that could conflict with OpenToonz's existing license.
@@ -90,4 +100,4 @@ This checklist is a practical restatement of the development policy described in
 
 > **PR can be merged if it will not interfere existing usages.**
 
-A separate checklist should cover project policy for **AI-assisted contributions**.
+A separate checklist covers project policy for **AI-assisted contributions**.
