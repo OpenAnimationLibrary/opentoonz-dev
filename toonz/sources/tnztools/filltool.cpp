@@ -24,6 +24,8 @@
 #include "tproperty.h"
 #include "tenv.h"
 #include "tools/stylepicker.h"
+#include "setsaveboxtool.h"
+#include "fillsaveboxcommands.h"
 
 #include "toonz/tstageobject.h"
 #include "toonz/dpiscale.h"
@@ -83,10 +85,41 @@ TEnv::IntVar FillCloseGap("InknpaintFillCloseGap", 0);
 TEnv::IntVar FillReferFill("InknpaintFillReferFill", 0);
 TEnv::IntVar FillRange("InknpaintFillRange", 0);
 TEnv::IntVar FillExtend("InknpaintFillExtend", 0);
+// -1 means the Fill Tool has not established its own savebox state yet.
+TEnv::IntVar FillOnlySavebox("InknpaintFillOnlySavebox", -1);
 
 //-----------------------------------------------------------------------------
 
 namespace {
+
+class FitSaveboxUndo final : public TToolUndo {
+  TRect m_oldSavebox;
+  TRect m_newSavebox;
+
+  void apply(const TRect &savebox) const {
+    TToonzImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+    image->setSavebox(savebox);
+    TTool::Application *app = TTool::getApplication();
+    if (app) app->getCurrentXsheet()->notifyXsheetChanged();
+    notifyImageChanged();
+  }
+
+public:
+  FitSaveboxUndo(const TRect &oldSavebox, const TRect &newSavebox,
+                 TXshSimpleLevel *level, const TFrameId &fid)
+      : TToolUndo(level, fid)
+      , m_oldSavebox(oldSavebox)
+      , m_newSavebox(newSavebox) {}
+
+  void undo() const override { apply(m_oldSavebox); }
+  void redo() const override { apply(m_newSavebox); }
+  int getSize() const override { return sizeof(*this); }
+  QString getToolName() override {
+    return QObject::tr("Fit Savebox to Drawing");
+  }
+  int getHistoryType() override { return HistoryType::FillTool; }
+};
 
 inline int vectorFill(const TVectorImageP &img, const std::wstring &type,
                       const TPointD &point, int style, bool emptyOnly = false) {
@@ -842,7 +875,7 @@ void fillAreaWithUndo(const TImageP &img, const TRaster32P &ref,
                       const TRectD &area, TStroke *stroke, bool onlyUnfilled,
                       std::wstring colorType, TXshSimpleLevel *sl,
                       const TFrameId &fid, int cs, bool autopaintLines,
-                      bool fillAllautoPaintLines) {
+                      bool fillAllautoPaintLines, bool fillOnlySavebox) {
   TRectD selArea = stroke ? stroke->getBBox().enlarge(1) : area;
   if (TToonzImageP ti = img) {
     // Expand savebox by 1 so rectfill of entire image does a single fill
@@ -866,14 +899,15 @@ void fillAreaWithUndo(const TImageP &img, const TRaster32P &ref,
 
     TPoint offs(0, 0);
     TRect rasSaveBox;
-    TRasterCM32P raux;
-    if (Preferences::instance()->getFillOnlySavebox()) {
+    TRasterCM32P raux = ti->getRaster();
+    if (fillOnlySavebox) {
       TRectD bbox = ti->getBBox();
-      rasSaveBox  = convert(bbox);
-      offs        = rasSaveBox.getP00();
-      raux        = ti->getRaster()->extract(rasSaveBox);
-    } else
-      raux = ti->getRaster();
+      if (!bbox.isEmpty()) {
+        rasSaveBox = convert(bbox);
+        offs       = rasSaveBox.getP00();
+        raux       = ti->getRaster()->extract(rasSaveBox);
+      }
+    }
 
     TRect auxStrokeBox = rasStrokeBox - offs;
     TRect auxBounds    = ras->getBounds();
@@ -1063,7 +1097,7 @@ void doRefFill(const TImageP &img, const TRaster32P &refImg, const TPointD &pos,
     TPoint offs(0, 0);
     TRasterCM32P ras = ti->getRaster();
 
-    if (Preferences::instance()->getFillOnlySavebox()) {
+    if (params.m_fillOnlySavebox) {
       TRectD bbox = ti->getBBox();
       if (!bbox.isEmpty()) {
         TRect ibbox = convert(bbox);
@@ -1122,8 +1156,8 @@ void doRefFill(const TImageP &img, const TRaster32P &refImg, const TPointD &pos,
           t->m_rasterBounds = t->m_rasterBounds + offs;
         }
       TUndoManager::manager()->add(new RasterFillUndo(
-          tileSet, params, sl, fid,
-          Preferences::instance()->getFillOnlySavebox(), refImg.getPointer()));
+          tileSet, params, sl, fid, params.m_fillOnlySavebox,
+          refImg.getPointer()));
     }
 
     // Instead of updateFrame:
@@ -1238,13 +1272,15 @@ class MultiAreaFiller final : public SequencePainter {
   TVectorImageP m_firstImage, m_lastImage;
   int m_styleIndex;
   bool m_autopaintLines;
+  bool m_fillOnlySavebox;
   RefImgTable m_refImgTable;
   bool m_fillAllautoPaintLines;
 
 public:
   MultiAreaFiller(RefImgTable refImgTable, const TRectD &firstRect,
                   const TRectD &lastRect, bool unfilledOnly,
-                  std::wstring colorType, int styleIndex, bool autopaintLines)
+                  std::wstring colorType, int styleIndex, bool autopaintLines,
+                  bool fillOnlySavebox)
       : m_firstRect(firstRect)
       , m_lastRect(lastRect)
       , m_unfilledOnly(unfilledOnly)
@@ -1253,6 +1289,7 @@ public:
       , m_lastImage()
       , m_styleIndex(styleIndex)
       , m_autopaintLines(autopaintLines)
+      , m_fillOnlySavebox(fillOnlySavebox)
       , m_refImgTable(std::move(refImgTable)) {}
 
   ~MultiAreaFiller() {
@@ -1263,13 +1300,14 @@ public:
   MultiAreaFiller(RefImgTable &refImgTable, TStroke *&firstStroke,
                   TStroke *&lastStroke, bool unfilledOnly,
                   std::wstring colorType, int styleIndex, bool autopaintLines,
-                  bool fillAllautoPaintLines)
+                  bool fillAllautoPaintLines, bool fillOnlySavebox)
       : m_firstRect()
       , m_lastRect()
       , m_unfilledOnly(unfilledOnly)
       , m_colorType(colorType)
       , m_styleIndex(styleIndex)
       , m_autopaintLines(autopaintLines)
+      , m_fillOnlySavebox(fillOnlySavebox)
       , m_refImgTable(std::move(refImgTable))
       , m_fillAllautoPaintLines(fillAllautoPaintLines) {
     firstStroke->addRef();
@@ -1289,18 +1327,18 @@ public:
       TRectD rect(p0.x, p0.y, p1.x, p1.y);
       fillAreaWithUndo(img, m_refImgTable[imgId], rect, 0, m_unfilledOnly,
                        m_colorType, sl, fid, m_styleIndex, m_autopaintLines,
-                       m_fillAllautoPaintLines);
+                       m_fillAllautoPaintLines, m_fillOnlySavebox);
     } else {
       if (t == 0)
         fillAreaWithUndo(img, m_refImgTable[imgId], TRectD(),
                          m_firstImage->getStroke(0), m_unfilledOnly,
                          m_colorType, sl, fid, m_styleIndex, m_autopaintLines,
-                         m_fillAllautoPaintLines);
+                         m_fillAllautoPaintLines, m_fillOnlySavebox);
       else if (t == 1)
         fillAreaWithUndo(img, m_refImgTable[imgId], TRectD(),
                          m_lastImage->getStroke(0), m_unfilledOnly, m_colorType,
                          sl, fid, m_styleIndex, m_autopaintLines,
-                         m_fillAllautoPaintLines);
+                         m_fillAllautoPaintLines, m_fillOnlySavebox);
       else
       // if(t>1)
       {
@@ -1315,7 +1353,7 @@ public:
         fillAreaWithUndo(img, m_refImgTable[imgId], TRectD(),
                          vi->getStroke(0) /*, imgloc*/, m_unfilledOnly,
                          m_colorType, sl, fid, m_styleIndex, m_autopaintLines,
-                         m_fillAllautoPaintLines);
+                         m_fillAllautoPaintLines, m_fillOnlySavebox);
       }
     }
   }
@@ -1412,6 +1450,7 @@ AreaFillTool::AreaFillTool(TTool *parent)
     , m_onion(false)
     , m_isLeftButtonPressed(false)
     , m_autopaintLines(true)
+    , m_fillOnlySavebox(false)
     , m_bckStyleId(0) {}
 
 void AreaFillTool::draw() {
@@ -1581,7 +1620,7 @@ void AreaFillTool::leftButtonDoubleClick(const TPointD &pos,
     if (m_firstFrameSelected && !slFidsPairs.empty()) {
       MultiAreaFiller filler(refImgTable, m_firstStroke, stroke, m_onlyUnfilled,
                              m_colorType, styleIndex, m_autopaintLines,
-                             m_paintAllAPs);
+                             m_paintAllAPs, m_fillOnlySavebox);
       filler.setSelectionUndo(new FillToolSelectionUndo(
           m_currCell.second, m_currCell.first, slFidsPairs[0].first,
           slFidsPairs[0].second));
@@ -1617,7 +1656,8 @@ void AreaFillTool::leftButtonDoubleClick(const TPointD &pos,
       fillAreaWithUndo(m_parent->getImage(true), refImgTable[imgId], TRectD(),
                        stroke, m_onlyUnfilled, m_colorType,
                        m_level.getPointer(), m_parent->getCurrentFid(),
-                       styleIndex, m_autopaintLines, m_paintAllAPs);
+                       styleIndex, m_autopaintLines, m_paintAllAPs,
+                       m_fillOnlySavebox);
       // fillAreaWithUndo should take on the stroke property
     }
     TTool *t = app->getCurrentTool()->getTool();
@@ -1672,7 +1712,7 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
       if (m_firstFrameSelected && !slFidsPairs.empty()) {
         MultiAreaFiller filler(refImgTable, m_firstRect, m_selectingRect,
                                m_onlyUnfilled, m_colorType, styleIndex,
-                               m_autopaintLines);
+                               m_autopaintLines, m_fillOnlySavebox);
         filler.setSelectionUndo(new FillToolSelectionUndo(
             m_currCell.second, m_currCell.first, slFidsPairs[0].first,
             slFidsPairs[0].second));
@@ -1708,7 +1748,8 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
         fillAreaWithUndo(m_parent->getImage(true), refImgTable[imgId],
                          m_selectingRect, 0, m_onlyUnfilled, m_colorType,
                          m_level.getPointer(), m_parent->getCurrentFid(),
-                         styleIndex, m_autopaintLines, m_paintAllAPs);
+                         styleIndex, m_autopaintLines, m_paintAllAPs,
+                         m_fillOnlySavebox);
       m_parent->invalidate();
       m_selectingRect.empty();
       TTool *t = app->getCurrentTool()->getTool();
@@ -1737,7 +1778,8 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
       if (m_firstFrameSelected) {
         MultiAreaFiller filler(refImgTable, m_firstStroke, stroke,
                                m_onlyUnfilled, m_colorType, styleIndex,
-                               m_autopaintLines, m_paintAllAPs);
+                               m_autopaintLines, m_paintAllAPs,
+                               m_fillOnlySavebox);
         filler.setSelectionUndo(new FillToolSelectionUndo(
             m_currCell.second, m_currCell.first, slFidsPairs[0].first,
             slFidsPairs[0].second));
@@ -1780,7 +1822,7 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
                          stroke /*, imageLocation*/, m_onlyUnfilled,
                          m_colorType, m_level.getPointer(),
                          m_parent->getCurrentFid(), styleIndex,
-                         m_autopaintLines, m_paintAllAPs);
+                         m_autopaintLines, m_paintAllAPs, m_fillOnlySavebox);
       delete stroke;
       TTool *t = app->getCurrentTool()->getTool();
       if (t) t->notifyImageChanged();
@@ -1805,13 +1847,15 @@ void AreaFillTool::onImageChanged() {
 /*-- Called when Type other than Normal is selected --*/
 bool AreaFillTool::onPropertyChanged(bool multi, bool onlyUnfilled, bool onion,
                                      Type type, std::wstring colorType,
-                                     bool autopaintLines) {
-  m_frameRange     = multi;
-  m_onlyUnfilled   = onlyUnfilled;
-  m_colorType      = colorType;
-  m_type           = type;
-  m_onion          = onion;
-  m_autopaintLines = autopaintLines;
+                                     bool autopaintLines,
+                                     bool fillOnlySavebox) {
+  m_frameRange      = multi;
+  m_onlyUnfilled    = onlyUnfilled;
+  m_colorType       = colorType;
+  m_type            = type;
+  m_onion           = onion;
+  m_autopaintLines  = autopaintLines;
+  m_fillOnlySavebox = fillOnlySavebox;
 
   if (m_frameRange) resetMulti();
 
@@ -1985,9 +2029,13 @@ FillTool::FillTool(int targetType)
     , m_firstTime(true)
     , m_autopaintLines("Autopaint Lines", true)
     , m_referFill("Refer Fill", false)
-    , m_extendFill("Extend Fill", true) {
+    , m_extendFill("Extend Fill", true)
+    , m_fillOnlySavebox("Savebox", false)
+    , m_setSaveboxTool(nullptr)
+    , m_editSavebox(false) {
   m_areaFillTool       = new AreaFillTool(this);
   m_normalLineFillTool = new NormalLineFillTool(this);
+  if (targetType == TTool::ToonzImage) m_setSaveboxTool = new SetSaveboxTool(this);
 
   bind(targetType);
   m_prop.bind(m_fillType);
@@ -2016,6 +2064,7 @@ FillTool::FillTool(int targetType)
     m_maxGapDistance.setId("MaxGapDistance");
   }
   if (targetType == TTool::ToonzImage) {
+    m_prop.bind(m_fillOnlySavebox);
     m_prop.bind(m_autopaintLines);
     m_prop.bind(m_extendFill);
     m_prop.bind(m_gapCloseDistance);
@@ -2031,10 +2080,71 @@ FillTool::FillTool(int targetType)
   m_autopaintLines.setId("AutopaintLines");
   m_gapCloseDistance.setId("GapCloseDistance");
   m_extendFill.setId("ExtendFill");
+  m_fillOnlySavebox.setId("FillOnlySavebox");
 }
 //-----------------------------------------------------------------------------
 
+void FillTool::setSaveboxEditMode(bool enabled) {
+  if (m_targetType != TTool::ToonzImage || !m_setSaveboxTool) enabled = false;
+  if (m_editSavebox == enabled) return;
+  m_editSavebox = enabled;
+  resetMulti(true);
+  invalidate();
+  if (getApplication() && getApplication()->getCurrentTool())
+    getApplication()->getCurrentTool()->notifyToolChanged();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FillTool::fitSaveboxToDrawing() {
+  if (m_targetType != TTool::ToonzImage) return false;
+  TToonzImageP image = getImage(true);
+  if (!image || !image->getRaster()) return false;
+
+  TRect oldSavebox = image->getSavebox();
+  TRect fittedSavebox;
+  TRop::computeBBox(image->getRaster(), fittedSavebox);
+  if (oldSavebox == fittedSavebox) return false;
+
+  TTool::Application *app = getApplication();
+  TXshSimpleLevel *level =
+      app && app->getCurrentLevel() ? app->getCurrentLevel()->getSimpleLevel()
+                                    : nullptr;
+  if (!level) return false;
+
+  image->setSavebox(fittedSavebox);
+  level->setDirtyFlag(true);
+  TUndoManager::manager()->add(new FitSaveboxUndo(
+      oldSavebox, fittedSavebox, level, getCurrentFid()));
+  notifyImageChanged();
+  invalidate();
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+namespace FillSaveboxCommands {
+bool isEditMode(TTool *tool) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  return fillTool && fillTool->isSaveboxEditMode();
+}
+
+void setEditMode(TTool *tool, bool enabled) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  if (fillTool) fillTool->setSaveboxEditMode(enabled);
+}
+
+bool fitToDrawing(TTool *tool) {
+  FillTool *fillTool = dynamic_cast<FillTool *>(tool);
+  return fillTool && fillTool->fitSaveboxToDrawing();
+}
+}  // namespace FillSaveboxCommands
+
+//-----------------------------------------------------------------------------
+
 int FillTool::getCursorId() const {
+  if (m_editSavebox && m_setSaveboxTool)
+    return m_setSaveboxTool->getCursorId(m_mousePos);
   int ret;
   if (m_colorType.getValue() == LINES)
     ret = ToolCursor::FillCursorL;
@@ -2138,7 +2248,7 @@ void FillTool::computeRefImgsIfNeeded(const FillParameters &params) {
   }
 
   // Calculate every refImg
-  bool fillOnlySavebox = Preferences::instance()->getFillOnlySavebox();
+  bool fillOnlySavebox = m_fillOnlySavebox.getValue();
   //  TPointD cameraDpi =
   //      app->getCurrentScene()->getScene()->getCurrentCamera()->getDpi();
   for (auto [sl, fid] : m_slFidsPairs) {
@@ -2153,12 +2263,14 @@ void FillTool::computeRefImgsIfNeeded(const FillParameters &params) {
     auto imgId            = sl->getImageId(fid, 0);
     TPointD saveboxOffset = TPointD(0, 0);
     if (fillOnlySavebox) {
-      TRectD bbox    = ti->getBBox();
-      TRect ibbox    = convert(bbox);
-      TDimension res = ti->getSize();
-      saveboxOffset  = TPointD(res.lx / 2, res.ly / 2) - bbox.getP11() / 2 -
-                      bbox.getP00() / 2;
-      raux = ti->getRaster()->extract(ibbox);
+      TRectD bbox = ti->getBBox();
+      if (!bbox.isEmpty()) {
+        TRect ibbox    = convert(bbox);
+        TDimension res = ti->getSize();
+        saveboxOffset  = TPointD(res.lx / 2, res.ly / 2) - bbox.getP11() / 2 -
+                        bbox.getP00() / 2;
+        raux = ti->getRaster()->extract(ibbox);
+      }
     }
     TRaster32P ras(raux->getSize());
     ras->clear();
@@ -2202,6 +2314,7 @@ void FillTool::updateTranslation() {
   m_autopaintLines.setQStringName(tr("Autopaint Lines"));
   m_gapCloseDistance.setQStringName(tr("Gap Close Distance:"));
   m_extendFill.setQStringName(tr("Extend Fill"));
+  m_fillOnlySavebox.setQStringName(tr("Savebox"));
 }
 
 //-----------------------------------------------------------------------------
@@ -2215,15 +2328,20 @@ FillParameters FillTool::getFillParameters() const {
   params.m_emptyOnly = m_emptyOnly.getValue();
   params.m_segment   = m_segment.getValue();
   // RefFill is not controlled params
-  params.m_minFillDepth = (int)m_fillDepth.getValue().first;
-  params.m_maxFillDepth = (int)m_fillDepth.getValue().second;
-  params.m_extendFill   = m_extendFill.getValue();
+  params.m_minFillDepth    = (int)m_fillDepth.getValue().first;
+  params.m_maxFillDepth    = (int)m_fillDepth.getValue().second;
+  params.m_extendFill      = m_extendFill.getValue();
+  params.m_fillOnlySavebox = m_fillOnlySavebox.getValue();
   return params;
 }
 
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonDown(pos);
+    return;
+  }
   m_isAltPressed = e.isAltPressed();
   if (m_isAltPressed)
     Preferences::instance()->setValue(PreferencesItemId::DefRegionWithPaint,
@@ -2301,6 +2419,7 @@ void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDoubleClick(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox) return;
   if (m_fillType.getValue() != NORMALFILL) {
     buildFillInfo(getFillParameters());
     m_areaFillTool->leftButtonDoubleClick(pos, e);
@@ -2311,6 +2430,11 @@ void FillTool::leftButtonDoubleClick(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonDrag(pos);
+    invalidate();
+    return;
+  }
   // Area mode
   if (m_fillType.getValue() != NORMALFILL) {
     m_areaFillTool->leftButtonDrag(pos, e);
@@ -2361,6 +2485,11 @@ void FillTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void FillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->leftButtonUp(pos);
+    invalidate();
+    return;
+  }
   FillParameters params = getFillParameters();
   // Area mode
   if (m_fillType.getValue() != NORMALFILL) {
@@ -2398,6 +2527,10 @@ void FillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
 
 bool FillTool::keyDown(QKeyEvent *e) {
   if (e && e->key() == Qt::Key_Escape) {
+    if (m_editSavebox) {
+      setSaveboxEditMode(false);
+      return true;
+    }
     if (m_fillType.getValue() != NORMALFILL)
       m_areaFillTool->resetMulti();
     else
@@ -2483,6 +2616,12 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
   else if (propertyName == m_autopaintLines.getName()) {
     rectPropChangedflag = true;
   }
+  // Savebox
+  else if (propertyName == m_fillOnlySavebox.getName()) {
+    FillOnlySavebox     = m_fillOnlySavebox.getValue() ? 1 : 0;
+    rectPropChangedflag = true;
+    invalidate();
+  }
   // Gap Close Distance
   else if (propertyName == m_gapCloseDistance.getName()) {
     AutocloseDistance = m_gapCloseDistance.getValue();
@@ -2548,7 +2687,8 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
 
     m_areaFillTool->onPropertyChanged(
         m_frameRange.getValue(), m_emptyOnly.getValue(), m_onion.getValue(),
-        type, m_colorType.getValue(), m_autopaintLines.getValue());
+        type, m_colorType.getValue(), m_autopaintLines.getValue(),
+        m_fillOnlySavebox.getValue());
   }
 
   return true;
@@ -2557,8 +2697,12 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
 //-----------------------------------------------------------------------------
 
 void FillTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
-  if (m_fillType.getValue() != NORMALFILL) m_areaFillTool->mouseMove(pos, e);
   m_mousePos = pos;
+  if (m_editSavebox) {
+    invalidate();
+    return;
+  }
+  if (m_fillType.getValue() != NORMALFILL) m_areaFillTool->mouseMove(pos, e);
 }
 
 //-----------------------------------------------------------------------------
@@ -2596,7 +2740,11 @@ void FillTool::onFrameSwitched() {
 //-----------------------------------------------------------------------------
 
 void FillTool::draw() {
-  if (Preferences::instance()->getFillOnlySavebox()) {
+  if (m_editSavebox && m_setSaveboxTool) {
+    m_setSaveboxTool->draw();
+    return;
+  }
+  if (m_fillOnlySavebox.getValue()) {
     TToonzImageP ti = (TToonzImageP)getImage(false);
     if (ti) {
       TRectD bbox =
@@ -2747,6 +2895,10 @@ void FillTool::onActivate() {
         AutocloseDistance, AutocloseAngle, AutocloseOpacity,
         AutocloseIgnoreAutoPaint);
     m_extendFill.setValue(FillExtend ? 1 : 0);
+    if (FillOnlySavebox < 0)
+      FillOnlySavebox =
+          Preferences::instance()->getFillOnlySavebox() ? 1 : 0;
+    m_fillOnlySavebox.setValue(FillOnlySavebox ? 1 : 0);
     m_firstTime = false;
 
     if (m_fillType.getValue() != NORMALFILL) {
@@ -2764,7 +2916,8 @@ void FillTool::onActivate() {
 
       m_areaFillTool->onPropertyChanged(
           m_frameRange.getValue(), m_emptyOnly.getValue(), m_onion.getValue(),
-          type, m_colorType.getValue(), m_autopaintLines.getValue());
+          type, m_colorType.getValue(), m_autopaintLines.getValue(),
+          m_fillOnlySavebox.getValue());
     }
   }
 
@@ -2804,6 +2957,7 @@ void FillTool::onActivate() {
 //-----------------------------------------------------------------------------
 
 void FillTool::onDeactivate() {
+  m_editSavebox = false;
   disconnect(TTool::m_application->getCurrentFrame(),
              &TFrameHandle::frameSwitched, this, &FillTool::onFrameSwitched);
   disconnect(TTool::m_application->getCurrentScene(),

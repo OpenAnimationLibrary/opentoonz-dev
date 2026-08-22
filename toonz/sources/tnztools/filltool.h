@@ -24,6 +24,7 @@
 #define ALL L"Lines & Areas"
 
 class NormalLineFillTool;
+class SetSaveboxTool;
 typedef std::vector<std::pair<TXshSimpleLevel *, TFrameId>> SlFidsPairs;
 typedef std::map<std::string, TRaster32P> RefImgTable;
 
@@ -61,6 +62,7 @@ private:
   bool m_isLeftButtonPressed;
   bool m_paintAllAPs;
   bool m_autopaintLines;
+  bool m_fillOnlySavebox;
 
   int m_bckStyleId;
 
@@ -76,7 +78,8 @@ public:
   void leftButtonUp(const TPointD &pos, const TMouseEvent &e);
   void onImageChanged();
   bool onPropertyChanged(bool multi, bool onlyUnfilled, bool onion, Type type,
-                         std::wstring colorType, bool autopaintLines);
+                         std::wstring colorType, bool autopaintLines,
+                         bool fillOnlySavebox);
   void onActivate();
   void onEnter();
 };
@@ -121,6 +124,9 @@ class FillTool final : public QObject, public TTool {
   // disabled
   TBoolProperty m_autopaintLines;
   TBoolProperty m_extendFill;
+  TBoolProperty m_fillOnlySavebox;
+  SetSaveboxTool *m_setSaveboxTool;
+  bool m_editSavebox;
 
   SlFidsPairs m_slFidsPairs;
   RefImgTable m_refImgTable;  // imageId
@@ -138,6 +144,10 @@ public:
   TPropertyGroup *getProperties(int targetType) override { return &m_prop; }
   
   FillParameters getFillParameters() const;
+
+  bool isSaveboxEditMode() const { return m_editSavebox; }
+  void setSaveboxEditMode(bool enabled);
+  bool fitSaveboxToDrawing();
 
   void leftButtonDown(const TPointD &pos, const TMouseEvent &e) override;
   void leftButtonDrag(const TPointD &pos, const TMouseEvent &e) override;

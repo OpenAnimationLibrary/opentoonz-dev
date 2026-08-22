@@ -23,6 +23,7 @@
 #include "tools/tool.h"
 #include "rasterselectiontool.h"
 #include "vectorselectiontool.h"
+#include "fillsaveboxcommands.h"
 // to enable the increase/decrease shortcuts while hiding the tool option
 #include "tools/toolhandle.h"
 // to enable shortcuts only when the viewer is focused
@@ -116,6 +117,72 @@ void ToolOptionCheckbox::nextCheckState() {
   QAbstractButton::nextCheckState();
   m_property->setValue(checkState() == Qt::Checked);
   notifyTool();
+}
+
+//=============================================================================
+// ToolOptionSaveboxButton
+
+ToolOptionSaveboxButton::ToolOptionSaveboxButton(
+    TTool *tool, TBoolProperty *property, ToolHandle *toolHandle, QWidget *parent)
+    : QToolButton(parent)
+    , ToolOptionControl(tool, property->getName(), toolHandle)
+    , m_property(property) {
+  setText(property->getQStringName());
+  setCheckable(true);
+  setAutoRaise(true);
+  setToolTip(tr("Savebox - Right-click for options"));
+  m_property->addListener(this);
+  updateStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void ToolOptionSaveboxButton::updateStatus() {
+  setText(m_property->getQStringName());
+  setChecked(m_property->getValue());
+}
+
+//-----------------------------------------------------------------------------
+
+void ToolOptionSaveboxButton::contextMenuEvent(QContextMenuEvent *event) {
+  QMenu menu(this);
+
+  QAction *limitAction = menu.addAction(tr("Limit Fill to Savebox"));
+  limitAction->setCheckable(true);
+  limitAction->setChecked(m_property->getValue());
+
+  QAction *editAction = menu.addAction(tr("Edit Savebox"));
+  editAction->setCheckable(true);
+  editAction->setChecked(FillSaveboxCommands::isEditMode(m_tool));
+
+  QAction *fitAction = menu.addAction(tr("Fit Savebox to Drawing"));
+
+  menu.addSeparator();
+
+  Preferences *preferences = Preferences::instance();
+  QAction *minimizeAction =
+      menu.addAction(tr("Minimize Savebox after Editing"));
+  minimizeAction->setCheckable(true);
+  minimizeAction->setChecked(preferences->isMinimizeSaveboxAfterEditing());
+
+  QAction *chosen = menu.exec(event->globalPos());
+  if (!chosen) return;
+
+  if (chosen == limitAction) {
+    m_property->setValue(!m_property->getValue());
+    notifyTool(false);
+    updateStatus();
+  } else if (chosen == editAction) {
+    FillSaveboxCommands::setEditMode(
+        m_tool, !FillSaveboxCommands::isEditMode(m_tool));
+  } else if (chosen == fitAction) {
+    FillSaveboxCommands::fitToDrawing(m_tool);
+  } else if (chosen == minimizeAction) {
+    preferences->setValue(minimizeSaveboxAfterEditing,
+                          !preferences->isMinimizeSaveboxAfterEditing());
+  }
+
+  if (m_toolHandle) m_toolHandle->notifyToolChanged();
 }
 
 //=============================================================================
