@@ -480,7 +480,11 @@ void adaptLevelToPalette(TXshLevelHandle *currentLevelHandle,
   TXshSimpleLevel *sl = currentLevelHandle->getSimpleLevel();
   QApplication::setOverrideCursor(Qt::WaitCursor);
 
-  TPalette *oldPalette = sl->getPalette();
+  // Keep the current level palette alive for the duration of the operation.
+  // The palette handle stores only a raw pointer, while the level and images
+  // release their owning references as they switch to the Studio Palette.
+  TPaletteP oldPalette = sl->getPalette();
+  std::wstring oldGlobalName = paletteHandle->getPalette()->getGlobalName();
 
   ToleranceMap.clear();
 
@@ -507,7 +511,6 @@ void adaptLevelToPalette(TXshLevelHandle *currentLevelHandle,
 
   currentLevelHandle->getSimpleLevel()->setPalette(plt);
 
-  std::wstring oldGlobalName = paletteHandle->getPalette()->getGlobalName();
   paletteHandle->setPalette(plt);
   paletteHandle->getPalette()->setGlobalName(oldGlobalName);
   plt->setDirtyFlag(true);
