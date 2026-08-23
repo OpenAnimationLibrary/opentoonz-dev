@@ -28,9 +28,16 @@ Change the reference tiddlers, advance the manifest revision, regenerate the
 payload checksum and run:
 
 ```sh
-node docs/production-journal/validate-reference-pack.mjs
+node doc/production-journal/validate-reference-pack.mjs
 ```
 
 The Pages workflow validates the feed and builds the online TiddlyWiki with a
 pinned TiddlyWiki release before deployment. Local annotations are not present
 in this directory and are never uploaded by the reference loader.
+
+## CI scope
+
+This is a documentation-only surface. Pull requests run only the lightweight
+reference validation and TiddlyWiki build in `production_journal_pages.yml`.
+The files live under OT-Dev's existing `doc/` tree so the Linux, macOS and
+Windows OpenToonz application workflows remain out of scope.

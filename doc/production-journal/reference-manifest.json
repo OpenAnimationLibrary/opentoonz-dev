@@ -6,6 +6,6 @@
   "reference-count": 8,
   "source-manual-version": "OpenToonz 1.7.1",
   "source-manual-url": "https://opentoonz.readthedocs.io/en/latest/",
-  "payload-path": "docs/production-journal/tiddlers/reference-tiddlers.json",
-  "payload-sha256": "05ccfb0dcf9b7058dec643c9c9f697ca27e8709892ce133cd760463d1670ad5e"
+  "payload-path": "doc/production-journal/tiddlers/reference-tiddlers.json",
+  "payload-sha256": "967aa1ee2bf792c2b171464d92ea4277915438d8f3e2dde535aa7e76267fd067"
 }

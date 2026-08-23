@@ -1,15 +1,15 @@
-name: Production Journal references
+name: Docs — Production Journal
 
 on:
   pull_request:
     paths:
-      - "docs/production-journal/**"
+      - "doc/production-journal/**"
       - ".github/workflows/production_journal_pages.yml"
   push:
     branches:
       - main
     paths:
-      - "docs/production-journal/**"
+      - "doc/production-journal/**"
       - ".github/workflows/production_journal_pages.yml"
   workflow_dispatch:
 
@@ -29,19 +29,19 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Validate reference feed
-        run: node docs/production-journal/validate-reference-pack.mjs
+        run: node doc/production-journal/validate-reference-pack.mjs
 
       - name: Build single-file TiddlyWiki
-        run: npx --yes tiddlywiki@5.4.1 docs/production-journal --build index
+        run: npx --yes tiddlywiki@5.4.1 doc/production-journal --build index
 
       - name: Stage Pages site
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           mkdir -p _site/production-journal
-          cp docs/production-journal/output/index.html _site/production-journal/index.html
-          cp docs/production-journal/reference-manifest.json _site/production-journal/reference-manifest.json
-          cp docs/production-journal/tiddlers/reference-tiddlers.json _site/production-journal/reference-tiddlers.json
+          cp doc/production-journal/output/index.html _site/production-journal/index.html
+          cp doc/production-journal/reference-manifest.json _site/production-journal/reference-manifest.json
+          cp doc/production-journal/tiddlers/reference-tiddlers.json _site/production-journal/reference-tiddlers.json
           printf '%s\n' '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=production-journal/"><title>OT-Dev — Works in Progress</title><p><a href="production-journal/">Open Production Journal references</a></p>' > _site/index.html
           touch _site/.nojekyll
 
