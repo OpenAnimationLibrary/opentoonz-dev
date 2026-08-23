@@ -1,0 +1,14 @@
+{
+  "description": "OT-Dev maintained references for the local OpenToonz Production Journal",
+  "plugins": [],
+  "themes": [],
+  "languages": [],
+  "build": {
+    "index": [
+      "--render",
+      "$:/core/save/all",
+      "index.html",
+      "text/plain"
+    ]
+  }
+}
