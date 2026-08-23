@@ -7,7 +7,7 @@ concurrency:
 on:
   push:
     branches:
-      - master  # Specify branches where the workflow should run
+      - main
     paths:
       - '**/*'                                    # Include all files in the repository
       - '!appveyor.yml'                           # Ignore changes in AppVeyor
@@ -16,6 +16,8 @@ on:
       - '!**/.github/**'                          # Exclude everything in .github folder
       - '.github/workflows/workflow_windows.yml'  # Include Windows workflow file
   pull_request:
+    branches:
+      - main
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -23,6 +25,7 @@ on:
       - '!doc/**'
       - '!**/.github/**'
       - '.github/workflows/workflow_windows.yml'
+  workflow_dispatch:
 
 jobs:
   Windows:
