@@ -27,6 +27,9 @@ on:
       - '.github/workflows/workflow_windows.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   Windows:
     runs-on: windows-2025

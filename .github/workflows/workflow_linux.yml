@@ -28,6 +28,9 @@ on:
       - '.github/workflows/workflow_linux.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   Ubuntu:
     # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,

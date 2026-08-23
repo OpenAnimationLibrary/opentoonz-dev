@@ -28,6 +28,9 @@ on:
       - '.github/workflows/workflow_macos.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   macOS:
     # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,
