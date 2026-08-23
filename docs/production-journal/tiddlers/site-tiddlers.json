@@ -1,0 +1,31 @@
+[
+  {
+    "title": "$:/SiteTitle",
+    "text": "OpenToonz Manual Reference"
+  },
+  {
+    "title": "$:/SiteSubtitle",
+    "text": "OT-Dev — Works in Progress · 2026.08.23.1"
+  },
+  {
+    "title": "$:/DefaultTiddlers",
+    "text": "[[OT-Dev Production Journal References]]"
+  },
+  {
+    "title": "$:/theme",
+    "text": "$:/themes/tiddlywiki/readonly"
+  },
+  {
+    "title": "$:/OTJournal/OnlineStyles",
+    "tags": "$:/tags/Stylesheet",
+    "type": "text/css",
+    "text": "body.tc-body{background:#eef2f0;color:#283f45}.tc-story-river{max-width:78rem}.tc-tiddler-frame{border-radius:7px}.otpj-online-note{border-left:4px solid #547d80;background:#e8f2f1;padding:.6rem .75rem;margin:.7rem 0}"
+  },
+  {
+    "title": "OT-Dev Production Journal References",
+    "tags": "Home",
+    "created": "20260823140620836",
+    "modified": "20260823140620836",
+    "text": "! OT-Dev Production Journal References\n\n<div class=\"otpj-online-note\">These maintained references summarize selected areas of the OpenToonz manual; they do not replace it. A local Production Journal can display this source beside private, editable annotations.</div>\n\n''Published revision:'' 2026.08.23.1\n\n* [[OpenToonz Manual Reference]]\n* [[Manual Snapshot - OpenToonz 1.7.1]]\n* [[Production Workflow]]\n* [[Interface Overview]]\n* [[Managing Projects]]\n* [[Setting Up a Scene]]\n* [[Drawing Animation Levels]]\n* [[Using Onion Skin]]\n\n[[Open the official OpenToonz manual|https://opentoonz.readthedocs.io/en/latest/]]"
+  }
+]

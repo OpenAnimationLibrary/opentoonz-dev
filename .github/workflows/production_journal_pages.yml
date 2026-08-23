@@ -1,0 +1,72 @@
+name: Production Journal references
+
+on:
+  pull_request:
+    paths:
+      - "docs/production-journal/**"
+      - ".github/workflows/production_journal_pages.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/production-journal/**"
+      - ".github/workflows/production_journal_pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-journal-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Validate and build reference wiki
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate reference feed
+        run: node docs/production-journal/validate-reference-pack.mjs
+
+      - name: Build single-file TiddlyWiki
+        run: npx --yes tiddlywiki@5.4.1 docs/production-journal --build index
+
+      - name: Stage Pages site
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          mkdir -p _site/production-journal
+          cp docs/production-journal/output/index.html _site/production-journal/index.html
+          cp docs/production-journal/reference-manifest.json _site/production-journal/reference-manifest.json
+          cp docs/production-journal/tiddlers/reference-tiddlers.json _site/production-journal/reference-tiddlers.json
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=production-journal/"><title>OT-Dev — Works in Progress</title><p><a href="production-journal/">Open Production Journal references</a></p>' > _site/index.html
+          touch _site/.nojekyll
+
+      - name: Configure Pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy reference wiki
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}production-journal/
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

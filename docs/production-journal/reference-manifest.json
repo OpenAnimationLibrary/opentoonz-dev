@@ -1,0 +1,11 @@
+{
+  "schema-version": 1,
+  "edition": "ot-dev-production-journal-reference",
+  "revision": "2026.08.23.1",
+  "published": "2026-08-23T14:06:20.836Z",
+  "reference-count": 8,
+  "source-manual-version": "OpenToonz 1.7.1",
+  "source-manual-url": "https://opentoonz.readthedocs.io/en/latest/",
+  "payload-path": "docs/production-journal/tiddlers/reference-tiddlers.json",
+  "payload-sha256": "05ccfb0dcf9b7058dec643c9c9f697ca27e8709892ce133cd760463d1670ad5e"
+}
