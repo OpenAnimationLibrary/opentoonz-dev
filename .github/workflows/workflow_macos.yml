@@ -6,14 +6,19 @@ concurrency:
 
 on:
   push:
+    branches:
+      - main
     paths:
       - '**/*'                                  # Include all files in the repository
       - '!appveyor.yml'                         # Ignore changes in AppVeyor
       - '!README.md'                            # Exclude README
       - '!doc/**'                               # Exclude documentation
       - '!**/.github/**'                        # Exclude everything in .github folder
-      - '.github/workflows/workflow_macos.yml'  # Include MacOs workflow file
+      - '.github/workflows/workflow_macos.yml'  # Include macOS workflow file
   pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -21,9 +26,19 @@ on:
       - '!doc/**'
       - '!**/.github/**'
       - '.github/workflows/workflow_macos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   macOS:
+    # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,
+    # explicitly labelled ci:full, manually dispatched, or merged to main.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.draft == false ||
+      contains(github.event.pull_request.labels.*.name, 'ci:full')
     timeout-minutes: 180 # Stop job if it exceeds expected build time
     # GHA are sunsetting support for macOS 13 (Intel & Apple Silicon/arm) & will be fully unsupported on (December 4th 2025),
     # See: https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/ & https://github.com/actions/runner-images/issues/13046
