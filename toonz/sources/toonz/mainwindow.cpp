@@ -2813,6 +2813,8 @@ void MainWindow::defineActions() {
   CommandManager::instance()->setToggleTexts(
       MI_FreezePreview, tr("Freeze Preview"), tr("Unfreeze Preview"));
   createRightClickMenuAction(MI_SavePreset, QT_TR_NOOP("&Save As Preset"), "");
+  createRightClickMenuAction(MI_SaveAsCustomVectorBrush,
+                             QT_TR_NOOP("Save as Custom Vector Brush..."), "");
   createRightClickMenuAction(MI_PreviewFx, QT_TR_NOOP("Preview Fx"), "");
   createRightClickMenuAction(MI_PasteValues, QT_TR_NOOP("&Paste Color && Name"),
                              "", "paste_color_and_name");
