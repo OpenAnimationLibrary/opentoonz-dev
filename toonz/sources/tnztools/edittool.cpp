@@ -1361,11 +1361,12 @@ void EditTool::draw() {
     tglMultMatrix(parentAff.inv() * aff * TTranslation(center));
     glScaled(unit, unit, 1);
     tglColor(normalColor);
+    const int crossHairRadius = 100;
     glBegin(GL_LINES);  // GL_LINE_STRIP to GL_LINES for continuous axes
-    glVertex2i(-800, 0);
-    glVertex2i(800, 0);
-    glVertex2i(0, -100);
-    glVertex2i(0, 100);
+    glVertex2i(-crossHairRadius, 0);
+    glVertex2i(crossHairRadius, 0);
+    glVertex2i(0, -crossHairRadius);
+    glVertex2i(0, crossHairRadius);
     glEnd();
     glPopMatrix();
   }
