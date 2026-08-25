@@ -71,6 +71,10 @@ using namespace ToolUtils;
 #define FREEHANDFILL L"Freehand"
 #define POLYLINEFILL L"Polyline"
 #define FREEPICKFILL L"Freepick"
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
 
 TEnv::IntVar MinFillDepth("InknpaintMinFillDepth", 0);
 TEnv::IntVar MaxFillDepth("InknpaintMaxFillDepth", 10);
@@ -1201,21 +1205,31 @@ class SequencePainter {
 public:
   virtual void process(TImageP img /*, TImageLocation &imgloc*/, double t,
                        TXshSimpleLevel *sl, const TFrameId &fid) = 0;
-  void processSequence(const SlFidsPairs &SlFidsPairs);
+  void processSequence(const SlFidsPairs &slFidsPairs, int frameRange);
   virtual ~SequencePainter() {}
   void setSelectionUndo(FillToolSelectionUndo *undo) { m_selectionUndo = undo; }
 };
 
 //-----------------------------------------------------------------------------
 
-void SequencePainter::processSequence(const SlFidsPairs &slFidsPairs) {
+void SequencePainter::processSequence(const SlFidsPairs &slFidsPairs,
+                                      int frameRange) {
+  TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+  if (frameRange == 2)
+    algorithm = TInbetween::EaseInInterpolation;
+  else if (frameRange == 3)
+    algorithm = TInbetween::EaseOutInterpolation;
+  else if (frameRange == 4)
+    algorithm = TInbetween::EaseInOutInterpolation;
+
   TUndoManager::manager()->beginBlock();
   if (m_selectionUndo) TUndoManager::manager()->add(m_selectionUndo);
   int m = slFidsPairs.size();
   int i = 0;
   for (auto &[sl, fid] : slFidsPairs) {
     TImageP img = sl->getFrame(fid, true);
-    double t    = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    double t = m > 1 ? (double)i / (double)(m - 1) : 0.5;
+    t        = TInbetween::interpolation(t, algorithm);
     process(img, t, sl, fid);
     TTool::Application *app = TTool::getApplication();
     if (app) {
@@ -1585,7 +1599,7 @@ void AreaFillTool::leftButtonDoubleClick(const TPointD &pos,
       filler.setSelectionUndo(new FillToolSelectionUndo(
           m_currCell.second, m_currCell.first, slFidsPairs[0].first,
           slFidsPairs[0].second));
-      filler.processSequence(slFidsPairs);
+      filler.processSequence(slFidsPairs, m_frameRange);
 
       m_parent->invalidate(m_selectingRect.enlarge(2));
       if (e.isShiftPressed()) {
@@ -1676,7 +1690,7 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
         filler.setSelectionUndo(new FillToolSelectionUndo(
             m_currCell.second, m_currCell.first, slFidsPairs[0].first,
             slFidsPairs[0].second));
-        filler.processSequence(slFidsPairs);
+        filler.processSequence(slFidsPairs, m_frameRange);
         m_parent->invalidate(m_selectingRect.enlarge(2));
         if (e.isShiftPressed()) {
           m_firstRect    = m_selectingRect;
@@ -1741,7 +1755,7 @@ void AreaFillTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
         filler.setSelectionUndo(new FillToolSelectionUndo(
             m_currCell.second, m_currCell.first, slFidsPairs[0].first,
             slFidsPairs[0].second));
-        filler.processSequence(slFidsPairs);
+        filler.processSequence(slFidsPairs, m_frameRange);
         m_parent->invalidate(m_selectingRect.enlarge(2));
         if (e.isShiftPressed()) {
           m_firstStroke  = stroke;
@@ -1803,7 +1817,7 @@ void AreaFillTool::onImageChanged() {
 }
 
 /*-- Called when Type other than Normal is selected --*/
-bool AreaFillTool::onPropertyChanged(bool multi, bool onlyUnfilled, bool onion,
+bool AreaFillTool::onPropertyChanged(int multi, bool onlyUnfilled, bool onion,
                                      Type type, std::wstring colorType,
                                      bool autopaintLines) {
   m_frameRange     = multi;
@@ -1970,7 +1984,7 @@ public:
 
 FillTool::FillTool(int targetType)
     : TTool("T_Fill")
-    , m_frameRange("Frame Range", false)  // W_ToolOptions_FrameRange
+    , m_frameRange("Frame Range:")        // W_ToolOptions_FrameRange
     , m_fillType("Type:")
     , m_emptyOnly("Empty Only", false)
     , m_colorType("Mode:")
@@ -2011,6 +2025,11 @@ FillTool::FillTool(int targetType)
   }
   m_prop.bind(m_onion);
   m_prop.bind(m_frameRange);
+  m_frameRange.addValue(L"Off");
+  m_frameRange.addValue(LINEAR_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_INTERPOLATION);
+  m_frameRange.addValue(EASE_OUT_INTERPOLATION);
+  m_frameRange.addValue(EASE_IN_OUT_INTERPOLATION);
   if (targetType == TTool::VectorImage) {
     m_prop.bind(m_maxGapDistance);
     m_maxGapDistance.setId("MaxGapDistance");
@@ -2069,13 +2088,13 @@ void FillTool::buildFillInfo(const FillParameters &params) {
     m_firstFrameId = getCurrentFid();
     m_firstPoint   = m_mousePos;
     invalidate();
-    if (m_frameRange.getValue()) return;
+    if (m_frameRange.getIndex()) return;
   }
 
   m_slFidsPairs.clear();
 
   // Multi
-  if (m_frameRange.getValue()) {
+  if (m_frameRange.getIndex()) {
     if (app->getCurrentFrame()->isEditingScene()) {
       int endRow = getFrame();
       auto xsh   = app->getCurrentXsheet()->getXsheet();
@@ -2177,7 +2196,12 @@ void FillTool::computeRefImgsIfNeeded(const FillParameters &params) {
 //-----------------------------------------------------------------------------
 
 void FillTool::updateTranslation() {
-  m_frameRange.setQStringName(tr("Frame Range"));
+  m_frameRange.setQStringName(tr("Frame Range:"));
+  m_frameRange.setItemUIName(L"Off", tr("Off"));
+  m_frameRange.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+  m_frameRange.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+  m_frameRange.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+  m_frameRange.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
 
   m_fillType.setQStringName(tr("Type:"));
   m_fillType.setItemUIName(NORMALFILL, tr("Normal"));
@@ -2258,7 +2282,7 @@ void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
     return;
   }
   buildFillInfo(params);
-  if (!m_frameRange.getValue()) {
+  if (!m_frameRange.getIndex()) {
     auto fid = getCurrentFid();
     TRaster32P Ref =
         m_level ? m_refImgTable[m_level->getImageId(fid, 0)] : TRaster32P();
@@ -2279,7 +2303,7 @@ void FillTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
     filler.setSelectionUndo(new FillToolSelectionUndo(
         m_beginCell.row, m_beginCell.col, m_slFidsPairs[0].first,
         m_slFidsPairs[0].second));
-    filler.processSequence(m_slFidsPairs);
+    filler.processSequence(m_slFidsPairs, m_frameRange.getIndex());
 
     if (e.isShiftPressed()) {
       m_firstPoint   = pos;
@@ -2323,7 +2347,7 @@ void FillTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
   }
 
   // Drag to Fill
-  if (!m_onion.getValue() && !m_frameRange.getValue()) {
+  if (!m_onion.getValue() && !m_frameRange.getIndex()) {
     FillParameters params = getFillParameters();
     if (m_clickPoint == pos) return;
     TImageP img = getImage(true);
@@ -2452,7 +2476,7 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
   }
   // Frame Range
   else if (propertyName == m_frameRange.getName()) {
-    FillRange = (int)(m_frameRange.getValue());
+    FillRange = m_frameRange.getIndex();
     resetMulti();
     rectPropChangedflag = true;
   }
@@ -2547,7 +2571,7 @@ bool FillTool::onPropertyChanged(std::string propertyName, bool addToUndo) {
       assert(false);
 
     m_areaFillTool->onPropertyChanged(
-        m_frameRange.getValue(), m_emptyOnly.getValue(), m_onion.getValue(),
+        m_frameRange.getIndex(), m_emptyOnly.getValue(), m_onion.getValue(),
         type, m_colorType.getValue(), m_autopaintLines.getValue());
   }
 
@@ -2610,7 +2634,7 @@ void FillTool::draw() {
   }
   if (m_colorType.getValue() == LINES && m_targetType == TTool::ToonzImage)
     m_normalLineFillTool->draw();
-  else if (m_frameRange.getValue() && m_firstFrameSelected) {
+  else if (m_frameRange.getIndex() && m_firstFrameSelected) {
     tglColor(TPixel::Red);
     invalidate();
     drawCross(m_firstPoint, 6);
@@ -2739,7 +2763,7 @@ void FillTool::onActivate() {
     m_segment.setValue(FillSegment ? 1 : 0);
     m_closeGap.setValue(FillCloseGap ? 1 : 0);
     m_referFill.setValue(FillReferFill ? 1 : 0);
-    m_frameRange.setValue(FillRange ? 1 : 0);
+    m_frameRange.setIndex(FillRange);
     m_gapCloseDistance.setValue(AutocloseDistance);
     auto st              = ToonzCheck::instance()->getAutocloseSettings();
     st.m_closingDistance = AutocloseDistance;
@@ -2763,7 +2787,7 @@ void FillTool::onActivate() {
         assert(false);
 
       m_areaFillTool->onPropertyChanged(
-          m_frameRange.getValue(), m_emptyOnly.getValue(), m_onion.getValue(),
+          m_frameRange.getIndex(), m_emptyOnly.getValue(), m_onion.getValue(),
           type, m_colorType.getValue(), m_autopaintLines.getValue());
     }
   }

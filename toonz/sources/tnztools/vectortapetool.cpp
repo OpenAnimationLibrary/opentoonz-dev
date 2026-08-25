@@ -17,10 +17,12 @@
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tobjecthandle.h"
 #include "toonz/txsheethandle.h"
+#include "toonz/txshcell.h"
 #include "toonz/tstageobject.h"
 #include "tools/toolhandle.h"
 #include "toonz/stage2.h"
 #include "tenv.h"
+#include "tinbetween.h"
 // For Qt translation support
 #include <QCoreApplication>
 
@@ -32,11 +34,17 @@ using namespace ToolUtils;
 #define NORMAL L"Normal"
 #define RECT L"Rectangular"
 
+#define LINEAR_INTERPOLATION L"Linear"
+#define EASE_IN_INTERPOLATION L"Ease In"
+#define EASE_OUT_INTERPOLATION L"Ease Out"
+#define EASE_IN_OUT_INTERPOLATION L"Ease In/Out"
+
 TEnv::StringVar TapeMode("InknpaintTapeMode1", "Endpoint to Endpoint");
 TEnv::IntVar TapeSmooth("InknpaintTapeSmooth", 0);
 TEnv::IntVar TapeJoinStrokes("InknpaintTapeJoinStrokes", 0);
 TEnv::StringVar TapeType("InknpaintTapeType1", "Normal");
 TEnv::DoubleVar AutocloseFactor("InknpaintAutocloseFactor", 4.0);
+TEnv::IntVar TapeRange("InknpaintTapeRange", 0);
 namespace {
 
 class UndoAutoclose final : public ToolUtils::TToolUndo {
@@ -190,6 +198,13 @@ class VectorTapeTool final : public TTool {
   TPropertyGroup m_prop;
   TDoubleProperty m_autocloseFactor;
   TEnumProperty m_type;
+  TEnumProperty m_multi;
+  TRectD m_firstRect;
+  bool m_firstFrameSelected;
+  TFrameId m_firstFrameId;
+  int m_firstRow;
+  int m_firstColumn;
+  TXshSimpleLevelP m_level;
 
 public:
   VectorTapeTool()
@@ -207,11 +222,22 @@ public:
       , m_autocloseFactor("Distance", 0.1, 100, 0.5)
       , m_firstTime(true)
       , m_selectionRect()
-      , m_startRect() {
+      , m_startRect()
+      , m_multi("Frame Range:")
+      , m_firstFrameSelected(false)
+      , m_firstRow(-1)
+      , m_firstColumn(-1)
+      , m_level(0) {
     bind(TTool::Vectors);
 
     m_prop.bind(m_type);
     m_prop.bind(m_mode);
+    m_prop.bind(m_multi);
+    m_multi.addValue(L"Off");
+    m_multi.addValue(LINEAR_INTERPOLATION);
+    m_multi.addValue(EASE_IN_INTERPOLATION);
+    m_multi.addValue(EASE_OUT_INTERPOLATION);
+    m_multi.addValue(EASE_IN_OUT_INTERPOLATION);
     m_prop.bind(m_autocloseFactor);
     m_prop.bind(m_joinStrokes);
     m_prop.bind(m_smooth);
@@ -227,6 +253,7 @@ public:
     m_type.setId("Type");
     m_joinStrokes.setId("JoinVectors");
     m_autocloseFactor.setId("Distance");
+    m_multi.setId("FrameRange");
   }
 
   //-----------------------------------------------------------------------------
@@ -238,12 +265,14 @@ public:
   bool onPropertyChanged(std::string propertyName) override {
     TapeMode       = ::to_string(m_mode.getValue());
     TapeSmooth     = (int)(m_smooth.getValue());
+    TapeRange      = m_multi.getIndex();
     std::wstring s = m_type.getValue();
     if (!s.empty()) TapeType = ::to_string(s);
     TapeJoinStrokes = (int)(m_joinStrokes.getValue());
     AutocloseFactor = (double)(m_autocloseFactor.getValue());
     m_selectionRect = TRectD();
     m_startRect     = TPointD();
+    if (propertyName == m_multi.getName()) m_firstFrameSelected = false;
 
     if (propertyName == "Distance" &&
         (ToonzCheck::instance()->getChecks() & ToonzCheck::eAutoclose))
@@ -265,6 +294,13 @@ public:
     m_type.setQStringName(tr("Type:"));
     m_type.setItemUIName(NORMAL, tr("Normal"));
     m_type.setItemUIName(RECT, tr("Rectangular"));
+
+    m_multi.setQStringName(tr("Frame Range:"));
+    m_multi.setItemUIName(L"Off", tr("Off"));
+    m_multi.setItemUIName(LINEAR_INTERPOLATION, tr("Linear"));
+    m_multi.setItemUIName(EASE_IN_INTERPOLATION, tr("Ease In"));
+    m_multi.setItemUIName(EASE_OUT_INTERPOLATION, tr("Ease Out"));
+    m_multi.setItemUIName(EASE_IN_OUT_INTERPOLATION, tr("Ease In/Out"));
   }
 
   //-----------------------------------------------------------------------------
@@ -279,8 +315,10 @@ public:
     // glPushMatrix();
     // tglMultMatrix(viewMatrix);
     if (m_type.getValue() == RECT) {
+      if (m_multi.getIndex() && m_firstFrameSelected)
+        ToolUtils::drawRect(m_firstRect, TPixel::Red, 0x3F33, true);
       if (!m_selectionRect.isEmpty())
-        ToolUtils::drawRect(m_selectionRect, TPixel::Black, 0x3F33, true);
+        ToolUtils::drawRect(m_selectionRect, TPixel::Red, 0x3F33, true);
       return;
     }
 
@@ -601,7 +639,8 @@ public:
 #define l2p 3
 #define l2l 4
 
-  void tapeRect(const TVectorImageP &vi, const TRectD &rect) {
+  void tapeRect(const TVectorImageP &vi, const TRectD &rect,
+                bool undoBlockStarted = false) {
     std::vector<TFilledRegionInf> *fillInformation =
         new std::vector<TFilledRegionInf>;
     ImageUtils::getFillingInformationOverlappingArea(vi, *fillInformation,
@@ -618,7 +657,7 @@ public:
     std::vector<TPointD> startP(startPoints.size()), endP(startPoints.size());
 
     if (!startPoints.empty()) {
-      TUndoManager::manager()->beginBlock();
+      if (!undoBlockStarted) TUndoManager::manager()->beginBlock();
       for (UINT i = 0; i < startPoints.size(); i++) {
         startP[i] = vi->getStroke(startPoints[i].first)
                         ->getPoint(startPoints[i].second);
@@ -649,7 +688,72 @@ public:
         }
       }
     }
-    if (!startPoints.empty()) TUndoManager::manager()->endBlock();
+    if (!startPoints.empty() && !undoBlockStarted)
+      TUndoManager::manager()->endBlock();
+  }
+
+  TRectD interpolateRect(const TRectD &start, const TRectD &end, double t) {
+    return TRectD(start.x0 + (end.x0 - start.x0) * t,
+                  start.y0 + (end.y0 - start.y0) * t,
+                  start.x1 + (end.x1 - start.x1) * t,
+                  start.y1 + (end.y1 - start.y1) * t);
+  }
+
+  void tapeFrameRange(const TRectD &endRect) {
+    TTool::Application *app = TTool::getApplication();
+    if (!app || !m_level) return;
+
+    std::vector<std::pair<TXshSimpleLevel *, TFrameId>> frames;
+    if (app->getCurrentFrame()->isEditingScene()) {
+      int lastRow = getFrame();
+      int step    = m_firstRow <= lastRow ? 1 : -1;
+      TFrameId previousFid;
+      bool hasPrevious = false;
+      TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
+      for (int row = m_firstRow; row != lastRow + step; row += step) {
+        TXshCell cell = xsheet->getCell(row, m_firstColumn);
+        TXshSimpleLevel *level = cell.getSimpleLevel();
+        TFrameId fid = cell.getFrameId();
+        if (!level || level != m_level.getPointer() ||
+            (hasPrevious && fid == previousFid))
+          continue;
+        frames.push_back(std::make_pair(level, fid));
+        previousFid = fid;
+        hasPrevious = true;
+      }
+    } else {
+      int firstIndex = m_level->fid2index(m_firstFrameId);
+      int lastIndex = m_level->fid2index(getCurrentFid());
+      if (firstIndex < 0 || lastIndex < 0) return;
+      int step = firstIndex <= lastIndex ? 1 : -1;
+      for (int index = firstIndex; index != lastIndex + step; index += step)
+        frames.push_back(std::make_pair(m_level.getPointer(),
+                                        m_level->index2fid(index)));
+    }
+    if (frames.empty()) return;
+
+    TInbetween::TweenAlgorithm algorithm = TInbetween::LinearInterpolation;
+    if (m_multi.getIndex() == 2)
+      algorithm = TInbetween::EaseInInterpolation;
+    else if (m_multi.getIndex() == 3)
+      algorithm = TInbetween::EaseOutInterpolation;
+    else if (m_multi.getIndex() == 4)
+      algorithm = TInbetween::EaseInOutInterpolation;
+
+    TUndoManager::manager()->beginBlock();
+    int count = static_cast<int>(frames.size());
+    for (int index = 0; index < count; ++index) {
+      TXshSimpleLevel *level = frames[index].first;
+      TFrameId fid = frames[index].second;
+      TVectorImageP image = level->getFrame(fid, true);
+      if (!image) continue;
+      double t = count > 1 ? static_cast<double>(index) / (count - 1) : 0.5;
+      tapeRect(image, interpolateRect(m_firstRect, endRect,
+                                      TInbetween::interpolation(t, algorithm)),
+               true);
+    }
+    TUndoManager::manager()->endBlock();
+    app->getCurrentXsheet()->notifyXsheetChanged();
   }
 
   int doTape(const TVectorImageP &vi,
@@ -686,10 +790,42 @@ public:
   }
   //-------------------------------------------------------------------------------
 
-  void leftButtonUp(const TPointD &, const TMouseEvent &) override {
+  void leftButtonUp(const TPointD &, const TMouseEvent &e) override {
     TVectorImageP vi(getImage(true));
 
     if (vi && m_type.getValue() == RECT) {
+      if (m_multi.getIndex()) {
+        TTool::Application *app = TTool::getApplication();
+        if (!m_firstFrameSelected) {
+          TXshLevel *level = app->getCurrentLevel()->getLevel();
+          m_level = level ? level->getSimpleLevel() : 0;
+          m_firstRect = m_selectionRect;
+          m_firstFrameId = getCurrentFid();
+          m_firstRow = getFrame();
+          m_firstColumn = getColumnIndex();
+          m_firstFrameSelected = true;
+        } else {
+          tapeFrameRange(m_selectionRect);
+          if (e.isShiftPressed()) {
+            m_firstRect = m_selectionRect;
+            m_firstFrameId = getCurrentFid();
+            m_firstRow = getFrame();
+            m_firstColumn = getColumnIndex();
+          } else {
+            if (app->getCurrentFrame()->isEditingScene()) {
+              app->getCurrentColumn()->setColumnIndex(m_firstColumn);
+              app->getCurrentFrame()->setFrame(m_firstRow);
+            } else {
+              app->getCurrentFrame()->setFid(m_firstFrameId);
+            }
+            m_firstFrameSelected = false;
+          }
+        }
+        m_selectionRect = TRectD();
+        m_startRect = TPointD();
+        invalidate();
+        return;
+      }
       tapeRect(vi, m_selectionRect);
       m_selectionRect = TRectD();
       m_startRect     = TPointD();
@@ -742,6 +878,7 @@ public:
     m_autocloseFactor.setValue(AutocloseFactor);
     m_smooth.setValue(TapeSmooth ? 1 : 0);
     m_joinStrokes.setValue(TapeJoinStrokes ? 1 : 0);
+    m_multi.setIndex(TapeRange);
     m_firstTime     = false;
     m_selectionRect = TRectD();
     m_startRect     = TPointD();

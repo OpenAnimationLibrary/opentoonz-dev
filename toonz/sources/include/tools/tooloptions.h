@@ -518,12 +518,12 @@ class FillToolOptionsBox final : public ToolOptionsBox {
 
   int m_targetType;
   QLabel *m_fillDepthLabel;
-  ToolOptionCombo *m_colorMode, *m_toolType;
+  ToolOptionCombo *m_colorMode, *m_toolType, *m_multiFrameMode;
   ToolOptionCheckbox *m_emptyOnly, *m_segmentMode, *m_onionMode,
-      *m_multiFrameMode, *m_autopaintMode,*m_referFill, * m_closeGap,
+      *m_autopaintMode, *m_referFill, *m_closeGap,
       *m_extendFill;
   ToolOptionPairSlider *m_fillDepthField;
-  ToolOptionIntSlider* m_gapCloseDistance;
+  ToolOptionIntSlider *m_gapCloseDistance;
 
 public:
   FillToolOptionsBox(QWidget *parent, TTool *tool, TPaletteHandle *pltHandle,
@@ -535,7 +535,7 @@ protected slots:
   void onColorModeChanged(int);
   void onToolTypeChanged(int);
   void onOnionModeToggled(bool);
-  void onMultiFrameModeToggled(bool);
+  void onMultiFrameModeChanged(int);
 };
 
 //=============================================================================
@@ -593,8 +593,8 @@ protected slots:
 class EraserToolOptionsBox final : public ToolOptionsBox {
   Q_OBJECT
 
-  ToolOptionCheckbox *m_pencilMode, *m_invertMode, *m_multiFrameMode;
-  ToolOptionCombo *m_toolType, *m_colorMode;
+  ToolOptionCheckbox *m_pencilMode, *m_invertMode;
+  ToolOptionCombo *m_toolType, *m_colorMode, *m_multiFrameMode;
   QLabel *m_hardnessLabel;
   ToolOptionSlider *m_hardnessField;
 
@@ -674,7 +674,7 @@ class TapeToolOptionsBox final : public ToolOptionsBox {
   Q_OBJECT
 
   ToolOptionCheckbox *m_smoothMode, *m_joinStrokesMode;
-  ToolOptionCombo *m_toolMode, *m_typeMode;
+  ToolOptionCombo *m_toolMode, *m_typeMode, *m_multiFrameMode;
   QLabel *m_autocloseLabel;
   ToolOptionSlider *m_autocloseField;
 
