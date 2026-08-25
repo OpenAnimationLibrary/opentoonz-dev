@@ -70,6 +70,9 @@ namespace {
 
 using EditToolGadgets::DragTool;
 
+// Below this handle scale, labels become too small to read.
+constexpr double MinReadableTextScale = 0.6;
+
 //=============================================================================
 // DragCenterTool
 //-----------------------------------------------------------------------------
@@ -1130,6 +1133,7 @@ void EditTool::drawMainHandle() {
   const TPixel32 normalColor = Preferences::instance()->getAnimateToolColor();
   const TPixel32 highlightedColor = TPixel32(150, 255, 140);
   const double prefScale = Preferences::instance()->getAnimateToolHandleSize();
+  const bool showText     = prefScale >= MinReadableTextScale;
 
   // collect information
   TXsheet *xsh         = getXsheet();
@@ -1160,7 +1164,7 @@ void EditTool::drawMainHandle() {
   else {
     tglDrawCircle(center, unit * 10);
     tglDrawCircle(center, unit * 8);
-    if (m_highlightedDevice == Center && !dragging)
+    if (showText && m_highlightedDevice == Center && !dragging)
       drawText(center + TPointD(4 * unit, 0), unit, "Move center");
   }
   glPopName();
@@ -1170,7 +1174,7 @@ void EditTool::drawMainHandle() {
   glPushMatrix();
   glTranslated(center.x + unit * 10, center.y - unit * 20, 0);
 
-  if (objId.isColumn() || objId.isPegbar()) {
+  if (showText && (objId.isColumn() || objId.isPegbar())) {
     TStageObject *pegbar = xsh->getStageObject(objId);
     std::string name     = pegbar->getFullName();
     glScaled(unit * 2, unit * 1.5, 1);
@@ -1191,7 +1195,8 @@ void EditTool::drawMainHandle() {
   else
     tglDrawDisk(p, unit * 5);
   glPopName();
-  if (m_highlightedDevice == Rotation && !dragging && !isPicking())
+  if (showText && m_highlightedDevice == Rotation && !dragging &&
+      !isPicking())
     drawText(p, unit, "Rotate");
   tglColor(normalColor);
   tglDrawSegment(p, center);
@@ -1213,7 +1218,7 @@ void EditTool::drawMainHandle() {
     tglDrawRect(p.x - r, p.y - r, p.x + r, p.y + r);
   glPopName();
   TPointD scaleTooltipPos = p + unit * TPointD(-16, -16);
-  if (m_highlightedDevice == Scale && !dragging && !isPicking())
+  if (showText && m_highlightedDevice == Scale && !dragging && !isPicking())
     drawText(scaleTooltipPos, unit, "Scale");
 
   tglColor(normalColor);
@@ -1232,7 +1237,8 @@ void EditTool::drawMainHandle() {
   else
     tglDrawRect(q.x - r, q.y - r, q.x + r, q.y + r);
   glPopName();
-  if (m_highlightedDevice == ScaleXY && !dragging && !isPicking())
+  if (showText && m_highlightedDevice == ScaleXY && !dragging &&
+      !isPicking())
     drawText(scaleTooltipPos, unit, "Horizontal/Vertical scale");
 
   // draw shear handle
@@ -1257,7 +1263,7 @@ void EditTool::drawMainHandle() {
     glEnd();
   }
   glPopName();
-  if (m_highlightedDevice == Shear && !dragging)
+  if (showText && m_highlightedDevice == Shear && !dragging)
     drawText(p + TPointD(0, -unit * 10), unit, "Shear");
   tglColor(normalColor);
   tglDrawSegment(p, center);
@@ -1298,6 +1304,7 @@ void EditTool::draw() {
   const TPixel32 normalColor = Preferences::instance()->getAnimateToolColor();
   const TPixel32 highlightedColor = TPixel32(150, 255, 140);
   const double prefScale = Preferences::instance()->getAnimateToolHandleSize();
+  const bool showText     = prefScale >= MinReadableTextScale;
 
   TXsheet *xsh         = getXsheet();
   /*-- Obtain ID of the current editing stage object --*/
@@ -1398,14 +1405,17 @@ void EditTool::draw() {
   /*-- Object name --*/
   TStageObject *pegbar = xsh->getStageObject(objId);
   std::string name     = pegbar->getFullName();
-  if (objId.isColumn() || objId.isPegbar() || objId.isTable()) {
+  if (showText &&
+      (objId.isColumn() || objId.isPegbar() || objId.isTable())) {
     glScaled(unit * 2, unit * 1.5, 1);
     tglDrawText(TPointD(0, 0), name);
   } else if (objId.isCamera()) {
-    glPushMatrix();
-    glScaled(unit * 2, unit * 1.5, 1);
-    tglDrawText(TPointD(12, 0), name);
-    glPopMatrix();
+    if (showText) {
+      glPushMatrix();
+      glScaled(unit * 2, unit * 1.5, 1);
+      tglDrawText(TPointD(12, 0), name);
+      glPopMatrix();
+    }
     glScaled(unit, unit, 1);
     drawCameraIcon();
   }
