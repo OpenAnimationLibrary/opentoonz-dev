@@ -1107,12 +1107,13 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
   case QMetaType::QVariantMap:  // used in colorCalibrationLutPaths
   {
     DVGui::FileField* field = new DVGui::FileField(
-        this, QString("- Please specify 3DLUT file (.3dl) -"), false, true);
+        this, QString("- Please specify 3D LUT file (.3dl or .cube) -"), false,
+        true);
     QString lutPath = m_pref->getColorCalibrationLutPath(
         LutManager::instance()->getMonitorName());
     if (!lutPath.isEmpty()) field->setPath(lutPath);
     field->setFileMode(QFileDialog::ExistingFile);
-    QStringList lutFileTypes = {"3dl"};
+    QStringList lutFileTypes = {"3dl", "cube"};
     field->setFilters(lutFileTypes);
     connect(field, &FileField::pathChanged, this,
             &PreferencesPopup::onLutPathChanged);
