@@ -1,6 +1,5 @@
 #include "crashhandler.h"
 
-#include <algorithm>
 #include <inttypes.h>
 #include <signal.h>
 
@@ -114,9 +113,11 @@ static void printModules(std::string &out) {
   HMODULE modules[1024];
   DWORD size;
   if (EnumProcessModules(hProcess, modules, sizeof(modules), &size)) {
-    const unsigned int moduleCount =
-        (std::min)(size / sizeof(HMODULE),
-                   static_cast<DWORD>(sizeof(modules) / sizeof(HMODULE)));
+    const unsigned int moduleCapacity =
+        static_cast<unsigned int>(sizeof(modules) / sizeof(HMODULE));
+    unsigned int moduleCount =
+        static_cast<unsigned int>(size / sizeof(HMODULE));
+    if (moduleCount > moduleCapacity) moduleCount = moduleCapacity;
     for (unsigned int i = 0; i < moduleCount; i++) {
       wchar_t moduleName[512] = {};
       GetModuleFileNameW(modules[i], moduleName, 512);
