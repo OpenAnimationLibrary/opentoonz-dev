@@ -1,4 +1,4 @@
-# OpenToonz Development Checklist
+# Development Checklist (Draft)
 
 > Drafted from Shun Iwasawa's development policy posted in [OpenToonz Discussion #6332](https://github.com/opentoonz/opentoonz/discussions/6332).
 >

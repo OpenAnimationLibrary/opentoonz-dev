@@ -1,4 +1,4 @@
-# OT-Dev AI-Assisted Development Checklist
+# AI-Assisted Development Checklist (Draft)
 
 > **OT-Dev permits broad AI-assisted exploration and development.**
 >
