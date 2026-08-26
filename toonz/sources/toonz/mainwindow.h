@@ -113,6 +113,9 @@ public:
   void onOpenWhatsNew();
   void onOpenCommunityForum();
   void onOpenReportABug();
+#ifndef NDEBUG
+  void onTestCrashReporter();
+#endif
   void checkForUpdates();
   int getRoomCount() const;
   Room *getRoom(int index) const;

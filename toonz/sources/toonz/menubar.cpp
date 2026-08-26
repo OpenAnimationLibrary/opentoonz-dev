@@ -500,6 +500,9 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
   //----Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), cleanupMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return cleanupMenuBar;
 }
@@ -670,6 +673,9 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), pltEditMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return pltEditMenuBar;
 }
@@ -850,6 +856,9 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), inknPaintMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return inknPaintMenuBar;
 }
@@ -1037,6 +1046,9 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), xsheetMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return xsheetMenuBar;
 }
@@ -1073,6 +1085,9 @@ QMenuBar *StackedMenuBar::createBatchesMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), batchesMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return batchesMenuBar;
 }
@@ -1110,6 +1125,9 @@ QMenuBar *StackedMenuBar::createBrowserMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), browserMenuBar);
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
   return browserMenuBar;
 }
@@ -1504,6 +1522,9 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(helpMenu, MI_OpenReportABug);
   helpMenu->addSeparator();
   addMenuItem(helpMenu, MI_About);
+#ifndef NDEBUG
+  addMenuItem(helpMenu, MI_TestCrashReporter);
+#endif
 
 // addMenuItem(fileMenu, MI_TestAnimation);
 // fileMenu->addSeparator();

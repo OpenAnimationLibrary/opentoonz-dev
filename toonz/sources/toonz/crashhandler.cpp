@@ -48,6 +48,9 @@
 
 static QWidget *s_parentWindow = NULL;
 static bool s_reportProjInfo   = false;
+#ifndef NDEBUG
+static volatile sig_atomic_t s_intentionalCrashTest = 0;
+#endif
 
 static void appendUtf8(std::string &out, const QString &text) {
   const QByteArray utf8 = text.toUtf8();
@@ -650,6 +653,19 @@ void CrashHandler::attachParentWindow(QWidget *parent) {
 
 //-----------------------------------------------------------------------------
 
+#ifndef NDEBUG
+void CrashHandler::triggerTestCrash() {
+  s_intentionalCrashTest = 1;
+#ifdef _WIN32
+  RaiseException(EXCEPTION_ACCESS_VIOLATION, EXCEPTION_NONCONTINUABLE, 0, NULL);
+#else
+  raise(SIGSEGV);
+#endif
+}
+#endif
+
+//-----------------------------------------------------------------------------
+
 bool CrashHandler::trigger(const QString reason, bool showDialog) {
   char fileName[128];
   char dumpName[128];
@@ -677,6 +693,10 @@ bool CrashHandler::trigger(const QString reason, bool showDialog) {
     out.append(dateName);
     out.append("\nCrash Reason: ");
     out.append(reason.toStdString());
+#ifndef NDEBUG
+    if (s_intentionalCrashTest)
+      out.append("\nCrash Test: Intentional (Help > Test Crash Reporter)");
+#endif
     out.append("\n\n");
     printSysInfo(out);
     printUpdateGuidance(out);

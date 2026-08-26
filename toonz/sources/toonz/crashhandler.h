@@ -23,6 +23,9 @@ public:
   static void reportProjectInfo(bool enableReport);
   static void attachParentWindow(QWidget *parent);
   static bool trigger(const QString reason, bool showDialog);
+#ifndef NDEBUG
+  static void triggerTestCrash();
+#endif
 
 public slots:
   void copyClipboard();
