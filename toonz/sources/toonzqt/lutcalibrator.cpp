@@ -904,4 +904,3 @@ void LutManager::update() {
   // update textures for all calibrators
   for (auto calibrator : m_calibrators) calibrator->update(textureChanged);
 }
-
