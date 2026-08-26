@@ -183,6 +183,7 @@
 #define MI_ViewColorcard "MI_ViewColorcard"
 #define MI_ViewGuide "MI_ViewGuide"
 #define MI_ViewRuler "MI_ViewRuler"
+#define MI_ToggleColorCalibration "MI_ToggleColorCalibration"
 #define MI_TCheck "MI_TCheck"
 #define MI_ICheck "MI_ICheck"
 #define MI_Ink1Check "MI_Ink1Check"
