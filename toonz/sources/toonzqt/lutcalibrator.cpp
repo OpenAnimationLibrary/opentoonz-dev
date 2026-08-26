@@ -892,7 +892,9 @@ void LutManager::update() {
     // obtain 3dlut path associated to the monitor name
     QString lutPath =
         Preferences::instance()->getColorCalibrationLutPath(monitorName);
-    if (m_currentLutPath == lutPath)
+    if (lutPath.isEmpty())
+      m_currentLutPath.clear();
+    else if (m_currentLutPath == lutPath)
       m_isValid = true;
     else if (loadLutFile(lutPath)) {
       m_isValid        = true;
