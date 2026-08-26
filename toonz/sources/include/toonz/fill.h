@@ -45,6 +45,7 @@ public:
   bool m_defRegionWithPaint;
   bool m_usePrevailingReferFill;
   bool m_extendFill;
+  bool m_fillOnlySavebox;
 
   FillParameters()
       : m_styleId(0)
@@ -58,6 +59,7 @@ public:
       , m_palette(0)
       , m_prevailing(true)
       , m_extendFill(false)
+      , m_fillOnlySavebox(false)
       , m_defRegionWithPaint(true)
       , m_usePrevailingReferFill(false) {
     m_defRegionWithPaint     = DEF_REGION_WITH_PAINT;
@@ -75,6 +77,7 @@ public:
       , m_palette(params.m_palette)
       , m_prevailing(params.m_prevailing)
       , m_extendFill(params.m_extendFill)
+      , m_fillOnlySavebox(params.m_fillOnlySavebox)
       , m_defRegionWithPaint(params.m_defRegionWithPaint)
       , m_usePrevailingReferFill(params.m_usePrevailingReferFill) {}
 };

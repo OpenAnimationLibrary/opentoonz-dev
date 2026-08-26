@@ -48,6 +48,7 @@
 #endif
 
 class TTool;
+class QContextMenuEvent;
 class TFrameHandle;
 class TObjectHandle;
 class TXsheetHandle;
@@ -101,6 +102,28 @@ public:
 
 protected:
   void nextCheckState() override;
+};
+
+//-----------------------------------------------------------------------------
+
+// Savebox is a feature group rather than a simple boolean tool option.
+// Keep its Fill-limit state in the existing TBoolProperty, while presenting a
+// compact toolbar indicator whose right-click menu exposes Savebox operations.
+class ToolOptionSaveboxButton final : public QToolButton,
+                                      public ToolOptionControl {
+protected:
+  TBoolProperty *m_property;
+
+public:
+  ToolOptionSaveboxButton(TTool *tool, TBoolProperty *property,
+                          ToolHandle *toolHandle = 0, QWidget *parent = 0);
+  void updateStatus() override;
+
+protected:
+  // The checked appearance is only an indicator. State changes live in the
+  // right-click menu so a normal left click cannot silently toggle Fill.
+  void nextCheckState() override {}
+  void contextMenuEvent(QContextMenuEvent *event) override;
 };
 
 //-----------------------------------------------------------------------------
