@@ -683,7 +683,12 @@ void LutCalibrator::assignLutTexture() {
 
 void LutCalibrator::update(bool textureChanged) {
   m_isValid = LutManager::instance()->isValid();
-  if (textureChanged) assignLutTexture();
+
+  // PreferencesPopup notifies each viewer immediately after LutManager::update().
+  // The viewer then rebuilds the calibrator while its OpenGL context is current.
+  // Do not upload the texture here: this method runs from the preferences UI,
+  // where none of the viewers' OpenGL contexts is guaranteed to be current.
+  (void)textureChanged;
 }
 
 //=============================================================================
