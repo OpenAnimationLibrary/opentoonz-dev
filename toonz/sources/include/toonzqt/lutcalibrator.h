@@ -80,8 +80,8 @@ class DVAPI LutManager  // singleton
   LutManager();
 
   struct Lut {
-    int meshSize = 0;
-    float* data = nullptr;
+    int meshSize       = 0;
+    float* data        = nullptr;
     float domainMin[3] = {0.0f, 0.0f, 0.0f};
     float domainMax[3] = {1.0f, 1.0f, 1.0f};
   } m_lut;
