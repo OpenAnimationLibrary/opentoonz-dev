@@ -33,6 +33,7 @@
 #include <QApplication>
 #include <QByteArray>
 #include <QClipboard>
+#include <QDate>
 #include <QThread>
 #include <QMainWindow>
 #include <QMessageBox>
@@ -42,6 +43,7 @@
 #include <QLabel>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QLocale>
 #include <QStringList>
 #include <QtGlobal>
 
@@ -502,6 +504,32 @@ static void printGPUInfo(std::string &out) {
 
 //-----------------------------------------------------------------------------
 
+static void printUpdateGuidance(std::string &out) {
+  const QDate buildDate =
+      QLocale::c().toDate(QString::fromLatin1(__DATE__), "MMM d yyyy");
+  if (!buildDate.isValid()) return;
+
+  const int buildAge = buildDate.daysTo(QDate::currentDate());
+  if (buildAge < 30) return;
+
+  out.append("\nUpdate Test Recommended: This build is " +
+             std::to_string(buildAge) + " days old. ");
+#if defined(_WIN32) || defined(MACOSX)
+  out.append(
+      "Before reporting, reproduce the problem with the latest nightly build "
+      "if possible; it may already be fixed.\n"
+      "Nightly Builds: https://opentoonz.github.io/e/download/opentoonz.html\n");
+#else
+  out.append(
+      "Before reporting, reproduce the problem with a recent package or a "
+      "build from current source if possible; it may already be fixed. "
+      "Official nightly downloads are currently provided for Windows and "
+      "macOS.\n");
+#endif
+}
+
+//-----------------------------------------------------------------------------
+
 CrashHandler::CrashHandler(QWidget *parent, TFilePath crashFile, QString crashReport)
     : QDialog(parent), m_crashFile(crashFile), m_crashReport(crashReport) {
   setWindowFlag(Qt::WindowContextHelpButtonHint, false);
@@ -650,6 +678,7 @@ bool CrashHandler::trigger(const QString reason, bool showDialog) {
     out.append(reason.toStdString());
     out.append("\n\n");
     printSysInfo(out);
+    printUpdateGuidance(out);
     out.append("\n");
     printGPUInfo(out);
     out.append("\n");
