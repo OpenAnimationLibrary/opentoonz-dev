@@ -1,4 +1,5 @@
-# OpenToonz
+# OpenToonz-development repository
+OT-Dev is not an official repository of Opentoonz.  If currently read generically as Opentoonz Development the reference works fine but this implies no official status or recognition of the OT-Dev repo.  OT-Dev is maintained by Open Animation Library for the purpose of assisting developers in their effort to triage bugs and to improve Opentoonz.
 
 ## ⚠️ **Important**
 
