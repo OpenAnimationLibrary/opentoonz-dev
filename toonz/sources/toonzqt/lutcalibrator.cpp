@@ -89,9 +89,9 @@ bool parse3dl(QTextStream& stream, ParsedLut& lut, QString& error) {
   bool inputOk = false, outputOk = false;
   int inputBitDepth  = fields.size() == 3 ? fields.at(1).toInt(&inputOk) : 0;
   int outputBitDepth = fields.size() == 3 ? fields.at(2).toInt(&outputOk) : 0;
-  if (fields.size() != 3 || fields.at(0) != "Mesh" || !inputOk ||
-      !outputOk || inputBitDepth < 0 || inputBitDepth > 7 ||
-      outputBitDepth < 1 || outputBitDepth > 30) {
+  if (fields.size() != 3 || fields.at(0) != "Mesh" || !inputOk || !outputOk ||
+      inputBitDepth < 0 || inputBitDepth > 7 || outputBitDepth < 1 ||
+      outputBitDepth > 30) {
     error = lineError(
         lineNumber,
         QObject::tr("Expected Mesh [input bit depth] [output bit depth]."));
@@ -116,8 +116,8 @@ bool parse3dl(QTextStream& stream, ParsedLut& lut, QString& error) {
     return false;
   }
 
-  const size_t entryCount = static_cast<size_t>(lut.meshSize) * lut.meshSize *
-                            lut.meshSize;
+  const size_t entryCount =
+      static_cast<size_t>(lut.meshSize) * lut.meshSize * lut.meshSize;
   lut.data.resize(entryCount * 3);
   const float maxValue = std::ldexp(1.0f, outputBitDepth) - 1.0f;
 
@@ -145,9 +145,9 @@ bool parse3dl(QTextStream& stream, ParsedLut& lut, QString& error) {
           bool ok         = false;
           const int value = fields.at(channel).toInt(&ok);
           if (!ok) {
-            error = lineError(
-                lineNumber,
-                QObject::tr("Expected three integer color values."));
+            error =
+                lineError(lineNumber,
+                          QObject::tr("Expected three integer color values."));
             return false;
           }
           lut.data[offset + channel] = static_cast<float>(value) / maxValue;
@@ -179,13 +179,13 @@ bool parseCube(QTextStream& stream, ParsedLut& lut, QString& error) {
       dataHasBegun = true;
       float values[3];
       if (!parseFloatTriple(fields, values)) {
-        error = lineError(
-            lineNumber, QObject::tr("Expected three floating-point values."));
+        error = lineError(lineNumber,
+                          QObject::tr("Expected three floating-point values."));
         return false;
       }
       lut.data.insert(lut.data.end(), values, values + 3);
-      const size_t expectedValues = static_cast<size_t>(lut.meshSize) *
-                                    lut.meshSize * lut.meshSize * 3;
+      const size_t expectedValues =
+          static_cast<size_t>(lut.meshSize) * lut.meshSize * lut.meshSize * 3;
       if (lut.data.size() > expectedValues) {
         error = QObject::tr("The .cube file contains too many LUT entries.");
         return false;
@@ -194,19 +194,18 @@ bool parseCube(QTextStream& stream, ParsedLut& lut, QString& error) {
     }
 
     if (dataHasBegun) {
-      error = lineError(
-          lineNumber, QObject::tr("Only color triples may follow LUT data."));
+      error = lineError(lineNumber,
+                        QObject::tr("Only color triples may follow LUT data."));
       return false;
     }
 
     const QString keyword = fields.at(0).toUpper();
     if (keyword == "TITLE") {
       continue;
-    } else if (keyword == "LUT_1D_SIZE" ||
-               keyword == "LUT_1D_INPUT_RANGE") {
-      error = lineError(
-          lineNumber,
-          QObject::tr("1D and shaper .cube LUTs are not supported."));
+    } else if (keyword == "LUT_1D_SIZE" || keyword == "LUT_1D_INPUT_RANGE") {
+      error =
+          lineError(lineNumber,
+                    QObject::tr("1D and shaper .cube LUTs are not supported."));
       return false;
     } else if (keyword == "LUT_2D_SIZE") {
       error = lineError(lineNumber,
@@ -236,8 +235,7 @@ bool parseCube(QTextStream& stream, ParsedLut& lut, QString& error) {
                 .arg(keyword));
         return false;
       }
-      float* domain =
-          keyword == "DOMAIN_MIN" ? lut.domainMin : lut.domainMax;
+      float* domain = keyword == "DOMAIN_MIN" ? lut.domainMin : lut.domainMax;
       std::copy(values, values + 3, domain);
       hasDomainTags = true;
     } else if (keyword == "LUT_3D_INPUT_RANGE") {
@@ -268,8 +266,8 @@ bool parseCube(QTextStream& stream, ParsedLut& lut, QString& error) {
     return false;
   }
 
-  const size_t expectedValues = static_cast<size_t>(lut.meshSize) *
-                                lut.meshSize * lut.meshSize * 3;
+  const size_t expectedValues =
+      static_cast<size_t>(lut.meshSize) * lut.meshSize * lut.meshSize * 3;
   if (lut.data.size() != expectedValues) {
     error = QObject::tr("The .cube file contains %1 entries; expected %2.")
                 .arg(static_cast<qulonglong>(lut.data.size() / 3))
@@ -279,8 +277,9 @@ bool parseCube(QTextStream& stream, ParsedLut& lut, QString& error) {
 
   for (int channel = 0; channel < 3; ++channel) {
     if (lut.domainMin[channel] >= lut.domainMax[channel]) {
-      error = QObject::tr("Each .cube input-domain minimum must be less than "
-                          "its maximum.");
+      error = QObject::tr(
+          "Each .cube input-domain minimum must be less than "
+          "its maximum.");
       return false;
     }
   }
@@ -684,10 +683,11 @@ void LutCalibrator::assignLutTexture() {
 void LutCalibrator::update(bool textureChanged) {
   m_isValid = LutManager::instance()->isValid();
 
-  // PreferencesPopup notifies each viewer immediately after LutManager::update().
-  // The viewer then rebuilds the calibrator while its OpenGL context is current.
-  // Do not upload the texture here: this method runs from the preferences UI,
-  // where none of the viewers' OpenGL contexts is guaranteed to be current.
+  // PreferencesPopup notifies each viewer immediately after
+  // LutManager::update(). The viewer then rebuilds the calibrator while its
+  // OpenGL context is current. Do not upload the texture here: this method runs
+  // from the preferences UI, where none of the viewers' OpenGL contexts is
+  // guaranteed to be current.
   (void)textureChanged;
 }
 
@@ -904,3 +904,4 @@ void LutManager::update() {
   // update textures for all calibrators
   for (auto calibrator : m_calibrators) calibrator->update(textureChanged);
 }
+
