@@ -174,7 +174,7 @@ private slots:
   void onAdditionalStyleSheetEdited();
   void onPixelUnitExternallySelected(bool on);
   void onInterfaceFontChanged(const QString& text);
-  void onLutPathChanged();
+  void onLutPathChanged(int index);
   void onCheck30bitDisplay();
 
   void onAddLevelFormat();

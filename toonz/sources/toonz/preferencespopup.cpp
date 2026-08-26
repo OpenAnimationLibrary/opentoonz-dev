@@ -33,6 +33,7 @@
 #include "toonz/levelproperties.h"
 #include "toonz/tonionskinmaskhandle.h"
 #include "toonz/stage.h"
+#include "toonz/toonzfolders.h"
 
 // TnzCore includes
 #include "tsystem.h"
@@ -52,9 +53,12 @@
 #include <QLineEdit>
 #include <QFileDialog>
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
 #include <QPushButton>
 #include <QApplication>
 #include <QMainWindow>
+#include <QSignalBlocker>
 #include <QStringList>
 #include <QListWidget>
 #include <QGroupBox>
@@ -68,6 +72,26 @@ using namespace DVGui;
 
 namespace {
 enum DpiPolicy { DP_ImageDpi, DP_CustomDpi };
+
+constexpr int kLutBrowseRole = Qt::UserRole + 1;
+
+QString lutLibraryDirectory() {
+  return (ToonzFolder::getLibraryFolder() + "luts").getQString();
+}
+
+QString normalizedLutPath(const QString& path) {
+  return path.isEmpty() ? QString()
+                        : QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
+
+int findLutPath(QComboBox* combo, const QString& path) {
+  const QString normalizedPath = normalizedLutPath(path);
+  for (int index = 0; index < combo->count(); ++index) {
+    if (normalizedLutPath(combo->itemData(index).toString()) == normalizedPath)
+      return index;
+  }
+  return -1;
+}
 
 inline void setupLayout(QGridLayout* lay, int margin = 15) {
   lay->setContentsMargins(margin, margin, margin, margin);
@@ -910,10 +934,48 @@ void PreferencesPopup::onInterfaceFontChanged(const QString& text) {
 
 //-----------------------------------------------------------------------------
 
-void PreferencesPopup::onLutPathChanged() {
-  FileField* lutPathFileField = getUI<FileField*>(colorCalibrationLutPaths);
-  m_pref->setColorCalibrationLutPath(LutManager::instance()->getMonitorName(),
-                                     lutPathFileField->getPath());
+void PreferencesPopup::onLutPathChanged(int index) {
+  QComboBox* combo = getUI<QComboBox*>(colorCalibrationLutPaths);
+  if (!combo || index < 0) return;
+
+  const QString monitorName  = LutManager::instance()->getMonitorName();
+  const QString previousPath = m_pref->getColorCalibrationLutPath(monitorName);
+  QString lutPath;
+
+  if (combo->itemData(index, kLutBrowseRole).toBool()) {
+    const QString initialPath =
+        previousPath.isEmpty() ? lutLibraryDirectory() : previousPath;
+    lutPath = QFileDialog::getOpenFileName(
+        this, tr("Choose 3D LUT"), initialPath,
+        tr("3D LUT Files (*.3dl *.cube);;All Files (*)"));
+    if (lutPath.isEmpty()) {
+      const QSignalBlocker blocker(combo);
+      combo->setCurrentIndex(findLutPath(combo, previousPath));
+      return;
+    }
+
+    int pathIndex = findLutPath(combo, lutPath);
+    if (pathIndex < 0) {
+      const int browseIndex = combo->findData(true, kLutBrowseRole);
+      combo->insertItem(browseIndex - 1,
+                        tr("%1 (Custom)").arg(QFileInfo(lutPath).fileName()),
+                        lutPath);
+      pathIndex = findLutPath(combo, lutPath);
+    }
+    const QSignalBlocker blocker(combo);
+    combo->setCurrentIndex(pathIndex);
+  } else {
+    lutPath = combo->itemData(index).toString();
+  }
+
+  if (normalizedLutPath(lutPath) == normalizedLutPath(previousPath)) return;
+  if (!lutPath.isEmpty() && !LutManager::instance()->loadLutFile(lutPath)) {
+    const QSignalBlocker blocker(combo);
+    combo->setCurrentIndex(findLutPath(combo, previousPath));
+    return;
+  }
+
+  m_pref->setColorCalibrationLutPath(monitorName, lutPath);
   onColorCalibrationChanged();
 }
 
@@ -1107,18 +1169,40 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
 
   case QMetaType::QVariantMap:  // used in colorCalibrationLutPaths
   {
-    DVGui::FileField* field = new DVGui::FileField(
-        this, QString("- Please specify 3D LUT file (.3dl or .cube) -"), false,
-        true);
-    QString lutPath = m_pref->getColorCalibrationLutPath(
+    QComboBox* combo = new QComboBox(this);
+    combo->addItem(tr("None"), QString());
+
+    QDir lutDirectory(lutLibraryDirectory());
+    const QFileInfoList lutFiles = lutDirectory.entryInfoList(
+        QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& fileInfo : lutFiles) {
+      const QString suffix = fileInfo.suffix();
+      if (suffix.compare("3dl", Qt::CaseInsensitive) != 0 &&
+          suffix.compare("cube", Qt::CaseInsensitive) != 0)
+        continue;
+      combo->addItem(fileInfo.fileName(), fileInfo.absoluteFilePath());
+      combo->setItemData(combo->count() - 1, fileInfo.absoluteFilePath(),
+                         Qt::ToolTipRole);
+    }
+
+    const QString lutPath = m_pref->getColorCalibrationLutPath(
         LutManager::instance()->getMonitorName());
-    if (!lutPath.isEmpty()) field->setPath(lutPath);
-    field->setFileMode(QFileDialog::ExistingFile);
-    QStringList lutFileTypes = {"3dl", "cube"};
-    field->setFilters(lutFileTypes);
-    connect(field, &FileField::pathChanged, this,
+    int currentIndex = findLutPath(combo, lutPath);
+    if (!lutPath.isEmpty() && currentIndex < 0) {
+      const QFileInfo fileInfo(lutPath);
+      combo->addItem(tr("%1 (Custom)").arg(fileInfo.fileName()), lutPath);
+      combo->setItemData(combo->count() - 1, lutPath, Qt::ToolTipRole);
+      currentIndex = combo->count() - 1;
+    }
+
+    combo->insertSeparator(combo->count());
+    combo->addItem(tr("Browse..."));
+    combo->setItemData(combo->count() - 1, true, kLutBrowseRole);
+    combo->setCurrentIndex(currentIndex < 0 ? 0 : currentIndex);
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &PreferencesPopup::onLutPathChanged);
-    widget = field;
+    widget = combo;
   } break;
 
   default:
