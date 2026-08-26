@@ -48,7 +48,7 @@
 
 static QWidget *s_parentWindow = NULL;
 static bool s_reportProjInfo   = false;
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
 static volatile sig_atomic_t s_intentionalCrashTest = 0;
 #endif
 
@@ -653,7 +653,7 @@ void CrashHandler::attachParentWindow(QWidget *parent) {
 
 //-----------------------------------------------------------------------------
 
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
 void CrashHandler::triggerTestCrash() {
   s_intentionalCrashTest = 1;
 #ifdef _WIN32
@@ -693,7 +693,7 @@ bool CrashHandler::trigger(const QString reason, bool showDialog) {
     out.append(dateName);
     out.append("\nCrash Reason: ");
     out.append(reason.toStdString());
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
     if (s_intentionalCrashTest)
       out.append("\nCrash Test: Intentional (Help > Test Crash Reporter)");
 #endif

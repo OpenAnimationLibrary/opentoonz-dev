@@ -500,7 +500,7 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
   //----Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), cleanupMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -673,7 +673,7 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), pltEditMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -856,7 +856,7 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), inknPaintMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -1046,7 +1046,7 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), xsheetMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -1085,7 +1085,7 @@ QMenuBar *StackedMenuBar::createBatchesMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), batchesMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -1125,7 +1125,7 @@ QMenuBar *StackedMenuBar::createBrowserMenuBar() {
   //---Help Menu
   QMenu *helpMenu = addMenu(tr("Help"), browserMenuBar);
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 
@@ -1522,7 +1522,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(helpMenu, MI_OpenReportABug);
   helpMenu->addSeparator();
   addMenuItem(helpMenu, MI_About);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   addMenuItem(helpMenu, MI_TestCrashReporter);
 #endif
 

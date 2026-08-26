@@ -18,7 +18,7 @@
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
 #include "crashhandler.h"
 #endif
 
@@ -516,7 +516,7 @@ centralWidget->setLayout(centralWidgetLayout);*/
   setCommandHandler(MI_OpenCommunityForum, this,
                     &MainWindow::onOpenCommunityForum);
   setCommandHandler(MI_OpenReportABug, this, &MainWindow::onOpenReportABug);
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   setCommandHandler(MI_TestCrashReporter, this,
                     &MainWindow::onTestCrashReporter);
 #endif
@@ -1145,7 +1145,7 @@ void MainWindow::onOpenReportABug() {
 }
 //-----------------------------------------------------------------------------
 
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
 void MainWindow::onTestCrashReporter() {
   const std::vector<QString> buttons = {tr("Crash OpenToonz"), tr("Cancel")};
   const int ret = DVGui::MsgBox(
@@ -2809,7 +2809,7 @@ void MainWindow::defineActions() {
                        "", "web");
   createMenuHelpAction(MI_OpenReportABug, QT_TR_NOOP("&Report a Bug..."), "",
                        "web");
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   createMenuHelpAction(MI_TestCrashReporter,
                        QT_TR_NOOP("Test Crash Reporter..."), "", "");
 #endif

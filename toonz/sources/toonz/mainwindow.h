@@ -113,7 +113,7 @@ public:
   void onOpenWhatsNew();
   void onOpenCommunityForum();
   void onOpenReportABug();
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
   void onTestCrashReporter();
 #endif
   void checkForUpdates();

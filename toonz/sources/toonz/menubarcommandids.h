@@ -445,7 +445,7 @@
 #define MI_PreviewFx "MI_PreviewFx"
 
 #define MI_About "MI_About"
-#ifndef NDEBUG
+#ifdef ENABLE_CRASH_REPORTER_TEST
 #define MI_TestCrashReporter "MI_TestCrashReporter"
 #endif
 #define MI_StartupPopup "MI_StartupPopup"
