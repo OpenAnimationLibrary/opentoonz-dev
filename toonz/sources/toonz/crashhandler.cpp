@@ -606,7 +606,9 @@ void CrashHandler::copyClipboard() {
 //-----------------------------------------------------------------------------
 
 void CrashHandler::openWebpage() {
-  QDesktopServices::openUrl(QUrl("https://github.com/opentoonz/opentoonz/issues?q=is%3Aissue%20state%3Aopen%20label%3Acrash"));
+  QDesktopServices::openUrl(
+      QUrl("https://github.com/opentoonz/opentoonz/"
+           "issues?q=is%3Aissue%20state%3Aopen%20label%3Acrash"));
 }  
 
 //-----------------------------------------------------------------------------
