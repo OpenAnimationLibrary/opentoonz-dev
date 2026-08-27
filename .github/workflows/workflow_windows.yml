@@ -110,7 +110,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DENABLE_CRASH_REPORTER_TEST=ON
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -144,10 +144,7 @@ jobs:
           REM Deploy Qt dependencies
           "%QT_PATH%\bin\windeployqt.exe" Opentoonz\Opentoonz.exe --opengl
 
-          REM Preserve matching symbols separately from the portable build
-          mkdir Symbols
-          xcopy /Y /E /I RelWithDebInfo\*.pdb Symbols
-          del /Q Opentoonz\*.pdb
+          del /Q Opentoonz\*.pdb  REM Remove .pdb files
           del /Q Opentoonz\vc_redist.x64.exe REM Remove vc_redist.x64.exe file
           
           REM Create portablestuff directory and copy stuff folder
@@ -155,73 +152,16 @@ jobs:
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
 
-      - name: Add diagnostic build information
-        shell: pwsh
+      # Create artifact from the build
+      - name: Create Artifact
         run: |
-          @"
-          OT-Dev Diagnostic Build
-          Commit: $env:GITHUB_SHA
-          Build date (UTC): $([DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss"))
-          Configuration: RelWithDebInfo
-          Crash reporter test: Enabled
+          mkdir artifact
+          xcopy toonz\build\Opentoonz artifact\ /E /H /Y
+        shell: cmd
 
-          This is an unofficial development build for testing work in progress.
-          Save work before using Help > Test Crash Reporter.
-          "@ | Set-Content toonz\build\Opentoonz\OTDEV_BUILD.txt
-
-      - name: Create diagnostic archives
-        shell: pwsh
-        run: |
-          Compress-Archive -Path toonz\build\Opentoonz -DestinationPath OpenToonz-OTDev-Diagnostic-Windows.zip
-          Compress-Archive -Path toonz\build\Symbols -DestinationPath OpenToonz-OTDev-Diagnostic-Symbols-Windows.zip
-
-      - name: Upload diagnostic artifacts
+      # Upload the generated artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: OpenToonz-OTDev-Diagnostic-Windows-${{ github.sha }}
-          retention-days: 14
-          path: |
-            OpenToonz-OTDev-Diagnostic-Windows.zip
-            OpenToonz-OTDev-Diagnostic-Symbols-Windows.zip
-
-  Publish:
-    needs: Windows
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Download diagnostic archives
-        uses: actions/download-artifact@v7
-        with:
-          name: OpenToonz-OTDev-Diagnostic-Windows-${{ github.sha }}
-          path: release
-
-      - name: Publish rolling diagnostic prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_NOTES: |
-            Unofficial Windows diagnostic build from OT-Dev main.
-
-            - Configuration: RelWithDebInfo
-            - Crash reporter test: Enabled
-            - Commit: ${{ github.sha }}
-            - Use Help > Test Crash Reporter for a confirmed end-to-end test.
-            - Save work before testing.
-
-            The symbols archive matches this exact build and is intended for crash-dump analysis.
-        run: |
-          git tag --force otdev-diagnostic "$GITHUB_SHA"
-          git push origin refs/tags/otdev-diagnostic --force
-
-          if gh release view otdev-diagnostic >/dev/null 2>&1; then
-            gh release edit otdev-diagnostic --title "OT-Dev Windows Diagnostic Build" --notes "$RELEASE_NOTES" --prerelease
-          else
-            gh release create otdev-diagnostic --title "OT-Dev Windows Diagnostic Build" --notes "$RELEASE_NOTES" --prerelease --target "$GITHUB_SHA"
-          fi
-
-          gh release upload otdev-diagnostic release/OpenToonz-OTDev-Diagnostic-Windows.zip release/OpenToonz-OTDev-Diagnostic-Symbols-Windows.zip --clobber
+          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          path: artifact
