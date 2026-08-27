@@ -108,6 +108,12 @@ option(WITH_SYSTEM_SUPERLU "Use the system SuperLU library instead of 'thirdpart
 option(WITH_CANON "Build with Canon DSLR support - Requires Canon SDK" OFF)
 option(WITH_TRANSLATION "Generate translation projects as well" ON)
 option(WITH_WINTAB "(Windows only) Build with customized Qt with WinTab support. https://github.com/shun-iwasawa/qt5/releases/tag/v5.15.2_wintab" OFF)
+option(ENABLE_CRASH_REPORTER_TEST
+       "Include the intentional crash reporter test command" OFF)
+
+if(ENABLE_CRASH_REPORTER_TEST)
+    add_definitions(-DENABLE_CRASH_REPORTER_TEST)
+endif()
 
 # avoid using again
 option_defaults_clear()

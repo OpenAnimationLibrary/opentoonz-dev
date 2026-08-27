@@ -6,4 +6,8 @@ This repository is maintained by the Open Animation Library to assist contributo
 
 Work developed or accepted here does not imply approval, recognition, or acceptance by the official OpenToonz project.
 
+## Windows Diagnostic Build
+
+The [OT-Dev Windows Diagnostic Build](https://github.com/OpenAnimationLibrary/opentoonz-dev/releases/tag/otdev-diagnostic) is an unofficial development build for testing work in progress and collecting actionable crash reports. Save work before using **Help > Test Crash Reporter**.
+
 See the [synchronized OpenToonz README](../README.md) for project and installation information. The official OpenToonz repository is [opentoonz/opentoonz](https://github.com/opentoonz/opentoonz).

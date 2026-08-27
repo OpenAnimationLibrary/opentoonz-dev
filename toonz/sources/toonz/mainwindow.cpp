@@ -18,6 +18,9 @@
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
+#ifdef ENABLE_CRASH_REPORTER_TEST
+#include "crashhandler.h"
+#endif
 
 // TnzTools includes
 #include "tools/toolcommandids.h"
@@ -513,6 +516,10 @@ centralWidget->setLayout(centralWidgetLayout);*/
   setCommandHandler(MI_OpenCommunityForum, this,
                     &MainWindow::onOpenCommunityForum);
   setCommandHandler(MI_OpenReportABug, this, &MainWindow::onOpenReportABug);
+#ifdef ENABLE_CRASH_REPORTER_TEST
+  setCommandHandler(MI_TestCrashReporter, this,
+                    &MainWindow::onTestCrashReporter);
+#endif
 
   setCommandHandler(MI_MaximizePanel, this, &MainWindow::maximizePanel);
   setCommandHandler(MI_FullScreenWindow, this, &MainWindow::fullScreenWindow);
@@ -1136,6 +1143,20 @@ void MainWindow::onOpenReportABug() {
     QDesktopServices::openUrl(
         QUrl("https://github.com/opentoonz/opentoonz/issues"));
 }
+//-----------------------------------------------------------------------------
+
+#ifdef ENABLE_CRASH_REPORTER_TEST
+void MainWindow::onTestCrashReporter() {
+  const std::vector<QString> buttons = {tr("Crash OpenToonz"), tr("Cancel")};
+  const int ret = DVGui::MsgBox(
+      DVGui::WARNING,
+      tr("This will deliberately terminate OpenToonz without saving. "
+         "Continue?"),
+      buttons, 1);
+  if (ret == 1) CrashHandler::triggerTestCrash();
+}
+#endif
+
 //-----------------------------------------------------------------------------
 
 void MainWindow::autofillToggle() {
@@ -2788,6 +2809,10 @@ void MainWindow::defineActions() {
                        "", "web");
   createMenuHelpAction(MI_OpenReportABug, QT_TR_NOOP("&Report a Bug..."), "",
                        "web");
+#ifdef ENABLE_CRASH_REPORTER_TEST
+  createMenuHelpAction(MI_TestCrashReporter,
+                       QT_TR_NOOP("Test Crash Reporter..."), "", "");
+#endif
 
   // Fill
 
