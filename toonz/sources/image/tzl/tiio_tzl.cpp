@@ -2110,9 +2110,9 @@ TImageP TImageReaderTzl::load14() {
       throw TException("Loading tlv: bad icon size.");
     fread(&actualBuffSize, sizeof(TINT32), 1, chan);
 
-    const size_t iconBufferCapacity =
-        static_cast<size_t>(iconLx) * static_cast<size_t>(iconLy) *
-        sizeof(TPixelCM32);
+    const size_t iconBufferCapacity = static_cast<size_t>(iconLx) *
+                                      static_cast<size_t>(iconLy) *
+                                      sizeof(TPixelCM32);
     if (actualBuffSize <= 0 ||
         static_cast<size_t>(actualBuffSize) > iconBufferCapacity)
       throw TException("Loading tlv: icon buffer size error.");
@@ -2205,15 +2205,13 @@ TImageP TImageReaderTzl::load14() {
       fullRas->clear();
 
       if (!savebox.isEmpty()) {
-        const TPoint sourcePos =
-            savebox.getP00() - originalSavebox.getP00();
+        const TPoint sourcePos = savebox.getP00() - originalSavebox.getP00();
         const int copyLx =
             std::min(savebox.getLx(), ras->getLx() - sourcePos.x);
         const int copyLy =
             std::min(savebox.getLy(), ras->getLy() - sourcePos.y);
 
-        if (sourcePos.x >= 0 && sourcePos.y >= 0 && copyLx > 0 &&
-            copyLy > 0) {
+        if (sourcePos.x >= 0 && sourcePos.y >= 0 && copyLx > 0 && copyLy > 0) {
           const TDimension copySize(copyLx, copyLy);
           TRect sourceRect(sourcePos, copySize);
           TRect targetRect(savebox.getP00(), copySize);
