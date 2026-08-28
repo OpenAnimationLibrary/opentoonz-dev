@@ -99,8 +99,8 @@ static bool generateMinidump(TFilePath dumpFile) {
   mdei.ClientPointers    = FALSE;
 
   if (MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile,
-                        MiniDumpNormal,
-                        s_exceptionInfo ? &mdei : NULL, 0, NULL)) {
+                        MiniDumpNormal, s_exceptionInfo ? &mdei : NULL, 0,
+                        NULL)) {
     CloseHandle(hDumpFile);
     return true;
   }
@@ -133,12 +133,11 @@ static void printModules(std::string &out) {
 static void printTabletInfo(std::string &out) {
   QStringList modules;
   if (GetModuleHandleW(L"wintab32.dll")) modules.append("wintab32.dll");
-  if (GetModuleHandleW(L"Wacom_Tablet.dll"))
-    modules.append("Wacom_Tablet.dll");
+  if (GetModuleHandleW(L"Wacom_Tablet.dll")) modules.append("Wacom_Tablet.dll");
 
   out.append("Tablet Modules: ");
-  appendUtf8(out, modules.isEmpty() ? QString("None detected")
-                                    : modules.join(", "));
+  appendUtf8(out,
+             modules.isEmpty() ? QString("None detected") : modules.join(", "));
   out.append("\n");
 }
 
@@ -150,7 +149,7 @@ static void printWindowsVersion(std::string &out) {
                   GetProcAddress(ntdll, "RtlGetVersion"))
             : NULL;
 
-  OSVERSIONINFOW version = {};
+  OSVERSIONINFOW version      = {};
   version.dwOSVersionInfoSize = sizeof(version);
   if (!rtlGetVersion || rtlGetVersion(&version) != 0) {
     out.append("Operating System: Windows (native version unavailable)\n");
@@ -522,7 +521,8 @@ static void printUpdateGuidance(std::string &out) {
   out.append(
       "Before reporting, reproduce the problem with the latest nightly build "
       "if possible; it may already be fixed.\n"
-      "Nightly Builds: https://opentoonz.github.io/e/download/opentoonz.html\n");
+      "Nightly Builds: "
+      "https://opentoonz.github.io/e/download/opentoonz.html\n");
 #else
   out.append(
       "Before reporting, reproduce the problem with a recent package or a "
@@ -722,8 +722,8 @@ bool CrashHandler::trigger(const QString reason, bool showDialog) {
       std::wstring sceneName   = currentScene->getSceneName();
 
       out.append("\n");
-      appendPath(out, "Application Dir: ",
-                 QCoreApplication::applicationDirPath());
+      appendPath(out,
+                 "Application Dir: ", QCoreApplication::applicationDirPath());
       appendPath(out, "Stuff Dir: ", TEnv::getStuffDir().getQString());
       out.append("\nProject Name: ");
       appendUtf8(out, currentProject->getName().getQString());
@@ -731,8 +731,8 @@ bool CrashHandler::trigger(const QString reason, bool showDialog) {
       appendUtf8(out, QString::fromStdWString(sceneName));
       out.append("\n");
       appendPath(out, "Project Path: ", projectPath.getQString());
-      appendPath(out, "Scene Path: ",
-                 currentScene->getScenePath().getQString());
+      appendPath(out,
+                 "Scene Path: ", currentScene->getScenePath().getQString());
     }
   } catch (...) {
   }

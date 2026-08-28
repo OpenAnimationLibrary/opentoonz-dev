@@ -666,6 +666,8 @@ void PreferencesPopup::beforeRoomChoiceChanged() {
 //-----------------------------------------------------------------------------
 
 void PreferencesPopup::onColorCalibrationChanged() {
+  CommandManager::instance()->setChecked(MI_ToggleColorCalibration,
+                                         m_pref->isColorCalibrationEnabled());
   LutManager::instance()->update();
   TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
       "ColorCalibration");
@@ -1860,6 +1862,9 @@ QWidget* PreferencesPopup::createInterfacePage() {
 
   QGridLayout* colorCalibLay = insertGroupBoxUI(colorCalibrationEnabled, lay);
   { insertUI(colorCalibrationLutPaths, colorCalibLay); }
+  connect(CommandManager::instance()->getAction(MI_ToggleColorCalibration),
+          &QAction::triggered, getUI<QGroupBox*>(colorCalibrationEnabled),
+          &QGroupBox::setChecked);
   insertUI(displayIn30bit, lay);
   row = lay->rowCount();
   lay->addWidget(check30bitBtn, row - 1, 2, Qt::AlignRight);

@@ -32,6 +32,7 @@
 #include "toonzqt/viewcommandids.h"
 #include "toonzqt/updatechecker.h"
 #include "toonzqt/paletteviewer.h"
+#include "toonzqt/lutcalibrator.h"
 #include "toonzqt/seethroughwindow.h"
 
 // TnzLib includes
@@ -2638,6 +2639,18 @@ void MainWindow::defineActions() {
 
   // Menu - View
 
+  menuAct =
+      createToggle(MI_ToggleColorCalibration, QT_TR_NOOP("Toggle Active LUT"),
+                   "", Preferences::instance()->isColorCalibrationEnabled(),
+                   MenuViewCommandType);
+  connect(menuAct, &QAction::triggered, this, [](bool enabled) {
+    Preferences::instance()->setValue(colorCalibrationEnabled, enabled);
+    LutManager::instance()->update();
+    TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+        "ColorCalibration");
+  });
+  menuAct->setEnabled(true);
+
   createToggle(MI_ViewCamera, QT_TR_NOOP("&Camera Box"), "",
                ViewCameraToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_ViewTable, QT_TR_NOOP("&Table"), "",
@@ -2838,6 +2851,8 @@ void MainWindow::defineActions() {
   CommandManager::instance()->setToggleTexts(
       MI_FreezePreview, tr("Freeze Preview"), tr("Unfreeze Preview"));
   createRightClickMenuAction(MI_SavePreset, QT_TR_NOOP("&Save As Preset"), "");
+  createRightClickMenuAction(MI_SaveAsCustomVectorBrush,
+                             QT_TR_NOOP("Save as Custom Vector Brush..."), "");
   createRightClickMenuAction(MI_PreviewFx, QT_TR_NOOP("Preview Fx"), "");
   createRightClickMenuAction(MI_PasteValues, QT_TR_NOOP("&Paste Color && Name"),
                              "", "paste_color_and_name");
