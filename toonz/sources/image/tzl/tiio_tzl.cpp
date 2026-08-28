@@ -2215,8 +2215,8 @@ TImageP TImageReaderTzl::load14() {
         if (sourcePos.x >= 0 && sourcePos.y >= 0 && copyLx > 0 &&
             copyLy > 0) {
           const TDimension copySize(copyLx, copyLy);
-          const TRect sourceRect(sourcePos, copySize);
-          const TRect targetRect(savebox.getP00(), copySize);
+          TRect sourceRect(sourcePos, copySize);
+          TRect targetRect(savebox.getP00(), copySize);
           fullRas->extractT(targetRect)->copy(ras->extract(sourceRect));
           savebox = targetRect;
         } else {
