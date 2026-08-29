@@ -1682,9 +1682,6 @@ PreferencesPopup::PreferencesPopup()
   }
   setLayout(mainLayout);
 
-#ifdef MACOSX
-  setWindowFlags(Qt::Tool);
-#endif
 
   connect(categoryList, &QListWidget::currentRowChanged, stackedWidget,
           &QStackedWidget::setCurrentIndex);
