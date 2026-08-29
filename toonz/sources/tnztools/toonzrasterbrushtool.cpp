@@ -1262,8 +1262,6 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
           MYPAINT_BRUSH_SETTING_RADIUS_LOGARITHMIC, baseSize + modifierSize);
 
       const bool presetEraser =
-          m_painting.myPaint.baseBrush.isConstant(
-              MYPAINT_BRUSH_SETTING_ERASER) &&
           m_painting.myPaint.baseBrush.getBaseValue(
               MYPAINT_BRUSH_SETTING_ERASER) > 0.5f;
       m_painting.myPaint.eraser =
@@ -1272,8 +1270,8 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
           static_cast<MyPaintToonzEraserMode>(m_eraserMode.getIndex());
 
       if (m_painting.myPaint.eraser) {
-        // Render the brush shape into the work raster. Applying libmypaint's
-        // eraser directly to this temporary mask would produce no coverage.
+        // Render the brush shape into the work raster. Eraser mappings are
+        // flattened because libmypaint cannot erase an empty coverage mask.
         m_painting.myPaint.baseBrush.setBaseValue(
             MYPAINT_BRUSH_SETTING_ERASER, 0.0f);
         m_painting.myPaint.baseBrush.setBaseValue(
