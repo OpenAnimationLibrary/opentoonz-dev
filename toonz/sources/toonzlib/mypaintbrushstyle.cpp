@@ -2,6 +2,10 @@
 #include <streambuf>
 
 #include <QStandardPaths>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSaveFile>
 
 #include "tfilepath_io.h"
 #include "timage_io.h"
@@ -310,6 +314,94 @@ void TMyPaintBrushStyle::loadBrush(const TFilePath &path) {
   TImageReader::load(preview_path, m_preview);
 
   invalidateIcon();
+}
+
+//-----------------------------------------------------------------------------
+
+bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
+                                     QString &errorMessage) const {
+  QFile source(m_fullpath.getQString());
+  if (!source.open(QIODevice::ReadOnly)) {
+    errorMessage = QObject::tr("The source MyPaint brush could not be read: %1")
+                       .arg(m_fullpath.getQString());
+    return false;
+  }
+
+  QByteArray data = source.readAll();
+  source.close();
+  std::string brushData(data.constData(), data.size());
+  if (brushData.find("version 2") != std::string::npos)
+    brushData = mybToVersion3(brushData);
+
+  QJsonParseError parseError;
+  QJsonDocument document = QJsonDocument::fromJson(
+      QByteArray::fromStdString(brushData), &parseError);
+  if (document.isNull() || !document.isObject()) {
+    errorMessage = QObject::tr("The source MyPaint brush is not valid JSON: %1")
+                       .arg(parseError.errorString());
+    return false;
+  }
+
+  QJsonObject root     = document.object();
+  QJsonObject settings = root.value("settings").toObject();
+  for (const auto &entry : m_baseValues) {
+    const QString key =
+        QString::fromStdString(mypaint::Setting::byId(entry.first).key);
+    QJsonObject setting = settings.value(key).toObject();
+    setting.insert("base_value", static_cast<double>(entry.second));
+    settings.insert(key, setting);
+  }
+  root.insert("settings", settings);
+  root.insert("parent_brush_name", m_path.withType("").getQString());
+  root.insert("version", 3);
+
+  if (!TSystem::touchParentDir(path)) {
+    errorMessage =
+        QObject::tr("The destination folder could not be created: %1")
+            .arg(path.getParentDir().getQString());
+    return false;
+  }
+
+  QSaveFile output(path.getQString());
+  if (!output.open(QIODevice::WriteOnly)) {
+    errorMessage = QObject::tr("The MyPaint brush could not be written: %1")
+                       .arg(path.getQString());
+    return false;
+  }
+  output.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+  if (!output.commit()) {
+    errorMessage = QObject::tr("The MyPaint brush could not be saved: %1")
+                       .arg(path.getQString());
+    return false;
+  }
+
+  const TFilePath sourcePreview =
+      m_fullpath.getParentDir() + (m_fullpath.getWideName() + L"_prev.png");
+  const TFilePath destinationPreview =
+      path.getParentDir() + (path.getWideName() + L"_prev.png");
+  if (TFileStatus(sourcePreview).doesExist()) {
+    QFile::remove(destinationPreview.getQString());
+    QFile::copy(sourcePreview.getQString(), destinationPreview.getQString());
+  }
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+float TMyPaintBrushStyle::getSourceBaseValue(MyPaintBrushSetting id) const {
+  return m_brushOriginal.getBaseValue(id);
+}
+
+//-----------------------------------------------------------------------------
+
+float TMyPaintBrushStyle::getEffectiveBaseValue(MyPaintBrushSetting id) const {
+  return getBaseValue(id);
+}
+
+//-----------------------------------------------------------------------------
+
+void TMyPaintBrushStyle::resetBaseValue(MyPaintBrushSetting id) {
+  setBaseValue(id, false, 0.0f);
 }
 
 //-----------------------------------------------------------------------------

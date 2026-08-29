@@ -14,6 +14,7 @@
 #include <QFrame>
 #include <QTabBar>
 #include <QShortcut>
+#include <QPointer>
 
 #undef DVAPI
 #undef DVVAR
@@ -38,6 +39,7 @@ class TabBarContainter;
 class ChangeStyleCommand;
 class QMimeData;
 class StyleNameEditor;
+class QDialog;
 //==============================================================
 
 //****************************************************************************
@@ -288,6 +290,7 @@ private:
   QShortcut *m_zoomInShortCut;
   QShortcut *m_zoomOutShortCut;
   StyleNameEditor *m_styleNameEditor;
+  QPointer<QDialog> m_myPaintBrushSettingsDialog;
 
 signals:
   void changeWindowTitleSignal();

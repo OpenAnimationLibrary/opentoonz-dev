@@ -751,6 +751,11 @@ public:
     static MyPaintBrushStyleManager theManager(m_chipSize);
     m_manager    = &theManager;
     m_mypManager = &theManager;
+    connect(m_mypManager, &MyPaintBrushStyleManager::itemsChanged, this,
+            [this]() {
+              computeSize();
+              update();
+            });
   }
 
   bool loadIfNeeded() override {

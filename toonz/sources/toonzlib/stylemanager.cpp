@@ -602,8 +602,30 @@ void TextureStyleManager::loadItems() {
 //    MyPaintBrushStyleManager  implementation
 //********************************************************************************
 
+namespace {
+std::set<MyPaintBrushStyleManager *> &myPaintBrushManagers() {
+  static std::set<MyPaintBrushStyleManager *> managers;
+  return managers;
+}
+}  // namespace
+
 MyPaintBrushStyleManager::MyPaintBrushStyleManager(QSize chipSize)
-    : BaseStyleManager(TFilePath(), QString(), chipSize) {}
+    : BaseStyleManager(TFilePath(), QString(), chipSize) {
+  myPaintBrushManagers().insert(this);
+}
+
+//-----------------------------------------------------------------------------
+
+MyPaintBrushStyleManager::~MyPaintBrushStyleManager() {
+  myPaintBrushManagers().erase(this);
+}
+
+//-----------------------------------------------------------------------------
+
+void MyPaintBrushStyleManager::reloadAll() {
+  for (MyPaintBrushStyleManager *manager : myPaintBrushManagers())
+    manager->loadItems();
+}
 
 //-----------------------------------------------------------------------------
 
@@ -639,6 +661,7 @@ void MyPaintBrushStyleManager::loadItems() {
   }
 
   m_loaded = true;
+  emit itemsChanged();
 }
 
 //********************************************************************************

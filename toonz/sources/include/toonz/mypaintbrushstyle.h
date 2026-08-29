@@ -104,10 +104,16 @@ public:
   void setBaseValueEnabled(MyPaintBrushSetting id, bool enable) {
     setBaseValue(id, enable, getBaseValue(id));
   }
+  void resetBaseValue(MyPaintBrushSetting id);
 
   const std::map<MyPaintBrushSetting, float> getBaseValues() const {
     return m_baseValues;
   }
+
+  float getSourceBaseValue(MyPaintBrushSetting id) const;
+  float getEffectiveBaseValue(MyPaintBrushSetting id) const;
+
+  bool saveBrushAs(const TFilePath &path, QString &errorMessage) const;
 
   float getBaseValue(MyPaintBrushSetting id) const {
     std::map<MyPaintBrushSetting, float>::const_iterator i =

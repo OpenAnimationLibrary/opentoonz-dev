@@ -207,6 +207,9 @@ class DVAPI MyPaintBrushStyleManager final : public BaseStyleManager {
 
 public:
   MyPaintBrushStyleManager(QSize chipSize = QSize(25, 25));
+  ~MyPaintBrushStyleManager() override;
+
+  static void reloadAll();
 
   TMyPaintBrushStyle &getBrush(int index) {
     assert(0 <= index && index < countData());
@@ -214,6 +217,9 @@ public:
   }
 
   void loadItems() override;
+
+signals:
+  void itemsChanged();
 };
 
 //********************************************************************************
