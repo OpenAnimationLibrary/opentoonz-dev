@@ -729,6 +729,14 @@ void ToonzVectorBrushTool::onActivate() {
 
 //--------------------------------------------------------------------------------------------------
 
+void ToonzVectorBrushTool::onImageChanged() {
+  m_inputmanager.reset();
+  m_active = false;
+  m_tracks.clear();
+}
+
+//-----------------------------------------------------------------------------
+
 void ToonzVectorBrushTool::onDeactivate() {
   /*---
    * ドラッグ中にツールが切り替わった場合に備え、onDeactivateにもMouseReleaseと同じ処理を行う
@@ -902,6 +910,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     TStroke *stroke = m_tracks.front().makeStroke(error);
 
     TVectorImageP vi = getImage(true);
+    if (!vi) return;
 
     if (!isJustCreatedSpline(vi.getPointer())) {
       m_currentColor = TPixel32::Green;
@@ -930,6 +939,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
   // paint regular strokes
   
   TVectorImageP vi = getImage(true);
+  if (!vi) return;
   QMutexLocker lock(vi->getMutex());
   TTool::Application *app = TTool::getApplication();
   
