@@ -1378,7 +1378,7 @@ void IoCmd::newScene() {
   ToolHandle *toolH = TApp::instance()->getCurrentTool();
   if (toolH && toolH->getTool()) toolH->getTool()->reset();
 
-  CommandManager::instance()->execute("T_Hand");
+  CommandManager::instance()->execute("T_Brush");
 
   CommandManager::instance()->enable(MI_SaveSubxsheetAs, false);
 
