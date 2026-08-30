@@ -1,31 +1,6 @@
 name: Linux Build
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: ${{ github.head_ref != '' }}
-
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**/*'                   # Include all files in the repository
-      - '!appveyor.yml'          # Ignore changes in AppVeyor
-      - '!README.md'             # Exclude README
-      - '!doc/**'                # Exclude documentation
-      - '!**/.github/**'         # Exclude everything in .github folder
-      - '.github/workflows/workflow_linux.yml'  # Include Linux workflow file
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
-    paths:
-      - '**/*'
-      - '!appveyor.yml'
-      - '!README.md'
-      - '!doc/**'
-      - '!**/.github/**'
-      - '.github/workflows/workflow_linux.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,12 +8,6 @@ permissions:
 
 jobs:
   Ubuntu:
-    # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,
-    # explicitly labelled ci:full, manually dispatched, or merged to main.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.draft == false ||
-      contains(github.event.pull_request.labels.*.name, 'ci:full')
     # Build on the oldest supported LTS: glibc/libstdc++ symbol versioning is
     # backward compatible only, so an AppImage built on 24.04 requires
     # GLIBC_2.38 / GLIBCXX_3.4.32 and will not start on 22.04 (see #7001).
@@ -69,7 +38,7 @@ jobs:
       with:
         path: /home/runner/.ccache
         key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
-        restore-keys: | 
+        restore-keys: |
           ${{ runner.os }}-${{ matrix.compiler }}-
           ${{ runner.os }}-
 
@@ -143,12 +112,6 @@ jobs:
   # Compile-only: catches Fedora-specific breakage (package renames, newer
   # GCC/Qt) that the Ubuntu job cannot. Deliberately builds no AppImage.
   Fedora:
-    # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,
-    # explicitly labelled ci:full, manually dispatched, or merged to main.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.draft == false ||
-      contains(github.event.pull_request.labels.*.name, 'ci:full')
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
