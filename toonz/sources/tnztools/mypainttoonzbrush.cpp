@@ -27,10 +27,8 @@ void putOnRasterCM(const TRasterCM32P &out, const TRaster32P &in, int styleId,
       if (inPix->m == 0) continue;
       TPixelCM32 *outPix = &out->pixels(y)[x];
       if (eraser) {
-        const bool eraseLines =
-            eraserMode != MyPaintToonzEraserMode::Areas;
-        const bool eraseAreas =
-            eraserMode != MyPaintToonzEraserMode::Lines;
+        const bool eraseLines = eraserMode != MyPaintToonzEraserMode::Areas;
+        const bool eraseAreas = eraserMode != MyPaintToonzEraserMode::Lines;
 
         int ink   = outPix->getInk();
         int paint = eraseAreas ? 0 : outPix->getPaint();
