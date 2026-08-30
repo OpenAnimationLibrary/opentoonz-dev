@@ -1,0 +1,49 @@
+<!--
+  OT-DEV INFRASTRUCTURE ONLY.
+  This template is used to generate splash.svg for OT-Dev CI artifacts.
+  Do not transfer this file or generated OT-Dev branding to opentoonz/opentoonz.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">{{BUILD_LABEL}}</title>
+  <desc id="desc">{{DESCRIPTION}}</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121826"/>
+      <stop offset="1" stop-color="#263755"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#69d2ff"/>
+      <stop offset="1" stop-color="#9b7cff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="675" rx="28" fill="url(#bg)"/>
+
+  <!-- Replace or embellish this artwork from time to time. -->
+  <g opacity="0.18" fill="none" stroke="#ffffff" stroke-width="5">
+    <circle cx="1015" cy="158" r="102"/>
+    <circle cx="1015" cy="158" r="63"/>
+    <path d="M895 500 C955 398 1060 398 1120 500 C1060 600 955 600 895 500Z"/>
+    <path d="M927 500 C970 446 1045 446 1088 500 C1045 554 970 554 927 500Z"/>
+  </g>
+  <path d="M0 588 C185 525 340 646 523 578 C721 504 880 566 1200 470 L1200 675 L0 675Z" fill="#ffffff" opacity="0.055"/>
+
+  <rect x="72" y="64" width="196" height="42" rx="21" fill="url(#ribbon)"/>
+  <text x="170" y="92" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="21" font-weight="700" fill="#101522">OT-DEV BUILD</text>
+
+  <text x="72" y="183" font-family="Segoe UI, Arial, sans-serif" font-size="58" font-weight="700" fill="#ffffff">OpenToonz Development</text>
+  <text x="72" y="242" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="600" fill="#bfeaff">{{PR_HEADING}}</text>
+
+  <line x1="72" y1="282" x2="785" y2="282" stroke="#ffffff" stroke-opacity="0.24"/>
+
+  <text x="72" y="337" font-family="Segoe UI, Arial, sans-serif" font-size="24" fill="#ffffff">{{DESCRIPTION_LINE_1}}</text>
+  <text x="72" y="373" font-family="Segoe UI, Arial, sans-serif" font-size="24" fill="#ffffff">{{DESCRIPTION_LINE_2}}</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#d5dbea">
+    <text x="72" y="474">Built: {{BUILD_DATE}}</text>
+    <text x="72" y="510">Commit: {{SHORT_SHA}}</text>
+    <text x="72" y="546">Source: OpenAnimationLibrary/opentoonz-dev</text>
+  </g>
+
+  <text x="72" y="625" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#9facbf">Experimental review build — not an official OpenToonz release.</text>
+</svg>
