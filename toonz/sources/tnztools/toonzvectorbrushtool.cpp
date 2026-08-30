@@ -724,12 +724,14 @@ void ToonzVectorBrushTool::onActivate() {
   }
   resetFrameRange();
   updateModifiers();
+  m_skipStrokeUntilDown = false;
   // TODO:app->editImageOrSpline();
 }
 
 //--------------------------------------------------------------------------------------------------
 
 void ToonzVectorBrushTool::onImageChanged() {
+  if (m_active) m_skipStrokeUntilDown = true;
   m_inputmanager.reset();
   m_active = false;
   m_tracks.clear();
@@ -745,6 +747,7 @@ void ToonzVectorBrushTool::onDeactivate() {
   // End current stroke.
   m_inputmanager.finishTracks();
   resetFrameRange();
+  m_skipStrokeUntilDown = false;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1200,6 +1203,13 @@ void ToonzVectorBrushTool::handleMouseEvent(MouseEventType type,
   if (control != m_inputmanager.state.isKeyPressed(TKey::control))
     m_inputmanager.keyEvent(control, TKey::control, t, nullptr);
 
+  if (m_skipStrokeUntilDown) {
+    if (type == ME_DOWN)
+      m_skipStrokeUntilDown = false;
+    else if (type != ME_MOVE)
+      return;
+  }
+
   TPointD snappedPos = pos;
   bool pickerMode = getViewer() && getViewer()->getGuidedStrokePickerMode();
   bool snapInvert = alt && (!control || type == ME_MOVE || type == ME_DOWN);
@@ -1560,7 +1570,20 @@ void ToonzVectorBrushTool::snap(const TPointD &pos, bool snapEnabled, bool withS
 void ToonzVectorBrushTool::draw() {
   m_pixelSize = getPixelSize();
   m_inputmanager.draw();
-  
+
+  for (TrackList::iterator i = m_rangeTracks.begin(); i != m_rangeTracks.end();
+       ++i) {
+    if (i->isEmpty()) continue;
+    TPointD offset1 = TPointD(5, 5);
+    TPointD offset2 = TPointD(-offset1.x, offset1.y);
+    TPointD point   = i->getFirstPoint();
+    glColor3d(1.0, 0.0, 0.0);
+    i->drawAllFragments();
+    glColor3d(0.0, 0.6, 0.0);
+    tglDrawSegment(point - offset1, point + offset1);
+    tglDrawSegment(point - offset2, point + offset2);
+  }
+
   /*--ショートカットでのツール切り替え時に赤点が描かれるのを防止する--*/
   if (m_minThick == 0 && m_maxThick == 0 &&
       !Preferences::instance()->getShow0ThickLines())
@@ -1580,19 +1603,6 @@ void ToonzVectorBrushTool::draw() {
   if (m_snappedSelf) {
     tglColor(TPixelD(0.9, 0.9, 0.1));
     tglDrawCircle(m_snapPointSelf, snapMarkRadius);
-  }
-
-  // frame range
-  for(TrackList::iterator i = m_rangeTracks.begin(); i != m_rangeTracks.end(); ++i) {
-    if (i->isEmpty()) continue;
-    TPointD offset1 = TPointD(5, 5);
-    TPointD offset2 = TPointD(-offset1.x, offset1.y);
-    TPointD point = i->getFirstPoint();
-    glColor3d(1.0, 0.0, 0.0);
-    i->drawAllFragments();
-    glColor3d(0.0, 0.6, 0.0);
-    tglDrawSegment(point - offset1, point + offset1);
-    tglDrawSegment(point - offset2, point + offset2);
   }
 
   if (getApplication()->getCurrentObject()->isSpline()) return;
