@@ -54,6 +54,45 @@ jobs:
         with:
           lfs: false
 
+      - name: Brand OT-Dev build
+        shell: pwsh
+        env:
+          OT_EVENT_NAME: ${{ github.event_name }}
+          OT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          OT_PR_TITLE: ${{ github.event.pull_request.title }}
+          OT_REF_NAME: ${{ github.ref_name }}
+          OT_SHA: ${{ github.sha }}
+        run: |
+          if ($env:OT_EVENT_NAME -eq "pull_request" -and $env:OT_PR_NUMBER) {
+            $title = $env:OT_PR_TITLE -replace '[^A-Za-z0-9 ._#()+-]', ' '
+            $title = ($title -replace '\s+', ' ').Trim()
+            if ($title.Length -gt 48) {
+              $title = $title.Substring(0, 45).TrimEnd() + "..."
+            }
+
+            $label = "OT-Dev PR #$($env:OT_PR_NUMBER)"
+            if ($title) { $label += " - $title" }
+          } else {
+            $shortSha = $env:OT_SHA.Substring(0, 7)
+            $ref = $env:OT_REF_NAME -replace '[^A-Za-z0-9._-]', '-'
+            if (-not $ref) { $ref = "build" }
+            $label = "OT-Dev $ref @ $shortSha"
+          }
+
+          $sourcePath = "toonz/sources/toonz/mainwindow.cpp"
+          $source = Get-Content $sourcePath -Raw
+          $needle = 'QString::fromStdString(TEnv::getApplicationFullName());'
+          if (-not $source.Contains($needle)) {
+            throw "Unable to locate OpenToonz window-title construction."
+          }
+
+          $escapedLabel = $label.Replace('\', '\\').Replace('"', '\"')
+          $replacement = 'QString::fromStdString(TEnv::getApplicationFullName()) + " [' + $escapedLabel + ']";'
+          $source = $source.Replace($needle, $replacement)
+          Set-Content -Path $sourcePath -Value $source -NoNewline
+
+          Write-Host "Window title branding: $label"
+
       # Cache OpenCV and Boost libraries
       - name: Cache OpenCV and Boost
         id: cache-deps
