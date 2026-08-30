@@ -48,7 +48,13 @@
 
 TOfflineGL *currentOfflineGL = 0;
 
+#include <QDateTime>
+#include <QMessageBox>
 #include <QProgressDialog>
+#include <QPushButton>
+#include <QStringList>
+
+#include <algorithm>
 
 #if defined(MACOSX) || defined(LINUX) || defined(FREEBSD)
 #include <QSurfaceFormat>
@@ -277,7 +283,11 @@ static void deleteAllUntitledScenes() {
 // ToonzScene
 
 ToonzScene::ToonzScene()
-    : m_contentHistory(0), m_isUntitled(true), m_isLoading(false) {
+    : m_contentHistory(0)
+    , m_isUntitled(true)
+    , m_isLoading(false)
+    , m_unrecognizedSceneTags()
+    , m_loadedSceneGenerator() {
   m_childStack = new ChildStack(this);
   m_properties = new TSceneProperties();
   m_levelSet   = new TLevelSet();
@@ -311,6 +321,8 @@ void ToonzScene::clear() {
   m_properties                 = new TSceneProperties();
   delete properties;
   m_levelSet->clear();
+  m_unrecognizedSceneTags.clear();
+  m_loadedSceneGenerator.clear();
 }
 
 //-----------------------------------------------------------------------------
@@ -433,6 +445,8 @@ void ToonzScene::loadResources(bool withProgressDialog) {
 
 void ToonzScene::loadTnzFile(const TFilePath &fp) {
   bool reading22 = false;
+  m_unrecognizedSceneTags.clear();
+  m_loadedSceneGenerator.clear();
   TIStream is(fp);
   if (!is) throw TException(fp.getWideString() + L": Can't open file");
   try {
@@ -454,10 +468,10 @@ void ToonzScene::loadTnzFile(const TFilePath &fp) {
       is.setVersion(versionNumber);
       while (is.matchTag(tagName)) {
         if (tagName == "generator") {
-          std::string program = is.getString();
+          m_loadedSceneGenerator = is.getString();
           // TODO: This obsolete condition should be removed before releasing OT
           // v2.2 !
-          reading22 = program.find("2.2") != std::string::npos;
+          reading22 = m_loadedSceneGenerator.find("2.2") != std::string::npos;
         } else if (tagName == "properties")
           m_properties->loadData(is, false);
         else if (tagName == "palette")  // per compatibilita' beta1
@@ -495,8 +509,18 @@ void ToonzScene::loadTnzFile(const TFilePath &fp) {
           }
           TContentHistory *history = getContentHistory(true);
           history->deserialize(QString::fromStdString(historyData));
-        } else
-          throw TException(tagName + " : unexpected tag");
+        } else {
+          // Treat unknown top-level scene entries as optional extension data.
+          // The parser already knows how to skip a complete nested tag. Record
+          // the tag so a later explicit save can protect the source file from
+          // silently losing data that this version cannot round-trip.
+          if (std::find(m_unrecognizedSceneTags.begin(),
+                        m_unrecognizedSceneTags.end(),
+                        tagName) == m_unrecognizedSceneTags.end())
+            m_unrecognizedSceneTags.push_back(tagName);
+          is.skipCurrentTag();
+          continue;
+        }
 
         if (!is.matchEndTag()) throw TException(tagName + " : missing end tag");
       }
@@ -580,19 +604,90 @@ public:
 
 //-----------------------------------------------------------------------------
 
-void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
-                      bool saveSceneIcon) {
+void ToonzScene::save(TFilePath &fp, TXsheet *subxsh, bool saveSceneIcon) {
   TFilePath oldScenePath = getScenePath();
   TFilePath newScenePath = fp;
 
+  // Unknown top-level data was intentionally skipped at load time. On an
+  // explicit save back to the same scene, protect that original file by
+  // defaulting to a timestamped copy. Autosave passes saveSceneIcon=false,
+  // and sub-xsheet saves have their own target, so neither enters this modal
+  // compatibility decision.
+  if (saveSceneIcon && !subxsh && newScenePath == oldScenePath &&
+      hasUnrecognizedSceneData()) {
+    const QString timestamp =
+        QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+    const std::wstring timestampedBaseName =
+        newScenePath.getWideName() + L"_" + timestamp.toStdWString();
+
+    TFilePath suggestedPath = newScenePath.withName(timestampedBaseName);
+    int collisionIndex      = 1;
+    while (TSystem::doesExistFileOrLevel(decodeFilePath(suggestedPath))) {
+      suggestedPath = newScenePath.withName(
+          timestampedBaseName + L"_" + std::to_wstring(collisionIndex++));
+    }
+
+    QStringList tags;
+    const int maxTags = 8;
+    for (int i = 0;
+         i < (int)m_unrecognizedSceneTags.size() && i < maxTags; ++i)
+      tags << QString("<%1>").arg(
+          QString::fromStdString(m_unrecognizedSceneTags[i]));
+    if ((int)m_unrecognizedSceneTags.size() > maxTags)
+      tags << QObject::tr("and %1 more")
+                  .arg((int)m_unrecognizedSceneTags.size() - maxTags);
+
+    QString generatorInfo;
+    if (!m_loadedSceneGenerator.empty())
+      generatorInfo =
+          QObject::tr(
+              "\n\nThe scene was created or last saved with %1. For full "
+              "compatibility, open the original scene with that application/"
+              "version or a release known to support its features.")
+              .arg(QString::fromStdString(m_loadedSceneGenerator));
+
+    QMessageBox msgBox;
+    msgBox.setIcon(QMessageBox::Warning);
+    msgBox.setWindowTitle(QObject::tr("Unrecognized Scene Data"));
+    msgBox.setText(
+        QObject::tr(
+            "This scene contains data OpenToonz does not recognize.%1\n\n"
+            "Unrecognized entries: %2\n\n"
+            "OpenToonz can continue loading recognized data. Saving will not "
+            "write the unrecognized data back.\n\n"
+            "To preserve the original scene unchanged, save the recognized "
+            "scene data to the suggested timestamped file.")
+            .arg(generatorInfo, tags.join(", ")));
+    QPushButton *saveCopyButton = msgBox.addButton(
+        QObject::tr("Save as %1")
+            .arg(suggestedPath.withoutParentDir().getQString()),
+        QMessageBox::AcceptRole);
+    QPushButton *overwriteButton =
+        msgBox.addButton(QObject::tr("Overwrite Original"),
+                         QMessageBox::DestructiveRole);
+    Q_UNUSED(overwriteButton);
+    msgBox.setDefaultButton(saveCopyButton);
+    // This low-level save method has no cancellation result to return to its
+    // callers. For this first compatibility experiment, require one of the two
+    // explicit safe-save decisions rather than allowing the window-close path
+    // to be misreported as a successful save.
+    msgBox.setWindowFlag(Qt::WindowCloseButtonHint, false);
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == saveCopyButton) {
+      newScenePath = suggestedPath;
+      fp           = suggestedPath;
+    }
+  }
+
   if (newScenePath != oldScenePath)
-    TProjectManager::instance()->loadSceneProject(fp, &m_standAlone);
+    TProjectManager::instance()->loadSceneProject(newScenePath, &m_standAlone);
 
   CameraRedirection redir(this, subxsh);
 
   bool wasUntitled = isUntitled();
 
-  setScenePath(fp);
+  setScenePath(newScenePath);
 
   TFileStatus fs(newScenePath);
   if (fs.doesExist() && !fs.isWritable())
@@ -600,7 +695,7 @@ void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
                            "The scene cannot be saved: it is a read only "
                            "scene.\n All resources have been saved.");
 
-  TFilePath scenePath = decodeFilePath(fp);
+  TFilePath scenePath = decodeFilePath(newScenePath);
   TFilePath scenePathTemp(scenePath.getWideString() +
                           QString(".tmp").toStdWString());
 
@@ -691,6 +786,7 @@ void ToonzScene::save(const TFilePath &fp, TXsheet *subxsh,
     if (wasUntitled) setUntitled();
   } else {
     if (wasUntitled) deleteUntitledScene(oldScenePath.getParentDir());
+    if (saveSceneIcon) clearUnrecognizedSceneData();
   }
   // update the last saved version
   setVersionNumber(l_currentVersion);
