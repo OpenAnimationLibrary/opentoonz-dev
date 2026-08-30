@@ -169,6 +169,7 @@ protected:
 
   bool m_started;
   TFrameId m_strokeFrameId;
+  TXshSimpleLevelP m_strokeLevel;
 
   bool m_propertyUpdating    = false;
   bool m_skipStrokeUntilDown = false;

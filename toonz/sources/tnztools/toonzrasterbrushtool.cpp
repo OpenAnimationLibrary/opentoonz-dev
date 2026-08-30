@@ -1237,6 +1237,11 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
     }
 
     m_painting.frameId = getFrameId();
+    m_painting.level   = TXshSimpleLevelP();
+    if (TXshLevelHandle *lh = app->getCurrentLevel()) {
+      if (TXshLevel *xl = lh->getLevel())
+        m_painting.level = xl->getSimpleLevel();
+    }
 
     TToonzImageP ri(getImage(true));
     TRasterCM32P ras = ri ? ri->getRaster() : TRasterCM32P();
@@ -1634,15 +1639,10 @@ void ToonzRasterBrushTool::commitPainting() {
 
   TFrameId frameId =
       m_painting.frameId.isEmptyFrame() ? getCurrentFid() : m_painting.frameId;
-  TXshSimpleLevel *sl     = 0;
-  TTool::Application *app = TTool::getApplication();
-  if (app && app->getCurrentLevel()) {
-    TXshLevel *level = app->getCurrentLevel()->getLevel();
-    sl               = level ? level->getSimpleLevel() : 0;
-  }
+  TXshSimpleLevel *sl = m_painting.level.getPointer();
 
-  TToonzImageP ti  = sl ? TToonzImageP(sl->getFrame(frameId, true))
-                        : TToonzImageP(getImage(true));
+  TToonzImageP ti =
+      sl ? TToonzImageP(sl->getFrame(frameId, true)) : TToonzImageP();
   TRasterCM32P ras = ti ? ti->getRaster() : TRasterCM32P();
 
   if (m_painting.tileSet && m_painting.tileSet->getTileCount() > 0 && ras &&
@@ -1660,12 +1660,13 @@ void ToonzRasterBrushTool::commitPainting() {
   if (tc & ToonzCheck::eGap || tc & ToonzCheck::eAutoclose) invalidate();
 
   m_painting.frameId          = TFrameId();
+  m_painting.level            = TXshSimpleLevelP();
   m_painting.myPaint.isActive = false;
   m_painting.pencil.isActive  = false;
   m_painting.blured.isActive  = false;
   m_painting.active           = false;
 
-  notifyImageChanged(frameId);
+  if (sl) notifyImageChanged(frameId, sl);
   ToolUtils::updateSaveBox();
 }
 

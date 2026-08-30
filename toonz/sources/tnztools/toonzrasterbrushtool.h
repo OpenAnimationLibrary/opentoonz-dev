@@ -11,6 +11,7 @@
 #include <toonz/strokegenerator.h>
 #include <toonz/rasterstrokegenerator.h>
 #include "toonz/preferences.h"
+#include "toonz/txshsimplelevel.h"
 #include <tools/tool.h>
 #include <tools/cursors.h>
 
@@ -255,6 +256,7 @@ protected:
     // 作業中のFrameIdをクリック時に保存し、マウスリリース時（Undoの登録時）に別のフレームに
     // 移動していたときの不具合を修正する。
     TFrameId frameId;
+    TXshSimpleLevelP level;
 
     // common variables
     TTileSetCM32 *tileSet     = nullptr;

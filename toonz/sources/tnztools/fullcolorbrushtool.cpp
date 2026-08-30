@@ -144,7 +144,8 @@ FullColorBrushTool::FullColorBrushTool(std::string name)
     , m_presetsLoaded(false)
     , m_firstTime(true)
     , m_started(false)
-    , m_strokeFrameId() {
+    , m_strokeFrameId()
+    , m_strokeLevel() {
   bind(TTool::RasterImage | TTool::EmptyTarget);
   m_thickness.setNonLinearSlider();
 
@@ -530,6 +531,13 @@ void FullColorBrushTool::inputSetBusy(bool busy) {
     m_tileSet       = new TTileSetFullColor(ras->getSize());
     m_tileSaver     = new TTileSaverFullColor(ras, m_tileSet);
     m_strokeFrameId = getCurrentFid();
+    m_strokeLevel   = TXshSimpleLevelP();
+    if (TTool::Application *app = TTool::getApplication()) {
+      if (TXshLevelHandle *lh = app->getCurrentLevel()) {
+        if (TXshLevel *xl = lh->getLevel())
+          m_strokeLevel = xl->getSimpleLevel();
+      }
+    }
 
     // update color here since the current style might be switched
     // with numpad shortcut keys
@@ -670,15 +678,10 @@ void FullColorBrushTool::commitStroke() {
 
   TFrameId frameId =
       m_strokeFrameId.isEmptyFrame() ? getCurrentFid() : m_strokeFrameId;
+  TXshSimpleLevel *sl = m_strokeLevel.getPointer();
 
-  TRasterImageP ri;
-  TXshSimpleLevel *sl     = 0;
-  TTool::Application *app = TTool::getApplication();
-  if (app && app->getCurrentLevel()) {
-    TXshLevel *level = app->getCurrentLevel()->getLevel();
-    sl               = level ? level->getSimpleLevel() : 0;
-    if (sl) ri = TRasterImageP(sl->getFrame(frameId, true));
-  }
+  TRasterImageP ri =
+      sl ? TRasterImageP(sl->getFrame(frameId, true)) : TRasterImageP();
   TRasterP ras = ri ? ri->getRaster() : TRasterP();
 
   m_lastRect.empty();
@@ -701,8 +704,9 @@ void FullColorBrushTool::commitStroke() {
 
   m_started       = false;
   m_strokeFrameId = TFrameId();
+  m_strokeLevel   = TXshSimpleLevelP();
   m_strokeRect.empty();
-  if (ras) notifyImageChanged(frameId);
+  if (ras && sl) notifyImageChanged(frameId, sl);
 }
 
 //----------------------------------------------------------------------------------------------------------
