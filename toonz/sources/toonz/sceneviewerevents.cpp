@@ -30,6 +30,7 @@
 #include "tools/toolhandle.h"
 #include "tools/cursormanager.h"
 #include "tools/toolcommandids.h"
+#include "tools/strokesmoothnessdiagnostics.h"
 #include "toonzqt/viewcommandids.h"
 
 // TnzLib includes
@@ -280,6 +281,11 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
   }
   switch (e->type()) {
   case QEvent::TabletPress: {
+    if (e->button() == Qt::LeftButton)
+      StrokeSmoothnessDiagnostics::beginStroke();
+    StrokeSmoothnessDiagnostics::recordRawTabletEvent(
+        e, e->posF() * getDevPixRatio(), m_pressure, false,
+        e->button() == Qt::LeftButton);
 #ifdef MACOSX
     // In OSX tablet action may cause only tabletEvent, not followed by
     // mousePressEvent.
@@ -328,6 +334,9 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
 
   } break;
   case QEvent::TabletRelease: {
+    StrokeSmoothnessDiagnostics::recordRawTabletEvent(
+        e, e->posF() * getDevPixRatio(), m_pressure, false,
+        m_tabletState == StartStroke || m_tabletState == OnStroke);
 #ifdef MACOSX
     if (m_tabletState == StartStroke || m_tabletState == OnStroke)
       m_tabletState = Released;
@@ -365,6 +374,15 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
 #endif
 
     QPointF curPos = e->posF() * getDevPixRatio();
+#if defined(_WIN32)
+    const bool strokeDiagForwarded = curPos != m_lastMousePos;
+#else
+    const bool strokeDiagForwarded =
+        curPos != m_lastMousePos && !m_isBusyOnTabletMove;
+#endif
+    StrokeSmoothnessDiagnostics::recordRawTabletEvent(
+        e, curPos, m_pressure, m_isBusyOnTabletMove,
+        strokeDiagForwarded);
 #if defined(_WIN32)
     // Use the application attribute Qt::AA_CompressTabletEvents instead of the
     // delay timer

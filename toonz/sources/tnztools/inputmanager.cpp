@@ -2,6 +2,7 @@
 
 #include <tpixelutils.h>
 #include <tools/inputmanager.h>
+#include <tools/strokesmoothnessdiagnostics.h>
 
 // TnzCore includes
 #include <tgl.h>
@@ -275,6 +276,7 @@ TInputManager::paintTracks() {
         { allFinished = false; break; }
         
   if (allFinished) {
+    StrokeSmoothnessDiagnostics::recordGeometry(subTracks);
     if (m_started) {
       if (m_handler) m_handler->inputSetBusy(false);
       m_started = false;
@@ -493,7 +495,10 @@ TInputManager::trackEvent(
   bool final,
   TTimerTicks ticks )
 {
+  if (StrokeSmoothnessDiagnostics::maybeReplay(*this)) return;
   ticks = fixTicks(ticks);
+  StrokeSmoothnessDiagnostics::recordAccepted(
+      deviceId, position, pressure, final, ticks);
   TTrackP track = getTrack(deviceId, touchId, ticks, hasPressure, hasTilt);
   if (!track->finished()) {
     ticks = fixTicks(ticks);
