@@ -18,7 +18,7 @@ class QString;
 #undef DVVAR
 #ifdef TNZTOOLS_EXPORTS
 #define DVAPI DV_EXPORT_API
-#define DVVAR DV_IMPORT_API
+#define DVVAR DV_EXPORT_VAR
 #else
 #define DVAPI DV_IMPORT_API
 #define DVVAR DV_IMPORT_VAR
