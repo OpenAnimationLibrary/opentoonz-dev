@@ -99,6 +99,19 @@ void ToolHandle::setPersistedToolName(const QString &toolName) {
 
 //-----------------------------------------------------------------------------
 
+void ToolHandle::persistCurrentToolIfEligible() {
+  if (m_suppressToolPersistence || !m_tool ||
+      isViewerNavigationToolSelected() || m_toolName == "T_CameraTest" ||
+      !isCurrentToolPersistenceEnabled())
+    return;
+
+  const QByteArray toolId = m_toolName.toUtf8();
+  if (CommandManager::instance()->getAction(toolId.constData(), false))
+    setPersistedToolName(m_toolName);
+}
+
+//-----------------------------------------------------------------------------
+
 void ToolHandle::setTool(QString name) {
   m_oldToolName = m_toolName = name;
 
@@ -124,13 +137,7 @@ void ToolHandle::setTool(QString name) {
   {
     m_tool->onActivate();
     emit toolSwitched();
-
-    if (!m_suppressToolPersistence && !isViewerNavigationToolSelected() &&
-        name != "T_CameraTest" && isCurrentToolPersistenceEnabled()) {
-      const QByteArray toolId = name.toUtf8();
-      if (CommandManager::instance()->getAction(toolId.constData(), false))
-        setPersistedToolName(name);
-    }
+    persistCurrentToolIfEligible();
   }
 }
 
