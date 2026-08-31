@@ -2821,7 +2821,8 @@ void SettingsPage::onValueReset() {
 
   assert(0 <= p && p < m_editedStyle->getParamCount());
   m_editedStyle->setParamDefault(p);
-  updateValues();
+  if (dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer()))
+    updateValues();
 
   // Forward the signal to the style editor
   if (!m_updating) emit paramStyleChanged(false);
