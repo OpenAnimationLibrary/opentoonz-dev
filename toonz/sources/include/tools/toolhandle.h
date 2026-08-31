@@ -18,7 +18,7 @@ class QString;
 #undef DVVAR
 #ifdef TNZTOOLS_EXPORTS
 #define DVAPI DV_EXPORT_API
-#define DVVAR DV_EXPORT_VAR
+#define DVVAR DV_IMPORT_API
 #else
 #define DVAPI DV_IMPORT_API
 #define DVVAR DV_IMPORT_VAR
@@ -55,6 +55,7 @@ public:
   static void setCurrentToolPersistenceEnabled(bool enabled);
   static QString getPersistedToolName();
   static void setPersistedToolName(const QString &toolName);
+  void persistCurrentToolIfEligible();
 
   // used to change tool for a short while (e.g. while keeping pressed a
   // short-key)
