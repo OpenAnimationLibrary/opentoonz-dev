@@ -8,10 +8,25 @@
 // #include "tapp.h"
 #include "toonzqt/menubarcommand.h"
 #include "toonz/preferences.h"
+#include "toonz/toonzfolders.h"
 #include <QGuiApplication>
 #include <QAction>
 #include <QMap>
 #include <QDebug>
+#include <QSettings>
+#include <QTimer>
+
+namespace {
+
+const char *kPersistCurrentToolKey = "PersistCurrentToolAcrossSessions";
+const char *kLastUsedToolKey       = "LastUsedTool";
+
+QString preferencesFilePath() {
+  return (ToonzFolder::getMyModuleDir() + TFilePath("preferences.ini"))
+      .getQString();
+}
+
+}  // namespace
 
 //=============================================================================
 // ToolHandle
@@ -22,7 +37,22 @@ ToolHandle::ToolHandle()
     , m_toolName("")
     , m_toolTargetType(TTool::NoTarget)
     , m_storedToolName("")
-    , m_toolIsBusy(false) {}
+    , m_toolIsBusy(false)
+    , m_suppressToolPersistence(false) {
+  // Restore after application startup has completed its normal initial tool
+  // selection. This also avoids relying on a clean shutdown to capture state.
+  QTimer::singleShot(0, this, []() {
+    if (!ToolHandle::isCurrentToolPersistenceEnabled()) return;
+
+    const QString toolName = ToolHandle::getPersistedToolName();
+    if (toolName.isEmpty()) return;
+
+    const QByteArray toolId = toolName.toUtf8();
+    QAction *action =
+        CommandManager::instance()->getAction(toolId.constData(), false);
+    if (action) CommandManager::instance()->execute(action);
+  });
+}
 
 //-----------------------------------------------------------------------------
 
@@ -31,6 +61,41 @@ ToolHandle::~ToolHandle() {}
 //-----------------------------------------------------------------------------
 
 TTool *ToolHandle::getTool() const { return m_tool; }
+
+//-----------------------------------------------------------------------------
+
+bool ToolHandle::isCurrentToolPersistenceEnabled() {
+  QSettings settings(preferencesFilePath(), QSettings::IniFormat);
+  return settings.value(kPersistCurrentToolKey, false).toBool();
+}
+
+//-----------------------------------------------------------------------------
+
+void ToolHandle::setCurrentToolPersistenceEnabled(bool enabled) {
+  QSettings settings(preferencesFilePath(), QSettings::IniFormat);
+  settings.setValue(kPersistCurrentToolKey, enabled ? 1 : 0);
+  settings.sync();
+}
+
+//-----------------------------------------------------------------------------
+
+QString ToolHandle::getPersistedToolName() {
+  QSettings settings(preferencesFilePath(), QSettings::IniFormat);
+  return settings.value(kLastUsedToolKey).toString();
+}
+
+//-----------------------------------------------------------------------------
+
+void ToolHandle::setPersistedToolName(const QString &toolName) {
+  if (toolName.isEmpty()) return;
+
+  QSettings settings(preferencesFilePath(), QSettings::IniFormat);
+  settings.setValue(kLastUsedToolKey, toolName);
+  // Flush immediately so the selection survives crashes, freezes, forced
+  // termination, and unexpected system shutdowns whenever the filesystem can
+  // still accept the write.
+  settings.sync();
+}
 
 //-----------------------------------------------------------------------------
 
@@ -59,6 +124,13 @@ void ToolHandle::setTool(QString name) {
   {
     m_tool->onActivate();
     emit toolSwitched();
+
+    if (!m_suppressToolPersistence && !isViewerNavigationToolSelected() &&
+        name != "T_CameraTest" && isCurrentToolPersistenceEnabled()) {
+      const QByteArray toolId = name.toUtf8();
+      if (CommandManager::instance()->getAction(toolId.constData(), false))
+        setPersistedToolName(name);
+    }
   }
 }
 
@@ -96,15 +168,21 @@ bool ToolHandle::isViewerNavigationToolSelected() {
 //-----------------------------------------------------------------------------
 
 void ToolHandle::setPseudoTool(QString name) {
-  QString oldToolName = m_oldToolName;
+  QString oldToolName       = m_oldToolName;
+  m_suppressToolPersistence = true;
   setTool(name);
-  m_oldToolName = oldToolName;
+  m_suppressToolPersistence = false;
+  m_oldToolName             = oldToolName;
 }
 
 //-----------------------------------------------------------------------------
 
 void ToolHandle::unsetPseudoTool() {
-  if (m_toolName != m_oldToolName) setTool(m_oldToolName);
+  if (m_toolName != m_oldToolName) {
+    m_suppressToolPersistence = true;
+    setTool(m_oldToolName);
+    m_suppressToolPersistence = false;
+  }
 }
 
 //-----------------------------------------------------------------------------
