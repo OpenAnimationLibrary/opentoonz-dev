@@ -39,6 +39,7 @@ class DVAPI ToolHandle final : public QObject {
   QElapsedTimer m_storedToolTime;
   QString m_oldToolName;
   bool m_toolIsBusy;
+  bool m_suppressToolPersistence;
 
 public:
   ToolHandle();
@@ -49,6 +50,11 @@ public:
   void setTargetType(int targetType);  // TODO: unused, remove?
 
   const QString &getRequestedToolName() const { return m_toolName; }
+
+  static bool isCurrentToolPersistenceEnabled();
+  static void setCurrentToolPersistenceEnabled(bool enabled);
+  static QString getPersistedToolName();
+  static void setPersistedToolName(const QString &toolName);
 
   // used to change tool for a short while (e.g. while keeping pressed a
   // short-key)
