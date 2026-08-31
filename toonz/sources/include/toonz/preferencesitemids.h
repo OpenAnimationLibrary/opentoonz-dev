@@ -114,7 +114,6 @@ enum PreferencesItemId {
   //----------
   // Tools
   // dropdownShortcutsCycleOptions, // removed
-  persistCurrentToolAcrossSessions,
   FillOnlysavebox,
   DefRegionWithPaint,
   ReferFillPrevailing,
@@ -216,7 +215,6 @@ enum PreferencesItemId {
 
   //----------
   // Others (not appeared in the popup)
-  lastUsedTool,
   // Shortcut popup settings
   shortcutPreset,
   // Viewer context menu
