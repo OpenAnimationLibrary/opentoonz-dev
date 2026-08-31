@@ -382,7 +382,7 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
     return false;
   }
 
-  QSaveFile output(destinationPath);
+  QSaveFile output(destinationInfo.absoluteFilePath());
   if (!output.open(QIODevice::WriteOnly)) {
     errorMessage = QObject::tr("The MyPaint brush could not be written: %1")
                        .arg(path.getQString());
