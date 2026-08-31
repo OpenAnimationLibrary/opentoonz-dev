@@ -319,8 +319,8 @@ void TMyPaintBrushStyle::loadBrush(const TFilePath &path) {
 
 //-----------------------------------------------------------------------------
 
-bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
-                                     QString &errorMessage) const {
+bool TMyPaintBrushStyle::saveBrushAs(const TFilePath& path,
+                                     QString& errorMessage) const {
   const QFileInfo sourceInfo(m_fullpath.getQString());
   const QFileInfo destinationInfo(path.getQString());
   const QString sourcePath      = sourceInfo.canonicalFilePath().isEmpty()
@@ -364,7 +364,7 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
 
   QJsonObject root     = document.object();
   QJsonObject settings = root.value("settings").toObject();
-  for (const auto &entry : m_baseValues) {
+  for (const auto& entry : m_baseValues) {
     const QString key =
         QString::fromStdString(mypaint::Setting::byId(entry.first).key);
     QJsonObject setting = settings.value(key).toObject();

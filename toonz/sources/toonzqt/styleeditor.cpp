@@ -2532,8 +2532,8 @@ SettingsPage::SettingsPage(QWidget *parent)
 
   paramsContainerLayout->addStretch(1);
 
-  m_myPaintActions = new QWidget(this);
-  QHBoxLayout *myPaintActionsLayout = new QHBoxLayout(m_myPaintActions);
+  m_myPaintActions                  = new QWidget(this);
+  QHBoxLayout* myPaintActionsLayout = new QHBoxLayout(m_myPaintActions);
   myPaintActionsLayout->setContentsMargins(0, 0, 0, 0);
   m_resetMyPaintButton = new QPushButton(tr("Reset"), m_myPaintActions);
   m_saveMyPaintButton  = new QPushButton(tr("Save As..."), m_myPaintActions);
@@ -2587,7 +2587,7 @@ void SettingsPage::setStyle(const TColorStyleP &editedStyle) {
 
   m_editedStyle = editedStyle;
   m_myPaintActions->setVisible(
-      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer()));
+      dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer()));
 
   if (clearLayout) locals::clearLayout(m_paramsLayout);
 
@@ -2720,8 +2720,8 @@ void SettingsPage::updateValues() {
   // Deal with the autofill
   m_autoFillCheckBox->setChecked(m_editedStyle->getFlags() & 1);
 
-  TMyPaintBrushStyle *myPaintStyle =
-      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer());
+  TMyPaintBrushStyle* myPaintStyle =
+      dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer());
   if (myPaintStyle)
     m_resetMyPaintButton->setEnabled(!myPaintStyle->getBaseValues().empty());
 
@@ -2830,8 +2830,8 @@ void SettingsPage::onValueReset() {
 //-----------------------------------------------------------------------------
 
 void SettingsPage::onMyPaintReset() {
-  TMyPaintBrushStyle *myPaintStyle =
-      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer());
+  TMyPaintBrushStyle* myPaintStyle =
+      dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer());
   assert(myPaintStyle);
 
   myPaintStyle->resetBaseValues();
@@ -2843,12 +2843,12 @@ void SettingsPage::onMyPaintReset() {
 //-----------------------------------------------------------------------------
 
 void SettingsPage::onMyPaintSaveAs() {
-  TMyPaintBrushStyle *myPaintStyle =
-      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer());
+  TMyPaintBrushStyle* myPaintStyle =
+      dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer());
   assert(myPaintStyle);
 
-  const TFilePath customDir = ToonzFolder::getLibraryFolder() +
-                              "mypaint brushes" + "Custom";
+  const TFilePath customDir =
+      ToonzFolder::getLibraryFolder() + "mypaint brushes" + "Custom";
   if (!QDir().mkpath(customDir.getQString())) {
     QMessageBox::warning(
         this, tr("Save MyPaint Brush As"),
@@ -2917,8 +2917,8 @@ void SettingsPage::onValueChanged(bool isDragging) {
   }
   }
 
-  TMyPaintBrushStyle *myPaintStyle =
-      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer());
+  TMyPaintBrushStyle* myPaintStyle =
+      dynamic_cast<TMyPaintBrushStyle*>(m_editedStyle.getPointer());
   if (myPaintStyle)
     m_resetMyPaintButton->setEnabled(!myPaintStyle->getBaseValues().empty());
 
@@ -3087,7 +3087,7 @@ StyleEditor::~StyleEditor() {}
 //-----------------------------------------------------------------------------
 
 void StyleEditor::onMyPaintBrushSaved() {
-  static_cast<MyPaintBrushStyleChooserPage *>(m_mypaintBrushesStylePage)
+  static_cast<MyPaintBrushStyleChooserPage*>(m_mypaintBrushesStylePage)
       ->reloadItems();
 }
 

@@ -823,9 +823,9 @@ class SettingsPage final : public QScrollArea {
   QGridLayout *m_paramsLayout;
 
   QCheckBox *m_autoFillCheckBox;
-  QWidget *m_myPaintActions;
-  QPushButton *m_resetMyPaintButton;
-  QPushButton *m_saveMyPaintButton;
+  QWidget* m_myPaintActions;
+  QPushButton* m_resetMyPaintButton;
+  QPushButton* m_saveMyPaintButton;
 
   TColorStyleP m_editedStyle;  //!< A copy of the current style being edited by
                                //! the Style Editor.
