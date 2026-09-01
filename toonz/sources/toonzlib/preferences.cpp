@@ -462,6 +462,8 @@ void Preferences::definePreferenceItems() {
 
   define(viewerIndicatorEnabled, "viewerIndicatorEnabled", QMetaType::Bool,
          true);
+  define(restoreViewerViewFromLastSession, "restoreViewerViewFromLastSession",
+         QMetaType::Bool, false);
 
   // Visualization
   define(show0ThickLines, "show0ThickLines", QMetaType::Bool, true);
