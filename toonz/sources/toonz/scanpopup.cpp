@@ -15,7 +15,15 @@
 
 #include "toonz/tscenehandle.h"
 #include "toonz/tframehandle.h"
+#include "toonz/tcolumnhandle.h"
+#include "toonz/txsheethandle.h"
 #include "toonz/txshlevelhandle.h"
+#include "toonz/txsheet.h"
+#include "toonz/txshcell.h"
+#include "toonz/txshcolumn.h"
+#include "toonz/txshleveltypes.h"
+#include "toonz/levelset.h"
+#include "toonz/namebuilder.h"
 #include "toonz/toonzscene.h"
 #include "toonz/observer.h"
 #include "toonz/sceneproperties.h"
@@ -35,11 +43,15 @@
 #include "toonzqt/checkbox.h"
 #include "toonzqt/gutil.h"
 
+#include "cellselection.h"
+
 #include <QPushButton>
 #include <QComboBox>
 #include <QLabel>
 #include <QSettings>
 #include <QApplication>
+
+#include <memory>
 
 using namespace DVGui;
 using namespace CleanupTypes;
@@ -71,13 +83,16 @@ bool defineScanner(const QString &scannerType) {
   bool ret = false;
   QApplication::setOverrideCursor(Qt::WaitCursor);
 
+  TScanner::m_isWia   = (scannerType == "WIA");
   TScanner::m_isTwain = (scannerType == "TWAIN");
 
   try {
     if (!TScanner::instance()->isDeviceAvailable()) {
-      DVGui::warning(TScanner::m_isTwain
-                         ? QObject::tr("No TWAIN scanner is available")
-                         : QObject::tr("No scanner is available"));
+      DVGui::warning(TScanner::m_isWia
+                         ? QObject::tr("No WIA scanner is available")
+                         : (TScanner::m_isTwain
+                                ? QObject::tr("No TWAIN scanner is available")
+                                : QObject::tr("No scanner is available")));
       /* FIXME: try/catch からの goto
 って合法じゃないだろ……。とりあえず応急処置したところ"例外ってナニ?"って感じになったのが
 indent も腐っておりつらいので後で直す */
@@ -86,6 +101,13 @@ indent も腐っておりつらいので後で直す */
       return false;
     }
     TScanner::instance()->selectDevice();
+    if (!TScanner::instance()->isDeviceSelected()) {
+      DVGui::warning(TScanner::m_isWia
+                         ? QObject::tr("No WIA scanner was selected")
+                         : QObject::tr("No scanner was selected"));
+      QApplication::restoreOverrideCursor();
+      return false;
+    }
   } catch (TException &e) {
     DVGui::warning(QString::fromStdWString(e.getMessage()));
     QApplication::restoreOverrideCursor();
@@ -123,9 +145,21 @@ bool checkScannerDefinition() {
   if (!ScannerHasBeenDefined) {
     QString scannerType = QSettings().value("CurrentScannerType").toString();
     if (scannerType == "") {
+#ifdef _WIN32
+      QSettings().setValue("CurrentScannerType", "WIA");
+      scannerType = "WIA";
+#else
       QSettings().setValue("CurrentScannerType", "Internal");
       scannerType = "Internal";
+#endif
     }
+#ifdef _WIN32
+    // WIA selection can involve a synchronous network/device dialog. Do not
+    // repeatedly reopen it from Scan Settings or other implicit checks after
+    // a failed/cancelled attempt. WIA selection is initiated explicitly from
+    // Define Scanner.
+    if (scannerType == "WIA") return false;
+#endif
     ScannerHasBeenDefined = defineScanner(scannerType);
   }
   return ScannerHasBeenDefined;
@@ -166,6 +200,129 @@ void makeTransparent(const TRaster32P &ras) {
   }
 }
 
+//-----------------------------------------------------------------------------
+
+class ScannerListenerGuard {
+  TScanner *m_scanner;
+  TScannerListener *m_listener;
+
+public:
+  ScannerListenerGuard(TScanner *scanner, TScannerListener *listener)
+      : m_scanner(scanner), m_listener(listener) {
+    m_scanner->addListener(m_listener);
+  }
+
+  ~ScannerListenerGuard() { m_scanner->removeListener(m_listener); }
+};
+
+//-----------------------------------------------------------------------------
+
+bool hasSelectedToonzRasterLevel() {
+  TCellSelection *selection =
+      dynamic_cast<TCellSelection *>(TSelection::getCurrent());
+  if (!selection) return false;
+
+  TApp *app         = TApp::instance();
+  ToonzScene *scene = app->getCurrentScene()->getScene();
+  TXsheet *xsh      = scene ? scene->getXsheet() : nullptr;
+  if (!xsh) return false;
+
+  int r0, c0, r1, c1;
+  selection->getSelectedCells(r0, c0, r1, c1);
+  for (int column = c0; column <= c1; ++column) {
+    for (int row = r0; row <= r1; ++row) {
+      TXshSimpleLevel *level = xsh->getCell(row, column).getSimpleLevel();
+      if (level && level->getType() == TZP_XSHLEVEL) return true;
+    }
+  }
+  return false;
+}
+
+//-----------------------------------------------------------------------------
+
+bool getAdHocScanTarget(int &row, int &column) {
+  TCellSelection *selection =
+      dynamic_cast<TCellSelection *>(TSelection::getCurrent());
+  if (!selection) return false;
+
+  int r0, c0, r1, c1;
+  selection->getSelectedCells(r0, c0, r1, c1);
+  if (r0 != r1 || c0 != c1) return false;
+
+  TApp *app         = TApp::instance();
+  ToonzScene *scene = app->getCurrentScene()->getScene();
+  TXsheet *xsh      = scene ? scene->getXsheet() : nullptr;
+  if (!xsh || r0 < 0 || c0 < 0 || !xsh->getCell(r0, c0).isEmpty())
+    return false;
+
+  TXshColumn *xshColumn = xsh->getColumn(c0);
+  if (xshColumn &&
+      (xshColumn->getColumnType() != TXshColumn::eLevelType ||
+       xshColumn->isLocked()))
+    return false;
+
+  row    = r0;
+  column = c0;
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool appendAdHocScanFrame(ScanList &scanList, int startRow, int column) {
+  TApp *app         = TApp::instance();
+  ToonzScene *scene = app->getCurrentScene()->getScene();
+  TXsheet *xsh      = scene ? scene->getXsheet() : nullptr;
+  if (!xsh || startRow < 0 || column < 0) return false;
+
+  int frameIndex = scanList.getFrameCount();
+  int row        = startRow + frameIndex;
+  if (!xsh->getCell(row, column).isEmpty()) return false;
+
+  TXshSimpleLevel *sl = nullptr;
+  bool createdLevel   = false;
+  if (frameIndex == 0) {
+    const std::unique_ptr<NameBuilder> nameBuilder(
+        NameBuilder::getBuilder(L"Scan"));
+    std::wstring levelName;
+    TFilePath levelPath;
+    for (;;) {
+      levelName = nameBuilder->getNext();
+      levelPath = scene->getDefaultLevelPath(TZI_XSHLEVEL, levelName);
+      if (scene->getLevelSet()->getLevel(levelName)) continue;
+      if (TSystem::doesExistFileOrLevel(
+              scene->decodeFilePath(levelPath)))
+        continue;
+      break;
+    }
+
+    TXshLevel *level = scene->createNewLevel(
+        TZI_XSHLEVEL, levelName, TDimension(), 0, levelPath);
+    sl = level ? level->getSimpleLevel() : nullptr;
+    if (!sl) return false;
+    sl->setPath(levelPath, true);
+    createdLevel = true;
+  } else {
+    sl = scanList.getFrame(0).getLevel();
+  }
+
+  if (!sl) return false;
+
+  TFrameId fid(frameIndex + 1);
+  sl->formatFId(fid,
+                scene->getProperties()->formatTemplateFIdForInput());
+  if (!xsh->setCell(row, column, TXshCell(sl, fid))) {
+    if (createdLevel) scene->getLevelSet()->removeLevel(sl);
+    return false;
+  }
+
+  scanList.addFrame(ScanListFrame(sl, fid));
+  app->getCurrentLevel()->setLevel(sl);
+  app->getCurrentScene()->notifySceneChanged();
+  app->getCurrentScene()->notifyCastChange();
+  app->getCurrentXsheet()->notifyXsheetChanged();
+  return true;
+}
+
 //=============================================================================
 
 }  // namespace
@@ -190,12 +347,19 @@ DefineScannerPopup::DefineScannerPopup()
 
   m_scanDriverOm = new QComboBox();
   m_scanDriverOm->setFixedSize(150, WidgetHeight);
+#ifdef _WIN32
+  m_scanDriverOm->addItem(tr("WIA"), "WIA");
+#endif
   m_scanDriverOm->addItem(tr("TWAIN"), "TWAIN");
   m_scanDriverOm->addItem(tr("Internal"), "Internal");
   addWidget(tr("Scanner Driver:"), m_scanDriverOm);
 
-  if (QSettings().value("CurrentScannerType").toString() == "Internal")
-    m_scanDriverOm->setCurrentIndex(m_scanDriverOm->findData("Internal"));
+  QString scannerType = QSettings().value("CurrentScannerType").toString();
+#ifdef _WIN32
+  if (scannerType.isEmpty()) scannerType = "WIA";
+#endif
+  int scannerIndex = m_scanDriverOm->findData(scannerType);
+  if (scannerIndex >= 0) m_scanDriverOm->setCurrentIndex(scannerIndex);
 
   QPushButton *okBtn = new QPushButton(tr("OK"), this);
   okBtn->setDefault(true);
@@ -219,7 +383,7 @@ void DefineScannerPopup::accept() {
         CommandManager::instance()->getAction("MI_SetScanCropbox");
     QAction *resetCropAction =
         CommandManager::instance()->getAction("MI_ResetScanCropbox");
-    if (scannerType == "TWAIN")
+    if (scannerType == "TWAIN" || scannerType == "WIA")
       setCropAction->setDisabled(true);
     else
       setCropAction->setDisabled(false);
@@ -440,7 +604,7 @@ void ScanSettingsPopup::updateUI() {
   } else
     m_dpi->hide(), m_dpiLbl->hide();
 
-  if (TScanner::m_isTwain) {
+  if (TScanner::m_isTwain || TScanner::m_isWia) {
     m_paperFeederCB->hide();
     m_modeOm->hide(), m_modeLbl->hide();
     m_paperFormatOm->hide(), m_formatLbl->hide();
@@ -643,10 +807,13 @@ void AutocenterPopup::onFieldGuideChanged(const QString &fg) {
 //-----------------------------------------------------------------------------
 #endif
 
-MyScannerListener::MyScannerListener(const ScanList &scanList)
-    : m_scanList(scanList)
-    , m_current(0)
+MyScannerListener::MyScannerListener(const ScanList &scanList, int adHocRow,
+                                         int adHocColumn)
+    : m_current(0)
     , m_inc(+1)
+    , m_adHocRow(adHocRow)
+    , m_adHocColumn(adHocColumn)
+    , m_scanList(scanList)
     , m_isCanceled(false)
     , m_progressDialog(0) {
   TScannerParameters *parameters = TApp::instance()
@@ -657,7 +824,8 @@ MyScannerListener::MyScannerListener(const ScanList &scanList)
 
   m_isPreview = parameters->isPreview();
   if (m_isPreview) return;
-  if (parameters->isPaperFeederEnabled()) {
+  if (parameters->isPaperFeederEnabled() &&
+      m_scanList.getFrameCount() > 0) {
     int frameCount         = m_scanList.getFrameCount();
     ScanListFrame frame    = m_scanList.getFrame(m_current);
     TXshSimpleLevel *newXl = frame.getLevel();
@@ -666,14 +834,14 @@ MyScannerListener::MyScannerListener(const ScanList &scanList)
         toQString(levelName.withFrame(frame.getFrameId())) + QString(".tif");
     QString text = tr("Scanning in progress: ") + imageName + " 1/" +
                    QString::number(frameCount);
-    m_progressDialog =
-        new DVGui::ProgressDialog(text, QObject::tr("Cancel"), 0, frameCount);
+    m_progressDialog = new DVGui::ProgressDialog(
+        text, QObject::tr("Cancel"), 0, frameCount);
     connect(m_progressDialog, SIGNAL(canceled()), this,
             SLOT(cancelButtonPressed()));
     m_progressDialog->setWindowModality(Qt::WindowModal);
     m_progressDialog->show();
   }
-  if (parameters->isReverseOrder()) {
+  if (parameters->isReverseOrder() && m_scanList.getFrameCount() > 0) {
     m_current = m_scanList.getFrameCount() - 1;
     m_inc     = -1;
   }
@@ -687,6 +855,14 @@ void MyScannerListener::onImage(const TRasterImageP &rasImg) {
     m_current += m_inc;
     return;
   }
+  if (!m_isPreview && m_adHocRow >= 0 &&
+      m_current >= m_scanList.getFrameCount()) {
+    if (!appendAdHocScanFrame(m_scanList, m_adHocRow, m_adHocColumn)) {
+      DVGui::warning(
+          tr("Unable to create a scan level at the selected cell."));
+      return;
+    }
+  }
   if (!m_isPreview &&
       (m_current < 0 || m_current >= m_scanList.getFrameCount())) {
     DVGui::warning(tr("The scanning process is completed."));
@@ -697,7 +873,6 @@ void MyScannerListener::onImage(const TRasterImageP &rasImg) {
                                  rasImg.getPointer());
   } else {
 #ifdef LINETEST
-    // Autocenter
     CleanupParameters *cp = TApp::instance()
                                 ->getCurrentScene()
                                 ->getScene()
@@ -707,10 +882,11 @@ void MyScannerListener::onImage(const TRasterImageP &rasImg) {
       bool autocentered;
       TCleanupper *cl = TCleanupper::instance();
       cl->setParameters(cp);
-      TRasterImageP outImg = cl->autocenterOnly(rasImg, false, autocentered);
+      TRasterImageP outImg =
+          cl->autocenterOnly(rasImg, false, autocentered);
       if (!autocentered)
-        DVGui::warning(
-            QObject::tr("The autocentering failed on the current drawing."));
+        DVGui::warning(QObject::tr(
+            "The autocentering failed on the current drawing."));
       else
         rasImg->setRaster(outImg->getRaster());
     }
@@ -727,7 +903,8 @@ void MyScannerListener::onImage(const TRasterImageP &rasImg) {
     if (params->getScanType() == TScannerParameters::BW) {
       isBW = true;
       rasImg->setScanBWFlag(true);
-      Tiio::Writer::setBlackAndWhiteThreshold(params->m_threshold.m_value);
+      Tiio::Writer::setBlackAndWhiteThreshold(
+          params->m_threshold.m_value);
     }
     frame.setRasterImage(rasImg, isBW);
 
@@ -800,19 +977,33 @@ void MyScannerListener::cancelButtonPressed() {
 //
 static void doScan() {
   if (!checkScannerDefinition()) return;
+
+  if (TScanner::m_isWia && hasSelectedToonzRasterLevel()) {
+    DVGui::warning(QObject::tr(
+        "WIA scans produce full-color raster images and cannot be "
+        "written directly into a Toonz Raster level. Select an empty "
+        "cell or a Raster/Scan Level."));
+    return;
+  }
+
   ScanList scanList;
   if (scanList.areScannedFramesSelected()) {
     int ret = DVGui::MsgBox(
         QObject::tr("Some of the selected drawings were already scanned. Do "
                     "you want to scan them again?"),
-        QObject::tr("Scan"), QObject::tr("Don't Scan"), QObject::tr("Cancel"));
+        QObject::tr("Scan"), QObject::tr("Don't Scan"),
+        QObject::tr("Cancel"));
     if (ret == 3) return;
     scanList.update(ret == 1);
   } else
     scanList.update(true);
 
-  if (scanList.getFrameCount() == 0) {
-    DVGui::warning(QObject::tr("There are no frames to scan."));
+  int adHocRow = -1, adHocColumn = -1;
+  if (scanList.getFrameCount() == 0 &&
+      !getAdHocScanTarget(adHocRow, adHocColumn)) {
+    DVGui::warning(QObject::tr(
+        "Select one empty cell in an unlocked level column for "
+        "scanning."));
     return;
   }
 
@@ -821,21 +1012,34 @@ static void doScan() {
 
     int rc = scanner->isDeviceAvailable();
     if (!rc) {
-      DVGui::warning(QObject::tr("TWAIN is not available."));
+      DVGui::warning(
+          TScanner::m_isWia
+              ? QObject::tr("WIA is not available.")
+              : (TScanner::m_isTwain
+                     ? QObject::tr("TWAIN is not available.")
+                     : QObject::tr("The scanner is not available.")));
       return;
     }
 
-    MyScannerListener lst(scanList);
-    scanner->addListener(&lst);
+    MyScannerListener lst(scanList, adHocRow, adHocColumn);
+    {
+      ScannerListenerGuard listenerGuard(scanner, &lst);
+      TScannerParameters *sp = TApp::instance()
+                                   ->getCurrentScene()
+                                   ->getScene()
+                                   ->getProperties()
+                                   ->getScanParameters();
+      sp->adaptToCurrentScannerIfNeeded();
+      int paperCount = scanList.getFrameCount();
+      if (paperCount == 0) paperCount = 1;
+      scanner->acquire(*sp, paperCount);
+    }
 
-    TScannerParameters *sp = TApp::instance()
-                                 ->getCurrentScene()
-                                 ->getScene()
-                                 ->getProperties()
-                                 ->getScanParameters();
-    sp->adaptToCurrentScannerIfNeeded();
-    scanner->acquire(*sp, scanList.getFrameCount());
-    scanner->removeListener(&lst);
+    if (scanList.getFrameCount() == 0) {
+      const ScanList &acquiredScanList = lst.getScanList();
+      for (int i = 0; i < acquiredScanList.getFrameCount(); ++i)
+        scanList.addFrame(acquiredScanList.getFrame(i));
+    }
 
     SetScanCropboxCheck *cropboxCheck = SetScanCropboxCheck::instance();
     if (cropboxCheck->isEnabled()) cropboxCheck->uncheck();
@@ -843,16 +1047,6 @@ static void doScan() {
     DVGui::warning(QString::fromStdWString(e.getMessage()));
   }
 
-  // If some levels were scanned successfully, their renumber table must be
-  // updated.
-
-  // A level's renumber table is usually updated when it is either loaded or
-  // before saving -
-  // this is a similar case, where a level is filled with frames.
-  // An empty renumber table means that a renumbering operation was carried out
-  // with all frames
-  // being eradicated - which may lead to the level being saved with missing
-  // frames.
   int i, frameCount = scanList.getFrameCount();
   TXshSimpleLevel *oldLevel = 0, *level;
   for (i = 0; i < frameCount; ++i) {
