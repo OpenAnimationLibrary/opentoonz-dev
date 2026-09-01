@@ -1,0 +1,30 @@
+name: Apply startup dock layout crash fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-patch:
+    if: github.head_ref == 'fix/startup-dock-layout-crash'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply focused dock layout fix
+        run: |
+          git apply .github/staging/startup-dock-layout-crash.patch
+          rm .github/staging/startup-dock-layout-crash.patch
+          rm .github/workflows/apply-startup-dock-layout-crash-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix startup crash in dock layout restore"
+          git push
