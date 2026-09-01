@@ -43,6 +43,7 @@ enum PreferencesItemId {
   showRoomBindButtons,
   displayIn30bit,
   viewerIndicatorEnabled,
+  restoreViewerViewFromLastSession,
 
   //----------
   // Visualization
