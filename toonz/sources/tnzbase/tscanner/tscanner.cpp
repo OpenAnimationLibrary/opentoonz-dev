@@ -2,6 +2,9 @@
 
 #include "tscanner.h"
 #include "tscannertwain.h"
+#ifdef _WIN32
+#include "tscannerwia.h"
+#endif
 #include "texception.h"
 #include "tscannerepson.h"
 #include "tstream.h"
@@ -305,11 +308,15 @@ void TScannerParameters::loadData(TIStream &is) {
 namespace {
 TScanner *instanceTwain = 0;
 TScanner *instanceEpson = 0;
+#ifdef _WIN32
+TScanner *instanceWia = 0;
+#endif
 }
 
 //-------------------------------------------------------------------
 
 bool TScanner::m_isTwain = true;
+bool TScanner::m_isWia   = false;
 
 //-------------------------------------------------------------------
 
@@ -362,24 +369,42 @@ TScanner *TScanner::instance() {
   static TScannerDummy dummy = TScannerDummy();
   return &dummy;
 #else
+#ifdef _WIN32
+  if (m_isWia) {
+    if (instanceEpson) {
+      TScannerEpson *se = (TScannerEpson *)instanceEpson;
+      se->closeIO();
+    }
+    if (instanceTwain) TTWAIN_CloseAll(0);
+    if (!instanceWia) instanceWia = new TScannerWia();
+    return instanceWia;
+  }
+
   if (m_isTwain) {
     if (instanceEpson) {
       TScannerEpson *se = (TScannerEpson *)instanceEpson;
       se->closeIO();
-      // delete m_instanceEpson; //e' singletone, perche' buttarlo? (vinz)
-      // m_instanceEpson=0;
     }
     if (!instanceTwain) instanceTwain = new TScannerTwain();
-  } else if (!m_isTwain) {
-    if (instanceTwain) {
-      // delete m_instanceTwain;  //e' singletone, perche' buttarlo? (vinz)
-      // m_instanceTwain=0;
-      TTWAIN_CloseAll(0);
-    }
-    if (!instanceEpson) instanceEpson = new TScannerEpson();
+    return instanceTwain;
   }
 
+  if (instanceTwain) TTWAIN_CloseAll(0);
+  if (!instanceEpson) instanceEpson = new TScannerEpson();
+  return instanceEpson;
+#else
+  if (m_isTwain) {
+    if (instanceEpson) {
+      TScannerEpson *se = (TScannerEpson *)instanceEpson;
+      se->closeIO();
+    }
+    if (!instanceTwain) instanceTwain = new TScannerTwain();
+  } else {
+    if (instanceTwain) TTWAIN_CloseAll(0);
+    if (!instanceEpson) instanceEpson = new TScannerEpson();
+  }
   return (m_isTwain ? instanceTwain : instanceEpson);
+#endif
 #endif
 }
 
