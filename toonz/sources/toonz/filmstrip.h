@@ -59,8 +59,11 @@ public:
   void setDarkLineColor(const QColor &color) { m_darkLineColor = color; }
   QColor getDarkLineColor() const { return m_darkLineColor; }
 
-  // helper method: get the current level
+  // Level displayed by this strip. The application current level remains
+  // the active editing context.
   TXshSimpleLevel *getLevel() const;
+  void setLevel(TXshSimpleLevel *level);
+  void setActive(bool active);
 
   QSize getIconSize() const { return m_iconSize; }
   int getFrameLabelWidth() const { return m_frameLabelWidth; }
@@ -134,6 +137,7 @@ signals:
   void navigatorToggledSignal();
   void responsiveThumbnailsToggledSignal(bool responsive);
   void levelSelectedSignal(int);
+  void levelActivatedSignal(TXshSimpleLevel *level);
 
 protected:
   void showEvent(QShowEvent *) override;
@@ -197,10 +201,12 @@ private:
   // Widgets
 
   QScrollArea *m_scrollArea;
+  TXshSimpleLevel *m_level;
   TFilmstripSelection *m_selection;
   FilmstripFrameHeadGadget *m_frameHeadGadget;
   InbetweenDialog *m_inbetweenDialog;
   SceneViewer *m_viewer;
+  bool m_isActive              = false;
   bool m_justStartedSelection  = false;
   int m_indexForResetSelection = -1;
   bool m_allowResetSelection   = false;
@@ -216,6 +222,9 @@ private:
 
   QTimer *m_responsiveRenderTimer = nullptr;
 
+  bool isCurrentLevel() const;
+  bool isActiveLevel() const;
+  void activateLevel();
   void updateContentConstraints();
   void scheduleResponsiveRenderCommit();
   static QSize quantizeResponsiveRenderSize(const QSize &layout,
@@ -290,10 +299,12 @@ public slots:
   void comboBoxToggled();
   void navigatorToggled();
   void responsiveThumbnailsToggled(bool responsive);
+  void onLevelActivated(TXshSimpleLevel *level);
 
 private:
+  void makeActive();
   void updateWindowTitle();
-  // synchronize the current index of combo to the current level
+  // synchronize the current index of combo to the assigned level
   void updateCurrentLevelComboItem();
 };
 

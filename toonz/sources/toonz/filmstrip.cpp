@@ -114,6 +114,8 @@ public:
 
 const int kResponsiveIconQuantStep    = 16;
 const int kResponsiveRenderDebounceMs = 120;
+
+Filmstrip *s_activeFilmstrip = nullptr;
 }  // namespace
 
 //=============================================================================
@@ -123,6 +125,7 @@ const int kResponsiveRenderDebounceMs = 120;
 FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
     : QFrame(parent, flags)
     , m_scrollArea(parent)
+    , m_level(0)
     , m_selection(new TFilmstripSelection())
     , m_frameHeadGadget(0)
     , m_inbetweenDialog(0)
@@ -153,7 +156,6 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
   // la testa mobile che indica il frame corrente (e gestisce la GUI dell'onion
   // skin)
   m_frameHeadGadget = new FilmstripFrameHeadGadget(this);
-  installEventFilter(m_frameHeadGadget);
 
   m_selection->setView(this);
   setMouseTracking(true);
@@ -177,9 +179,58 @@ FilmstripFrames::~FilmstripFrames() {
 
 //-----------------------------------------------------------------------------
 
-TXshSimpleLevel *FilmstripFrames::getLevel() const {
-  TXshLevel *xl = TApp::instance()->getCurrentLevel()->getLevel();
-  return xl ? xl->getSimpleLevel() : 0;
+TXshSimpleLevel *FilmstripFrames::getLevel() const { return m_level; }
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setLevel(TXshSimpleLevel *level) {
+  if (m_level == level) return;
+
+  m_level = level;
+  m_selection->selectNone();
+
+  removeEventFilter(m_frameHeadGadget);
+  if (m_isActive && m_level) installEventFilter(m_frameHeadGadget);
+
+  if (m_isVertical)
+    updateContentHeight(0);
+  else
+    updateContentWidth(0);
+
+  if (isActiveLevel())
+    onFrameSwitched();
+  else
+    update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setActive(bool active) {
+  if (m_isActive == active) return;
+
+  m_isActive = active;
+  removeEventFilter(m_frameHeadGadget);
+  if (m_isActive && m_level) installEventFilter(m_frameHeadGadget);
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::isCurrentLevel() const {
+  return m_level &&
+         m_level == TApp::instance()->getCurrentLevel()->getSimpleLevel();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::isActiveLevel() const {
+  return m_isActive && isCurrentLevel();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::activateLevel() {
+  if (m_level) emit levelActivatedSignal(m_level);
 }
 
 //-----------------------------------------------------------------------------
@@ -504,6 +555,8 @@ void FilmstripFrames::scroll(int dy) {
 //---------------------------------------------------------------------------
 
 void FilmstripFrames::mouseDoubleClickEvent(QMouseEvent *event) {
+  activateLevel();
+
   int index;
   if (m_isVertical) {
     index = y2index(event->pos().y());
@@ -748,6 +801,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
   // fids, frameCount <- frames del livello
   std::vector<TFrameId> fids;
   TXshSimpleLevel *sl = getLevel();
+  const bool activeLevel = isActiveLevel();
   if (sl)
     sl->getFids(fids);
   else {
@@ -770,7 +824,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
   QRect naviRect;
 
-  if ((sl->getType() == TZP_XSHLEVEL || sl->getType() == OVL_XSHLEVEL) &&
+  if (activeLevel &&
+      (sl->getType() == TZP_XSHLEVEL || sl->getType() == OVL_XSHLEVEL) &&
       m_viewer && m_viewer->isVisible()) {
     // imgSize: image's pixel size
     QSize imgSize(sl->getProperties()->getImageRes().lx,
@@ -778,7 +833,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
     // Viewer affine
     TAffine viewerAff = m_viewer->getViewMatrix();
     // pixel size which will be displayed with 100% scale in Viewer Stage
-    TFrameId currentId = TApp::instance()->getCurrentFrame()->getFid();
+    TFrameId currentId = getCurrentFrameId();
     double imgPixelWidth =
         (double)(imgSize.width()) / sl->getDpi(currentId).x * Stage::inch;
     double imgPixelHeight =
@@ -859,6 +914,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
       tmp_frameRect   = frameRect.translated(QPoint(oneFrameWidth * i, 0));
     }
     bool isCurrentFrame =
+        activeLevel &&
         (i == sl->fid2index(TApp::instance()->getCurrentFrame()->getFid()));
     bool isSelected =
         (0 <= i && i < frameCount && m_selection->isSelected(fids[i]));
@@ -880,7 +936,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
       // Frame number
       if (m_selection->isSelected(fids[i])) {
-        if (TApp::instance()->getCurrentFrame()->isEditingLevel() &&
+        if (activeLevel &&
+            TApp::instance()->getCurrentFrame()->isEditingLevel() &&
             isCurrentFrame)
           p.setPen(Qt::red);
         else
@@ -931,7 +988,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
     }
 
     // red frame for the current frame
-    if (TApp::instance()->getCurrentFrame()->isEditingLevel() &&
+    if (activeLevel && TApp::instance()->getCurrentFrame()->isEditingLevel() &&
         (isCurrentFrame || isSelected)) {
       QPen pen;
       pen.setColor(Qt::red);
@@ -946,7 +1003,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
   // se sono in modalita' level edit faccio vedere la freccia che indica il
   // frame corrente
-  if (TApp::instance()->getCurrentFrame()->isEditingLevel())
+  if (activeLevel && TApp::instance()->getCurrentFrame()->isEditingLevel())
     m_frameHeadGadget->draw(p, QColor(Qt::white), QColor(Qt::black));
 }
 
@@ -956,7 +1013,7 @@ void FilmstripFrames::drawFrameIcon(QPainter &p, const QRect &r, int index,
                                     const TFrameId &fid, int flags) {
   QPixmap pm;
   TXshSimpleLevel *sl = getLevel();
-  TXshLevel *xl       = TApp::instance()->getCurrentLevel()->getLevel();
+  TXshLevel *xl       = sl;
   if (sl && xl) {
     const bool needNativeSize =
         m_responsiveThumbnails &&
@@ -1031,7 +1088,9 @@ void FilmstripFrames::enterEvent(QEvent *event) { getViewer(); }
 //-----------------------------------------------------------------------------
 
 TFrameId FilmstripFrames::getCurrentFrameId() {
-  TApp *app        = TApp::instance();
+  TApp *app = TApp::instance();
+  if (!isActiveLevel()) return TFrameId();
+
   TFrameHandle *fh = app->getCurrentFrame();
   TFrameId currFid;
   if (fh->isEditingLevel())
@@ -1061,6 +1120,8 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
   TFrameId fid = index2fid(index);
 
   TXshSimpleLevel *sl = getLevel();
+  if (sl) activateLevel();
+
   int frameHeight = m_iconSize.height() + fs_frameSpacing + fs_iconMarginTop +
                     fs_iconMarginBottom;
   int frameWidth = m_iconSize.width() + fs_frameSpacing + fs_iconMarginLR +
@@ -1137,8 +1198,7 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
       // move current frame when clicked without modifier
       TApp *tapp = TApp::instance();
       std::vector<TFrameId> fids;
-      TXshLevel *level = tapp->getCurrentLevel()->getLevel();
-      level->getFids(fids);
+      sl->getFids(fids);
 
       tapp->getCurrentFrame()->setFrameIds(fids);
       tapp->getCurrentFrame()->setFid(fid);
@@ -1342,9 +1402,11 @@ void FilmstripFrames::mouseMoveEvent(QMouseEvent *e) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::keyPressEvent(QKeyEvent *event) {
-  TFrameHandle *fh       = TApp::instance()->getCurrentFrame();
   TXshSimpleLevel *level = getLevel();
   if (!level) return;
+
+  activateLevel();
+  TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   std::vector<TFrameId> fids;
   level->getFids(fids);
   if (fids.empty()) return;
@@ -1445,8 +1507,10 @@ void FilmstripFrames::timerEvent(QTimerEvent *) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
-  QMenu *menu             = new QMenu();
-  TXshSimpleLevel *sl     = getLevel();
+  QMenu *menu         = new QMenu();
+  TXshSimpleLevel *sl = getLevel();
+  if (sl) activateLevel();
+
   bool isSubsequenceLevel = (sl && sl->isSubsequence());
   bool isReadOnly         = (sl && sl->isReadOnly());
   CommandManager *cm      = CommandManager::instance();
@@ -1606,6 +1670,8 @@ void FilmstripFrames::setComboBox(bool showComboBox) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onLevelChanged() {
+  if (!isCurrentLevel()) return;
+
   if (m_isVertical)
     updateContentHeight();
   else
@@ -1616,16 +1682,24 @@ void FilmstripFrames::onLevelChanged() {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onLevelSwitched(TXshLevel *) {
+  if (!isCurrentLevel()) return;
+
   if (m_isVertical)
     updateContentHeight(0);
   else
     updateContentWidth(0);
-  onFrameSwitched();  // deve visualizzare il frame corrente nella levelstrip
+
+  if (isActiveLevel())
+    onFrameSwitched();  // deve visualizzare il frame corrente nella levelstrip
+  else
+    update();
 }
 
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onFrameSwitched() {
+  if (!isActiveLevel()) return;
+
   // no. interferische con lo shift-click per la selezione.
   // m_selection->selectNone();
   TApp *app        = TApp::instance();
@@ -1753,6 +1827,7 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
   setLayout(mainLayout);
 
   setFocusProxy(m_frames);
+  m_frames->setLevel(TApp::instance()->getCurrentLevel()->getSimpleLevel());
 
   onLevelSwitched(0);
 
@@ -1771,6 +1846,8 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
           SLOT(responsiveThumbnailsToggled(bool)));
   connect(m_frames, SIGNAL(levelSelectedSignal(int)), this,
           SLOT(onChooseLevelComboChanged(int)));
+  connect(m_frames, SIGNAL(levelActivatedSignal(TXshSimpleLevel *)), this,
+          SLOT(onLevelActivated(TXshSimpleLevel *)));
 
   m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 }
@@ -1781,47 +1858,70 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
  */
 void Filmstrip::onChooseLevelComboChanged(int index) {
   TApp *tapp = TApp::instance();
-  // empty level
-  if (index == m_chooseLevelCombo->findText(tr("- No Current Level -")))
+  int noLevelIndex = m_chooseLevelCombo->findText(tr("- No Current Level -"));
+
+  if (index == noLevelIndex) {
+    makeActive();
+    m_frames->setLevel(0);
     tapp->getCurrentLevel()->setLevel(0);
-  else {
-    std::vector<TFrameId> fids;
-    m_levels[index]->getFids(fids);
-    tapp->getCurrentFrame()->setFrameIds(fids);
-
-    // retrieve to the current working frame of the level
-    TFrameId WF;
-    std::map<TXshSimpleLevel *, TFrameId>::iterator WFit;
-    WFit = m_workingFrames.find(m_levels[index]);
-    if (WFit != m_workingFrames.end())
-      WF = WFit->second;
-    else
-      WF = fids[0];
-
-    // this function emits xshLevelSwitched() signal and eventually calls
-    // FlipConsole::UpdateRange
-    // it may move the current frame so we need to keep the current frameId
-    // before calling setLevel.
-    tapp->getCurrentLevel()->setLevel(m_levels[index]);
-
-    if (tapp->getCurrentSelection()->getSelection())
-      tapp->getCurrentSelection()->getSelection()->selectNone();
-
-    // move to the current working frame
-    tapp->getCurrentFrame()->setFid(WF);
-
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-
-    invalidateIcons(m_levels[index], fids);
-
-    QApplication::restoreOverrideCursor();
+    updateWindowTitle();
+    return;
   }
+
+  if (index < 0 || index >= (int)m_levels.size()) return;
+
+  TXshSimpleLevel *level = m_levels[index];
+  m_frames->setLevel(level);
+  onLevelActivated(level);
+
+  std::vector<TFrameId> fids;
+  level->getFids(fids);
+
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  invalidateIcons(level, fids);
+  QApplication::restoreOverrideCursor();
+
+  updateWindowTitle();
+}
+
+//-----------------------------------------------------------------------------
+
+void Filmstrip::onLevelActivated(TXshSimpleLevel *level) {
+  if (!level) return;
+
+  const bool wasActive = s_activeFilmstrip == this;
+  makeActive();
+
+  TApp *tapp              = TApp::instance();
+  const bool levelChanged = tapp->getCurrentLevel()->getSimpleLevel() != level;
+  if (wasActive && !levelChanged) return;
+
+  std::vector<TFrameId> fids;
+  level->getFids(fids);
+  tapp->getCurrentFrame()->setFrameIds(fids);
+
+  TFrameId workingFid;
+  std::map<TXshSimpleLevel *, TFrameId>::iterator workingIt =
+      m_workingFrames.find(level);
+  if (workingIt != m_workingFrames.end() && level->isFid(workingIt->second))
+    workingFid = workingIt->second;
+  else if (!fids.empty())
+    workingFid = fids.front();
+
+  if (levelChanged) tapp->getCurrentLevel()->setLevel(level);
+
+  if (tapp->getCurrentSelection()->getSelection())
+    tapp->getCurrentSelection()->getSelection()->selectNone();
+
+  if (workingFid != TFrameId()) tapp->getCurrentFrame()->setFid(workingFid);
 }
 
 //-----------------------------------------------------------------------------
 /*! update combo items when the contents of scene cast are changed
  */
 void Filmstrip::updateChooseLevelComboItems() {
+  TXshSimpleLevel *stripLevel = m_frames->getLevel();
+
   // clear items
   m_chooseLevelCombo->clear();
   for (auto oldLevel : m_levels) oldLevel->release();
@@ -1878,12 +1978,24 @@ void Filmstrip::updateChooseLevelComboItems() {
   m_workingFrames.clear();
   m_workingFrames = new_workingFrames;
 
-  // synchronize the current index of combo to the current level
+  if (std::find(m_levels.begin(), m_levels.end(), stripLevel) ==
+      m_levels.end()) {
+    TXshSimpleLevel *currentLevel =
+        TApp::instance()->getCurrentLevel()->getSimpleLevel();
+    if (std::find(m_levels.begin(), m_levels.end(), currentLevel) !=
+        m_levels.end())
+      stripLevel = currentLevel;
+    else
+      stripLevel = 0;
+  }
+  m_frames->setLevel(stripLevel);
+
+  // synchronize the combo to this strip's assigned level
   updateCurrentLevelComboItem();
 }
 
 //-----------------------------------------------------------------------------
-/*! synchronize the current index of combo to the current level
+/*! synchronize the combo to the level assigned to this strip
  */
 void Filmstrip::updateCurrentLevelComboItem() {
   if (m_chooseLevelCombo->count() == 1 &&
@@ -1892,8 +2004,7 @@ void Filmstrip::updateCurrentLevelComboItem() {
     return;
   }
 
-  TXshSimpleLevel *currentLevel =
-      TApp::instance()->getCurrentLevel()->getSimpleLevel();
+  TXshSimpleLevel *currentLevel = m_frames->getLevel();
   if (!currentLevel) {
     int noLevelIndex = m_chooseLevelCombo->findText(tr("- No Current Level -"));
     if (noLevelIndex == -1) {
@@ -1905,7 +2016,7 @@ void Filmstrip::updateCurrentLevelComboItem() {
   }
 
   for (int i = 0; i < m_levels.size(); i++) {
-    if (currentLevel->getName() == m_levels[i]->getName()) {
+    if (currentLevel == m_levels[i]) {
       m_chooseLevelCombo->setCurrentIndex(i);
       int noLevelIndex =
           m_chooseLevelCombo->findText(tr("- No Current Level -"));
@@ -1925,14 +2036,37 @@ void Filmstrip::updateCurrentLevelComboItem() {
 //-----------------------------------------------------------------------------
 
 Filmstrip::~Filmstrip() {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(false);
+    s_activeFilmstrip = nullptr;
+  }
+
   for (auto level : m_levels) level->release();
   m_levels.clear();
 }
 
 //-----------------------------------------------------------------------------
 
+void Filmstrip::makeActive() {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(true);
+    return;
+  }
+
+  if (s_activeFilmstrip) s_activeFilmstrip->m_frames->setActive(false);
+
+  s_activeFilmstrip = this;
+  m_frames->setActive(true);
+}
+
+//-----------------------------------------------------------------------------
+
 void Filmstrip::showEvent(QShowEvent *) {
-  TApp *app                    = TApp::instance();
+  TApp *app = TApp::instance();
+  if (!s_activeFilmstrip) makeActive();
+  if (!m_frames->getLevel())
+    m_frames->setLevel(app->getCurrentLevel()->getSimpleLevel());
+
   TXshLevelHandle *levelHandle = app->getCurrentLevel();
   bool ret = connect(levelHandle, SIGNAL(xshLevelSwitched(TXshLevel *)),
                      SLOT(onLevelSwitched(TXshLevel *)));
@@ -1973,6 +2107,11 @@ void Filmstrip::showEvent(QShowEvent *) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::hideEvent(QHideEvent *) {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(false);
+    s_activeFilmstrip = nullptr;
+  }
+
   TApp *app                    = TApp::instance();
   TXshLevelHandle *levelHandle = app->getCurrentLevel();
   disconnect(levelHandle, SIGNAL(xshLevelSwitched(TXshLevel *)), this,
@@ -2032,31 +2171,52 @@ void Filmstrip::updateWindowTitle() {
   if (!level) {
     parentWidget()->setWindowTitle(tr("Level Strip"));
     return;
-  } else {
-    levelName = QString::fromStdWString(level->getName());
-    if (level->getProperties()->getDirtyFlag()) levelName += " *";
   }
+
+  levelName = QString::fromStdWString(level->getName());
+  if (level->getProperties()->getDirtyFlag()) levelName += " *";
 
   // parentWidget() is TPanel
   parentWidget()->setWindowTitle(tr("Level:  ") + levelName);
 
+  TFrameId workingFid;
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
-  if (fh->isEditingLevel() && fh->getFid().getNumber() >= 0)
-    levelName += QString("  [#") + QString::number(fh->getFid().getNumber()) +
+  if (s_activeFilmstrip == this &&
+      level == TApp::instance()->getCurrentLevel()->getSimpleLevel() &&
+      fh->isEditingLevel() && level->isFid(fh->getFid())) {
+    workingFid = fh->getFid();
+  } else {
+    std::map<TXshSimpleLevel *, TFrameId>::iterator workingIt =
+        m_workingFrames.find(level);
+    if (workingIt != m_workingFrames.end()) workingFid = workingIt->second;
+  }
+
+  if (workingFid.getNumber() >= 0)
+    levelName += QString("  [#") + QString::number(workingFid.getNumber()) +
                  QString("]");
 
-  m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
-                                  levelName);
+  if (m_chooseLevelCombo->currentIndex() >= 0)
+    m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
+                                    levelName);
 }
 
 //-----------------------------------------------------------------------------
 
 void Filmstrip::onLevelSwitched(TXshLevel *oldLevel) {
+  (void)oldLevel;
+
+  if (s_activeFilmstrip == this) {
+    TXshSimpleLevel *activeLevel =
+        TApp::instance()->getCurrentLevel()->getSimpleLevel();
+    m_frames->setLevel(activeLevel);
+  }
+
   updateWindowTitle();
 
   int tc = ToonzCheck::instance()->getChecks();
-  if (tc & (ToonzCheck::eInk | ToonzCheck::ePaint)) {
-    TXshLevel *sl = TApp::instance()->getCurrentLevel()->getLevel();
+  if (s_activeFilmstrip == this &&
+      (tc & (ToonzCheck::eInk | ToonzCheck::ePaint))) {
+    TXshLevel *sl = m_frames->getLevel();
     if (!sl) return;
     std::vector<TFrameId> fids;
     sl->getFids(fids);
@@ -2084,22 +2244,29 @@ void Filmstrip::onSliderMoved(int val) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::onFrameSwitched() {
+  if (s_activeFilmstrip != this) return;
+
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   if (!fh->isEditingLevel()) return;
 
   TXshSimpleLevel *level = m_frames->getLevel();
+  if (!level || level != TApp::instance()->getCurrentLevel()->getSimpleLevel())
+    return;
+
+  TFrameId fid = fh->getFid();
+  if (!level->isFid(fid)) return;
 
   std::map<TXshSimpleLevel *, TFrameId>::iterator WFit;
   WFit = m_workingFrames.find(level);
   if (WFit == m_workingFrames.end()) return;
 
-  WFit->second = fh->getFid();
+  WFit->second = fid;
 
   QString levelName = QString::fromStdWString(level->getName());
   if (level->getProperties()->getDirtyFlag()) levelName += " *";
-  if (fh->getFid().getNumber() >= 0)
-    levelName += QString("  [#") + QString::number(fh->getFid().getNumber()) +
-                 QString("]");
+  if (fid.getNumber() >= 0)
+    levelName +=
+        QString("  [#") + QString::number(fid.getNumber()) + QString("]");
 
   m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
                                   levelName);
