@@ -64,6 +64,7 @@ public:
   TXshSimpleLevel *getLevel() const;
   void setLevel(TXshSimpleLevel *level);
   void setActive(bool active);
+  void setSynchronized(bool synchronized);
 
   QSize getIconSize() const { return m_iconSize; }
   int getFrameLabelWidth() const { return m_frameLabelWidth; }
@@ -138,6 +139,7 @@ signals:
   void responsiveThumbnailsToggledSignal(bool responsive);
   void levelSelectedSignal(int);
   void levelActivatedSignal(TXshSimpleLevel *level);
+  void levelStripsResyncRequestedSignal();
 
 protected:
   void showEvent(QShowEvent *) override;
@@ -207,6 +209,7 @@ private:
   InbetweenDialog *m_inbetweenDialog;
   SceneViewer *m_viewer;
   bool m_isActive              = false;
+  bool m_isSynchronized        = true;
   bool m_justStartedSelection  = false;
   int m_indexForResetSelection = -1;
   bool m_allowResetSelection   = false;
@@ -224,6 +227,7 @@ private:
 
   bool isCurrentLevel() const;
   bool isActiveLevel() const;
+  bool isCurrentContextLevel() const;
   void activateLevel();
   void updateContentConstraints();
   void scheduleResponsiveRenderCommit();
@@ -263,6 +267,7 @@ class Filmstrip final : public QWidget, public SaveLoadQSettings {
   bool m_showNavigator        = true;
   bool m_showComboBox         = true;
   bool m_responsiveThumbnails = true;
+  bool m_syncWithCurrentLevel = true;
 
 public:
   Filmstrip(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
@@ -300,6 +305,7 @@ public slots:
   void navigatorToggled();
   void responsiveThumbnailsToggled(bool responsive);
   void onLevelActivated(TXshSimpleLevel *level);
+  void resyncLevelStrips();
 
 private:
   void makeActive();
