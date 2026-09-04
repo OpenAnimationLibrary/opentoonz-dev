@@ -62,6 +62,33 @@ QString makeCacheId(UINT id, const TFrameId &fid) {
 
 //-----------------------------------------------------------------------------
 
+bool palettesMatch(const TPalette *a, const TPalette *b) {
+  if (a == b) return true;
+  if (!a || !b) return false;
+  if (a->getStyleCount() != b->getStyleCount()) return false;
+
+  for (int i = 0; i < a->getStyleCount(); ++i) {
+    const TColorStyle *as = a->getStyle(i);
+    const TColorStyle *bs = b->getStyle(i);
+    if (as == bs) continue;
+    if (!as || !bs || !(*as == *bs)) return false;
+  }
+
+  if (a->getPageCount() != b->getPageCount()) return false;
+  for (int p = 0; p < a->getPageCount(); ++p) {
+    const TPalette::Page *ap = a->getPage(p);
+    const TPalette::Page *bp = b->getPage(p);
+    if (!ap || !bp || ap->getName() != bp->getName() ||
+        ap->getStyleCount() != bp->getStyleCount())
+      return false;
+    for (int i = 0; i < ap->getStyleCount(); ++i)
+      if (ap->getStyleId(i) != bp->getStyleId(i)) return false;
+  }
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
 //
 // frames[] is replaced by a sequence of imageSet.size() consecutive TFrameId's
 // frames[0] is used to determine the 'pastePosition', i.e. the starting frame
@@ -237,18 +264,27 @@ bool DrawingData::getLevelFrames(TXshSimpleLevel *sl,
   }
   // when pasting the frame to different level
   else {
-    QString question;
-    question = "Replace palette ?";
-    int ret  = DVGui::MsgBox(
-        question, QObject::tr("Replace with copied palette"),
-        QObject::tr("Keep original palette"), QObject::tr("Cancel"), 0);
+    TPalette *sourcePalette = m_level->getPalette();
+    TPalette *targetPalette = sl->getPalette();
 
-    if (ret == 0 || ret == 3)
-      return false;
-    else if (ret == 1)
-      keepOriginalPalette = false;
-    else
+    if (palettesMatch(sourcePalette, targetPalette)) {
+      // Identical style mapping and page layout: replacing or keeping would
+      // produce the same palette, so avoid interrupting the transfer.
       keepOriginalPalette = true;
+    } else {
+      QString question;
+      question = "Replace palette ?";
+      int ret  = DVGui::MsgBox(
+          question, QObject::tr("Replace with copied palette"),
+          QObject::tr("Keep original palette"), QObject::tr("Cancel"), 0);
+
+      if (ret == 0 || ret == 3)
+        return false;
+      else if (ret == 1)
+        keepOriginalPalette = false;
+      else
+        keepOriginalPalette = true;
+    }
   }
 
   QApplication::setOverrideCursor(Qt::WaitCursor);
