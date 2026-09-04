@@ -793,7 +793,7 @@ int main(int argc, char *argv[]) {
   // Show floating panels only after the main window has been shown
   w.startupFloatingPanels();
 
-  CommandManager::instance()->execute(T_Hand);
+  CommandManager::instance()->execute(T_Brush);
   if (!loadFilePath.isEmpty()) {
     splash.showMessage(
         QString("Loading file '") + loadFilePath.getQString() + "'...",
