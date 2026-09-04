@@ -20,7 +20,10 @@
 #include "toonz/txsheethandle.h"
 #include "toonz/tframehandle.h"
 #include "toonz/imagestyles.h"
+#include "toonz/mypaintbrushstyle.h"
 #include "toonz/preferences.h"
+#include "toonz/stylemanager.h"
+#include "toonz/toonzfolders.h"
 
 // TnzCore includes
 #include "tcolorstyles.h"
@@ -36,6 +39,19 @@
 #include <QDrag>
 #include <QAction>
 #include <QShortcut>
+#include <QCheckBox>
+#include <QDialog>
+#include <QDir>
+#include <QFileDialog>
+#include <QFormLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QTableWidget>
+#include <QVBoxLayout>
+
+#include <utility>
 
 // enable to set font size for style name separately from other texts
 TEnv::IntVar EnvSoftwareCurrentFontSize_StyleName(
@@ -46,6 +62,278 @@ TEnv::IntVar ShowStyleIndex("ShowStyleIndex", 1);
 
 using namespace PaletteViewerGUI;
 using namespace DVGui;
+
+namespace {
+
+class MyPaintStyleChangeUndo final : public TUndo {
+  TPaletteHandle *m_paletteHandle;
+  int m_styleId;
+  TColorStyleP m_oldStyle;
+  TColorStyleP m_newStyle;
+  QString m_historyString;
+
+  void apply(const TColorStyleP &style) const {
+    TPalette *palette =
+        m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    if (!palette || !style) return;
+    palette->setStyle(m_styleId, style->clone());
+    palette->setDirtyFlag(true);
+    m_paletteHandle->notifyColorStyleChanged(false);
+  }
+
+public:
+  MyPaintStyleChangeUndo(TPaletteHandle *paletteHandle, int styleId,
+                         const TColorStyle &oldStyle,
+                         const TColorStyle &newStyle, QString historyString)
+      : m_paletteHandle(paletteHandle)
+      , m_styleId(styleId)
+      , m_oldStyle(oldStyle.clone())
+      , m_newStyle(newStyle.clone())
+      , m_historyString(std::move(historyString)) {}
+
+  void undo() const override { apply(m_oldStyle); }
+  void redo() const override { apply(m_newStyle); }
+  int getSize() const override { return sizeof(*this); }
+  QString getHistoryString() override { return m_historyString; }
+};
+
+class MyPaintBrushSettingsDialog final : public QDialog {
+  TPaletteHandle *m_paletteHandle;
+  int m_styleId;
+  QLabel *m_styleName;
+  QLabel *m_sourceBrush;
+  QCheckBox *m_changedOnly;
+  QTableWidget *m_settings;
+  QLabel *m_status;
+  QPushButton *m_resetAll;
+  QPushButton *m_loadBrush;
+  QPushButton *m_save;
+
+  TMyPaintBrushStyle *currentStyle() const {
+    TPalette *palette =
+        m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    return palette && 0 <= m_styleId && m_styleId < palette->getStyleCount()
+               ? dynamic_cast<TMyPaintBrushStyle *>(
+                     palette->getStyle(m_styleId))
+               : nullptr;
+  }
+
+  void resetSetting(MyPaintBrushSetting setting) {
+    TMyPaintBrushStyle *style = currentStyle();
+    TPalette *palette = m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    if (!style || !palette || palette->isLocked()) return;
+    TColorStyleP oldStyle(style->clone());
+    style->resetBaseValue(setting);
+    TUndoManager::manager()->add(
+        new MyPaintStyleChangeUndo(m_paletteHandle, m_styleId, *oldStyle,
+                                   *style, tr("Reset MyPaint Brush Setting")));
+    palette->setDirtyFlag(true);
+    m_paletteHandle->notifyColorStyleChanged(false);
+  }
+
+  void populate() {
+    TMyPaintBrushStyle *style = currentStyle();
+    m_settings->setRowCount(0);
+    TPalette *palette =
+        m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    const bool isLocked = palette && palette->isLocked();
+    if (!style) {
+      m_styleName->setText(tr("No MyPaint style selected"));
+      m_sourceBrush->clear();
+      m_status->clear();
+      m_resetAll->setEnabled(false);
+      m_loadBrush->setEnabled(false);
+      m_save->setEnabled(false);
+      return;
+    }
+
+    m_styleName->setText(QString::fromStdWString(style->getName()));
+    m_sourceBrush->setText(style->getPath().getQString());
+    const auto changed = style->getBaseValues();
+    for (int index = 0; index < MYPAINT_BRUSH_SETTINGS_COUNT; ++index) {
+      const auto setting   = static_cast<MyPaintBrushSetting>(index);
+      const bool isChanged = changed.find(setting) != changed.end();
+      if (m_changedOnly->isChecked() && !isChanged) continue;
+
+      const int row = m_settings->rowCount();
+      m_settings->insertRow(row);
+      m_settings->setItem(row, 0,
+                          new QTableWidgetItem(style->getParamNames(index)));
+      m_settings->setItem(row, 1,
+                          new QTableWidgetItem(QString::number(
+                              style->getSourceBaseValue(setting), 'g', 5)));
+      m_settings->setItem(row, 2,
+                          new QTableWidgetItem(QString::number(
+                              style->getEffectiveBaseValue(setting), 'g', 5)));
+      if (isChanged) {
+        QPushButton *reset = new QPushButton(tr("Reset"));
+        reset->setToolTip(tr("Reset to the source brush value"));
+        reset->setEnabled(!isLocked);
+        connect(reset, &QPushButton::clicked, this,
+                [this, setting]() { resetSetting(setting); });
+        m_settings->setCellWidget(row, 3, reset);
+      }
+    }
+    m_status->setText(tr("%1 settings changed from source brush")
+                          .arg(static_cast<int>(changed.size())));
+    m_resetAll->setEnabled(!changed.empty() && !isLocked);
+    m_loadBrush->setEnabled(!isLocked);
+    m_save->setEnabled(true);
+  }
+
+  void followCurrentStyle() {
+    m_styleId = m_paletteHandle ? m_paletteHandle->getStyleIndex() : -1;
+    populate();
+  }
+
+  void loadBrush() {
+    TMyPaintBrushStyle *style = currentStyle();
+    TPalette *palette = m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    if (!style || !palette || palette->isLocked()) return;
+
+    TFilePath initialFolder =
+        style->getPath().isAbsolute()
+            ? style->getPath().getParentDir()
+            : ToonzFolder::getLibraryFolder() + "mypaint brushes";
+    const QString fileName = QFileDialog::getOpenFileName(
+        this, tr("Load MyPaint Brush"), initialFolder.getQString(),
+        tr("MyPaint Brushes (*.myb)"));
+    if (fileName.isEmpty()) return;
+
+    TMyPaintBrushStyle loadedBrush{TFilePath(fileName)};
+    loadedBrush.assignNames(style);
+    loadedBrush.setMainColor(style->getMainColor());
+    TColorStyleP oldStyle(style->clone());
+
+    palette->setStyle(m_styleId, loadedBrush.clone());
+    palette->setDirtyFlag(true);
+    TUndoManager::manager()->add(
+        new MyPaintStyleChangeUndo(m_paletteHandle, m_styleId, *oldStyle,
+                                   loadedBrush, tr("Load MyPaint Brush")));
+    m_paletteHandle->notifyColorStyleChanged(false);
+  }
+
+  void saveAs() {
+    TMyPaintBrushStyle *style = currentStyle();
+    if (!style) return;
+    TFilePath folder =
+        ToonzFolder::getLibraryFolder() + "mypaint brushes" + "xtrabrush";
+    QDir().mkpath(folder.getQString());
+    QString defaultName = QString::fromStdWString(style->getName()).trimmed();
+    if (defaultName.isEmpty()) defaultName = style->getPath().getQString();
+    defaultName.replace('/', '_').replace('\\', '_');
+    const QString fileName = QFileDialog::getSaveFileName(
+        this, tr("Save MyPaint Brush As"),
+        (folder + TFilePath(defaultName.toStdWString()))
+            .withType("myb")
+            .getQString(),
+        tr("MyPaint Brushes (*.myb)"));
+    if (fileName.isEmpty()) return;
+
+    QString errorMessage;
+    if (!style->saveBrushAs(TFilePath(fileName), errorMessage)) {
+      QMessageBox::warning(this, tr("Save MyPaint Brush"), errorMessage);
+      return;
+    }
+    MyPaintBrushStyleManager::reloadAll();
+    QMessageBox::information(
+        this, tr("Save MyPaint Brush"),
+        tr("The MyPaint brush was saved as:\n%1").arg(fileName));
+  }
+
+  void resetAll() {
+    TMyPaintBrushStyle *style = currentStyle();
+    TPalette *palette = m_paletteHandle ? m_paletteHandle->getPalette() : nullptr;
+    if (!style || !palette || palette->isLocked()) return;
+    TColorStyleP oldStyle(style->clone());
+    style->resetBaseValues();
+    TUndoManager::manager()->add(
+        new MyPaintStyleChangeUndo(m_paletteHandle, m_styleId, *oldStyle,
+                                   *style, tr("Reset MyPaint Brush Settings")));
+    palette->setDirtyFlag(true);
+    m_paletteHandle->notifyColorStyleChanged(false);
+  }
+
+public:
+  MyPaintBrushSettingsDialog(TPaletteHandle *paletteHandle, int styleId,
+                             QWidget *parent)
+      : QDialog(parent), m_paletteHandle(paletteHandle), m_styleId(styleId) {
+    setWindowTitle(tr("MyPaint Brush Settings"));
+    setAttribute(Qt::WA_DeleteOnClose);
+    setModal(false);
+    resize(720, 520);
+
+    auto *sourceLayout = new QFormLayout;
+    m_styleName        = new QLabel;
+    m_sourceBrush      = new QLabel;
+    sourceLayout->addRow(tr("Palette Style:"), m_styleName);
+    sourceLayout->addRow(tr("Source Brush:"), m_sourceBrush);
+
+    m_changedOnly = new QCheckBox(tr("Changed Settings Only"));
+    m_changedOnly->setChecked(true);
+    m_loadBrush = new QPushButton(tr("Load Brush..."));
+    m_loadBrush->setToolTip(tr("Load another MyPaint brush into this style"));
+    auto *filterLayout = new QHBoxLayout;
+    filterLayout->addWidget(m_changedOnly);
+    filterLayout->addStretch();
+    filterLayout->addWidget(m_loadBrush);
+
+    m_settings = new QTableWidget;
+    m_settings->setColumnCount(4);
+    m_settings->setHorizontalHeaderLabels(
+        {tr("Setting"), tr("Source"), tr("Current"), QString()});
+    m_settings->horizontalHeader()->setSectionResizeMode(0,
+                                                         QHeaderView::Stretch);
+    m_settings->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_settings->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_settings->verticalHeader()->hide();
+
+    m_status    = new QLabel;
+    m_resetAll  = new QPushButton(tr("Reset All"));
+    m_save      = new QPushButton(tr("Save As..."));
+    auto *close = new QPushButton(tr("Close"));
+    m_save->setDefault(true);
+    auto *buttons = new QHBoxLayout;
+    buttons->addWidget(m_resetAll);
+    buttons->addStretch();
+    buttons->addWidget(m_save);
+    buttons->addWidget(close);
+
+    auto *layout = new QVBoxLayout(this);
+    layout->addLayout(sourceLayout);
+    layout->addLayout(filterLayout);
+    layout->addWidget(m_settings);
+    layout->addWidget(m_status);
+    layout->addLayout(buttons);
+
+    connect(m_changedOnly, &QCheckBox::toggled, this, [this]() { populate(); });
+    connect(m_resetAll, &QPushButton::clicked, this, [this]() { resetAll(); });
+    connect(m_loadBrush, &QPushButton::clicked, this,
+            [this]() { loadBrush(); });
+    connect(m_save, &QPushButton::clicked, this, [this]() { saveAs(); });
+    connect(close, &QPushButton::clicked, this, &QDialog::close);
+    connect(m_paletteHandle, &TPaletteHandle::colorStyleSwitched, this,
+            [this]() { followCurrentStyle(); });
+    connect(m_paletteHandle, &TPaletteHandle::colorStyleChanged, this,
+            [this](bool isDragging) {
+              if (!isDragging) populate();
+            });
+    connect(m_paletteHandle, &TPaletteHandle::paletteSwitched, this,
+            [this]() { followCurrentStyle(); });
+    connect(m_paletteHandle, &TPaletteHandle::paletteChanged, this,
+            [this]() { followCurrentStyle(); });
+    connect(m_paletteHandle, &TPaletteHandle::paletteLockChanged, this,
+            [this]() { populate(); });
+    populate();
+  }
+
+  void setStyleId(int styleId) {
+    m_styleId = styleId;
+    populate();
+  }
+};
+
+}  // namespace
 
 //=============================================================================
 /*! \namespace PaletteViewerGUI
@@ -1194,6 +1482,32 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
     m_styleNameEditor->raise();
     m_styleNameEditor->activateWindow();
   });
+
+  menu.addSeparator();
+  QAction *myPaintSettingsAct = menu.addAction(tr("MyPaint Brush Settings..."));
+  TPalette *currentPalette =
+      getPaletteHandle() ? getPaletteHandle()->getPalette() : nullptr;
+  const int currentStyleId =
+      getPaletteHandle() ? getPaletteHandle()->getStyleIndex() : -1;
+  TColorStyle *currentStyle = currentPalette && currentStyleId >= 0
+                                  ? currentPalette->getStyle(currentStyleId)
+                                  : nullptr;
+  myPaintSettingsAct->setEnabled(
+      dynamic_cast<TMyPaintBrushStyle *>(currentStyle) != nullptr);
+  connect(myPaintSettingsAct, &QAction::triggered, this,
+          [this, currentStyleId]() {
+            if (!m_myPaintBrushSettingsDialog) {
+              m_myPaintBrushSettingsDialog = new MyPaintBrushSettingsDialog(
+                  getPaletteHandle(), currentStyleId, this);
+            } else {
+              static_cast<MyPaintBrushSettingsDialog *>(
+                  m_myPaintBrushSettingsDialog.data())
+                  ->setStyleId(currentStyleId);
+            }
+            m_myPaintBrushSettingsDialog->show();
+            m_myPaintBrushSettingsDialog->raise();
+            m_myPaintBrushSettingsDialog->activateWindow();
+          });
 
   // Verifica se lo stile e' link.
   // Abilita e disabilita le voci di menu' in base a dove si e' cliccato.
