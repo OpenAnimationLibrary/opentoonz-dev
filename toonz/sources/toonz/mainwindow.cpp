@@ -2340,6 +2340,8 @@ void MainWindow::defineActions() {
   createMenuEditAction(MI_Group, QT_TR_NOOP("&Group"), "Ctrl+G", "group");
   createMenuEditAction(MI_Ungroup, QT_TR_NOOP("&Ungroup"), "Ctrl+Shift+G",
                        "ungroup");
+  createMenuEditAction(MI_UngroupAll,
+                       QT_TR_NOOP("Ungroup &All in Drawing"), "", "ungroup");
   createMenuEditAction(MI_EnterGroup, QT_TR_NOOP("&Enter Group"), "",
                        "enter_group");
   createMenuEditAction(MI_ExitGroup, QT_TR_NOOP("&Exit Group"), "",

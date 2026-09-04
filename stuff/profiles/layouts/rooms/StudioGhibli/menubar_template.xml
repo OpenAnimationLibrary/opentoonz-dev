@@ -66,6 +66,10 @@
     <separator/>
     <command>MI_Group</command>
     <command>MI_Ungroup</command>
+    <command>MI_UngroupAllSelected</command>
+    <separator/>
+    <command>MI_UngroupAll</command>
+    <separator/>
     <command>MI_EnterGroup</command>
     <command>MI_ExitGroup</command>
     <separator/>
