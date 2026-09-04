@@ -100,7 +100,15 @@ void initImageIo(bool lightVersion) {
     TFileType::declare("pli", TFileType::VECTOR_LEVEL);
 
     TLevelReader::define("svg", 0, TLevelReaderSvg::create);
+#ifdef _WIN32
+    // Retained SVG may be a numbered frame sequence. Treat SVG as a level on
+    // Windows so the File Browser preserves sequence identity (name..svg)
+    // instead of rejecting that level path before the retained loader can bind
+    // its individual SVG source frames.
+    TFileType::declare("svg", TFileType::VECTOR_LEVEL);
+#else
     TFileType::declare("svg", TFileType::VECTOR_IMAGE);
+#endif
     TLevelWriter::define("svg", TLevelWriterSvg::create, false);
     Tiio::defineWriterProperties("svg", new Tiio::SvgWriterProperties());
 
