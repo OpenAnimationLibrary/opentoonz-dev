@@ -17,6 +17,7 @@ set(HEADERS
     mov/tiio_mov_proxy.h
     3gp/tiio_3gp_proxy.h
     ffmpeg/tiio_gif.h
+    ffmpeg/tiio_webp.h
     ffmpeg/tiio_webm.h
     ffmpeg/tiio_apng.h
     ffmpeg/tiio_mp4.h
@@ -49,6 +50,7 @@ set(SOURCES
     mov/tiio_mov_proxy.cpp
     3gp/tiio_3gp_proxy.cpp
     ffmpeg/tiio_gif.cpp
+    ffmpeg/tiio_webp.cpp
     ffmpeg/tiio_webm.cpp
     ffmpeg/tiio_apng.cpp
     ffmpeg/tiio_mp4.cpp
