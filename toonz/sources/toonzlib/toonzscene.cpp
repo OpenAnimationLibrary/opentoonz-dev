@@ -1451,15 +1451,20 @@ TFilePath ToonzScene::codeFilePath(const TFilePath &path) const {
     return fp;
   }
 
-  if (project)
+  if (project) {
+    TFilePath bestName, bestPath;
     for (int i = 0; i < project->getFolderCount(); i++) {
       TFilePath folderName("+" + project->getFolderName(i));
       TFilePath folderPath = decodeFilePath(folderName);
-      if (folderPath.isAncestorOf(fp)) {
-        fp = folderName + (fp - folderPath);
-        return fp;
+      if (!folderPath.isAncestorOf(fp)) continue;
+      if (bestPath.isEmpty() || folderPath.getWideString().length() >
+                                    bestPath.getWideString().length()) {
+        bestName = folderName;
+        bestPath = folderPath;
       }
     }
+    if (!bestPath.isEmpty()) return bestName + (fp - bestPath);
+  }
 
   if (priority == Preferences::ProjectFolderAliases)
     codeFilePathWithSceneFolder(fp);
