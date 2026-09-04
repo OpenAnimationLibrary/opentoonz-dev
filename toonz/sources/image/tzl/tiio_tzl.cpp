@@ -2110,8 +2110,11 @@ TImageP TImageReaderTzl::load14() {
       throw TException("Loading tlv: bad icon size.");
     fread(&actualBuffSize, sizeof(TINT32), 1, chan);
 
+    const size_t iconBufferCapacity = static_cast<size_t>(iconLx) *
+                                      static_cast<size_t>(iconLy) *
+                                      sizeof(TPixelCM32);
     if (actualBuffSize <= 0 ||
-        actualBuffSize > (int)(iconLx * iconLx * sizeof(TPixelCM32)))
+        static_cast<size_t>(actualBuffSize) > iconBufferCapacity)
       throw TException("Loading tlv: icon buffer size error.");
 
     TRasterCM32P raux = TRasterCM32P(iconLx, iconLy);
@@ -2185,23 +2188,39 @@ TImageP TImageReaderTzl::load14() {
     // TPixelCM32 bgColorRect(1,0,100);
 
     TDimension imgSize(iconLx, iconLy);
-    if (!TRect(imgSize).contains(
+    const TRect iconBounds(imgSize);
+    const TRect originalSavebox(savebox);
+    if (!iconBounds.contains(
             savebox))  // for this 'if', see comment in createIcon method. vinz
-      savebox = savebox * TRect(imgSize);
-    // if(!TRect(imgSize).contains(savebox)) throw TException("Loading tlv: bad
+      savebox = savebox * iconBounds;
+    // if(!iconBounds.contains(savebox)) throw TException("Loading tlv: bad
     // icon savebox size.");
 
-    if (imgSize != savebox.getSize()) {
+    // Embedded icon rasters are normally cropped to the scaled savebox. If
+    // malformed metadata makes their sizes disagree, reconstruct the fixed
+    // icon canvas and copy only the mutually valid area. Keep the surviving
+    // savebox placement instead of moving the icon content to the origin.
+    if (ras->getSize() != imgSize) {
       TRasterCM32P fullRas(imgSize);
-      TPixelCM32 bgColor;
+      fullRas->clear();
 
-      fullRas->fillOutside(savebox, bgColor);
+      if (!savebox.isEmpty()) {
+        const TPoint sourcePos = savebox.getP00() - originalSavebox.getP00();
+        const int copyLx =
+            std::min(savebox.getLx(), ras->getLx() - sourcePos.x);
+        const int copyLy =
+            std::min(savebox.getLy(), ras->getLy() - sourcePos.y);
 
-      // fullRas->extractT(rect)->fill(bgColorRect);
-      // assert(savebox.getSize() == ras->getSize());
-      if (savebox.getSize() != ras->getSize())
-        throw TException("Loading tlv: bad icon savebox size.");
-      fullRas->extractT(savebox)->copy(ras);
+        if (sourcePos.x >= 0 && sourcePos.y >= 0 && copyLx > 0 && copyLy > 0) {
+          const TDimension copySize(copyLx, copyLy);
+          TRect sourceRect(sourcePos, copySize);
+          TRect targetRect(savebox.getP00(), copySize);
+          fullRas->extractT(targetRect)->copy(ras->extract(sourceRect));
+          savebox = targetRect;
+        } else {
+          savebox = TRect();
+        }
+      }
       ras = fullRas;
     }
 
