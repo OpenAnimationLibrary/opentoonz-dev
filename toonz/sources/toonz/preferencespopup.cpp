@@ -1881,7 +1881,7 @@ QWidget* PreferencesPopup::createInterfacePage() {
   insertUI(customHelpLink, lay);
   getUI<FileField*>(customHelpLink)
       ->setToolTip(
-          tr("Leave blank to use the default OpenToonz Discord invite. "
+          tr("Leave blank to use the local OpenToonz documentation index. "
              "To open a PDF at a specific page, append #page=12."));
 
   lay->setRowStretch(lay->rowCount(), 1);
