@@ -1071,6 +1071,16 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
           combo, &QFontComboBox::currentFontChanged, this,
           [this](const QFont& font) { onInterfaceFontChanged(font.family()); });
       widget = combo;
+    } else if (id == customHelpLink) {
+      DVGui::FileField* field =
+          new DVGui::FileField(this, item.value.toString());
+      field->setFileMode(QFileDialog::ExistingFile);
+      field->setFilters(QStringList() << "html"
+                                      << "htm"
+                                      << "pdf");
+      connect(field, &FileField::pathChanged, this,
+              &PreferencesPopup::onChange);
+      widget = field;
     } else if (!comboItems.isEmpty()) {  // create QComboBox
       QComboBox* combo = new QComboBox(this);
       for (const ComboBoxItem& item : comboItems)
@@ -1289,6 +1299,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {displayIn30bit, tr("30bit Display*")},
       {showIconsInMenu, tr("Show Icons In Menu*")},
       {showRoomBindButtons, tr("Show Room Bind Buttons*")},
+      {customHelpLink, tr("Quicklink URL:")},
       {viewerIndicatorEnabled, tr("Show Viewer Indicators")},
       {restoreViewerViewFromLastSession,
        tr("Restore Viewer Zoom and Pan from Last Session")},
@@ -1869,6 +1880,11 @@ QWidget* PreferencesPopup::createInterfacePage() {
   lay->addWidget(check30bitBtn, row - 1, 2, Qt::AlignRight);
   insertUI(showIconsInMenu, lay);
   insertUI(showRoomBindButtons, lay);
+  insertUI(customHelpLink, lay);
+  getUI<FileField*>(customHelpLink)
+      ->setToolTip(
+          tr("Leave blank to use the local OpenToonz documentation index. "
+             "To open a PDF at a specific page, append #page=12."));
 
   lay->setRowStretch(lay->rowCount(), 1);
   insertFootNote(lay);
