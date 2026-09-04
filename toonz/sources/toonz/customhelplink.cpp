@@ -20,8 +20,7 @@
 
 namespace {
 
-const QString DefaultCustomHelpLink =
-    QStringLiteral("https://discord.gg/jXFx6jt");
+const QString DefaultCustomHelpLink = QStringLiteral("index.html");
 
 QUrl resolveHelpLink(const QString &link) {
   QUrl url(link);
