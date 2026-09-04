@@ -23,6 +23,9 @@ class FilmstripFrameHeadGadget;
 class TXshSimpleLevel;
 class QComboBox;
 class QTimer;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class InbetweenDialog;
 class TXshLevel;
 class SceneViewer;
@@ -130,6 +133,7 @@ public:
   void setComboBox(bool showComboBox);
   void setResponsiveThumbnails(bool responsive);
   bool isResponsiveThumbnails() const { return m_responsiveThumbnails; }
+  bool isDragInProgress() const { return m_dragInProgress; }
   void updateIconLayout();
 
 signals:
@@ -157,6 +161,9 @@ protected:
   void mousePressEvent(QMouseEvent *event) override;
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *) override;
+  void dragEnterEvent(QDragEnterEvent *event) override;
+  void dragMoveEvent(QDragMoveEvent *event) override;
+  void dropEvent(QDropEvent *event) override;
   void enterEvent(QEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
   void wheelEvent(QWheelEvent *event) override;
@@ -168,6 +175,9 @@ protected:
   void contextMenuEvent(QContextMenuEvent *event) override;
 
   void startDragDrop();
+  int dropInsertionIndex(const QPoint &pos) const;
+  void refreshLevelContent();
+  void selectDroppedFrames(const std::set<TFrameId> &fids);
   void createSelectLevelMenu(QMenu *menu);
   void inbetween();
 
@@ -210,6 +220,7 @@ private:
   SceneViewer *m_viewer;
   bool m_isActive              = false;
   bool m_isSynchronized        = true;
+  bool m_dragInProgress        = false;
   bool m_justStartedSelection  = false;
   int m_indexForResetSelection = -1;
   bool m_allowResetSelection   = false;

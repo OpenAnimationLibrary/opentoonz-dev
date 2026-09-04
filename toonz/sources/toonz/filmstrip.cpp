@@ -17,6 +17,7 @@
 #include "toonzqt/trepetitionguard.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/tselectionhandle.h"
+#include "toonzqt/dvdialog.h"
 
 // TnzLib includes
 #include "toonz/txshlevelhandle.h"
@@ -49,6 +50,9 @@
 #include <QMainWindow>
 #include <QMimeData>
 #include <QDrag>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QTimer>
 #include <algorithm>
 
@@ -103,7 +107,8 @@ public:
 
   bool eventFilter(QObject *watched, QEvent *event) override {
     if (event->type() == QEvent::Resize && m_frames &&
-        m_frames->isResponsiveThumbnails() && !m_busy) {
+        m_frames->isResponsiveThumbnails() && !m_frames->isDragInProgress() &&
+        !m_busy) {
       m_busy = true;
       m_frames->updateIconLayout();
       m_busy = false;
@@ -115,7 +120,9 @@ public:
 const int kResponsiveIconQuantStep    = 16;
 const int kResponsiveRenderDebounceMs = 120;
 
-Filmstrip *s_activeFilmstrip = nullptr;
+Filmstrip *s_activeFilmstrip           = nullptr;
+FilmstripFrames *s_dragSourceFilmstrip = nullptr;
+std::set<TFrameId> s_dragSourceFrames;
 }  // namespace
 
 //=============================================================================
@@ -146,6 +153,7 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
   setFrameStyle(QFrame::StyledPanel);
 
   setFocusPolicy(Qt::StrongFocus);
+  setAcceptDrops(true);
   updateContentConstraints();
   if (m_isVertical) {
     setFixedHeight(parentWidget()->height());
@@ -1208,10 +1216,15 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
         m_dragDropArmed = true;
         m_pos           = event->pos();
       }
-    } else if (event->modifiers() & Qt::ControlModifier)
+    } else if (event->modifiers() & Qt::ControlModifier) {
       select(index, CTRL_SELECT);
-
-    else if (sl->getType() == PLI_XSHLEVEL &&
+      if (m_selection->isSelected(fid)) {
+        // Ctrl-click-drag is the explicit copy gesture. Arm the drag
+        // immediately after toggling this frame into the selection.
+        m_dragDropArmed = true;
+        m_pos           = event->pos();
+      }
+    } else if (sl->getType() == PLI_XSHLEVEL &&
              m_selection->isInInbetweenRange(fid) && inbetweenSelected) {
       inbetween();
     } else {
@@ -1223,17 +1236,18 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
       tapp->getCurrentFrame()->setFrameIds(fids);
       tapp->getCurrentFrame()->setFid(fid);
 
-      if (actualIconClicked &&
-          (!m_selection->isSelected(fid) || m_justStartedSelection)) {
-        // click on a non-selected frame
-        m_selecting = true;  // allow drag-select
-        select(index, START_DRAG_SELECT);
-      } else if (m_selection->isSelected(fid)) {
-        // if it's already selected - it can be drag and dropped
+      if (actualIconClicked && !m_selection->isSelected(fid)) {
+        // Plain click-drag on an unselected drawing should immediately move
+        // that drawing. Multi-frame drag sources are built explicitly with
+        // Shift/Ctrl selection instead of competing with drag-select here.
+        select(index, ONLY_SELECT);
         m_dragDropArmed = true;
         m_pos           = event->pos();
-        // allow a the frame to be reselected if the mouse isn't moved far
-        // this is to enable a group selection to become a single selection
+      } else if (m_selection->isSelected(fid)) {
+        // If it's already selected, drag the current selection. A click
+        // without enough movement still collapses the group to this frame.
+        m_dragDropArmed = true;
+        m_pos           = event->pos();
         m_allowResetSelection    = true;
         m_indexForResetSelection = index;
       } else if (!actualIconClicked) {
@@ -1765,7 +1779,237 @@ void FilmstripFrames::startDragDrop() {
   QPixmap dropThumbnail = IconGenerator::instance()->getIcon(sl, *fids.begin());
   if (!dropThumbnail.isNull()) drag->setPixmap(dropThumbnail);
   drag->setMimeData(mimeData);
-  Qt::DropAction dropAction = drag->exec(Qt::CopyAction | Qt::MoveAction);
+
+  s_dragSourceFilmstrip = this;
+  s_dragSourceFrames    = fids;
+  m_dragInProgress      = true;
+  drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
+  m_dragInProgress = false;
+  s_dragSourceFrames.clear();
+  s_dragSourceFilmstrip = nullptr;
+
+  // Responsive thumbnail mode can receive viewport resize events while
+  // QDrag::exec() runs its nested event loop. Keep the frame metrics fixed
+  // for the drag, then reconcile the responsive layout once the drop ends.
+  if (m_responsiveThumbnails) updateIconLayout();
+}
+
+//-----------------------------------------------------------------------------
+
+int FilmstripFrames::dropInsertionIndex(const QPoint &pos) const {
+  TXshSimpleLevel *level = getLevel();
+  if (!level) return 0;
+
+  int index = m_isVertical ? y2index(pos.y()) : x2index(pos.x());
+  index = std::max(0, std::min(index, level->getFrameCount()));
+
+  if (index < level->getFrameCount()) {
+    const int frameStart = m_isVertical ? index2y(index) : index2x(index);
+    const int frameSize =
+        m_isVertical ? getOneFrameHeight() : getOneFrameWidth();
+    const int cursor = m_isVertical ? pos.y() : pos.x();
+    const int local  = cursor - frameStart;
+
+    // Responsive thumbnails can make the visible gutter very small. Give
+    // each before/after boundary a wider logical snap zone without changing
+    // thumbnail spacing or causing a layout reflow during the drag.
+    const int edgeZone =
+        m_responsiveThumbnails
+            ? std::max(12, std::min(frameSize / 4, 24))
+            : std::max(4, fs_frameSpacing);
+
+    if (local <= edgeZone)
+      return index;
+    if (local >= frameSize - edgeZone)
+      return std::min(index + 1, level->getFrameCount());
+
+    if (cursor >= frameStart + frameSize / 2) ++index;
+  }
+
+  return std::max(0, std::min(index, level->getFrameCount()));
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::refreshLevelContent() {
+  if (m_isVertical)
+    updateContentHeight(0);
+  else
+    updateContentWidth(0);
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::selectDroppedFrames(const std::set<TFrameId> &fids) {
+  m_selection->selectNone();
+  for (const TFrameId &fid : fids) {
+    int index = fid2index(fid);
+    if (index >= 0) m_selection->select(fid);
+  }
+  if (!fids.empty()) {
+    int index = fid2index(*fids.begin());
+    if (index >= 0) showFrame(index);
+  }
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dragEnterEvent(QDragEnterEvent *event) {
+  if (!s_dragSourceFilmstrip ||
+      !event->mimeData()->hasFormat("application/vnd.toonz.drawings") ||
+      !getLevel()) {
+    event->ignore();
+    return;
+  }
+
+  event->acceptProposedAction();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dragMoveEvent(QDragMoveEvent *event) {
+  TXshSimpleLevel *sourceLevel =
+      s_dragSourceFilmstrip ? s_dragSourceFilmstrip->getLevel() : nullptr;
+  TXshSimpleLevel *targetLevel = getLevel();
+  if (!sourceLevel || !targetLevel || targetLevel->isSubsequence() ||
+      targetLevel->isReadOnly()) {
+    event->ignore();
+    return;
+  }
+
+  const bool copyRequested =
+      event->keyboardModifiers() & Qt::ControlModifier;
+  Qt::DropAction action = Qt::MoveAction;
+  if (sourceLevel != targetLevel &&
+      (copyRequested || sourceLevel->isReadOnly() ||
+       sourceLevel->isSubsequence()))
+    action = Qt::CopyAction;
+
+  event->setDropAction(action);
+  event->accept();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dropEvent(QDropEvent *event) {
+  FilmstripFrames *sourceStrip = s_dragSourceFilmstrip;
+  TXshSimpleLevel *sourceLevel = sourceStrip ? sourceStrip->getLevel() : nullptr;
+  TXshSimpleLevel *targetLevel = getLevel();
+  if (!sourceLevel || !targetLevel || s_dragSourceFrames.empty()) {
+    event->ignore();
+    return;
+  }
+
+  activateLevel();
+  const int targetIndex = dropInsertionIndex(event->pos());
+
+  if (sourceLevel == targetLevel) {
+    std::vector<TFrameId> oldFids;
+    targetLevel->getFids(oldFids);
+
+    std::vector<TFrameId> moving;
+    std::vector<TFrameId> remaining;
+    int insertionIndex = 0;
+    for (int i = 0; i < (int)oldFids.size(); ++i) {
+      const TFrameId &fid = oldFids[i];
+      if (s_dragSourceFrames.count(fid))
+        moving.push_back(fid);
+      else {
+        if (i < targetIndex) ++insertionIndex;
+        remaining.push_back(fid);
+      }
+    }
+    if (moving.empty()) {
+      event->ignore();
+      return;
+    }
+
+    insertionIndex = std::min(insertionIndex, (int)remaining.size());
+    std::vector<TFrameId> desired = remaining;
+    desired.insert(desired.begin() + insertionIndex, moving.begin(), moving.end());
+    if (desired == oldFids) {
+      event->setDropAction(Qt::MoveAction);
+      event->accept();
+      return;
+    }
+
+    std::vector<std::pair<TFrameId, TFrameId>> renumberTable;
+    std::set<TFrameId> movedFids;
+    for (int i = 0; i < (int)oldFids.size(); ++i) {
+      renumberTable.emplace_back(desired[i], oldFids[i]);
+      if (i >= insertionIndex && i < insertionIndex + (int)moving.size())
+        movedFids.insert(oldFids[i]);
+    }
+
+    FilmstripCmd::reorder(targetLevel, renumberTable);
+    refreshLevelContent();
+    selectDroppedFrames(movedFids);
+
+    std::vector<TFrameId> fids;
+    targetLevel->getFids(fids);
+    TApp::instance()->getCurrentFrame()->setFrameIds(fids);
+    if (!movedFids.empty())
+      TApp::instance()->getCurrentFrame()->setFid(*movedFids.begin());
+
+    event->setDropAction(Qt::MoveAction);
+    event->accept();
+    return;
+  }
+
+  if (sourceLevel->getType() != targetLevel->getType()) {
+    DVGui::warning(tr("Frames cannot be dropped between different level types. "
+                      "Level conversion can be added as a future drop option."));
+    event->ignore();
+    return;
+  }
+
+  std::vector<TFrameId> targetFids;
+  targetLevel->getFids(targetFids);
+  std::set<TFrameId> insertionPoint;
+  if (targetFids.empty())
+    insertionPoint.insert(TFrameId(1));
+  else if (targetIndex < (int)targetFids.size())
+    insertionPoint.insert(targetFids[targetIndex]);
+  else
+    insertionPoint.insert(targetFids.back() + 1);
+
+  const bool copyRequested =
+      event->keyboardModifiers() & Qt::ControlModifier;
+  const bool canMove =
+      !copyRequested && !sourceLevel->isReadOnly() &&
+      !sourceLevel->isSubsequence();
+  const Qt::DropAction dropAction =
+      canMove ? Qt::MoveAction : Qt::CopyAction;
+
+  if (canMove) TUndoManager::manager()->beginBlock();
+
+  if (!FilmstripCmd::insertFramesFromLevel(sourceLevel, s_dragSourceFrames,
+                                            targetLevel, insertionPoint)) {
+    if (canMove) TUndoManager::manager()->endBlock();
+    event->ignore();
+    return;
+  }
+
+  if (canMove) {
+    std::set<TFrameId> sourceFrames = s_dragSourceFrames;
+    FilmstripCmd::remove(sourceLevel, sourceFrames);
+    TUndoManager::manager()->endBlock();
+    sourceStrip->m_selection->selectNone();
+    sourceStrip->refreshLevelContent();
+  }
+
+  refreshLevelContent();
+  selectDroppedFrames(insertionPoint);
+  targetFids.clear();
+  targetLevel->getFids(targetFids);
+  TApp::instance()->getCurrentFrame()->setFrameIds(targetFids);
+  if (!insertionPoint.empty())
+    TApp::instance()->getCurrentFrame()->setFid(*insertionPoint.begin());
+
+  event->setDropAction(dropAction);
+  event->accept();
 }
 
 //-----------------------------------------------------------------------------
