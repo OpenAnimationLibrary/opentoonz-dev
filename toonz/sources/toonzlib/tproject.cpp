@@ -408,7 +408,7 @@ int TProject::getFolderIndex(string name) const {
   std::vector<std::string>::const_iterator it;
   it = std::find(m_folderNames.begin(), m_folderNames.end(), name);
   if (it == m_folderNames.end()) return -1;
-  return std::distance(it, m_folderNames.begin());
+  return std::distance(m_folderNames.begin(), it);
 }
 
 //-------------------------------------------------------------------
