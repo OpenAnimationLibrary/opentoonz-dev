@@ -1,0 +1,303 @@
+name: Channel Stack Preview (Windows)
+run-name: "Channel stack PRs 143 + 145 / ${{ github.run_number }}"
+
+on:
+  push:
+    branches:
+      - build/channel-stack-143-145
+  workflow_dispatch:
+
+concurrency:
+  group: channel-stack-143-145
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  Windows:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      # QT related variable
+      QT_PATH: ${{ github.workspace }}\thirdparty\qt\5.15.2_wintab\msvc2019_64  # Path to custom Qt
+
+      # Visual Studio related variables
+      MSVCVERSION: "Visual Studio 18 2026"  # Visual Studio version
+      
+      # Boost-related variables      
+      BOOST_TOOLSET: "14.3"                 # Boost MSVC Toolset version
+      BOOST_VERSION: "1.87.0"               # Boost version
+      BOOST_ROOT: C:\local\boost_1_87_0     # Path to Boost library root
+      
+      # OpenCV-related variables      
+      OPENCV_VERSION: "4.13.0"              # OpenCV version
+      OpenCV_DIR: C:\tools\opencv\build     # Path to OpenCV
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+          fetch-depth: 0
+
+      - name: Verify stack ancestry
+        shell: pwsh
+        run: |
+          git merge-base --is-ancestor a2f9b9a8d7844456c79202154d01f1845dc6c0c6 HEAD
+          if ($LASTEXITCODE -ne 0) { throw "PR 143 is missing from this build" }
+          git merge-base --is-ancestor 3dcfe10ff0e4ab91c1f4d7a76c936db7ad15d46c HEAD
+          if ($LASTEXITCODE -ne 0) { throw "PR 145 is missing from this build" }
+
+      - name: Brand OT-Dev build
+        shell: pwsh
+        env:
+          OT_EVENT_NAME: ${{ github.event_name }}
+          OT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          OT_PR_TITLE: ${{ github.event.pull_request.title }}
+          OT_PR_BODY: ${{ github.event.pull_request.body }}
+          OT_REF_NAME: ${{ github.ref_name }}
+          OT_SHA: ${{ github.sha }}
+        run: |
+          $shortSha = $env:OT_SHA.Substring(0, 7)
+
+          if ($env:OT_EVENT_NAME -eq "pull_request" -and $env:OT_PR_NUMBER) {
+            $title = $env:OT_PR_TITLE -replace '[^A-Za-z0-9 ._#()+-]', ' '
+            $title = ($title -replace '\s+', ' ').Trim()
+            if ($title.Length -gt 48) {
+              $title = $title.Substring(0, 45).TrimEnd() + "..."
+            }
+
+            $label = "OT-Dev PR #$($env:OT_PR_NUMBER)"
+            if ($title) { $label += " - $title" }
+            $prHeading = "PR #$($env:OT_PR_NUMBER) — $title"
+
+            $description = $env:OT_PR_BODY
+            if ($description) {
+              $description = $description -replace '(?m)^\s*#{1,6}\s*', ''
+              $description = $description -replace '(?m)^\s*[-*+]\s*', ''
+              $description = $description -replace '`', ''
+              $description = $description -replace '\[(.*?)\]\([^)]*\)', '$1'
+              $description = ($description -replace '\s+', ' ').Trim()
+            }
+            if (-not $description) {
+              $description = "Experimental OT-Dev pull-request build for review and testing."
+            }
+          } else {
+            $ref = $env:OT_REF_NAME -replace '[^A-Za-z0-9._-]', '-'
+            if (-not $ref) { $ref = "build" }
+            $label = "OT-Dev PRs #143 + #145 @ $shortSha"
+            $prHeading = "Extended Channel Mapping + Custom Channels"
+            $description = "Stacked preview: stable channel IDs, custom curves, names and expression references."
+          }
+
+          $sourcePath = "toonz/sources/toonz/mainwindow.cpp"
+          $source = Get-Content $sourcePath -Raw
+          $needle = 'QString::fromStdString(TEnv::getApplicationFullName());'
+          if (-not $source.Contains($needle)) {
+            throw "Unable to locate OpenToonz window-title construction."
+          }
+
+          $escapedLabel = $label.Replace('\', '\\').Replace('"', '\"')
+          $replacement = 'QString::fromStdString(TEnv::getApplicationFullName()) + " [' + $escapedLabel + ']";'
+          $source = $source.Replace($needle, $replacement)
+          Set-Content -Path $sourcePath -Value $source -NoNewline
+
+          function Escape-SvgText([string]$text) {
+            if ($null -eq $text) { return "" }
+            return [System.Security.SecurityElement]::Escape($text)
+          }
+
+          function Split-SvgDescription([string]$text) {
+            $max = 72
+            if ($text.Length -le $max) { return @($text, "") }
+            $cut = $text.LastIndexOf(' ', [Math]::Min($max, $text.Length - 1))
+            if ($cut -lt 1) { $cut = [Math]::Min($max, $text.Length) }
+            $line1 = $text.Substring(0, $cut).Trim()
+            $rest = $text.Substring($cut).Trim()
+            if ($rest.Length -gt $max) {
+              $secondCut = $rest.LastIndexOf(' ', [Math]::Min($max - 3, $rest.Length - 1))
+              if ($secondCut -lt 1) { $secondCut = [Math]::Min($max - 3, $rest.Length) }
+              $rest = $rest.Substring(0, $secondCut).TrimEnd() + "..."
+            }
+            return @($line1, $rest)
+          }
+
+          $descriptionLines = Split-SvgDescription $description
+          $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
+          $templatePath = ".github/ot-dev/splash-template.svg"
+          if (-not (Test-Path $templatePath)) {
+            throw "OT-Dev splash template is missing: $templatePath"
+          }
+
+          $splash = Get-Content $templatePath -Raw
+          $replacements = @{
+            '{{BUILD_LABEL}}' = (Escape-SvgText $label)
+            '{{PR_HEADING}}' = (Escape-SvgText $prHeading)
+            '{{DESCRIPTION}}' = (Escape-SvgText $description)
+            '{{DESCRIPTION_LINE_1}}' = (Escape-SvgText $descriptionLines[0])
+            '{{DESCRIPTION_LINE_2}}' = (Escape-SvgText $descriptionLines[1])
+            '{{BUILD_DATE}}' = (Escape-SvgText $buildDate)
+            '{{SHORT_SHA}}' = (Escape-SvgText $shortSha)
+          }
+          foreach ($entry in $replacements.GetEnumerator()) {
+            $splash = $splash.Replace($entry.Key, $entry.Value)
+          }
+
+          $generatedSplash = Join-Path $env:RUNNER_TEMP "ot-dev-splash.svg"
+          Set-Content -Path $generatedSplash -Value $splash -NoNewline -Encoding utf8
+
+          Write-Host "Window title branding: $label"
+          Write-Host "Generated OT-Dev splash: $generatedSplash"
+
+      # Cache OpenCV and Boost libraries
+      - name: Cache OpenCV and Boost
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            C:\tools\opencv
+            ${{ env.BOOST_ROOT }}
+          key: ${{ runner.os }}-opencv-boost-${{ env.OPENCV_VERSION }}-boost-${{ env.BOOST_VERSION }}
+          restore-keys: |
+            ${{ runner.os }}-opencv-boost-${{ env.OPENCV_VERSION }}-boost-
+
+      # Install OpenCV and Boost if the cache is missing
+      - name: Install OpenCV and Boost if cache is missing
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          @echo on
+          choco install opencv --version=${{ env.OPENCV_VERSION }} -y
+          choco install boost-msvc-${{ env.BOOST_TOOLSET }} --version=${{ env.BOOST_VERSION }} -y
+        shell: cmd
+
+      # Install custom Qt 5.15.2 with WinTab support
+      - name: Install custom Qt 5.15.2 with WinTab support
+        run: |
+          @echo on
+          mkdir thirdparty\qt
+          curl -fsSL -o Qt5.15.2_wintab.zip https://github.com/shun-iwasawa/qt5/releases/download/v5.15.2_wintab/Qt5.15.2_wintab.zip
+          7z x Qt5.15.2_wintab.zip
+          move Qt5.15.2_wintab\5.15.2_wintab thirdparty\qt
+        shell: cmd
+
+      - name: Install third-party prebuilt libs (LFS workaround)
+        run: |
+          @echo on
+          curl -fsSL -o thirdparty-libs.zip https://github.com/andeon/opentoonz-thirdparty-libs/releases/download/prebuilt-libs-v1/thirdparty-libs.zip
+          7z x -y thirdparty-libs.zip
+        shell: cmd    
+
+      # Add msbuild to PATH for build process
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v3
+
+      # CMake configuration step
+      - name: CMake configuration
+        run: |
+          @echo on
+          cd thirdparty
+          copy /Y tiff-4.0.3\libtiff\tif_config.vc.h tiff-4.0.3\libtiff\tif_config.h
+          copy /Y tiff-4.0.3\libtiff\tiffconf.vc.h tiff-4.0.3\libtiff\tiffconf.h
+          copy /Y libpng-1.6.21\scripts\pnglibconf.h.prebuilt libpng-1.6.21\pnglibconf.h
+
+          cd ../toonz
+          rmdir /S /Q build
+          mkdir build
+          cd build
+
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DWITH_CHANNEL_MAPPING_TEST=ON
+        shell: cmd
+
+      # Build Opentoonz using MSBuild
+      - name: Build Opentoonz
+        run: |
+          @echo on
+          cd toonz\build
+          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal ALL_BUILD.vcxproj
+        shell: cmd
+
+      # Create the package
+      - name: Create Package
+        run: |
+          @echo on
+          cd toonz\build
+          
+          REM Create Opentoonz directory and copy files from RelWithDebInfo
+          mkdir Opentoonz
+          copy /Y RelWithDebInfo\*.* Opentoonz\
+          REM Copy required DLLs for proper functionality
+          copy /Y ..\..\thirdparty\glut\3.7.6\lib\glut64.dll Opentoonz
+          copy /Y ..\..\thirdparty\glew\glew-1.9.0\bin\64bit\glew32.dll Opentoonz
+          copy /Y ..\..\thirdparty\libmypaint\dist\64\libiconv-2.dll Opentoonz
+          copy /Y ..\..\thirdparty\libmypaint\dist\64\libintl-8.dll Opentoonz
+          copy /Y ..\..\thirdparty\libmypaint\dist\64\libjson-c-2.dll Opentoonz
+          copy /Y ..\..\thirdparty\libmypaint\dist\64\libmypaint-1-4-0.dll Opentoonz
+          
+          REM Copy OpenCV DLL (IMPORTANT: Update path/filename when upgrading OpenCV version)
+          copy /Y "C:\tools\opencv\build\x64\vc16\bin\opencv_world4130.dll" Opentoonz
+          
+          REM Deploy Qt dependencies
+          "%QT_PATH%\bin\windeployqt.exe" Opentoonz\Opentoonz.exe --opengl
+
+          REM Add generated OT-Dev-only build manifest/artwork beside OpenToonz.exe
+          copy /Y "%RUNNER_TEMP%\ot-dev-splash.svg" Opentoonz\splash.svg
+
+          del /Q Opentoonz\*.pdb  REM Remove .pdb files
+          del /Q Opentoonz\vc_redist.x64.exe REM Remove vc_redist.x64.exe file
+          
+          REM Create portablestuff directory and copy stuff folder
+          mkdir Opentoonz\portablestuff
+          xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
+        shell: cmd
+
+      - name: Run channel integration tests
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:GITHUB_WORKSPACE "toonz\build\Opentoonz"
+          $env:PATH = "$package;$env:QT_PATH\bin;$env:PATH"
+          Set-Location toonz/build
+          ctest -C RelWithDebInfo -R 'channel_mapping|custom_channels' --output-on-failure --timeout 120
+          if ($LASTEXITCODE -ne 0) { throw "Channel integration tests failed" }
+
+      - name: Write stack build information
+        shell: pwsh
+        run: |
+          $details = @(
+            "OT-Dev preview: PR #143 + PR #145",
+            "Build commit: $env:GITHUB_SHA",
+            "Foundation: a2f9b9a8d7844456c79202154d01f1845dc6c0c6",
+            "Custom channels: 3dcfe10ff0e4ab91c1f4d7a76c936db7ad15d46c",
+            "Includes the two opt-in channel integration tests.",
+            "Function Editor > Stage > right-click owner > Add Custom Channel.",
+            "Custom-channel scenes require a compatible build. Use a separate scene copy.",
+            "Global Key and Xsheet key retiming are not yet extended to custom channels.",
+            "https://github.com/OpenAnimationLibrary/opentoonz-dev/pull/143",
+            "https://github.com/OpenAnimationLibrary/opentoonz-dev/pull/145"
+          )
+          $details | Set-Content -Encoding utf8 toonz/build/Opentoonz/CHANNEL-STACK-BUILD.txt
+          $details | Add-Content -Encoding utf8 $env:GITHUB_STEP_SUMMARY
+
+      # Create artifact from the build
+      - name: Create Artifact
+        run: |
+          mkdir artifact
+          xcopy toonz\build\Opentoonz artifact\ /E /H /Y
+        shell: cmd
+
+      # Upload the generated artifact
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: OT-Dev-Windows-PR143-PR145-${{ github.run_number }}
+          path: artifact
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload channel test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Channel-stack-test-logs-${{ github.run_number }}
+          path: toonz/build/Testing/Temporary/*.log
+          if-no-files-found: ignore
+          retention-days: 14
