@@ -1,0 +1,3 @@
+add_executable(channel_mapping_test channelmapping.cpp)
+target_link_libraries(channel_mapping_test PRIVATE toonzlib tnzbase tnzcore)
+add_test(NAME channel_mapping COMMAND channel_mapping_test)

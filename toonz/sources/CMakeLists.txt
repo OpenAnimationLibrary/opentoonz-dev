@@ -773,3 +773,10 @@ endif()
 if(BUILD_ENV_UNIXLIKE AND NOT BUILD_TARGET_WIN)
     add_subdirectory(xdg-data)
 endif()
+
+# Opt-in regression check for the exploratory channel identity adapter.
+option(WITH_CHANNEL_MAPPING_TEST "Build the channel mapping regression test" OFF)
+if(WITH_CHANNEL_MAPPING_TEST)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
