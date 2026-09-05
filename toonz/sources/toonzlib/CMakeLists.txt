@@ -134,6 +134,7 @@ set(HEADERS
     ../include/toonz/tpinnedrangeset.h
     ../include/toonz/tproject.h
     ../include/toonz/trasterimageutils.h
+    ../include/toonz/tchannelid.h
     ../include/toonz/tstageobject.h
     ../include/toonz/tstageobjectcmd.h
     ../include/toonz/tstageobjectid.h
