@@ -2,4 +2,4 @@
 
 class QAction;
 
-void initConvertLinesToAreasCommand(QAction *action);
+void initConvertLineAreaCommands(QAction *action, QAction *reverseAction);
