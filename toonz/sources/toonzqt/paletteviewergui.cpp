@@ -1180,6 +1180,7 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
   if (m_viewType == LEVEL_PALETTE) {
     QAction *openPltGizmoAct = cmd->getAction("MI_OpenPltGizmo");
     menu.addAction(openPltGizmoAct);
+    menu.addAction(cmd->getAction(MI_ConvertLinesToAreas));
   }
   QAction *openStyleControlAct = cmd->getAction("MI_OpenStyleControl");
   menu.addAction(openStyleControlAct);

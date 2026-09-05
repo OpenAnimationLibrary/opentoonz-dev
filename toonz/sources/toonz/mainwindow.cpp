@@ -1,6 +1,7 @@
 
 
 #include "mainwindow.h"
+#include "convertlinestoareascommand.h"
 
 // Tnz6 includes
 #include "menubar.h"
@@ -2658,6 +2659,8 @@ void MainWindow::defineActions() {
   createRightClickMenuAction(MI_EraseUnusedStyles,
                              QT_TR_NOOP("&Delete Unused Styles"), "",
                              "delete_unused_styles");
+  initConvertLinesToAreasCommand(createRightClickMenuAction(
+      MI_ConvertLinesToAreas, QT_TR_NOOP("Convert Lines to Areas"), ""));
 
   // Menu - View
 
