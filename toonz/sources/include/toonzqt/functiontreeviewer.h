@@ -345,6 +345,7 @@ class DVAPI StageObjectChannelGroup final
     : public FunctionTreeModel::ChannelGroup {
 public:
   TStageObject *m_stageObject;  //!< (not owned) Referenced stage object
+  FunctionTreeModel::ChannelGroup *m_customGroup;
   FunctionTreeModel::ChannelGroup
       *m_plasticGroup;  //!< (not owned) Eventual plastic channels group
 

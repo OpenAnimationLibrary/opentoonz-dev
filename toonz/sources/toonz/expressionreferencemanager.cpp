@@ -823,6 +823,10 @@ void ExpressionReferenceManager::transferReference(
           TDoubleParam* to_p = toObj->getParam((TStageObject::Channel)c);
           curveReplaceTable.insert(to_p, to_p);
         }
+        for (const auto& entry : toObj->getCustomChannels()) {
+          TDoubleParam* param = entry.second.param.getPointer();
+          curveReplaceTable.insert(param, param);
+        }
       }
     } else {  // for transferring objects over xsheets (i.e. collapse and
               // explode)
@@ -837,6 +841,10 @@ void ExpressionReferenceManager::transferReference(
           TDoubleParam* from_p = fromObj->getParam((TStageObject::Channel)c);
           TDoubleParam* to_p   = toObj->getParam((TStageObject::Channel)c);
           curveReplaceTable.insert(from_p, to_p);
+        }
+        for (const auto& entry : fromObj->getCustomChannels()) {
+          TDoubleParam* to_p = toObj->findChannel(TChannelId(entry.first));
+          if (to_p) curveReplaceTable.insert(entry.second.param.getPointer(), to_p);
         }
       }
     }
