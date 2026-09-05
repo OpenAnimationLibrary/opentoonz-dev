@@ -28,14 +28,23 @@ namespace {
 
 using StyleMask = std::bitset<4096>;
 
-// Only convert ink over transparent paint. Keeping occupied paint slots intact
-// avoids changing another style's role or discarding existing area data.
+// Conversion can leave paint underneath solid ink to prevent antialiasing
+// gaps (see Naa2TlvConverter::makeTlv). Test its contribution, not just its ID.
 bool convertPixel(TPixelCM32 &pixel, const StyleMask &styles) {
   const int ink = pixel.getInk();
-  if (ink == 0 || !styles[ink] || pixel.getPaint() != 0 || pixel.isPurePaint())
-    return false;
+  if (ink == 0 || !styles[ink] || pixel.isPurePaint()) return false;
 
-  pixel = TPixelCM32(0, ink, TPixelCM32::getMaxTone() - pixel.getTone());
+  if (pixel.isPureInk() || pixel.getPaint() == ink) {
+    // Hidden paint contributes nothing at tone 0. When both IDs are the same,
+    // their coverages add to a full pixel, including the style's own alpha.
+    pixel = TPixelCM32(0, ink, TPixelCM32::getMaxTone());
+  } else if (pixel.getPaint() == 0) {
+    // Preserve all fractional coverage at transparent antialiased edges.
+    pixel = TPixelCM32(0, ink, TPixelCM32::getMaxTone() - pixel.getTone());
+  } else {
+    // Two different contributing styles cannot share a single paint slot.
+    return false;
+  }
   return true;
 }
 
@@ -167,9 +176,9 @@ public:
 void initConvertLinesToAreasCommand(QAction *action) {
   TApp *app = TApp::instance();
   action->setToolTip(QObject::tr(
-      "Convert selected styles' lines over transparent areas in the current "
-      "Toonz Raster drawing. Pixels with existing area styles are left "
-      "unchanged."));
+      "Convert selected styles' lines to areas in the current Toonz Raster "
+      "drawing, preserving antialiasing and transparency. Mixed edge pixels "
+      "with a different area style are left unchanged."));
   // Palette clicks update the style and selection in separate steps. Refresh
   // after both changes so Ctrl/Shift selections are evaluated together.
   const auto update = []() {
