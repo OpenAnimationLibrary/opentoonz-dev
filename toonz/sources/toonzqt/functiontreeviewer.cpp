@@ -5,6 +5,8 @@
 #include "tstream.h"
 #include "tfilepath_io.h"
 #include "tfunctorinvoker.h"
+#include "tundo.h"
+#include "toonz/tscenehandle.h"
 
 // TnzBase includes
 #include "tunit.h"
@@ -34,6 +36,14 @@
 #include "tw/stringtable.h"
 
 // Qt includes
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPointer>
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
@@ -255,7 +265,7 @@ void FunctionTreeModel::ChannelGroup::setChildrenAllActive(bool active) {
 //-----------------------------------------------------------------------------
 
 StageObjectChannelGroup::StageObjectChannelGroup(TStageObject *stageObject)
-    : m_stageObject(stageObject), m_plasticGroup() {
+    : m_stageObject(stageObject), m_customGroup(nullptr), m_plasticGroup() {
   m_stageObject->addRef();
 }
 
@@ -657,6 +667,10 @@ QString FunctionTreeModel::Channel::getExprRefName() const {
   StageObjectChannelGroup *stageGroup =
       dynamic_cast<StageObjectChannelGroup *>(m_group);
   if (stageGroup) {
+    for (const auto &entry : stageGroup->getStageObject()->getCustomChannels())
+      if (entry.second.param.getPointer() == getParam())
+        return stageGroup->getIdName() + "." +
+               QString::fromStdString(entry.second.name);
     if (tmpName == "Y")
       tmpName = "y";
     else if (tmpName == "X")
@@ -865,7 +879,8 @@ void FunctionTreeModel::refreshStageObjects(TXsheet *xsh) {
   for (i = 0; i < iCount; ++i) {
     TStageObject *pegbar = ptree->getStageObject(i);
     TStageObjectId id    = pegbar->getId();
-    if (id.isColumn() && xsh->isColumnEmpty(id.getIndex())) continue;
+    if (id.isColumn() && xsh->isColumnEmpty(id.getIndex()) &&
+        pegbar->getCustomChannels().empty()) continue;
 
     newItems.push_back(new StageObjectChannelGroup(pegbar));
   }
@@ -895,6 +910,27 @@ void FunctionTreeModel::refreshStageObjects(TXsheet *xsh) {
     }
 
     pegbarItem->applyShowFilter();
+  }
+
+  // Refresh custom curves on existing entries too. setChildren preserves
+  // active curves by parameter identity across create/rename/undo operations.
+  for (int i = 0; i < m_stageObjects->getChildCount(); ++i) {
+    auto *stageItem = static_cast<StageObjectChannelGroup *>(
+        m_stageObjects->getChild(i));
+    const auto &custom = stageItem->getStageObject()->getCustomChannels();
+    if (custom.empty() && !stageItem->m_customGroup) continue;
+    if (!stageItem->m_customGroup) {
+      stageItem->m_customGroup = new ChannelGroup(tr("Custom Channels"));
+      stageItem->appendChild(stageItem->m_customGroup);
+    }
+    QList<TreeModel::Item *> channels;
+    for (const auto &entry : custom) {
+      auto *channel = new Channel(this, entry.second.param.getPointer());
+      channel->setChannelGroup(stageItem);
+      channels.push_back(channel);
+    }
+    stageItem->m_customGroup->setChildren(channels);
+    stageItem->applyShowFilter();
   }
 
   // As plastic deformations are stored in stage objects, refresh them if
@@ -1549,6 +1585,106 @@ void FunctionTreeView::onRelease() { m_clickedItem = 0; }
 
 //-----------------------------------------------------------------------------
 
+namespace {
+class CustomChannelsUndo final : public TUndo {
+  TStageObject *m_object;
+  TXsheet *m_xsheet;
+  QPointer<TXsheetHandle> m_xsheetHandle;
+  QPointer<TSceneHandle> m_sceneHandle;
+  TStageObject::CustomChannels m_before, m_after;
+  QString m_label;
+
+  void apply(const TStageObject::CustomChannels &channels) const {
+    if (!m_object->assignCustomChannels(channels)) return;
+    if (m_sceneHandle && m_sceneHandle->getScene() == m_xsheet->getScene())
+      m_sceneHandle->setDirtyFlag(true);
+    if (m_xsheetHandle && m_xsheetHandle->getXsheet() == m_xsheet)
+      m_xsheetHandle->notifyXsheetChanged();
+  }
+
+public:
+  CustomChannelsUndo(TStageObject *object, FunctionViewer *viewer,
+                     const TStageObject::CustomChannels &before,
+                     const QString &label)
+      : m_object(object)
+      , m_xsheet(viewer->getXsheetHandle()->getXsheet())
+      , m_xsheetHandle(viewer->getXsheetHandle())
+      , m_sceneHandle(viewer->getSceneHandle())
+      , m_before(before)
+      , m_after(object->getCustomChannels())
+      , m_label(label) {
+    m_object->addRef();
+    m_xsheet->addRef();
+  }
+  ~CustomChannelsUndo() {
+    m_object->release();
+    m_xsheet->release();
+  }
+  void undo() const override { apply(m_before); }
+  void redo() const override { apply(m_after); }
+  int getSize() const override {
+    return sizeof(*this) + (m_before.size() + m_after.size()) *
+                              sizeof(TStageObject::CustomChannel);
+  }
+  QString getHistoryString() override { return m_label; }
+};
+
+void editCustomChannel(QWidget *parent, FunctionViewer *viewer,
+                       TStageObject *object, TChannelId id = TChannelId()) {
+  if (!viewer || !viewer->getXsheetHandle() || !object || object->isLocked())
+    return;
+  const bool creating = id == TChannelIds::Invalid;
+  const auto found = object->getCustomChannels().find(id.value());
+  if (!creating && found == object->getCustomChannels().end()) return;
+  const QString title = creating ? QObject::tr("Add Custom Channel")
+                                 : QObject::tr("Rename Custom Channel");
+  QDialog dialog(parent);
+  dialog.setWindowTitle(title);
+  auto *layout = new QFormLayout(&dialog);
+  auto *name = new QLineEdit(&dialog);
+  name->setMaxLength(64);
+  if (!creating) name->setText(QString::fromStdString(found->second.name));
+  layout->addRow(QObject::tr("Name:"), name);
+  auto *value = new QDoubleSpinBox(&dialog);
+  value->setRange(-1e12, 1e12);
+  value->setDecimals(6);
+  if (creating)
+    layout->addRow(QObject::tr("Default Value:"), value);
+  else
+    value->hide();
+  auto *help = new QLabel(creating
+      ? QObject::tr("Use a letter followed by letters, numbers or underscores.\n"
+                    "Scenes saved with custom channels require this build or a newer compatible build.")
+      : QObject::tr("The channel ID stays unchanged. Earlier names remain valid\n"
+                    "in expressions and cannot be assigned to other channels."), &dialog);
+  help->setWordWrap(true);
+  layout->addRow(help);
+  auto *buttons = new QDialogButtonBox(
+      QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+  layout->addRow(buttons);
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+  while (dialog.exec() == QDialog::Accepted) {
+    const std::string requestedName = name->text().trimmed().toStdString();
+    const auto before = object->getCustomChannels();
+    bool changed = creating
+        ? object->createCustomChannel(requestedName, value->value()) != TChannelIds::Invalid
+        : object->renameCustomChannel(id, requestedName);
+    if (!changed) {
+      QMessageBox::warning(parent, title,
+          QObject::tr("Choose an unused name beginning with a letter, using only\n"
+                      "ASCII letters, numbers and underscores. Built-in names,\n"
+                      "earlier aliases and names beginning with 'channel' are reserved."));
+      continue;
+    }
+    TUndoManager::manager()->add(new CustomChannelsUndo(object, viewer, before, title));
+    if (viewer->getSceneHandle()) viewer->getSceneHandle()->setDirtyFlag(true);
+    viewer->getXsheetHandle()->notifyXsheetChanged();
+    return;
+  }
+}
+}  // namespace
+
 void FunctionTreeView::openContextMenu(TreeModel::Item *item,
                                        const QPoint &globalPos) {
   if (FunctionTreeModel::Channel *channel =
@@ -1575,8 +1711,23 @@ void FunctionTreeView::openContextMenu(FunctionTreeModel::Channel *channel,
   menu.addAction(&saveCurveAction);
   menu.addAction(&loadCurveAction);
   menu.addAction(&exportDataAction);
+  auto *stageGroup = dynamic_cast<StageObjectChannelGroup *>(channel->getChannelGroup());
+  TChannelId customId;
+  if (stageGroup)
+    for (const auto &entry : stageGroup->getStageObject()->getCustomChannels())
+      if (entry.second.param.getPointer() == channel->getParam())
+        customId = TChannelId(entry.first);
+  QAction renameAction(tr("Rename Custom Channel..."), nullptr);
+  if (customId != TChannelIds::Invalid) {
+    renameAction.setEnabled(!stageGroup->getStageObject()->isLocked());
+    menu.addAction(&renameAction);
+  }
 
   QAction *action = menu.exec(globalPos);
+  if (action == &renameAction) {
+    editCustomChannel(this, m_viewer, stageGroup->getStageObject(), customId);
+    return;
+  }
 
   TDoubleParam *curve = channel->getParam();
 
@@ -1601,10 +1752,28 @@ void FunctionTreeView::openContextMenu(FunctionTreeModel::ChannelGroup *group,
   QAction showAll(tr("Show All"), 0);
   menu.addAction(&showAnimateOnly);
   menu.addAction(&showAll);
+  auto *stageGroup = dynamic_cast<StageObjectChannelGroup *>(group);
+  if (!stageGroup)
+    stageGroup = dynamic_cast<StageObjectChannelGroup *>(group->getParent());
+  QAction addChannel(tr("Add Custom Channel..."), nullptr);
+  if (stageGroup) {
+    addChannel.setEnabled(!stageGroup->getStageObject()->isLocked());
+    menu.addAction(&addChannel);
+  }
 
   // execute menu
   QAction *action = menu.exec(globalPos);
 
+  if (action == &addChannel) {
+    editCustomChannel(this, m_viewer, stageGroup->getStageObject());
+    if (stageGroup->m_customGroup) {
+      stageGroup->m_customGroup->setShowFilter(
+          FunctionTreeModel::ChannelGroup::ShowAllChannels);
+      expand(stageGroup->createIndex());
+      expand(stageGroup->m_customGroup->createIndex());
+    }
+    return;
+  }
   if (action != &showAll && action != &showAnimateOnly) return;
 
   FunctionTreeModel::ChannelGroup::ShowFilter showFilter =

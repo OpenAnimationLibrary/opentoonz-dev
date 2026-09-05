@@ -32,6 +32,8 @@
 // STD includes
 #include <fstream>
 #include <set>
+#include <cmath>
+#include <limits>
 
 using namespace std;
 
@@ -99,6 +101,8 @@ TStageObjectParams::TStageObjectParams(TStageObjectParams *data)
     , m_posPath(data->m_posPath)
     , m_shearx(data->m_shearx)
     , m_sheary(data->m_sheary)
+    , m_customChannels(data->m_customChannels)
+    , m_nextCustomChannelId(data->m_nextCustomChannelId)
     , m_skeletonDeformation(data->m_skeletonDeformation)
     , m_noScaleZ(data->m_noScaleZ)
     , m_center(data->m_center)
@@ -448,6 +452,8 @@ TStageObject::TStageObject(TStageObjectTree *tree, TStageObjectId id)
 //-----------------------------------------------------------------------------
 
 TStageObject::~TStageObject() {
+  for (const auto &entry : m_customChannels)
+    entry.second.param->removeObserver(this);
   if (m_spline) {
     if (m_posPath) m_spline->removeParam(m_posPath.getPointer());
     m_spline->release();
@@ -1139,9 +1145,193 @@ TChannelId TStageObject::getChannelId(Channel channel) {
 }
 
 TDoubleParam *TStageObject::findChannel(TChannelId id) const {
+  const auto custom = m_customChannels.find(id.value());
+  if (custom != m_customChannels.end()) return custom->second.param.getPointer();
   for (const auto &descriptor : getChannelDescriptors())
     if (descriptor.id == id) return getParam(descriptor.legacyChannel);
   return nullptr;
+}
+
+//-----------------------------------------------------------------------------
+
+namespace {
+std::string customAlias(std::string name) {
+  for (char &c : name)
+    if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+  return name;
+}
+
+// Strict decimal parsing: no signs, whitespace, suffixes or overflow.
+bool channelNumber(const std::string &text, std::uint64_t &value) {
+  if (text.empty() || text.size() > 10) return false;
+  value = 0;
+  for (char c : text) {
+    if (c < '0' || c > '9') return false;
+    value = value * 10 + (c - '0');
+  }
+  return value <= (std::uint64_t(1) << 32);
+}
+}  // namespace
+
+bool TStageObject::isCustomChannelName(const std::string &name) {
+  if (name.empty() || name.size() > 64) return false;
+  const std::string alias = customAlias(name);
+  if (alias[0] < 'a' || alias[0] > 'z') return false;
+  for (char c : alias)
+    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+      return false;
+  // Includes legacy synonyms, drawing references and the numeric-ID syntax.
+  static const std::set<std::string> reserved = {
+      "x", "y", "z", "ns", "ew", "rot", "ang", "angle", "zdepth", "so",
+      "sx", "scalex", "xscale", "xs", "sh", "scaleh", "hscale", "hs",
+      "sy", "scaley", "yscale", "ys", "sv", "scalev", "vscale", "vs",
+      "sc", "scale", "path", "pos", "shearx", "shx", "shearh", "shh",
+      "sheary", "shy", "shearv", "shv", "cell", "cel", "cels"};
+  return !reserved.count(alias) && alias.compare(0, 7, "channel") != 0;
+}
+
+TChannelId TStageObject::findChannelId(const std::string &name) const {
+  const std::string alias = customAlias(name);
+  if (alias.compare(0, 7, "channel") == 0) {
+    std::uint64_t value;
+    if (channelNumber(alias.substr(7), value) && value <= UINT32_MAX) {
+      TChannelId id(static_cast<std::uint32_t>(value));
+      if (findChannel(id)) return id;
+    }
+    return TChannelIds::Invalid;
+  }
+  for (const auto &entry : m_customChannels) {
+    for (const auto &oldAlias : entry.second.aliases)
+      if (customAlias(oldAlias) == alias) return TChannelId(entry.first);
+  }
+  return TChannelIds::Invalid;
+}
+
+TChannelId TStageObject::createCustomChannel(const std::string &name,
+                                            double defaultValue) {
+  if (!isCustomChannelName(name) || !std::isfinite(defaultValue) ||
+      findChannelId(name) != TChannelIds::Invalid ||
+      m_nextCustomChannelId > UINT32_MAX)
+    return TChannelIds::Invalid;
+  const TChannelId id(static_cast<std::uint32_t>(m_nextCustomChannelId));
+  CustomChannels channels = m_customChannels;
+  channels.emplace(id.value(), CustomChannel{name, {name},
+                                             new TDoubleParam(defaultValue)});
+  return assignCustomChannels(channels) ? id : TChannelIds::Invalid;
+}
+
+bool TStageObject::renameCustomChannel(TChannelId id, const std::string &name) {
+  auto it = m_customChannels.find(id.value());
+  if (it == m_customChannels.end() || !isCustomChannelName(name)) return false;
+  const TChannelId existing = findChannelId(name);
+  if (existing != TChannelIds::Invalid && existing != id) return false;
+  CustomChannels channels = m_customChannels;
+  auto &channel = channels.at(id.value());
+  channel.name = name;
+  if (existing == TChannelIds::Invalid) channel.aliases.push_back(name);
+  return assignCustomChannels(channels);
+}
+
+bool TStageObject::assignCustomChannels(const CustomChannels &channels,
+                                       bool clone) {
+  std::set<std::string> aliases;
+  std::set<TDoubleParam *> parameters;
+  for (const auto &entry : channels) {
+    const auto &channel = entry.second;
+    if (entry.first < 50 || !channel.param || channel.aliases.empty() ||
+        !std::isfinite(channel.param->getDefaultValue()) ||
+        !isCustomChannelName(channel.name) ||
+        !parameters.insert(channel.param.getPointer()).second)
+      return false;
+    bool hasName = false;
+    for (const auto &alias : channel.aliases) {
+      if (!isCustomChannelName(alias) ||
+          !aliases.insert(customAlias(alias)).second)
+        return false;
+      hasName |= customAlias(alias) == customAlias(channel.name);
+    }
+    if (!hasName) return false;
+    for (const auto &descriptor : getChannelDescriptors())
+      if (channel.param.getPointer() == getParam(descriptor.legacyChannel))
+        return false;
+  }
+  CustomChannels replacement = channels;
+  if (clone)
+    for (auto &entry : replacement)
+      entry.second.param =
+          static_cast<TDoubleParam *>(entry.second.param->clone());
+  for (const auto &entry : m_customChannels)
+    entry.second.param->removeObserver(this);
+  m_customChannels.swap(replacement);
+  for (auto &entry : m_customChannels) {
+    auto &param = entry.second.param;
+    param->setName("channel" + std::to_string(entry.first));
+    param->setUILabel(entry.second.name);
+    m_tree->setGrammar(param);
+    param->addObserver(this);
+    m_nextCustomChannelId = std::max(m_nextCustomChannelId,
+                                    std::uint64_t(entry.first) + 1);
+  }
+  invalidate();
+  return true;
+}
+
+void TStageObject::saveCustomChannels(TOStream &os) const {
+  os.openChild("customChannels", {{"version", "1"},
+      {"nextId", std::to_string(m_nextCustomChannelId)}});
+  for (const auto &entry : m_customChannels) {
+    os.openChild("channel", {{"id", std::to_string(entry.first)},
+                            {"name", entry.second.name}});
+    os.openChild("aliases");
+    for (const auto &alias : entry.second.aliases) os << alias;
+    os.closeChild();
+    os.child("curve") << *entry.second.param;
+    os.closeChild();
+  }
+  os.closeChild();
+}
+
+void TStageObject::loadCustomChannels(TIStream &is) {
+  std::uint64_t nextId;
+  if (is.getTagAttribute("version") != "1" ||
+      !channelNumber(is.getTagAttribute("nextId"), nextId) || nextId < 50 ||
+      !m_customChannels.empty())
+    throw TException("Invalid or unsupported custom channel collection");
+  CustomChannels channels;
+  std::string tag;
+  while (is.matchTag(tag)) {
+    std::uint64_t id;
+    if (tag != "channel" || !channelNumber(is.getTagAttribute("id"), id) ||
+        id < 50 || id >= nextId || id > UINT32_MAX || channels.count(id))
+      throw TException("Invalid or duplicate custom channel ID");
+    CustomChannel channel;
+    channel.name = is.getTagAttribute("name");
+    channel.param = new TDoubleParam();
+    m_tree->setGrammar(channel.param);
+    bool curveRead = false, aliasesRead = false;
+    while (is.matchTag(tag)) {
+      if (tag == "aliases" && !aliasesRead) {
+        aliasesRead = true;
+        while (!is.eos()) {
+          std::string alias;
+          is >> alias;
+          channel.aliases.push_back(alias);
+        }
+      } else if (tag == "curve" && !curveRead) {
+        curveRead = true;
+        is >> *channel.param;
+      } else
+        throw TException("Invalid custom channel record");
+      is.matchEndTag();
+    }
+    if (!curveRead || !aliasesRead)
+      throw TException("Incomplete custom channel record");
+    channels.emplace(static_cast<std::uint32_t>(id), channel);
+    is.matchEndTag();
+  }
+  if (!assignCustomChannels(channels))
+    throw TException("Invalid or duplicate custom channel name");
+  m_nextCustomChannelId = nextId;
 }
 
 //-----------------------------------------------------------------------------
@@ -1272,6 +1462,9 @@ TStageObject *TStageObject::clone() {
   if (m_skeletonDeformation)
     cloned->m_skeletonDeformation =
         new PlasticSkeletonDeformation(*m_skeletonDeformation);
+
+  cloned->assignCustomChannels(m_customChannels, true);
+  cloned->m_nextCustomChannelId = m_nextCustomChannelId;
 
   cloned->m_noScaleZ   = m_noScaleZ;
   cloned->m_center     = m_center;
@@ -1665,6 +1858,8 @@ void TStageObject::saveData(TOStream &os) {
 
   if (m_spline) os.child("splinep") << m_spline;
 
+  if (!m_customChannels.empty()) saveCustomChannels(os);
+
   if (!m_x->isDefault()) os.child("x") << *m_x;
   if (!m_y->isDefault()) os.child("y") << *m_y;
   if (!m_z->isDefault()) os.child("z") << *m_z;
@@ -1817,6 +2012,8 @@ void TStageObject::loadData(TIStream &is) {
         is >> groupName;
         groupNames.push_back(groupName);
       }
+    } else if (tagName == "customChannels") {
+      loadCustomChannels(is);
     } else if (tagName == "plasticSD") {
       PlasticSkeletonDeformation *sd = new PlasticSkeletonDeformation;
       is >> *sd;
@@ -1885,6 +2082,8 @@ TStageObjectParams *TStageObject::getParams() const {
   data->m_posPath = m_posPath;
   data->m_shearx  = m_shearx;
   data->m_sheary  = m_sheary;
+  data->m_customChannels = m_customChannels;
+  data->m_nextCustomChannelId = m_nextCustomChannelId;
 
   data->m_skeletonDeformation = m_skeletonDeformation;
 
@@ -1954,6 +2153,10 @@ void TStageObject::assignParams(const TStageObjectParams *src,
     m_skeletonDeformation = src->m_skeletonDeformation;
     if (m_skeletonDeformation) m_skeletonDeformation->addObserver(this);
   }
+
+  assignCustomChannels(src->m_customChannels, doParametersClone);
+  m_nextCustomChannelId = std::max(m_nextCustomChannelId,
+                                  src->m_nextCustomChannelId);
 
   m_handle       = src->m_handle;
   m_parentHandle = src->m_parentHandle;

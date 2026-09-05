@@ -325,9 +325,12 @@ public:
     else if (i == 2) {
       if (matchChannelName(token) < TStageObject::T_ChannelCount)
         return true;
-      else
-        return token.getText() == "cell" &&
-               matchExistingObjectName(previousTokens[0]).isColumn();
+      TStageObjectId objectId = matchExistingObjectName(previousTokens[0]);
+      TStageObject *object =
+          m_xsh->getStageObjectTree()->getStageObject(objectId, false);
+      if (object && object->findChannelId(token.getText()) != TChannelIds::Invalid)
+        return true;
+      return token.getText() == "cell" && objectId.isColumn();
     } else
       return false;
   }
@@ -371,7 +374,10 @@ public:
           m_xsh->getStageObjectTree()->getStageObject(objectId, false);
       if (!object) return;
       TStageObject::Channel channelName = matchChannelName(tokens[2]);
-      TDoubleParam *channel             = object->getParam(channelName);
+      TDoubleParam *channel =
+          channelName != TStageObject::T_ChannelCount
+              ? object->getParam(channelName)
+              : object->findChannel(object->findChannelId(tokens[2].getText()));
       if (channel) {
         if (objectId.isColumn())
           stack.push_back(new ColumnParamCalculatorNode(

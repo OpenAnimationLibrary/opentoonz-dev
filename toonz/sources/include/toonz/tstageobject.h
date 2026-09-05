@@ -434,6 +434,22 @@ of the \e frame
   static TChannelId getChannelId(Channel channel);
   TDoubleParam *findChannel(TChannelId id) const;
 
+  // Numeric custom curves use owner-local IDs >= 50. Names are ASCII
+  // expression aliases; old aliases survive renames and remain reserved.
+  struct CustomChannel {
+    std::string name;
+    std::vector<std::string> aliases;
+    TDoubleParamP param;
+  };
+  using CustomChannels = std::map<std::uint32_t, CustomChannel>;
+  const CustomChannels &getCustomChannels() const { return m_customChannels; }
+  static bool isCustomChannelName(const std::string &name);
+  TChannelId findChannelId(const std::string &name) const;
+  TChannelId createCustomChannel(const std::string &name, double defaultValue);
+  bool renameCustomChannel(TChannelId id, const std::string &name);
+  // Snapshot restore for undo/column copying. Validates before changing state.
+  bool assignCustomChannels(const CustomChannels &channels, bool clone = false);
+
   //! Copies the data of the object in a new object with a new id and adds it to
   //! the tree.
   TStageObject *clone();
@@ -543,6 +559,11 @@ private:
   TDoubleParamP m_x, m_y, m_z, m_so, m_rot, m_scalex, m_scaley, m_scale,
       m_posPath, m_shearx, m_sheary;
 
+  CustomChannels m_customChannels;
+  std::uint64_t m_nextCustomChannelId = 50;
+  void saveCustomChannels(TOStream &os) const;
+  void loadCustomChannels(TIStream &is);
+
   PlasticSkeletonDeformationP
       m_skeletonDeformation;  //!< Deformation curves for a plastic skeleton
 
@@ -626,6 +647,8 @@ public:
   TPinnedRangeSet *m_pinnedRangeSet;
   TDoubleParamP m_x, m_y, m_z, m_so, m_rot, m_scalex, m_scaley, m_scale,
       m_posPath, m_shearx, m_sheary;
+  TStageObject::CustomChannels m_customChannels;
+  std::uint64_t m_nextCustomChannelId = 50;
   PlasticSkeletonDeformationP
       m_skeletonDeformation;  //!< Deformation curves for a plastic skeleton
   double m_noScaleZ;

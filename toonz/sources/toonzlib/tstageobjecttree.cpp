@@ -446,7 +446,8 @@ void TStageObjectTree::saveData(TOStream &os, int occupiedColumnCount,
     TStageObjectId objectId = it->first;
     TStageObject *pegbar    = it->second;
 
-    if (objectId.isColumn() && objectId.getIndex() >= occupiedColumnCount)
+    if (objectId.isColumn() && objectId.getIndex() >= occupiedColumnCount &&
+        pegbar->getCustomChannels().empty())
       continue;
 
     std::map<std::string, std::string> attr;
@@ -641,6 +642,9 @@ void TStageObjectTree::createGrammar(TXsheet *xsh) {
     int c, cCount = TStageObject::T_ChannelCount;
     for (c = 0; c != cCount; ++c)
       obj->getParam((TStageObject::Channel)c)->setGrammar(m_imp->m_grammar);
+
+    for (const auto &entry : obj->getCustomChannels())
+      entry.second.param->setGrammar(m_imp->m_grammar);
 
     if (const PlasticSkeletonDeformationP &sd =
             obj->getPlasticSkeletonDeformation())
