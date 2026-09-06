@@ -1004,6 +1004,11 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
 
   if (event->button() == Qt::RightButton) {
     m_styleSelection->makeCurrent();
+    // Opening the level palette menu beside the chips must preserve this
+    // page's selected styles for batch commands such as Convert.
+    const bool keepSelection =
+        m_viewType == LEVEL_PALETTE && !m_styleSelection->isEmpty() &&
+        m_styleSelection->isPageSelected(pageIndex);
     // if you are clicking on the color chip
     if (0 <= indexInPage && indexInPage < getChipCount()) {
       // Se pageIndex non e' selezionato lo seleziono
@@ -1013,7 +1018,7 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
       }
       // Cambio l'indice corrente
       setCurrentStyleIndex(m_page->getStyleId(indexInPage));
-    } else {
+    } else if (!keepSelection) {
       m_styleSelection->selectNone();
       m_styleSelection->select(pageIndex);
     }
