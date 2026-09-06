@@ -1186,6 +1186,7 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
   if (m_viewType == LEVEL_PALETTE) {
     QAction *openPltGizmoAct = cmd->getAction("MI_OpenPltGizmo");
     menu.addAction(openPltGizmoAct);
+    menu.addAction(cmd->getAction(MI_ReduceColors));
     QMenu *convertMenu = menu.addMenu(tr("Convert"));
     const auto addConversion = [&](CommandId id, const QString &label) {
       QAction *command = cmd->getAction(id);
