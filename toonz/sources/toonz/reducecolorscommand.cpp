@@ -2,6 +2,7 @@
 #include "palettecolorreduction.h"
 
 #include "tapp.h"
+#include "tenv.h"
 #include "menubarcommandids.h"
 #include "tools/toolutils.h"
 #include "toonz/levelset.h"
@@ -32,15 +33,16 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QElapsedTimer>
-#include <QHBoxLayout>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QLabel>
 #include <QMainWindow>
 #include <QProgressDialog>
 #include <QPushButton>
-#include <QRadioButton>
 #include <QScopedValueRollback>
 #include <QScreen>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -56,6 +58,17 @@ namespace {
 using namespace PaletteColorReduction;
 using StyleMask = std::bitset<4096>;
 bool reducing   = false;
+
+// Follow the other conversion dialogs: last accepted options are retained
+// across sessions, while context-dependent limits are applied only in the UI.
+TEnv::IntVar ReduceColorsMode("ReduceColorsMode", 0);
+TEnv::IntVar ReduceColorsTarget("ReduceColorsTarget", 16);
+TEnv::IntVar ReduceColorsAutomaticTolerance("ReduceColorsAutomaticTolerance",
+                                            1);
+TEnv::DoubleVar ReduceColorsTolerance("ReduceColorsTolerance", 3.0);
+TEnv::IntVar ReduceColorsCleanup("ReduceColorsCleanup", 1);
+TEnv::IntVar ReduceColorsRenumber("ReduceColorsRenumber", 0);
+TEnv::IntVar ReduceColorsSelectedScope("ReduceColorsSelectedScope", 1);
 
 std::vector<std::vector<int>> palettePages(TPalette *palette) {
   std::vector<std::vector<int>> pages(palette->getPageCount());
@@ -390,110 +403,157 @@ void executeReduction() {
   QDialog dialog(TApp::instance()->getMainWindow());
   dialog.setWindowTitle(QObject::tr("Reduce Colors"));
   QVBoxLayout *dialogLayout = new QVBoxLayout(&dialog);
-  QScrollArea *options      = new QScrollArea(&dialog);
+  dialogLayout->setContentsMargins(12, 12, 12, 12);
+  dialogLayout->setSpacing(12);
+  QScrollArea *options = new QScrollArea(&dialog);
   options->setWidgetResizable(true);
   options->setFrameShape(QFrame::NoFrame);
   QWidget *contents   = new QWidget(options);
   QVBoxLayout *layout = new QVBoxLayout(contents);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(12);
   options->setWidget(contents);
   dialogLayout->addWidget(options);
   // Keep the action buttons and large-operation warning reachable on smaller
   // displays while allowing the explanatory text to wrap and scroll.
   dialog.resize(
-      620,
+      600,
       std::min(
-          720,
+          600,
           QApplication::primaryScreen()->availableGeometry().height() - 80));
-  const auto addText = [&](const QString &text) {
-    QLabel *label = new QLabel(text, &dialog);
+  const auto addText = [](QVBoxLayout *box, const QString &text) {
+    QLabel *label = new QLabel(text);
     label->setWordWrap(true);
-    layout->addWidget(label);
+    box->addWidget(label);
     return label;
   };
-  addText(QObject::tr("Styles to process:"));
-  QComboBox *scopeChoice = new QComboBox(&dialog);
+  const auto addGroup = [&](const QString &title) {
+    QGroupBox *group = new QGroupBox(title, contents);
+    QVBoxLayout *box = new QVBoxLayout(group);
+    box->setContentsMargins(12, 16, 12, 12);
+    box->setSpacing(8);
+    layout->addWidget(group);
+    return box;
+  };
+
+  QVBoxLayout *scopeLayout = addGroup(QObject::tr("Scope"));
+  QComboBox *scopeChoice   = new QComboBox;
   scopeChoice->setAccessibleName(QObject::tr("Styles to process"));
   if (!allStyles) scopeChoice->addItem(QObject::tr("Selected styles"));
   scopeChoice->addItem(QObject::tr("All palette styles"));
-  layout->addWidget(scopeChoice);
-  QLabel *scopeInfo = addText(QString());
-  QRadioButton *identical =
-      new QRadioButton(QObject::tr("Merge identical colors"), &dialog);
-  QRadioButton *reduce = new QRadioButton(
-      QObject::tr("Reduce to at most this many colors:"), &dialog);
-  QSpinBox *target = new QSpinBox(&dialog);
-  target->setEnabled(false);
+  if (!allStyles && !int(ReduceColorsSelectedScope))
+    scopeChoice->setCurrentIndex(1);
+  scopeLayout->addWidget(scopeChoice);
+  QLabel *scopeInfo = addText(scopeLayout, QString());
+
+  QVBoxLayout *methodLayout = addGroup(QObject::tr("Color reduction"));
+  QGridLayout *methodForm   = new QGridLayout;
+  methodForm->setContentsMargins(0, 0, 0, 0);
+  methodForm->setHorizontalSpacing(12);
+  methodForm->setVerticalSpacing(8);
+  methodForm->setColumnStretch(1, 1);
+  methodLayout->addLayout(methodForm);
+  QComboBox *method = new QComboBox;
+  method->addItem(QObject::tr("Merge identical colors"));
+  method->addItem(QObject::tr("Reduce to a color count"));
+  method->addItem(QObject::tr("Merge similar colors (80/20)"));
+  const int savedMode = int(ReduceColorsMode);
+  method->setCurrentIndex(savedMode >= 0 && savedMode <= 2 ? savedMode : 0);
+  method->setAccessibleName(QObject::tr("Reduction method"));
+  QLabel *methodLabel = new QLabel(QObject::tr("Method:"));
+  methodLabel->setBuddy(method);
+  methodForm->addWidget(methodLabel, 0, 0);
+  methodForm->addWidget(method, 0, 1);
+
+  int preferredTarget = std::max(1, std::min(4095, int(ReduceColorsTarget)));
+  QSpinBox *target    = new QSpinBox;
+  target->setMaximumWidth(120);
   target->setAccessibleName(QObject::tr("Target color count"));
-  identical->setChecked(true);
-  QObject::connect(reduce, &QRadioButton::toggled, target,
-                   &QSpinBox::setEnabled);
-  layout->addWidget(identical);
-  layout->addWidget(reduce);
-  layout->addWidget(target);
-  addText(QObject::tr(
-      "Identical colors are merged first. The target counts colors "
-      "used by the eligible styles in this scope. Opacity is preserved; "
-      "different opacity values require separate colors."));
-  addText(
-      QObject::tr("The target cannot exceed the eligible style count. "
-                  "Increasing it does not restore previously combined colors; "
-                  "use Undo for that."));
-  QRadioButton *similar =
-      new QRadioButton(QObject::tr("Merge similar colors (80/20)"), &dialog);
-  layout->addWidget(similar);
+  target->setToolTip(QObject::tr(
+      "The target is limited to eligible styles in this scope. A smaller "
+      "palette temporarily limits the value without changing your saved "
+      "preference. Increasing it cannot restore merged colors; use Undo."));
+  QLabel *targetLabel = new QLabel(QObject::tr("Maximum colors:"));
+  targetLabel->setBuddy(target);
+  methodForm->addWidget(targetLabel, 1, 0);
+  methodForm->addWidget(target, 1, 1, Qt::AlignLeft);
+
   QCheckBox *automaticTolerance =
-      new QCheckBox(QObject::tr("Calculate tolerance automatically"), &dialog);
-  automaticTolerance->setChecked(true);
-  layout->addWidget(automaticTolerance);
-  QHBoxLayout *toleranceRow = new QHBoxLayout;
-  QLabel *toleranceLabel    = new QLabel(QObject::tr("Tolerance:"), &dialog);
-  QDoubleSpinBox *tolerance = new QDoubleSpinBox(&dialog);
+      new QCheckBox(QObject::tr("Calculate tolerance automatically"));
+  automaticTolerance->setChecked(int(ReduceColorsAutomaticTolerance) != 0);
+  methodForm->addWidget(automaticTolerance, 2, 0, 1, 2);
+  QDoubleSpinBox *tolerance = new QDoubleSpinBox;
   tolerance->setRange(0, 200);
   tolerance->setDecimals(3);
   tolerance->setSingleStep(0.5);
-  tolerance->setValue(3);
+  tolerance->setMaximumWidth(120);
+  const double savedTolerance = double(ReduceColorsTolerance);
+  tolerance->setValue(std::isfinite(savedTolerance)
+                          ? std::max(0.0, std::min(200.0, savedTolerance))
+                          : 3.0);
   tolerance->setAccessibleName(QObject::tr("Color similarity tolerance"));
   tolerance->setToolTip(QObject::tr(
       "Maximum color distance to the surviving style, measured as "
       "100 times the Oklab distance. Lower values keep more colors. "
       "Zero merges only identical colors."));
+  QLabel *toleranceLabel = new QLabel(QObject::tr("Tolerance:"));
   toleranceLabel->setBuddy(tolerance);
-  toleranceRow->addWidget(toleranceLabel);
-  toleranceRow->addWidget(tolerance);
-  layout->addLayout(toleranceRow);
-  const auto updateTolerance = [&]() {
-    automaticTolerance->setEnabled(similar->isChecked());
-    const bool manual =
-        similar->isChecked() && !automaticTolerance->isChecked();
-    tolerance->setEnabled(manual);
-    toleranceLabel->setEnabled(manual);
+  methodForm->addWidget(toleranceLabel, 3, 0);
+  methodForm->addWidget(tolerance, 3, 1, Qt::AlignLeft);
+  QLabel *methodInfo      = addText(methodLayout, QString());
+  const auto updateMethod = [&]() {
+    const bool useTarget     = method->currentIndex() == 1;
+    const bool useSimilarity = method->currentIndex() == 2;
+    targetLabel->setVisible(useTarget);
+    target->setVisible(useTarget);
+    automaticTolerance->setVisible(useSimilarity);
+    const bool manual = useSimilarity && !automaticTolerance->isChecked();
+    toleranceLabel->setVisible(manual);
+    tolerance->setVisible(manual);
+    if (useSimilarity)
+      methodInfo->setText(QObject::tr(
+          "Favors fewer styles over color accuracy. Protects about 20% of "
+          "the distinct used colors (rounded up), chosen by pixel coverage "
+          "and color separation. Automatic tolerance merges the rest; a "
+          "lower manual tolerance keeps more colors."));
+    else if (useTarget)
+      methodInfo->setText(QObject::tr(
+          "Merges identical colors first, then keeps at most the requested "
+          "number of colors used in this scope."));
+    else
+      methodInfo->setText(QObject::tr(
+          "Combines styles with identical colors and opacity, preserving "
+          "the appearance of every drawing."));
   };
-  QObject::connect(similar, &QRadioButton::toggled, &dialog, updateTolerance);
+  QObject::connect(method, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                   &dialog, updateMethod);
   QObject::connect(automaticTolerance, &QCheckBox::toggled, &dialog,
-                   updateTolerance);
-  updateTolerance();
-  addText(QObject::tr(
-      "80/20 favors fewer styles over color accuracy. After merging identical "
-      "colors, it protects about 20% of the distinct used colors (rounded up), "
-      "chosen by pixel coverage and color separation. Automatic tolerance "
-      "merges the rest into those colors. Use a lower manual tolerance to "
-      "keep more colors. Opacity may require additional protected colors."));
+                   updateMethod);
+  QObject::connect(target, QOverload<int>::of(&QSpinBox::valueChanged), &dialog,
+                   [&](int value) { preferredTarget = value; });
+  updateMethod();
+
+  QVBoxLayout *finishLayout = addGroup(QObject::tr("After reduction"));
   QCheckBox *cleanup =
-      new QCheckBox(QObject::tr("Remove unused styles in this scope"), &dialog);
-  cleanup->setChecked(true);
-  layout->addWidget(cleanup);
-  addText(QObject::tr(
-      "All drawings in the current level will be processed. Cleanup keeps "
-      "reserved, animated, linked and non-solid styles, and styles still used "
-      "by other levels in the scene sharing this palette."));
-  QCheckBox *renumber = new QCheckBox(
-      QObject::tr("Renumber remaining styles consecutively"), &dialog);
-  layout->addWidget(renumber);
-  addText(QObject::tr(
-      "Renumbering applies to the entire palette in page order, keeping "
-      "indices 0 and 1 fixed. Pixel assignments, style definitions and "
-      "animation are preserved. Shared levels are also updated and must "
-      "all be editable Toonz Raster levels."));
+      new QCheckBox(QObject::tr("Remove unused styles in this scope"));
+  cleanup->setChecked(int(ReduceColorsCleanup) != 0);
+  finishLayout->addWidget(cleanup);
+  addText(
+      finishLayout,
+      QObject::tr("Keeps reserved styles and colors still used by other levels "
+                  "sharing this palette."));
+  finishLayout->addSpacing(4);
+  QCheckBox *renumber =
+      new QCheckBox(QObject::tr("Renumber remaining styles consecutively"));
+  renumber->setChecked(int(ReduceColorsRenumber) != 0);
+  finishLayout->addWidget(renumber);
+  addText(
+      finishLayout,
+      QObject::tr(
+          "Renumbers the entire palette in page order, keeping indices 0 and 1 "
+          "fixed. Pixel assignments and animation are preserved. Shared levels "
+          "must be editable Toonz Raster levels."));
+  layout->addStretch();
   const TDimension resolution = level->getResolution();
   const double pixelCount = double(resolution.lx) * resolution.ly * fids.size();
   const auto sharedLevels = sharedPaletteLevels(level);
@@ -515,6 +575,7 @@ void executeReduction() {
   QDialogButtonBox *buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
   buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Reduce Colors"));
+  buttons->button(QDialogButtonBox::Ok)->setDefault(true);
   QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog,
                    &QDialog::accept);
   QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
@@ -536,14 +597,21 @@ void executeReduction() {
       else
         ++skipped;
     }
-    scopeInfo->setText(
-        QObject::tr("%1 eligible styles in %2 drawings. "
-                    "%3 animated, linked or non-solid styles are excluded "
-                    "from color reduction.")
-            .arg(int(colors.size()))
-            .arg(int(fids.size()))
-            .arg(skipped));
+    QString summary = QObject::tr("Eligible styles: %1    Drawings: %2")
+                          .arg(int(colors.size()))
+                          .arg(int(fids.size()));
+    if (skipped > 0)
+      summary +=
+          QObject::tr("\nSkipped styles: %1 (animated, linked or non-solid).")
+              .arg(skipped);
+    summary += QObject::tr(
+        "\nOpacity is preserved and may require additional colors.");
+    scopeInfo->setText(summary);
+    // Do not treat a context-dependent cap as a newly chosen target. Switching
+    // back to a larger scope restores the user's preferred value.
+    const QSignalBlocker blockTarget(target);
     target->setRange(1, std::max(1, int(colors.size())));
+    target->setValue(preferredTarget);
     buttons->button(QDialogButtonBox::Ok)
         ->setEnabled(!colors.empty() || renumber->isChecked());
     const bool checksShared = cleanup->isChecked() || renumber->isChecked();
@@ -558,10 +626,20 @@ void executeReduction() {
   QObject::connect(renumber, &QCheckBox::toggled, &dialog, updateScope);
   QObject::connect(cleanup, &QCheckBox::toggled, &dialog, updateScope);
   updateScope();
-  target->setValue(std::min(16, int(colors.size())));
   if (dialog.exec() != QDialog::Accepted) return;
-  const int requested      = reduce->isChecked() ? target->value() : 0;
-  const bool useSimilarity = similar->isChecked();
+  // Canceling the dialog leaves all remembered options unchanged. A forced
+  // all-styles scope (fewer than two selected chips) must not overwrite the
+  // user's preference for occasions when a real multi-selection exists.
+  ReduceColorsMode               = method->currentIndex();
+  ReduceColorsTarget             = preferredTarget;
+  ReduceColorsAutomaticTolerance = automaticTolerance->isChecked() ? 1 : 0;
+  ReduceColorsTolerance          = tolerance->value();
+  ReduceColorsCleanup            = cleanup->isChecked() ? 1 : 0;
+  ReduceColorsRenumber           = renumber->isChecked() ? 1 : 0;
+  if (!allStyles)
+    ReduceColorsSelectedScope = scopeChoice->currentIndex() == 0 ? 1 : 0;
+  const int requested      = method->currentIndex() == 1 ? target->value() : 0;
+  const bool useSimilarity = method->currentIndex() == 2;
   const double requestedTolerance =
       automaticTolerance->isChecked() ? -1 : tolerance->value() / 100.0;
   std::vector<RenumberLevel> renumberLevels;
