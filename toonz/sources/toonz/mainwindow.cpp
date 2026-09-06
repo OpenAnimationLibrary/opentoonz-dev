@@ -2,6 +2,7 @@
 
 #include "mainwindow.h"
 #include "convertlinestoareascommand.h"
+#include "reducecolorscommand.h"
 
 // Tnz6 includes
 #include "menubar.h"
@@ -2664,6 +2665,8 @@ void MainWindow::defineActions() {
                                 QT_TR_NOOP("Convert Lines to Areas"), ""),
       createRightClickMenuAction(MI_ConvertAreasToLines,
                                 QT_TR_NOOP("Convert Areas to Lines"), ""));
+  initReduceColorsCommand(createRightClickMenuAction(
+      MI_ReduceColors, QT_TR_NOOP("Reduce Colors..."), ""));
 
   // Menu - View
 
