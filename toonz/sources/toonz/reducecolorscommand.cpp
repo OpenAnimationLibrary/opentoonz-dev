@@ -4,8 +4,11 @@
 #include "tapp.h"
 #include "menubarcommandids.h"
 #include "tools/toolutils.h"
+#include "toonz/levelset.h"
 #include "toonz/tcolumnhandle.h"
 #include "toonz/tframehandle.h"
+#include "toonz/toonzscene.h"
+#include "toonz/tscenehandle.h"
 #include "toonz/ttilesaver.h"
 #include "toonz/ttileset.h"
 #include "toonz/txshcell.h"
@@ -23,6 +26,8 @@
 #include "ttoonzimage.h"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
@@ -47,6 +52,30 @@ namespace {
 using namespace PaletteColorReduction;
 using StyleMask = std::bitset<4096>;
 bool reducing   = false;
+
+std::vector<std::vector<int>> palettePages(TPalette *palette) {
+  std::vector<std::vector<int>> pages(palette->getPageCount());
+  for (int p = 0; p < palette->getPageCount(); ++p) {
+    TPalette::Page *page = palette->getPage(p);
+    for (int i = 0; i < page->getStyleCount(); ++i)
+      pages[p].push_back(page->getStyleId(i));
+  }
+  return pages;
+}
+
+StyleMask paletteScope(TPalette *palette) {
+  StyleMask styles;
+  // Removed chips keep their numeric slots in TPalette. Only visible palette
+  // entries should count toward the dialog's scope and target limit.
+  for (int p = 0; p < palette->getPageCount(); ++p) {
+    TPalette::Page *page = palette->getPage(p);
+    for (int i = 0; i < page->getStyleCount(); ++i) {
+      int id = page->getStyleId(i);
+      if (id > 0 && id < int(styles.size())) styles.set(id);
+    }
+  }
+  return styles;
+}
 
 bool getTarget(TXshSimpleLevel *&level, StyleMask &styles, bool &allStyles) {
   TApp *app = TApp::instance();
@@ -85,12 +114,7 @@ bool getTarget(TXshSimpleLevel *&level, StyleMask &styles, bool &allStyles) {
   // Count the user's selection BEFORE filtering animated/protected styles.
   // Selecting two animated styles must not expand to the entire palette.
   allStyles = selectedCount < 2;
-  if (allStyles) {
-    styles.reset();
-    for (int id = 1; id < palette->getStyleCount() && id < int(styles.size());
-         ++id)
-      styles.set(id);
-  }
+  if (allStyles) styles = paletteScope(palette);
   return styles.any();
 }
 
@@ -173,6 +197,49 @@ TToonzImageP readFrame(TXshSimpleLevel *level, const TFrameId &fid,
   return image;
 }
 
+bool collectSharedUsage(TXshSimpleLevel *current, Used &used,
+                        Progress &progress) {
+  // Include unexposed scene-cast levels, not just cells in the current Xsheet.
+  TLevelSet *cast =
+      TApp::instance()->getCurrentScene()->getScene()->getLevelSet();
+  std::vector<TXshSimpleLevelP> levels;
+  for (int i = 0; i < cast->getLevelCount(); ++i) {
+    TXshSimpleLevel *level = cast->getLevel(i)->getSimpleLevel();
+    if (level && level != current &&
+        level->getPalette() == current->getPalette())
+      levels.push_back(TXshSimpleLevelP(level));
+  }
+  for (const auto &level : levels) {
+    for (const TFrameId &fid : level->getFids()) {
+      if (progress.canceled()) return false;
+      TImageP image    = level->getFullsampledFrame(fid, ImageManager::none);
+      TToonzImageP tlv = image;
+      TVectorImageP vector = image;
+      if (tlv && tlv->getRaster() && tlv->getSubsampling() <= 1) {
+        TRasterCM32P raster = tlv->getRaster();
+        for (int start = 0; start < raster->getLy(); start += 32) {
+          if (progress.canceled()) return false;
+          RasterLock lock(raster);
+          for (int y = start; y < std::min(start + 32, raster->getLy()); ++y) {
+            const TPixelCM32 *row = raster->pixels(y);
+            for (int x = 0; x < raster->getLx(); ++x)
+              used[row[x].getInk()] = used[row[x].getPaint()] = true;
+          }
+        }
+      } else if (vector) {
+        std::set<int> ids;
+        vector->getUsedStyles(ids);
+        for (int id : ids)
+          if (id >= 0 && id < int(used.size())) used[id] = true;
+      } else {
+        // An unreadable/unsupported shared level is not evidence of disuse.
+        throw std::runtime_error("Cannot verify shared palette usage");
+      }
+    }
+  }
+  return true;
+}
+
 class FrameUndo final : public ToolUtils::TRasterUndo {
   std::shared_ptr<const StyleMap> m_styles;
 
@@ -200,23 +267,64 @@ public:
 };
 
 class ReduceColorsUndo final : public TUndo {
+  TPaletteP m_palette;
+
 public:
+  struct RemovedStyle {
+    int page, index, id;
+    std::unique_ptr<TColorStyle> style;
+  };
   std::vector<std::unique_ptr<FrameUndo>> frames;
+  std::vector<RemovedStyle> removedStyles;
+
+  explicit ReduceColorsUndo(const TPaletteP &palette) : m_palette(palette) {}
+
+  void removeStyles() const {
+    // Original page indices stay valid when removed in reverse order.
+    for (auto it = removedStyles.rbegin(); it != removedStyles.rend(); ++it)
+      m_palette->getPage(it->page)->removeStyle(it->index);
+  }
 
   void notify() const {
+    if (!removedStyles.empty()) {
+      m_palette->setDirtyFlag(true);
+      TPaletteHandle *handle = TApp::instance()->getCurrentPalette();
+      if (handle->getPalette() == m_palette.getPointer()) {
+        auto selection = dynamic_cast<TStyleSelection *>(
+            TApp::instance()->getCurrentSelection()->getSelection());
+        if (selection && selection->getPaletteHandle() &&
+            selection->getPalette() == m_palette.getPointer())
+          selection->selectNone();
+        const int id = handle->getStyleIndex();
+        if (id < 0 || id >= m_palette->getStyleCount() ||
+            !m_palette->getStylePage(id))
+          handle->setStyleIndex(1);
+        handle->notifyPaletteChanged();
+        handle->notifyColorStyleChanged(false, false);
+      }
+    }
     TApp::instance()->getCurrentLevel()->notifyLevelChange();
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   }
   void undo() const override {
+    for (const RemovedStyle &removed : removedStyles) {
+      // Unpaged IDs may be reused by later style creation. Restore the saved
+      // definition, including its name, before putting the chip back.
+      m_palette->setStyle(removed.id, removed.style->clone());
+      m_palette->getPage(removed.page)->insertStyle(removed.index, removed.id);
+    }
     for (auto it = frames.rbegin(); it != frames.rend(); ++it) (*it)->undo();
     notify();
   }
   void redo() const override {
     for (const auto &frame : frames) frame->redo();
+    removeStyles();
     notify();
   }
   int getSize() const override {
     size_t size = sizeof(*this) + sizeof(StyleMap);
+    size += removedStyles.size() *
+            (sizeof(RemovedStyle) + sizeof(TSolidColorStyle));
     for (const auto &frame : frames) size += frame->getSize();
     return int(std::min(size, size_t(std::numeric_limits<int>::max())));
   }
@@ -235,8 +343,11 @@ void executeReduction() {
   StyleMask scope;
   bool allStyles = false;
   if (!getTarget(level, scope, allStyles)) return;
+  const StyleMask originalScope = scope;
   TXshSimpleLevelP keepLevel(level);
   TPaletteP palette(level->getPalette());
+  const auto originalPages = palettePages(palette.getPointer());
+  ToonzScene *scene        = TApp::instance()->getCurrentScene()->getScene();
   std::vector<TFrameId> fids;
   level->getFids(fids);
   if (fids.empty()) return;
@@ -248,23 +359,6 @@ void executeReduction() {
       return;
     }
 
-  std::vector<Color> colors;
-  int skipped = 0;
-  for (int id = 1; id < palette->getStyleCount() && id < int(scope.size());
-       ++id) {
-    if (!scope[id]) continue;
-    if (eligible(palette.getPointer(), id))
-      colors.push_back({id, palette->getStyle(id)->getMainColor()});
-    else
-      ++skipped;
-  }
-  if (colors.size() < 2) {
-    DVGui::info(QObject::tr(
-        "There are fewer than two eligible styles. Animated, "
-        "linked and non-solid styles are skipped, even when selected."));
-    return;
-  }
-
   QDialog dialog(TApp::instance()->getMainWindow());
   dialog.setWindowTitle(QObject::tr("Reduce Colors"));
   QVBoxLayout *layout = new QVBoxLayout(&dialog);
@@ -272,24 +366,20 @@ void executeReduction() {
     QLabel *label = new QLabel(text, &dialog);
     label->setWordWrap(true);
     layout->addWidget(label);
+    return label;
   };
-  addText(
-      (allStyles
-           ? QObject::tr("All styles: %1 eligible styles in %2 drawings.")
-           : QObject::tr("Selected styles: %1 eligible styles in %2 drawings."))
-          .arg(int(colors.size()))
-          .arg(int(fids.size())));
-  if (skipped)
-    addText(
-        QObject::tr("%1 animated, linked or non-solid styles will be skipped.")
-            .arg(skipped));
+  addText(QObject::tr("Styles to process:"));
+  QComboBox *scopeChoice = new QComboBox(&dialog);
+  scopeChoice->setAccessibleName(QObject::tr("Styles to process"));
+  if (!allStyles) scopeChoice->addItem(QObject::tr("Selected styles"));
+  scopeChoice->addItem(QObject::tr("All palette styles"));
+  layout->addWidget(scopeChoice);
+  QLabel *scopeInfo = addText(QString());
   QRadioButton *identical =
       new QRadioButton(QObject::tr("Merge identical colors"), &dialog);
   QRadioButton *reduce = new QRadioButton(
       QObject::tr("Reduce to at most this many colors:"), &dialog);
   QSpinBox *target = new QSpinBox(&dialog);
-  target->setRange(1, int(colors.size()));
-  target->setValue(std::min(16, int(colors.size())));
   target->setEnabled(false);
   target->setAccessibleName(QObject::tr("Target color count"));
   identical->setChecked(true);
@@ -300,19 +390,26 @@ void executeReduction() {
   layout->addWidget(target);
   addText(QObject::tr(
       "Identical colors are merged first. The target counts colors "
-      "used by the eligible styles in this level. Opacity is preserved; "
+      "used by the eligible styles in this scope. Opacity is preserved; "
       "different opacity values require separate colors."));
+  addText(
+      QObject::tr("The target cannot exceed the eligible style count. "
+                  "Increasing it does not restore previously combined colors; "
+                  "use Undo for that."));
+  QCheckBox *cleanup =
+      new QCheckBox(QObject::tr("Remove unused styles in this scope"), &dialog);
+  cleanup->setChecked(true);
+  layout->addWidget(cleanup);
   addText(QObject::tr(
-      "All drawings in the current level will be processed. Palette "
-      "styles are kept; use Delete Unused Styles afterward. Styles "
-      "still used by other levels sharing this palette remain in use."));
+      "All drawings in the current level will be processed. Cleanup keeps "
+      "reserved, animated, linked and non-solid styles, and styles still used "
+      "by other levels in the scene sharing this palette."));
   const TDimension resolution = level->getResolution();
   const double pixelCount = double(resolution.lx) * resolution.ly * fids.size();
-  if (colors.size() >= 256 || fids.size() >= 100 || pixelCount >= 50000000.0)
-    addText(QObject::tr(
-        "This is a large operation and may take considerable time "
-        "and memory. You can cancel during analysis or preparation; "
-        "no drawings are changed until preparation finishes."));
+  QLabel *largeOperation  = addText(
+      QObject::tr("This is a large operation and may take considerable time "
+                    "and memory. You can cancel during analysis or preparation; "
+                    "no drawings are changed until preparation finishes."));
   QDialogButtonBox *buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
   buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Reduce Colors"));
@@ -321,10 +418,42 @@ void executeReduction() {
   QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
                    &QDialog::reject);
   layout->addWidget(buttons);
+
+  std::vector<Color> colors;
+  const auto updateScope = [&]() {
+    scope = (allStyles || scopeChoice->currentIndex() == 1)
+                ? paletteScope(palette.getPointer())
+                : originalScope;
+    colors.clear();
+    int skipped = 0;
+    for (int id = 1; id < palette->getStyleCount() && id < int(scope.size());
+         ++id) {
+      if (!scope[id]) continue;
+      if (eligible(palette.getPointer(), id))
+        colors.push_back({id, palette->getStyle(id)->getMainColor()});
+      else
+        ++skipped;
+    }
+    scopeInfo->setText(
+        QObject::tr("%1 eligible styles in %2 drawings. "
+                    "%3 animated, linked or non-solid styles will be skipped.")
+            .arg(int(colors.size()))
+            .arg(int(fids.size()))
+            .arg(skipped));
+    target->setRange(1, std::max(1, int(colors.size())));
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(!colors.empty());
+    largeOperation->setVisible(colors.size() >= 256 || fids.size() >= 100 ||
+                               pixelCount >= 50000000.0);
+  };
+  QObject::connect(scopeChoice,
+                   QOverload<int>::of(&QComboBox::currentIndexChanged), &dialog,
+                   updateScope);
+  updateScope();
+  target->setValue(std::min(16, int(colors.size())));
   if (dialog.exec() != QDialog::Accepted) return;
   const int requested = reduce->isChecked() ? target->value() : 0;
 
-  auto undo = std::make_unique<ReduceColorsUndo>();
+  auto undo = std::make_unique<ReduceColorsUndo>(palette);
   Plan plan;
   {
     Progress progress;
@@ -355,16 +484,32 @@ void executeReduction() {
               .arg(plan.minimum));
       return;
     }
-    if (plan.before == plan.after) {
-      DVGui::info(QObject::tr(
-          "No colors need to be combined. No drawings have been changed."));
-      return;
+    if (cleanup->isChecked()) {
+      progress.label(
+          QObject::tr("Checking unused styles and shared palettes..."));
+      Used remaining = remappedUsage(used, plan.styles);
+      if (!collectSharedUsage(level, remaining, progress)) return;
+      for (int p = 0; p < palette->getPageCount(); ++p) {
+        TPalette::Page *page = palette->getPage(p);
+        for (int i = 0; i < page->getStyleCount(); ++i) {
+          const int id = page->getStyleId(i);
+          // Match Delete Unused Styles' protection for the first two chips.
+          // Keep ID 1 protected even if the user has moved it to another page.
+          if ((p == 0 && i < 2) || id <= 1 || id >= int(scope.size()) ||
+              !scope[id] || remaining[id] ||
+              !eligible(palette.getPointer(), id))
+            continue;
+          undo->removedStyles.push_back(
+              {p, i, id,
+               std::unique_ptr<TColorStyle>(palette->getStyle(id)->clone())});
+        }
+      }
     }
 
     progress.label(QObject::tr("Preparing drawings and undo data..."));
     const auto mapping = std::make_shared<const StyleMap>(plan.styles);
     std::vector<PreparedFrame> prepared;
-    for (size_t f = 0; f < fids.size(); ++f) {
+    for (size_t f = 0; plan.before != plan.after && f < fids.size(); ++f) {
       if (progress.canceled(400 + int(600 * f / fids.size()))) return;
       TToonzImageP image  = readFrame(level, fids[f], false);
       TRasterCM32P raster = image->getRaster()->clone();
@@ -386,8 +531,11 @@ void executeReduction() {
     StyleMask currentScope;
     bool currentAll = false;
     if (!getTarget(currentLevel, currentScope, currentAll) ||
-        currentLevel != level || currentScope != scope ||
-        level->getPalette() != palette.getPointer() || level->getFids() != fids)
+        currentLevel != level || currentScope != originalScope ||
+        level->getPalette() != palette.getPointer() ||
+        level->getFids() != fids ||
+        palettePages(palette.getPointer()) != originalPages ||
+        TApp::instance()->getCurrentScene()->getScene() != scene)
       throw std::runtime_error("Reduction target changed");
     for (const Color &color : colors)
       if (color.id >= palette->getStyleCount() ||
@@ -405,17 +553,23 @@ void executeReduction() {
       frame.image->setCMapped(frame.raster);
       frame.image->setSavebox(frame.savebox);
     }
+    undo->removeStyles();
   }
-  if (undo->frames.empty()) return;
+  if (undo->frames.empty() && undo->removedStyles.empty()) {
+    DVGui::info(QObject::tr(
+        "No colors need to be combined and no styles need to be removed."));
+    return;
+  }
+  const int removedCount = int(undo->removedStyles.size());
   for (const auto &frame : undo->frames) frame->notify();
   undo->notify();
   TUndoManager::manager()->add(undo.release());
   DVGui::info(
       QObject::tr("Reduced %1 used styles to %2 colors in the chosen scope. "
-                  "Palette styles were kept. Use Delete Unused Styles to "
-                  "remove styles that are no longer used.")
+                  "Removed %3 unused styles.")
           .arg(plan.before)
-          .arg(plan.after));
+          .arg(plan.after)
+          .arg(removedCount));
 }
 
 class ReduceColorsCommand final : public MenuItemHandler {

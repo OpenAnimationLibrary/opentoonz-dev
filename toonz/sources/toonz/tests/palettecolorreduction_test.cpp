@@ -124,6 +124,27 @@ void weightsAndOpacity() {
   assert(coverage[3] == 55 && coverage[5] == 200);
 }
 
+void cleanupUsage() {
+  Used used{};
+  Usage coverage{};
+  count(TPixelCM32(9, 4095, 0), coverage, used);
+  count(TPixelCM32(3, 0, 255), coverage, used);
+  Plan plan;
+  plan.styles[4095] = 9;
+  Used remaining    = remappedUsage(used, plan.styles);
+  assert(remaining[9] && remaining[3] && remaining[0]);
+  assert(!remaining[4095] && !remaining[7]);
+  // Another level still references the source ID. Accumulate its original
+  // usage without applying this level's map or clearing earlier evidence.
+  Used other{};
+  other[4095] = true;
+  for (size_t id = 0; id < other.size(); ++id) remaining[id] |= other[id];
+  assert(remaining[4095] && remaining[9] && remaining[3]);
+  // Cleanup is also meaningful when the reducer itself makes no changes.
+  Plan unchanged;
+  assert(remappedUsage(used, unchanged.styles) == used);
+}
+
 void randomized() {
   std::mt19937 random(20260906);
   for (int trial = 0; trial < 200; ++trial) {
@@ -173,6 +194,7 @@ void randomized() {
 int main() {
   duplicatesAndPixels();
   weightsAndOpacity();
+  cleanupUsage();
   randomized();
   std::cout
       << "Palette reduction: duplicate rendering, hidden slots, coverage, "

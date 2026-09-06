@@ -48,6 +48,16 @@ inline void count(const TPixelCM32 &pixel, Usage &usage, Used &used) {
   usage[pixel.getPaint()] += pixel.getTone();
 }
 
+// Predict current-level usage before applying any edits. Other levels sharing
+// the palette must contribute their original IDs to this result, not remapped
+// IDs: their drawings are not part of the reduction.
+inline Used remappedUsage(const Used &used, const StyleMap &styles) {
+  Used result{};
+  for (size_t id = 0; id < used.size(); ++id)
+    if (used[id]) result[styles[id]] = true;
+  return result;
+}
+
 namespace detail {
 
 using Lab = std::array<double, 3>;
