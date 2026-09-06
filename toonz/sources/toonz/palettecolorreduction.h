@@ -7,6 +7,7 @@
 #include <array>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <vector>
@@ -26,6 +27,8 @@ struct Color {
 
 struct Plan {
   StyleMap styles;
+  std::vector<int> protectedStyles;
+  double tolerance = 0;
   int before = 0, after = 0, minimum = 0;
   bool canceled = false;
 
@@ -56,6 +59,29 @@ inline Used remappedUsage(const Used &used, const StyleMap &styles) {
   for (size_t id = 0; id < used.size(); ++id)
     if (used[id]) result[styles[id]] = true;
   return result;
+}
+
+// Compact visible chips in page order while keeping reserved IDs fixed.
+// Retain unpaged slots at the end, including any hidden pixel references.
+// A full permutation lets Undo restore the original indices without loss.
+inline StyleMap makeRenumberMap(const std::vector<std::vector<int>> &pages,
+                                int styleCount, const Used &removed) {
+  StyleMap map;
+  std::iota(map.begin(), map.end(), 0);
+  Used assigned{};
+  assigned[0] = assigned[1] = true;
+  int next                  = 2;
+  const auto append         = [&](int id) {
+    if (id < 2 || id >= styleCount || id >= int(map.size()) || assigned[id])
+      return;
+    assigned[id] = true;
+    map[id]      = next++;
+  };
+  for (const auto &page : pages)
+    for (int id : page)
+      if (id >= 0 && id < int(removed.size()) && !removed[id]) append(id);
+  for (int id = 2; id < styleCount && id < int(map.size()); ++id) append(id);
+  return map;
 }
 
 namespace detail {
@@ -221,6 +247,125 @@ inline Plan makePlan(const std::vector<Color> &colors, const Usage &usage,
         plan.styles[id] = groups[best].representative;
   }
   plan.after = int(boxes.size());
+  return plan;
+}
+
+// A Pareto-inspired heuristic, not a guarantee of visual importance: keep
+// ceil(distinct used colors / 5) representatives, or more to preserve opacity.
+// Pixel coverage and color separation estimate which colors matter most.
+// tolerance < 0 calculates the smallest distance to this protected set that
+// reaches that goal. A manual tolerance can retain additional colors.
+inline Plan makeSimilarityPlan(const std::vector<Color> &colors,
+                               const Usage &usage, const Used &used,
+                               double tolerance                    = -1,
+                               const std::function<bool()> &cancel = {}) {
+  using namespace detail;
+  Plan plan = makePlan(colors, usage, used, 0);
+  if (cancel && cancel()) {
+    plan.canceled = true;
+    return plan;
+  }
+  // Reuse exact-color deduplication so duplicates and unused chips do not
+  // inflate the 20% budget. Accumulate in ID order for deterministic weights.
+  std::map<int, Color> ordered;
+  for (const Color &color : colors)
+    if (color.id > 0 && color.id < int(used.size()) && used[color.id])
+      ordered.emplace(color.id, color);
+  std::map<int, Group> distinct;
+  for (const auto &entry : ordered) {
+    const Color &color   = entry.second;
+    const int id         = plan.styles[color.id];
+    Group &group         = distinct[id];
+    group.representative = id;
+    group.alpha          = color.rgba.m;
+    group.lab            = toLab(color.rgba);
+    group.weight += usage[color.id];
+  }
+  if (distinct.empty()) return plan;
+  std::vector<Group> groups;
+  double maxWeight = 1;
+  for (auto &entry : distinct) {
+    entry.second.weight = std::max(1.0, entry.second.weight);
+    maxWeight           = std::max(maxWeight, entry.second.weight);
+    groups.push_back(std::move(entry.second));
+  }
+
+  const int goal = std::max(plan.minimum, (int(groups.size()) + 4) / 5);
+  std::vector<bool> protectedColor(groups.size(), false);
+  std::vector<int> nearest(groups.size(), -1);
+  std::vector<double> distance(groups.size(),
+                               std::numeric_limits<double>::infinity());
+  const auto protect = [&](int anchor) {
+    protectedColor[anchor] = true;
+    nearest[anchor]        = anchor;
+    distance[anchor]       = 0;
+    plan.protectedStyles.push_back(groups[anchor].representative);
+    for (int i = 0; i < int(groups.size()); ++i) {
+      if (protectedColor[i] || groups[i].alpha != groups[anchor].alpha)
+        continue;
+      double squared = 0;
+      for (int d = 0; d < 3; ++d) {
+        const double delta = groups[i].lab[d] - groups[anchor].lab[d];
+        squared += delta * delta;
+      }
+      if (squared < distance[i] ||
+          (squared == distance[i] &&
+           groups[anchor].representative < groups[nearest[i]].representative)) {
+        distance[i] = squared;
+        nearest[i]  = anchor;
+      }
+    }
+  };
+  // Every opacity group needs a survivor. Start with its greatest coverage.
+  std::map<int, int> seeds;
+  for (int i = 0; i < int(groups.size()); ++i) {
+    auto seed = seeds.find(groups[i].alpha);
+    if (seed == seeds.end() || groups[i].weight > groups[seed->second].weight)
+      seeds[groups[i].alpha] = i;
+  }
+  for (const auto &seed : seeds) {
+    if (cancel && cancel()) {
+      plan.canceled = true;
+      return plan;
+    }
+    protect(seed.second);
+  }
+  while (int(plan.protectedStyles.size()) < goal) {
+    if (cancel && cancel()) {
+      plan.canceled = true;
+      return plan;
+    }
+    int best         = -1;
+    double bestScore = -1;
+    for (int i = 0; i < int(groups.size()); ++i) {
+      if (protectedColor[i]) continue;
+      // Temper coverage weighting to leave room for small, distinct accents.
+      const double score =
+          distance[i] * std::sqrt(groups[i].weight / maxWeight);
+      if (score > bestScore) {
+        best      = i;
+        bestScore = score;
+      }
+    }
+    protect(best);
+  }
+  // Map directly to a protected color. Chaining through another merged color
+  // could exceed the user's tolerance even if each individual hop is close.
+  const double threshold =
+      tolerance < 0 ? *std::max_element(distance.begin(), distance.end())
+                    : tolerance * tolerance;
+  plan.tolerance = tolerance < 0 ? std::sqrt(threshold) : tolerance;
+  StyleMap survivors;
+  std::iota(survivors.begin(), survivors.end(), 0);
+  plan.after = goal;
+  for (int i = 0; i < int(groups.size()); ++i) {
+    if (protectedColor[i]) continue;
+    if (distance[i] <= threshold)
+      survivors[groups[i].representative] = groups[nearest[i]].representative;
+    else
+      ++plan.after;
+  }
+  for (int &id : plan.styles) id = survivors[id];
   return plan;
 }
 

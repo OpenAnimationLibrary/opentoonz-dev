@@ -145,6 +145,130 @@ void cleanupUsage() {
   assert(remappedUsage(used, unchanged.styles) == used);
 }
 
+void validateSimilarity(const Plan &plan, const std::vector<Color> &colors,
+                        const Usage &usage, const Used &used) {
+  validate(plan, colors, used);
+  const Plan exact = makePlan(colors, usage, used, 0);
+  const int goal   = std::max(exact.minimum, (exact.after + 4) / 5);
+  assert(int(plan.protectedStyles.size()) == goal);
+  assert(plan.after >= goal && plan.after <= exact.after);
+  std::map<int, detail::Lab> labs;
+  std::set<int> protectedIds(plan.protectedStyles.begin(),
+                             plan.protectedStyles.end());
+  for (const Color &c : colors) labs[c.id] = detail::toLab(c.rgba);
+  for (int id : protectedIds) assert(plan.styles[id] == id && used[id]);
+  for (const Color &c : colors) {
+    int to         = plan.styles[c.id];
+    double squared = 0;
+    for (int d = 0; d < 3; ++d) {
+      double delta = labs[c.id][d] - labs[to][d];
+      squared += delta * delta;
+    }
+    assert(std::sqrt(squared) <= plan.tolerance + 1e-12);
+    // Every non-identical merge goes directly to a protected survivor.
+    if (squared > 0) assert(protectedIds.count(to));
+  }
+}
+
+void similarity() {
+  Usage usage{};
+  Used used{};
+  std::vector<Color> colors;
+  // A frequently used gray, eight close shades and one small red accent.
+  for (int id = 1; id <= 10; ++id) {
+    const int gray = 120 + id;
+    colors.push_back(
+        {id, id == 10 ? TPixel32(230, 10, 10) : TPixel32(gray, gray, gray)});
+    used[id]  = true;
+    usage[id] = id == 1 ? 100000 : 100;
+  }
+  Plan automatic = makeSimilarityPlan(colors, usage, used);
+  validateSimilarity(automatic, colors, usage, used);
+  assert(automatic.after == 2);
+  assert(automatic.styles[1] == 1 && automatic.styles[10] == 10);
+  Plan strict = makeSimilarityPlan(colors, usage, used, 0);
+  validateSimilarity(strict, colors, usage, used);
+  assert(strict.after == 10);
+  Plan medium =
+      makeSimilarityPlan(colors, usage, used, automatic.tolerance / 2);
+  validateSimilarity(medium, colors, usage, used);
+  assert(medium.after > automatic.after && medium.after <= strict.after);
+  assert(medium.protectedStyles == automatic.protectedStyles);
+  assert(makeSimilarityPlan(colors, usage, used, 2).styles == automatic.styles);
+
+  // Duplicates, unused chips and hidden-only references do not inflate the
+  // distinct-color budget. A small palette rounds up to one survivor.
+  colors = {{2, TPixel32(100, 100, 100)},
+            {3, TPixel32(101, 101, 101)},
+            {4, TPixel32(102, 102, 102)},
+            {5, TPixel32(100, 100, 100)},
+            {6, TPixel32(0, 255, 0)}};
+  usage.fill(0);
+  used.fill(false);
+  for (int id : {2, 3, 4, 5}) used[id] = true;
+  usage[2]  = 100;
+  automatic = makeSimilarityPlan(colors, usage, used);
+  validateSimilarity(automatic, colors, usage, used);
+  assert(automatic.before == 4 && automatic.after == 1);
+  strict = makeSimilarityPlan(colors, usage, used, 0);
+  assert(strict.after == 3 && strict.styles[5] == 2 && strict.styles[6] == 6);
+  colors.push_back({7, TPixel32(100, 100, 100, 128)});
+  used[7]   = true;
+  automatic = makeSimilarityPlan(colors, usage, used);
+  validateSimilarity(automatic, colors, usage, used);
+  assert(automatic.after == 2 && automatic.styles[7] == 7);
+  used.fill(false);
+  automatic = makeSimilarityPlan(colors, usage, used);
+  assert(automatic.after == 0 && automatic.protectedStyles.empty());
+}
+
+void renumbering() {
+  Used removed{};
+  removed[40] = true;
+  std::vector<std::vector<int>> pages{{0, 1, 90, 40, 7}, {85, 3}};
+  StyleMap map = makeRenumberMap(pages, 100, removed), inverse;
+  assert(map[0] == 0 && map[1] == 1);
+  assert(map[90] == 2 && map[7] == 3 && map[85] == 4 && map[3] == 5);
+  std::set<int> indices(map.begin(), map.end());
+  assert(indices.size() == map.size());
+  std::array<TPixel32, 4096> before{}, after{};
+  for (int id = 0; id < 4096; ++id) {
+    before[id] = TPixel32(id % 256, (id / 3) % 256, (id / 9) % 256, id % 256);
+    after[map[id]]   = before[id];
+    inverse[map[id]] = id;
+    if (id >= 100) assert(map[id] == id);
+  }
+  // Includes unpaged references (such as 99), hidden ink/paint, and all tones.
+  for (int ink : {0, 1, 3, 7, 40, 85, 90, 99, 4095})
+    for (int paint : {0, 1, 3, 7, 40, 85, 90, 99, 4095})
+      for (int tone = 0; tone < 256; ++tone) {
+        TPixelCM32 original(ink, paint, tone), pixel = original;
+        remap(pixel, map);
+        assert(render(original, before) == render(pixel, after));
+        assert(pixel.getTone() == tone);
+        remap(pixel, inverse);
+        assert(pixel.getInk() == ink && pixel.getPaint() == paint);
+      }
+  // Compose reduction and renumbering once for the current level. Other
+  // shared levels use just the permutation, retaining their original colors.
+  StyleMap reduction;
+  std::iota(reduction.begin(), reduction.end(), 0);
+  reduction[40]     = 90;
+  StyleMap combined = reduction;
+  for (int &id : combined) id = map[id];
+  TPixelCM32 current(40, 7, 0), shared = current;
+  remap(current, combined);
+  remap(shared, map);
+  assert(current.getInk() == 2 && current.getPaint() == 3);
+  assert(after[shared.getInk()] == before[40]);
+  assert(after[current.getInk()] == before[90]);
+  // No cleanup: keep every page entry, and compact the entire 12-bit range.
+  removed.fill(false);
+  map = makeRenumberMap({{0, 1, 4095, 12}}, 4096, removed);
+  assert(map[4095] == 2 && map[12] == 3);
+  assert(std::set<int>(map.begin(), map.end()).size() == 4096);
+}
+
 void randomized() {
   std::mt19937 random(20260906);
   for (int trial = 0; trial < 200; ++trial) {
@@ -171,6 +295,22 @@ void randomized() {
       std::reverse(colors.begin(), colors.end());
       assert(makePlan(colors, usage, used, target).styles == p.styles);
     }
+    Plan automatic = makeSimilarityPlan(colors, usage, used);
+    validateSimilarity(automatic, colors, usage, used);
+    assert(automatic.after == std::max(exact.minimum, (exact.after + 4) / 5));
+    int previous = exact.after;
+    for (double tolerance :
+         {0.0, automatic.tolerance / 2, automatic.tolerance * 1.01}) {
+      Plan p = makeSimilarityPlan(colors, usage, used, tolerance);
+      validateSimilarity(p, colors, usage, used);
+      assert(p.after <= previous);
+      previous = p.after;
+    }
+    std::reverse(colors.begin(), colors.end());
+    Plan reversed = makeSimilarityPlan(colors, usage, used);
+    assert(reversed.styles == automatic.styles);
+    assert(reversed.protectedStyles == automatic.protectedStyles);
+    assert(reversed.tolerance == automatic.tolerance);
   }
   // Exercise the entire 12-bit style range, plus cancellation between splits.
   Usage usage{};
@@ -187,6 +327,13 @@ void randomized() {
   int calls = 0;
   p         = makePlan(colors, usage, used, 64, [&]() { return ++calls == 3; });
   assert(p.canceled && calls == 3);
+  p = makeSimilarityPlan(colors, usage, used);
+  validateSimilarity(p, colors, usage, used);
+  assert(p.after == 819);
+  calls = 0;
+  p     = makeSimilarityPlan(colors, usage, used, -1,
+                             [&]() { return ++calls == 3; });
+  assert(p.canceled && calls == 3);
 }
 
 }  // namespace
@@ -195,8 +342,11 @@ int main() {
   duplicatesAndPixels();
   weightsAndOpacity();
   cleanupUsage();
+  similarity();
+  renumbering();
   randomized();
   std::cout
       << "Palette reduction: duplicate rendering, hidden slots, coverage, "
-         "opacity, targets, determinism, 12-bit IDs and cancellation passed.\n";
+         "opacity, targets, 80/20, tolerance, renumbering, determinism, "
+         "12-bit IDs and cancellation passed.\n";
 }

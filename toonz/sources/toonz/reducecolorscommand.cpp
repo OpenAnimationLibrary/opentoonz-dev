@@ -30,13 +30,17 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScopedValueRollback>
+#include <QScreen>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -197,8 +201,7 @@ TToonzImageP readFrame(TXshSimpleLevel *level, const TFrameId &fid,
   return image;
 }
 
-bool collectSharedUsage(TXshSimpleLevel *current, Used &used,
-                        Progress &progress) {
+std::vector<TXshSimpleLevelP> sharedPaletteLevels(TXshSimpleLevel *current) {
   // Include unexposed scene-cast levels, not just cells in the current Xsheet.
   TLevelSet *cast =
       TApp::instance()->getCurrentScene()->getScene()->getLevelSet();
@@ -209,6 +212,12 @@ bool collectSharedUsage(TXshSimpleLevel *current, Used &used,
         level->getPalette() == current->getPalette())
       levels.push_back(TXshSimpleLevelP(level));
   }
+  return levels;
+}
+
+bool collectSharedUsage(TXshSimpleLevel *current, Used &used,
+                        Progress &progress) {
+  const auto levels = sharedPaletteLevels(current);
   for (const auto &level : levels) {
     for (const TFrameId &fid : level->getFids()) {
       if (progress.canceled()) return false;
@@ -276,6 +285,7 @@ public:
   };
   std::vector<std::unique_ptr<FrameUndo>> frames;
   std::vector<RemovedStyle> removedStyles;
+  std::vector<int> renumber, originalNumbers;
 
   explicit ReduceColorsUndo(const TPaletteP &palette) : m_palette(palette) {}
 
@@ -285,8 +295,14 @@ public:
       m_palette->getPage(it->page)->removeStyle(it->index);
   }
 
-  void notify() const {
-    if (!removedStyles.empty()) {
+  void reorder(bool forward) const {
+    if (!renumber.empty() &&
+        !m_palette->reorderStyles(forward ? renumber : originalNumbers))
+      throw std::runtime_error("Palette indices changed during reduction");
+  }
+
+  void notify(const std::vector<int> *indexMap = nullptr) const {
+    if (!removedStyles.empty() || !renumber.empty()) {
       m_palette->setDirtyFlag(true);
       TPaletteHandle *handle = TApp::instance()->getCurrentPalette();
       if (handle->getPalette() == m_palette.getPointer()) {
@@ -295,10 +311,13 @@ public:
         if (selection && selection->getPaletteHandle() &&
             selection->getPalette() == m_palette.getPointer())
           selection->selectNone();
-        const int id = handle->getStyleIndex();
+        int id = handle->getStyleIndex();
+        if (indexMap && id >= 0 && id < int(indexMap->size()))
+          id = (*indexMap)[id];
         if (id < 0 || id >= m_palette->getStyleCount() ||
             !m_palette->getStylePage(id))
-          handle->setStyleIndex(1);
+          id = 1;
+        handle->setStyleIndex(id);
         handle->notifyPaletteChanged();
         handle->notifyColorStyleChanged(false, false);
       }
@@ -307,6 +326,7 @@ public:
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   }
   void undo() const override {
+    reorder(false);
     for (const RemovedStyle &removed : removedStyles) {
       // Unpaged IDs may be reused by later style creation. Restore the saved
       // definition, including its name, before putting the chip back.
@@ -314,17 +334,19 @@ public:
       m_palette->getPage(removed.page)->insertStyle(removed.index, removed.id);
     }
     for (auto it = frames.rbegin(); it != frames.rend(); ++it) (*it)->undo();
-    notify();
+    notify(&originalNumbers);
   }
   void redo() const override {
+    reorder(true);
     for (const auto &frame : frames) frame->redo();
     removeStyles();
-    notify();
+    notify(&renumber);
   }
   int getSize() const override {
     size_t size = sizeof(*this) + sizeof(StyleMap);
     size += removedStyles.size() *
             (sizeof(RemovedStyle) + sizeof(TSolidColorStyle));
+    size += (renumber.size() + originalNumbers.size()) * sizeof(int);
     for (const auto &frame : frames) size += frame->getSize();
     return int(std::min(size, size_t(std::numeric_limits<int>::max())));
   }
@@ -332,10 +354,16 @@ public:
 };
 
 struct PreparedFrame {
+  TXshSimpleLevelP level;
   TFrameId fid;
   TToonzImageP image;
   TRasterCM32P raster;
   TRect savebox;
+};
+
+struct RenumberLevel {
+  TXshSimpleLevelP level;
+  std::vector<TFrameId> fids;
 };
 
 void executeReduction() {
@@ -361,8 +389,22 @@ void executeReduction() {
 
   QDialog dialog(TApp::instance()->getMainWindow());
   dialog.setWindowTitle(QObject::tr("Reduce Colors"));
-  QVBoxLayout *layout = new QVBoxLayout(&dialog);
-  const auto addText  = [&](const QString &text) {
+  QVBoxLayout *dialogLayout = new QVBoxLayout(&dialog);
+  QScrollArea *options      = new QScrollArea(&dialog);
+  options->setWidgetResizable(true);
+  options->setFrameShape(QFrame::NoFrame);
+  QWidget *contents   = new QWidget(options);
+  QVBoxLayout *layout = new QVBoxLayout(contents);
+  options->setWidget(contents);
+  dialogLayout->addWidget(options);
+  // Keep the action buttons and large-operation warning reachable on smaller
+  // displays while allowing the explanatory text to wrap and scroll.
+  dialog.resize(
+      620,
+      std::min(
+          720,
+          QApplication::primaryScreen()->availableGeometry().height() - 80));
+  const auto addText = [&](const QString &text) {
     QLabel *label = new QLabel(text, &dialog);
     label->setWordWrap(true);
     layout->addWidget(label);
@@ -396,6 +438,46 @@ void executeReduction() {
       QObject::tr("The target cannot exceed the eligible style count. "
                   "Increasing it does not restore previously combined colors; "
                   "use Undo for that."));
+  QRadioButton *similar =
+      new QRadioButton(QObject::tr("Merge similar colors (80/20)"), &dialog);
+  layout->addWidget(similar);
+  QCheckBox *automaticTolerance =
+      new QCheckBox(QObject::tr("Calculate tolerance automatically"), &dialog);
+  automaticTolerance->setChecked(true);
+  layout->addWidget(automaticTolerance);
+  QHBoxLayout *toleranceRow = new QHBoxLayout;
+  QLabel *toleranceLabel    = new QLabel(QObject::tr("Tolerance:"), &dialog);
+  QDoubleSpinBox *tolerance = new QDoubleSpinBox(&dialog);
+  tolerance->setRange(0, 200);
+  tolerance->setDecimals(3);
+  tolerance->setSingleStep(0.5);
+  tolerance->setValue(3);
+  tolerance->setAccessibleName(QObject::tr("Color similarity tolerance"));
+  tolerance->setToolTip(QObject::tr(
+      "Maximum color distance to the surviving style, measured as "
+      "100 times the Oklab distance. Lower values keep more colors. "
+      "Zero merges only identical colors."));
+  toleranceLabel->setBuddy(tolerance);
+  toleranceRow->addWidget(toleranceLabel);
+  toleranceRow->addWidget(tolerance);
+  layout->addLayout(toleranceRow);
+  const auto updateTolerance = [&]() {
+    automaticTolerance->setEnabled(similar->isChecked());
+    const bool manual =
+        similar->isChecked() && !automaticTolerance->isChecked();
+    tolerance->setEnabled(manual);
+    toleranceLabel->setEnabled(manual);
+  };
+  QObject::connect(similar, &QRadioButton::toggled, &dialog, updateTolerance);
+  QObject::connect(automaticTolerance, &QCheckBox::toggled, &dialog,
+                   updateTolerance);
+  updateTolerance();
+  addText(QObject::tr(
+      "80/20 favors fewer styles over color accuracy. After merging identical "
+      "colors, it protects about 20% of the distinct used colors (rounded up), "
+      "chosen by pixel coverage and color separation. Automatic tolerance "
+      "merges the rest into those colors. Use a lower manual tolerance to "
+      "keep more colors. Opacity may require additional protected colors."));
   QCheckBox *cleanup =
       new QCheckBox(QObject::tr("Remove unused styles in this scope"), &dialog);
   cleanup->setChecked(true);
@@ -404,12 +486,32 @@ void executeReduction() {
       "All drawings in the current level will be processed. Cleanup keeps "
       "reserved, animated, linked and non-solid styles, and styles still used "
       "by other levels in the scene sharing this palette."));
+  QCheckBox *renumber = new QCheckBox(
+      QObject::tr("Renumber remaining styles consecutively"), &dialog);
+  layout->addWidget(renumber);
+  addText(QObject::tr(
+      "Renumbering applies to the entire palette in page order, keeping "
+      "indices 0 and 1 fixed. Pixel assignments, style definitions and "
+      "animation are preserved. Shared levels are also updated and must "
+      "all be editable Toonz Raster levels."));
   const TDimension resolution = level->getResolution();
   const double pixelCount = double(resolution.lx) * resolution.ly * fids.size();
-  QLabel *largeOperation  = addText(
+  const auto sharedLevels = sharedPaletteLevels(level);
+  size_t sharedDrawings   = 0;
+  double sharedPixels     = 0;
+  for (const auto &shared : sharedLevels) {
+    const size_t drawings = shared->getFids().size();
+    const TDimension size = shared->getResolution();
+    sharedDrawings += drawings;
+    sharedPixels += double(size.lx) * size.ly * drawings;
+  }
+  QLabel *largeOperation = new QLabel(
       QObject::tr("This is a large operation and may take considerable time "
-                    "and memory. You can cancel during analysis or preparation; "
-                    "no drawings are changed until preparation finishes."));
+                  "and memory. You can cancel during analysis or preparation; "
+                  "no drawings are changed until preparation finishes."),
+      &dialog);
+  largeOperation->setWordWrap(true);
+  dialogLayout->addWidget(largeOperation);
   QDialogButtonBox *buttons = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
   buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Reduce Colors"));
@@ -417,7 +519,7 @@ void executeReduction() {
                    &QDialog::accept);
   QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
                    &QDialog::reject);
-  layout->addWidget(buttons);
+  dialogLayout->addWidget(buttons);
 
   std::vector<Color> colors;
   const auto updateScope = [&]() {
@@ -436,22 +538,52 @@ void executeReduction() {
     }
     scopeInfo->setText(
         QObject::tr("%1 eligible styles in %2 drawings. "
-                    "%3 animated, linked or non-solid styles will be skipped.")
+                    "%3 animated, linked or non-solid styles are excluded "
+                    "from color reduction.")
             .arg(int(colors.size()))
             .arg(int(fids.size()))
             .arg(skipped));
     target->setRange(1, std::max(1, int(colors.size())));
-    buttons->button(QDialogButtonBox::Ok)->setEnabled(!colors.empty());
-    largeOperation->setVisible(colors.size() >= 256 || fids.size() >= 100 ||
-                               pixelCount >= 50000000.0);
+    buttons->button(QDialogButtonBox::Ok)
+        ->setEnabled(!colors.empty() || renumber->isChecked());
+    const bool checksShared = cleanup->isChecked() || renumber->isChecked();
+    largeOperation->setVisible(
+        colors.size() >= 256 ||
+        fids.size() + (checksShared ? sharedDrawings : 0) >= 100 ||
+        pixelCount + (checksShared ? sharedPixels : 0) >= 50000000.0);
   };
   QObject::connect(scopeChoice,
                    QOverload<int>::of(&QComboBox::currentIndexChanged), &dialog,
                    updateScope);
+  QObject::connect(renumber, &QCheckBox::toggled, &dialog, updateScope);
+  QObject::connect(cleanup, &QCheckBox::toggled, &dialog, updateScope);
   updateScope();
   target->setValue(std::min(16, int(colors.size())));
   if (dialog.exec() != QDialog::Accepted) return;
-  const int requested = reduce->isChecked() ? target->value() : 0;
+  const int requested      = reduce->isChecked() ? target->value() : 0;
+  const bool useSimilarity = similar->isChecked();
+  const double requestedTolerance =
+      automaticTolerance->isChecked() ? -1 : tolerance->value() / 100.0;
+  std::vector<RenumberLevel> renumberLevels;
+  if (renumber->isChecked()) {
+    for (const auto &shared : sharedLevels) {
+      if (shared->getType() != TZP_XSHLEVEL || shared->isReadOnly() ||
+          shared->isSubsequence()) {
+        DVGui::warning(QObject::tr(
+            "Renumbering requires every level sharing this palette to be "
+            "an editable Toonz Raster level. No drawings have been changed."));
+        return;
+      }
+      renumberLevels.push_back({shared, shared->getFids()});
+      for (const auto &fid : renumberLevels.back().fids)
+        if (shared->isFrameReadOnly(fid)) {
+          DVGui::warning(QObject::tr(
+              "A level sharing this palette contains read-only drawings. "
+              "Renumbering cannot proceed. No drawings have been changed."));
+          return;
+        }
+    }
+  }
 
   auto undo = std::make_unique<ReduceColorsUndo>(palette);
   Plan plan;
@@ -473,8 +605,10 @@ void executeReduction() {
       }
     }
     progress.label(QObject::tr("Choosing surviving colors..."));
-    plan = makePlan(colors, usage, used, requested,
-                    [&]() { return progress.canceled(); });
+    const auto cancel = [&]() { return progress.canceled(); };
+    plan              = useSimilarity ? makeSimilarityPlan(colors, usage, used,
+                                                           requestedTolerance, cancel)
+                                      : makePlan(colors, usage, used, requested, cancel);
     if (plan.canceled || progress.canceled()) return;
     if (requested > 0 && requested < plan.minimum) {
       DVGui::warning(
@@ -506,25 +640,60 @@ void executeReduction() {
       }
     }
 
-    progress.label(QObject::tr("Preparing drawings and undo data..."));
-    const auto mapping = std::make_shared<const StyleMap>(plan.styles);
-    std::vector<PreparedFrame> prepared;
-    for (size_t f = 0; plan.before != plan.after && f < fids.size(); ++f) {
-      if (progress.canceled(400 + int(600 * f / fids.size()))) return;
-      TToonzImageP image  = readFrame(level, fids[f], false);
-      TRasterCM32P raster = image->getRaster()->clone();
-      auto tiles          = std::make_unique<TTileSetCM32>(raster->getSize());
-      TTileSaverCM32 saver(raster, tiles.get());
-      if (!mapRaster(raster, plan.styles, &saver, &progress)) return;
-      if (tiles->getTileCount() == 0) continue;
-      // All expensive work is done on copies. A canceled operation never
-      // modifies pixels, dirty flags, palette definitions, or undo history.
-      auto frameUndo =
-          std::make_unique<FrameUndo>(tiles.get(), level, fids[f], mapping);
-      tiles.release();
-      undo->frames.push_back(std::move(frameUndo));
-      prepared.push_back({fids[f], image, raster, image->getSavebox()});
+    StyleMap numbers;
+    std::iota(numbers.begin(), numbers.end(), 0);
+    if (renumber->isChecked()) {
+      Used removed{};
+      for (const auto &style : undo->removedStyles) removed[style.id] = true;
+      const StyleMap identity = numbers;
+      numbers =
+          makeRenumberMap(originalPages, palette->getStyleCount(), removed);
+      if (numbers != identity) {
+        const int count = palette->getStyleCount();
+        undo->renumber.assign(numbers.begin(), numbers.begin() + count);
+        undo->originalNumbers.resize(count);
+        for (int id = 0; id < count; ++id)
+          undo->originalNumbers[numbers[id]] = id;
+        for (int &id : plan.styles) id = numbers[id];
+      }
     }
+
+    progress.label(QObject::tr("Preparing drawings and undo data..."));
+    const auto mapping       = std::make_shared<const StyleMap>(plan.styles);
+    const auto numberMapping = std::make_shared<const StyleMap>(numbers);
+    std::vector<PreparedFrame> prepared;
+    size_t totalFrames = fids.size(), preparedCount = 0;
+    for (const auto &shared : renumberLevels) totalFrames += shared.fids.size();
+    const auto prepare = [&](TXshSimpleLevel *targetLevel,
+                             const std::vector<TFrameId> &targetFids,
+                             const std::shared_ptr<const StyleMap> &map) {
+      for (const TFrameId &fid : targetFids) {
+        if (progress.canceled(400 + int(600 * preparedCount++ / totalFrames)))
+          return false;
+        TToonzImageP image  = readFrame(targetLevel, fid, false);
+        TRasterCM32P raster = image->getRaster()->clone();
+        auto tiles          = std::make_unique<TTileSetCM32>(raster->getSize());
+        TTileSaverCM32 saver(raster, tiles.get());
+        if (!mapRaster(raster, *map, &saver, &progress)) return false;
+        if (tiles->getTileCount() == 0) continue;
+        // Prepare copies and original tiles for both the reduced level and
+        // shared levels that only need a lossless index permutation.
+        auto frameUndo =
+            std::make_unique<FrameUndo>(tiles.get(), targetLevel, fid, map);
+        tiles.release();
+        undo->frames.push_back(std::move(frameUndo));
+        prepared.push_back({TXshSimpleLevelP(targetLevel), fid, image, raster,
+                            image->getSavebox()});
+      }
+      return true;
+    };
+    if ((plan.before != plan.after || !undo->renumber.empty()) &&
+        !prepare(level, fids, mapping))
+      return;
+    if (!undo->renumber.empty())
+      for (const auto &shared : renumberLevels)
+        if (!prepare(shared.level.getPointer(), shared.fids, numberMapping))
+          return;
     if (progress.canceled(999)) return;
 
     TXshSimpleLevel *currentLevel = nullptr;
@@ -542,34 +711,58 @@ void executeReduction() {
           !eligible(palette.getPointer(), color.id) ||
           palette->getStyle(color.id)->getMainColor() != color.rgba)
         throw std::runtime_error("Palette changed during reduction");
+    if (!undo->renumber.empty()) {
+      if (sharedPaletteLevels(level) != sharedLevels)
+        throw std::runtime_error("Shared palette levels changed");
+      for (const auto &shared : renumberLevels)
+        if (shared.level->getPalette() != palette.getPointer() ||
+            shared.level->getFids() != shared.fids ||
+            shared.level->isReadOnly() || shared.level->isSubsequence())
+          throw std::runtime_error("Shared palette level changed");
+    }
 
     // Mark cached images as editable before the commit. Retained image pointers
     // keep them resident. The commit itself only swaps prepared raster
     // pointers.
     for (const PreparedFrame &frame : prepared)
-      if (readFrame(level, frame.fid, true) != frame.image)
+      if (readFrame(frame.level.getPointer(), frame.fid, true) != frame.image)
         throw std::runtime_error("Drawing changed during reduction");
+    // reorderStyles allocates before making any change. Once it succeeds,
+    // swapping rasters and removing page entries cannot allocate or cancel.
+    undo->reorder(true);
     for (PreparedFrame &frame : prepared) {
       frame.image->setCMapped(frame.raster);
       frame.image->setSavebox(frame.savebox);
     }
     undo->removeStyles();
   }
-  if (undo->frames.empty() && undo->removedStyles.empty()) {
-    DVGui::info(QObject::tr(
-        "No colors need to be combined and no styles need to be removed."));
+  if (undo->frames.empty() && undo->removedStyles.empty() &&
+      undo->renumber.empty()) {
+    DVGui::info(
+        QObject::tr("No colors need to be combined, removed or renumbered."));
     return;
   }
   const int removedCount = int(undo->removedStyles.size());
+  const bool renumbered  = !undo->renumber.empty();
   for (const auto &frame : undo->frames) frame->notify();
-  undo->notify();
+  undo->notify(&undo->renumber);
   TUndoManager::manager()->add(undo.release());
-  DVGui::info(
-      QObject::tr("Reduced %1 used styles to %2 colors in the chosen scope. "
-                  "Removed %3 unused styles.")
+  QString result =
+      QObject::tr(
+          "Reduced %1 used styles to %2 colors in the chosen scope. "
+          "Removed %3 unused styles.")
           .arg(plan.before)
           .arg(plan.after)
-          .arg(removedCount));
+          .arg(removedCount);
+  if (useSimilarity)
+    result += QObject::tr("\nTolerance: %1. Protected colors: %2.")
+                  .arg(plan.tolerance * 100.0, 0, 'f', 3)
+                  .arg(int(plan.protectedStyles.size()));
+  if (renumbered)
+    result += QObject::tr(
+        "\nRemaining palette styles were renumbered. "
+        "Pixel assignments in shared levels were preserved.");
+  DVGui::info(result);
 }
 
 class ReduceColorsCommand final : public MenuItemHandler {
@@ -595,7 +788,7 @@ void initReduceColorsCommand(QAction *action) {
   action->setToolTip(
       QObject::tr("Reduce colors in every drawing of the current Toonz Raster "
                   "level. Select two or more styles to limit the operation. "
-                  "Animated styles are always skipped."));
+                  "Animated colors are never merged."));
   const auto update = []() {
     TXshSimpleLevel *level = nullptr;
     StyleMask scope;
