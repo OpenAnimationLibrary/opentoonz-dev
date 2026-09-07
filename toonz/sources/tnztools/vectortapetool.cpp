@@ -11,7 +11,9 @@
 #include "tproperty.h"
 
 #include "toonzqt/imageutils.h"
+#include "toonzqt/dvdialog.h"
 
+#include "toonz/preferences.h"
 #include "toonz/tframehandle.h"
 #include "toonz/tcolumnhandle.h"
 #include "toonz/txshlevelhandle.h"
@@ -23,6 +25,11 @@
 #include "tenv.h"
 // For Qt translation support
 #include <QCoreApplication>
+#include <QCursor>
+#include <QToolTip>
+
+#include <algorithm>
+#include <memory>
 
 using namespace ToolUtils;
 
@@ -39,6 +46,43 @@ TEnv::StringVar TapeType("InknpaintTapeType1", "Normal");
 TEnv::DoubleVar AutocloseFactor("InknpaintAutocloseFactor", 4.0);
 namespace {
 
+enum class TapeFillRiskPolicy { Ask = 0, Continue = 1, Cancel = 2 };
+
+// A rectangular gesture shares its before/after fills across the stroke undos.
+// Capture all regions: extending a stroke can affect fills outside the
+// rectangle.
+struct TapeFillInformation {
+  std::vector<TFilledRegionInf> before, after;
+};
+using TapeFillInformationP = std::shared_ptr<TapeFillInformation>;
+using TapePoint            = std::pair<int, double>;
+
+void collectRegionFills(TRegion *region, std::vector<TFilledRegionInf> &fills) {
+  fills.emplace_back(region->getId(), region->getStyle());
+  for (UINT i = 0; i < region->getSubregionCount(); ++i)
+    collectRegionFills(region->getSubregion(i), fills);
+}
+
+void collectFills(const TVectorImageP &image,
+                  std::vector<TFilledRegionInf> &fills) {
+  fills.clear();
+  image->findRegions();
+  for (UINT i = 0; i < image->getRegionCount(); ++i)
+    collectRegionFills(image->getRegion(i), fills);
+}
+
+void restoreFills(const TVectorImageP &image,
+                  const std::vector<TFilledRegionInf> &fills) {
+  image->findRegions();
+  for (const auto &fill : fills) {
+    TRegion *region = image->getRegion(fill.m_regionId);
+    assert(region);
+    if (region) region->setStyle(fill.m_styleId);
+  }
+}
+
+bool isEndpoint(double w) { return w == 0.0 || w == 1.0; }
+
 class UndoAutoclose final : public ToolUtils::TToolUndo {
   int m_oldStrokeId1;
   int m_oldStrokeId2;
@@ -47,7 +91,7 @@ class UndoAutoclose final : public ToolUtils::TToolUndo {
   VIStroke *m_oldStroke1;
   VIStroke *m_oldStroke2;
 
-  std::vector<TFilledRegionInf> *m_fillInformation;
+  TapeFillInformationP m_fillInformation;
 
   int m_row;
   int m_column;
@@ -59,13 +103,14 @@ public:
   int m_newStrokePos;
 
   UndoAutoclose(TXshSimpleLevel *level, const TFrameId &frameId, int pos1,
-                int pos2, std::vector<TFilledRegionInf> *fillInformation,
+                int pos2, const TapeFillInformationP &fillInformation,
                 const std::vector<int> &changedStrokes)
       : ToolUtils::TToolUndo(level, frameId)
       , m_oldStroke1(0)
       , m_oldStroke2(0)
       , m_pos1(pos1)
       , m_pos2(pos2)
+      , m_newStroke(nullptr)
       , m_newStrokePos(-1)
       , m_fillInformation(fillInformation)
       , m_changedStrokes(changedStrokes) {
@@ -89,7 +134,6 @@ public:
     deleteVIStroke(m_newStroke);
     if (m_oldStroke1) deleteVIStroke(m_oldStroke1);
     if (m_oldStroke2) deleteVIStroke(m_oldStroke2);
-    if (m_isLastInBlock) delete m_fillInformation;
   }
 
   void undo() const override {
@@ -116,11 +160,7 @@ public:
 
     if (!m_isLastInBlock) return;
 
-    for (UINT i = 0; i < m_fillInformation->size(); i++) {
-      TRegion *reg = image->getRegion((*m_fillInformation)[i].m_regionId);
-      assert(reg);
-      if (reg) reg->setStyle((*m_fillInformation)[i].m_styleId);
-    }
+    restoreFills(image, m_fillInformation->before);
     app->getCurrentXsheet()->notifyXsheetChanged();
     notifyImageChanged();
   }
@@ -154,13 +194,19 @@ public:
 
     image->notifyChangedStrokes(m_changedStrokes, std::vector<TStroke *>());
 
+    // Restore the accepted result after every stroke in the gesture is redone.
+    if (m_isLastInRedoBlock) restoreFills(image, m_fillInformation->after);
+
     app->getCurrentXsheet()->notifyXsheetChanged();
     notifyImageChanged();
   }
 
   int getSize() const override {
-    return sizeof(*this) +
-           m_fillInformation->capacity() * sizeof(TFilledRegionInf) + 500;
+    return sizeof(*this) + 500 +
+           (m_isLastInBlock ? (m_fillInformation->before.capacity() +
+                               m_fillInformation->after.capacity()) *
+                                  sizeof(TFilledRegionInf)
+                            : 0);
   }
 
   QString getToolName() override { return QString("Autoclose Tool"); }
@@ -458,7 +504,7 @@ public:
   //-----------------------------------------------------------------------------
 
   void joinPointToPoint(const TVectorImageP &vi,
-                        std::vector<TFilledRegionInf> *fillInfo) {
+                        const TapeFillInformationP &fillInfo) {
     int minindex = std::min(m_strokeIndex1, m_strokeIndex2);
     int maxindex = std::max(m_strokeIndex1, m_strokeIndex2);
 
@@ -499,7 +545,7 @@ public:
   //-----------------------------------------------------------------------------
 
   void joinPointToLine(const TVectorImageP &vi,
-                       std::vector<TFilledRegionInf> *fillInfo) {
+                       const TapeFillInformationP &fillInfo) {
     TUndo *undo                  = 0;
     UndoAutoclose *autoCloseUndo = 0;
     if (TTool::getApplication()->getCurrentObject()->isSpline())
@@ -538,7 +584,7 @@ public:
   //-----------------------------------------------------------------------------
 
   void joinLineToLine(const TVectorImageP &vi,
-                      std::vector<TFilledRegionInf> *fillInfo) {
+                      const TapeFillInformationP &fillInfo) {
     if (TTool::getApplication()->getCurrentObject()->isSpline())
       return;  // Caanot add vectros to spline... Spline can be only one
                // std::vector
@@ -566,7 +612,10 @@ public:
         vi->getStroke(m_strokeIndex1)->outlineOptions();
 
     int pos = vi->addStrokeToGroup(auxStroke, m_strokeIndex1);
-    if (pos < 0) return;
+    if (pos < 0) {
+      delete autoCloseUndo;
+      return;
+    }
     VIStroke *newStroke = vi->getVIStroke(pos);
 
     autoCloseUndo->m_newStrokePos = pos;
@@ -601,18 +650,9 @@ public:
 #define l2p 3
 #define l2l 4
 
-  void tapeRect(const TVectorImageP &vi, const TRectD &rect) {
-    std::vector<TFilledRegionInf> *fillInformation =
-        new std::vector<TFilledRegionInf>;
-    ImageUtils::getFillingInformationOverlappingArea(vi, *fillInformation,
-                                                     rect);
-
-    bool initUndoBlock = false;
-
-    std::vector<std::pair<int, double>> startPoints, endPoints;
-    getClosingPoints(rect, m_autocloseFactor.getValue(), vi, startPoints,
-                     endPoints);
-
+  void tapeRect(const TVectorImageP &vi, std::vector<TapePoint> startPoints,
+                std::vector<TapePoint> endPoints,
+                const TapeFillInformationP &fillInformation) {
     assert(startPoints.size() == endPoints.size());
 
     std::vector<TPointD> startP(startPoints.size()), endP(startPoints.size());
@@ -649,11 +689,12 @@ public:
         }
       }
     }
+    collectFills(vi, fillInformation->after);
     if (!startPoints.empty()) TUndoManager::manager()->endBlock();
   }
 
   int doTape(const TVectorImageP &vi,
-             std::vector<TFilledRegionInf> *fillInformation, bool joinStrokes) {
+             const TapeFillInformationP &fillInformation, bool joinStrokes) {
     int type;
     if (!joinStrokes)
       type = l2l;
@@ -686,42 +727,140 @@ public:
   }
   //-------------------------------------------------------------------------------
 
-  void leftButtonUp(const TPointD &, const TMouseEvent &) override {
-    TVectorImageP vi(getImage(true));
+  void resetGesture() {
+    m_strokeIndex1  = -1;
+    m_strokeIndex2  = -1;
+    m_w1            = -1.0;
+    m_w2            = -1.0;
+    m_secondPoint   = false;
+    m_selectionRect = TRectD();
+    m_startRect     = TPointD();
+    invalidate();
+  }
 
-    if (vi && m_type.getValue() == RECT) {
-      tapeRect(vi, m_selectionRect);
-      m_selectionRect = TRectD();
-      m_startRect     = TPointD();
-      notifyImageChanged();
-      invalidate();
+  bool confirmFillRisk() {
+    Preferences *preferences = Preferences::instance();
+    const int policy         = preferences->getIntValue(tapeToolFillRiskPolicy);
+    if (policy == int(TapeFillRiskPolicy::Continue)) return true;
+    if (policy == int(TapeFillRiskPolicy::Cancel)) {
+      QToolTip::showText(
+          QCursor::pos(),
+          tr("Tape operation canceled by your remembered choice."), nullptr,
+          QRect(), 3000);
+      return false;
+    }
+
+    // Unknown saved values also ask. Closing/Escape must not save a decision.
+    std::unique_ptr<DVGui::MessageAndCheckboxDialog> dialog(
+        DVGui::createMsgandCheckbox(
+            DVGui::WARNING,
+            tr("This operation may change or remove existing color fills.\n\n"
+               "Do you want to continue?"),
+            tr("Remember my choice for future Tape operations on filled "
+               "drawings."),
+            QStringList() << tr("Cancel") << tr("Continue"), 0, Qt::Unchecked));
+    dialog->setWindowTitle(tr("Tape Tool - Existing Color Fills"));
+    const int result = dialog->exec();
+    if ((result == 1 || result == 2) && dialog->getChecked())
+      preferences->setValue(tapeToolFillRiskPolicy,
+                            int(result == 2 ? TapeFillRiskPolicy::Continue
+                                            : TapeFillRiskPolicy::Cancel));
+    return result == 2;
+  }
+
+  void leftButtonUp(const TPointD &, const TMouseEvent &) override {
+    // Read-only preflight: Cancel must not mark an image as modified, create an
+    // undo, or perform even the first connection of a rectangular gesture.
+    TVectorImageP vi(getImage(false));
+    const bool rectangular = m_type.getValue() == RECT;
+    if (!vi || (!rectangular &&
+                (!m_secondPoint || m_strokeIndex1 < 0 || m_strokeIndex2 < 0))) {
+      resetGesture();
       return;
     }
 
-    if (!vi || m_strokeIndex1 == -1 || !m_secondPoint || m_strokeIndex2 == -1) {
-      m_strokeIndex1 = -1;
-      m_strokeIndex2 = -1;
-      m_w1           = -1.0;
-      m_w2           = -1.0;
-      m_secondPoint  = false;
+    std::vector<TapePoint> startPoints, endPoints;
+    std::vector<std::pair<int, int>> strokeIds;
+    auto fillInformation = std::make_shared<TapeFillInformation>();
+    {
+      QMutexLocker lock(vi->getMutex());
+      if (rectangular) {
+        getClosingPoints(m_selectionRect, m_autocloseFactor.getValue(), vi,
+                         startPoints, endPoints);
+        // Match the normal gesture's group restriction before planning joins.
+        for (size_t i = startPoints.size(); i-- > 0;) {
+          const int a = startPoints[i].first, b = endPoints[i].first;
+          if (!vi->sameGroup(a, b) &&
+              (vi->isStrokeGrouped(a) || vi->isStrokeGrouped(b))) {
+            startPoints.erase(startPoints.begin() + i);
+            endPoints.erase(endPoints.begin() + i);
+          }
+        }
+      } else if (m_strokeIndex1 < int(vi->getStrokeCount()) &&
+                 m_strokeIndex2 < int(vi->getStrokeCount())) {
+        startPoints.emplace_back(m_strokeIndex1, m_w1);
+        endPoints.emplace_back(m_strokeIndex2, m_w2);
+      }
+      if (startPoints.empty()) {
+        resetGesture();
+        return;
+      }
+      collectFills(vi, fillInformation->before);
+      for (size_t i = 0; i < startPoints.size(); ++i)
+        strokeIds.emplace_back(vi->getStroke(startPoints[i].first)->getId(),
+                               vi->getStroke(endPoints[i].first)->getId());
+    }
+
+    bool changesExistingStrokes = false;
+    if (m_joinStrokes.getValue())
+      for (size_t i = 0; i < startPoints.size(); ++i)
+        if (isEndpoint(startPoints[i].second) ||
+            isEndpoint(endPoints[i].second))
+          changesExistingStrokes = true;
+    const bool hasFills = std::any_of(
+        fillInformation->before.begin(), fillInformation->before.end(),
+        [](const TFilledRegionInf &fill) { return fill.m_styleId != 0; });
+
+    m_secondPoint = false;
+    // Do not hold the image mutex across the dialog's nested event loop.
+    if (changesExistingStrokes && hasFills && !confirmFillRisk()) {
+      resetGesture();
+      return;
+    }
+
+    // A modal event loop may have changed the current drawing. Never apply its
+    // saved stroke indices to another image or a reordered stroke list.
+    if (TVectorImageP(getImage(false)).getPointer() != vi.getPointer()) {
+      resetGesture();
       return;
     }
     QMutexLocker lock(vi->getMutex());
-    m_secondPoint = false;
-    std::vector<TFilledRegionInf> *fillInformation =
-        new std::vector<TFilledRegionInf>;
-    ImageUtils::getFillingInformationOverlappingArea(
-        vi, *fillInformation,
-        vi->getStroke(m_strokeIndex1)->getBBox() +
-            vi->getStroke(m_strokeIndex2)->getBBox());
+    for (size_t i = 0; i < startPoints.size(); ++i) {
+      if (startPoints[i].first >= int(vi->getStrokeCount()) ||
+          endPoints[i].first >= int(vi->getStrokeCount()) ||
+          vi->getStroke(startPoints[i].first)->getId() != strokeIds[i].first ||
+          vi->getStroke(endPoints[i].first)->getId() != strokeIds[i].second) {
+        resetGesture();
+        return;
+      }
+    }
 
-    doTape(vi, fillInformation, m_joinStrokes.getValue());
-
-    invalidate();
-
-    m_strokeIndex2 = -1;
-    m_w1           = -1.0;
-    m_w2           = -1.0;
+    TVectorImageP editableImage(getImage(true));
+    if (!editableImage || editableImage.getPointer() != vi.getPointer()) {
+      resetGesture();
+      return;
+    }
+    if (rectangular) {
+      tapeRect(vi, startPoints, endPoints, fillInformation);
+    } else {
+      m_strokeIndex1 = startPoints.front().first;
+      m_w1           = startPoints.front().second;
+      m_strokeIndex2 = endPoints.front().first;
+      m_w2           = endPoints.front().second;
+      doTape(vi, fillInformation, m_joinStrokes.getValue());
+      collectFills(vi, fillInformation->after);
+    }
+    resetGesture();
   }
 
   //-----------------------------------------------------------------------------
