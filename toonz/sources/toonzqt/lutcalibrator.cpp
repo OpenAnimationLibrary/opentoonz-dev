@@ -723,7 +723,6 @@ LutManager::LutManager() : m_isValid(false), m_currentLutPath() {
 //-----------------------------------------------------------------------------
 
 LutManager::~LutManager() {
-  if (m_lut.data) delete[] m_lut.data;
 }
 
 //-----------------------------------------------------------------------------
@@ -748,100 +747,24 @@ QString& LutManager::getMonitorName() const {
 //-----------------------------------------------------------------------------
 
 bool LutManager::loadLutFile(const QString& fp) {
-  QFile file(fp);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    return execWarning(QObject::tr("Failed to Open 3D LUT File."));
-
-  QTextStream stream(&file);
-  ParsedLut parsed;
   QString error;
-  const QString suffix = QFileInfo(fp).suffix();
-  bool loaded          = false;
-  if (suffix.compare("cube", Qt::CaseInsensitive) == 0)
-    loaded = parseCube(stream, parsed, error);
-  else if (suffix.compare("3dl", Qt::CaseInsensitive) == 0)
-    loaded = parse3dl(stream, parsed, error);
-  else
-    error = QObject::tr("Supported file types are .3dl and .cube.");
-
-  file.close();
-  if (!loaded)
+  if (!m_lut.load(fp, &error))
     return execWarning(
         QObject::tr("Failed to Load 3D LUT File.\n%1").arg(error));
-
-  float* data = new float[parsed.data.size()];
-  std::copy(parsed.data.begin(), parsed.data.end(), data);
-  if (m_lut.data) delete[] m_lut.data;
-  m_lut.data     = data;
-  m_lut.meshSize = parsed.meshSize;
-  std::copy(parsed.domainMin, parsed.domainMin + 3, m_lut.domainMin);
-  std::copy(parsed.domainMax, parsed.domainMax + 3, m_lut.domainMax);
   return true;
 }
 //-----------------------------------------------------------------------------
 
 // input : 0-1
 void LutManager::convert(float& r, float& g, float& b) {
-  struct locals {
-    static inline float lerp(float val1, float val2, float ratio) {
-      return val1 * (1.0f - ratio) + val2 * ratio;
-    }
-    static inline int getCoord(int r, int g, int b, int meshSize) {
-      return b * meshSize * meshSize * 3 + g * meshSize * 3 + r * 3;
-    }
-  };
-
   if (!m_isValid) return;
-
-  float ratio[3];   // RGB軸
-  int index[3][2];  // rgb インデックス
-  float rawVal[3] = {r, g, b};
-  for (int c = 0; c < 3; c++) {
-    rawVal[c] = (rawVal[c] - m_lut.domainMin[c]) /
-                (m_lut.domainMax[c] - m_lut.domainMin[c]);
-    rawVal[c] = clamp01(rawVal[c]);
-  }
-
-  float vertex_color[2][2][2][3];  // 補間用の１ボクセルの頂点色
-
-  for (int c = 0; c < 3; c++) {
-    float val   = rawVal[c] * (float)(m_lut.meshSize - 1);
-    index[c][0] = (int)val;
-    // boundary condition: if rawVal == 1 the value will not be interpolated
-    index[c][1] = (rawVal[c] >= 1.0f) ? index[c][0] : index[c][0] + 1;
-    ratio[c]    = val - (float)index[c][0];
-  }
-
-  for (int rr = 0; rr < 2; rr++)
-    for (int gg = 0; gg < 2; gg++)
-      for (int bb = 0; bb < 2; bb++) {
-        float* val = &m_lut.data[locals::getCoord(
-            index[0][rr], index[1][gg], index[2][bb], m_lut.meshSize)];
-        for (int chan = 0; chan < 3; chan++, val++)
-          vertex_color[rr][gg][bb][chan] = *val;
-      }
-  float result[3];
-
-  for (int chan = 0; chan < 3; chan++) {
-    result[chan] = locals::lerp(
-        locals::lerp(locals::lerp(vertex_color[0][0][0][chan],
-                                  vertex_color[0][0][1][chan], ratio[2]),
-                     locals::lerp(vertex_color[0][1][0][chan],
-                                  vertex_color[0][1][1][chan], ratio[2]),
-                     ratio[1]),
-        locals::lerp(locals::lerp(vertex_color[1][0][0][chan],
-                                  vertex_color[1][0][1][chan], ratio[2]),
-                     locals::lerp(vertex_color[1][1][0][chan],
-                                  vertex_color[1][1][1][chan], ratio[2]),
-                     ratio[1]),
-        ratio[0]);
-  }
+  m_lut.convert(r, g, b);
 
   // CPU-converted UI colors use normalized integer-backed color types. Match
   // the framebuffer's clipping when a floating-point .cube stores HDR values.
-  r = clamp01(result[0]);
-  g = clamp01(result[1]);
-  b = clamp01(result[2]);
+  r = clamp01(r);
+  g = clamp01(g);
+  b = clamp01(b);
 }
 
 //-----------------------------------------------------------------------------
