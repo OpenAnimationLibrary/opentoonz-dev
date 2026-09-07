@@ -213,7 +213,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_LUT3D_TESTS=ON
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -257,6 +257,14 @@ jobs:
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
+
+      - name: Test 3D LUT Bake
+        shell: cmd
+        run: |
+          cd toonz\build\Opentoonz
+          lut3dbake_test.exe
+          if errorlevel 1 exit /b 1
+          del lut3dbake_test.exe
 
       # Create artifact from the build
       - name: Create Artifact

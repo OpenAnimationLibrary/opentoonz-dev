@@ -12,6 +12,7 @@ namespace {
 constexpr int kMax3DLutSize = 129;
 
 float clamp01(float value) {
+  if (std::isnan(value)) return 0.0f;
   return value < 0.0f ? 0.0f : value > 1.0f ? 1.0f : value;
 }
 
@@ -209,8 +210,10 @@ bool parseCube(QTextStream &stream, int &meshSize, std::vector<float> &data,
                         "values and may not be combined with DOMAIN_MIN/MAX."));
         return false;
       }
-      for (int channel = 0; channel < 3; ++channel)
-        domainMin[channel] = values[0], domainMax[channel] = values[1];
+      for (int channel = 0; channel < 3; ++channel) {
+        domainMin[channel] = values[0];
+        domainMax[channel] = values[1];
+      }
       hasRangeTag = true;
     } else {
       error = lineError(lineNumber,
@@ -275,8 +278,9 @@ void Lut3D::convert(float &r, float &g, float &b) const {
   if (!isValid()) return;
   float raw[3] = {r, g, b};
   for (int c = 0; c < 3; ++c)
-    raw[c] =
-        clamp01((raw[c] - m_domainMin[c]) / (m_domainMax[c] - m_domainMin[c]));
+    raw[c] = clamp01(static_cast<float>(
+        (static_cast<double>(raw[c]) - m_domainMin[c]) /
+        (static_cast<double>(m_domainMax[c]) - m_domainMin[c])));
   int index[3][2];
   float ratio[3];
   for (int c = 0; c < 3; ++c) {
