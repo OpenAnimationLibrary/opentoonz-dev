@@ -43,6 +43,8 @@
 #include <QGridLayout>
 #include <QPainter>
 #include <QButtonGroup>
+#include <QDir>
+#include <QFileDialog>
 #include <QMouseEvent>
 #include <QLabel>
 #include <QCheckBox>
@@ -55,6 +57,7 @@
 #include <QToolTip>
 #include <QSplitter>
 #include <QMenu>
+#include <QMessageBox>
 #include <QOpenGLFramebufferObject>
 
 namespace {
@@ -2528,6 +2531,15 @@ SettingsPage::SettingsPage(QWidget *parent)
   paramsContainerLayout->addLayout(m_paramsLayout);
 
   paramsContainerLayout->addStretch(1);
+
+  m_saveMyPaintButton = new QPushButton(tr("Save As..."), this);
+  m_saveMyPaintButton->hide();
+  paramsContainerLayout->addWidget(m_saveMyPaintButton, 0, Qt::AlignRight);
+
+  ret = connect(m_saveMyPaintButton, SIGNAL(clicked(bool)), this,
+                SLOT(onMyPaintSaveAs())) &&
+        ret;
+  assert(ret);
 }
 
 //-----------------------------------------------------------------------------
@@ -2564,6 +2576,8 @@ void SettingsPage::setStyle(const TColorStyleP &editedStyle) {
       !(m_editedStyle && typeid(*m_editedStyle) == typeid(*editedStyle));
 
   m_editedStyle = editedStyle;
+  m_saveMyPaintButton->setVisible(
+      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer()));
 
   if (clearLayout) locals::clearLayout(m_paramsLayout);
 
@@ -2799,6 +2813,46 @@ void SettingsPage::onValueReset() {
 
 //-----------------------------------------------------------------------------
 
+void SettingsPage::onMyPaintSaveAs() {
+  TMyPaintBrushStyle *myPaintStyle =
+      dynamic_cast<TMyPaintBrushStyle *>(m_editedStyle.getPointer());
+  assert(myPaintStyle);
+
+  const TFilePath customDir =
+      ToonzFolder::getLibraryFolder() + "mypaint brushes" + "Custom";
+  if (!QDir().mkpath(customDir.getQString())) {
+    QMessageBox::warning(
+        this, tr("Save MyPaint Brush As"),
+        tr("The Custom MyPaint brush folder could not be created: %1")
+            .arg(customDir.getQString()));
+    return;
+  }
+
+  QString brushName = QString::fromStdString(myPaintStyle->getPath().getName());
+  if (brushName.isEmpty()) brushName = tr("Custom Brush");
+  QFileDialog saveDialog(this, tr("Save MyPaint Brush As"),
+                         customDir.getQString(), tr("MyPaint Brush (*.myb)"));
+  saveDialog.setAcceptMode(QFileDialog::AcceptSave);
+  saveDialog.setFileMode(QFileDialog::AnyFile);
+  saveDialog.setDefaultSuffix("myb");
+  saveDialog.selectFile(brushName + " Copy.myb");
+  if (saveDialog.exec() != QDialog::Accepted) return;
+
+  const QStringList selectedFiles = saveDialog.selectedFiles();
+  if (selectedFiles.isEmpty()) return;
+
+  QString errorMessage;
+  if (!myPaintStyle->saveBrushAs(TFilePath(selectedFiles.front()),
+                                 errorMessage)) {
+    QMessageBox::warning(this, tr("Save MyPaint Brush As"), errorMessage);
+    return;
+  }
+
+  emit myPaintBrushSaved();
+}
+
+//-----------------------------------------------------------------------------
+
 void SettingsPage::onValueChanged(bool isDragging) {
   assert(m_editedStyle);
 
@@ -2980,6 +3034,8 @@ StyleEditor::StyleEditor(PaletteController *paletteController, QWidget *parent)
                        SLOT(selectStyle(const TColorStyle &)));
   ret = ret && connect(m_settingsPage, SIGNAL(paramStyleChanged(bool)), this,
                        SLOT(onParamStyleChanged(bool)));
+  ret = ret && connect(m_settingsPage, SIGNAL(myPaintBrushSaved()), this,
+                       SLOT(onMyPaintBrushSaved()));
   ret = ret && connect(m_plainColorPage,
                        SIGNAL(colorChanged(const ColorModel &, bool)), this,
                        SLOT(onColorChanged(const ColorModel &, bool)));
@@ -2993,6 +3049,16 @@ StyleEditor::StyleEditor(PaletteController *paletteController, QWidget *parent)
 //-----------------------------------------------------------------------------
 
 StyleEditor::~StyleEditor() {}
+
+//-----------------------------------------------------------------------------
+
+void StyleEditor::onMyPaintBrushSaved() {
+  static_cast<MyPaintBrushStyleChooserPage *>(m_mypaintBrushesStylePage)
+      ->reloadItems();
+}
+
+//-----------------------------------------------------------------------------
+
 
 //-----------------------------------------------------------------------------
 /*
