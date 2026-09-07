@@ -265,7 +265,8 @@ void testPersistence(const QString &file, const QString &lutPath) {
     Lut3DBakeFx fx;
     setPath(fx, lutPath);
     TOStream os(TFilePath(file.toStdWString()));
-    os << fx;
+    // The pointer overload includes the type tag used by the factory on load.
+    os << &fx;
   }
   TIStream is(TFilePath(file.toStdWString()));
   TPersist *loaded = nullptr;
