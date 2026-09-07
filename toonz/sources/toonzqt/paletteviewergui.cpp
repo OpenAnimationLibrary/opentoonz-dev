@@ -1006,9 +1006,9 @@ void PageViewer::mousePressEvent(QMouseEvent *event) {
     m_styleSelection->makeCurrent();
     // Opening the level palette menu beside the chips must preserve this
     // page's selected styles for batch commands such as Convert.
-    const bool keepSelection =
-        m_viewType == LEVEL_PALETTE && !m_styleSelection->isEmpty() &&
-        m_styleSelection->isPageSelected(pageIndex);
+    const bool keepSelection = m_viewType == LEVEL_PALETTE &&
+                               !m_styleSelection->isEmpty() &&
+                               m_styleSelection->isPageSelected(pageIndex);
     // if you are clicking on the color chip
     if (0 <= indexInPage && indexInPage < getChipCount()) {
       // Se pageIndex non e' selezionato lo seleziono
@@ -1186,11 +1186,11 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
   if (m_viewType == LEVEL_PALETTE) {
     QAction *openPltGizmoAct = cmd->getAction("MI_OpenPltGizmo");
     menu.addAction(openPltGizmoAct);
-    QMenu *convertMenu = menu.addMenu(tr("Convert"));
+    QMenu *convertMenu       = menu.addMenu(tr("Convert"));
     const auto addConversion = [&](CommandId id, const QString &label) {
       QAction *command = cmd->getAction(id);
       if (!command) return;
-      QAction *item = convertMenu->addAction(label);
+      QAction *item   = convertMenu->addAction(label);
       const auto sync = [command, item, label]() {
         const QString shortcut =
             command->shortcut().toString(QKeySequence::NativeText);
