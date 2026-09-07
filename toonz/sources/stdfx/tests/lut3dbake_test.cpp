@@ -20,7 +20,7 @@ namespace {
 void require(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
 }
-void near(float actual, float expected, float tolerance = 0.00002f) {
+void expectClose(float actual, float expected, float tolerance = 0.00002f) {
   require(std::fabs(actual - expected) <= tolerance, "Unexpected LUT result");
 }
 void writeFile(const QString &path, const QString &contents) {
@@ -100,9 +100,9 @@ void testParser(const QString &path) {
             b        = float((i * 59) % 100) / 99;
       const float er = r * g, eg = 0.2f + 0.5f * g, eb = 1.0f - b;
       lut.convert(r, g, b);
-      near(r, er);
-      near(g, eg);
-      near(b, eb);
+      expectClose(r, er);
+      expectClose(g, eg);
+      expectClose(b, eb);
     }
   }
   writeFile(path, cube(2, 0, "DOMAIN_MIN -1 0 2\nDOMAIN_MAX 1 2 6\n"));
@@ -110,37 +110,37 @@ void testParser(const QString &path) {
   require(lut.load(path), "Domain load failed");
   float r = 0, g = 0.5f, b = 5;
   lut.convert(r, g, b);
-  near(r, 0.5f);
-  near(g, 0.25f);
-  near(b, 0.75f);
+  expectClose(r, 0.5f);
+  expectClose(g, 0.25f);
+  expectClose(b, 0.75f);
   r = -10;
   g = 10;
   b = 1;
   lut.convert(r, g, b);
-  near(r, 0);
-  near(g, 1);
-  near(b, 0);
+  expectClose(r, 0);
+  expectClose(g, 1);
+  expectClose(b, 0);
   writeFile(path, cube(2, 0, "LUT_3D_INPUT_RANGE -1 1\n"));
   require(lut.load(path), "Range load failed");
   r = g = b = 0;
   lut.convert(r, g, b);
-  near(r, 0.5f);
+  expectClose(r, 0.5f);
   writeFile(
       path,
       cube(2, 0, "DOMAIN_MIN -3e38 -3e38 -3e38\nDOMAIN_MAX 3e38 3e38 3e38\n"));
   require(lut.load(path), "Wide domain load failed");
   r = g = b = 0;
   lut.convert(r, g, b);
-  near(r, 0.5f);
+  expectClose(r, 0.5f);
   writeFile(path, cube(2));
   require(lut.load(path), "Identity load failed");
   r = std::numeric_limits<float>::quiet_NaN();
   g = std::numeric_limits<float>::infinity();
   b = -g;
   lut.convert(r, g, b);
-  near(r, 0);
-  near(g, 1);
-  near(b, 0);
+  expectClose(r, 0);
+  expectClose(g, 1);
+  expectClose(b, 0);
 
   const QStringList invalid = {
       "LUT_3D_SIZE 2\n0 0 0\n",
@@ -171,9 +171,9 @@ void test3dl(const QString &path) {
   require(lut.load(path), "3dl load failed");
   float r = 0.25f, g = 0.5f, b = 0.75f;
   lut.convert(r, g, b);
-  near(r, 0.25f);
-  near(g, 0.5f);
-  near(b, 0.75f);
+  expectClose(r, 0.25f);
+  expectClose(g, 0.5f);
+  expectClose(b, 0.75f);
 }
 template <class PIXEL>
 void testRaster(const QString &path) {
@@ -193,9 +193,9 @@ void testRaster(const QString &path) {
   fx.doCompute(tile, 0, ri);
   for (int i = 1; i < 8; ++i) {
     const PIXEL &src = input->pixels(0)[i], &dst = output->pixels(0)[i];
-    near(float(dst.r), float(src.r) * float(src.g) / src.m, 1.0f);
-    near(float(dst.g), 0.2f * src.m + 0.5f * src.g, 1.0f);
-    near(float(dst.b), float(src.m - src.b), 1.0f);
+    expectClose(float(dst.r), float(src.r) * float(src.g) / src.m, 1.0f);
+    expectClose(float(dst.g), 0.2f * src.m + 0.5f * src.g, 1.0f);
+    expectClose(float(dst.b), float(src.m - src.b), 1.0f);
     require(dst.m == src.m, "Alpha changed");
   }
   require(output->pixels(0)[0].m == 0 && output->pixels(0)[0].r == 0,
@@ -222,23 +222,23 @@ void testFloatAndReload(const QString &path) {
   TRenderSettings ri;
   ri.m_bpp = 128;
   fx.doCompute(tile, 0, ri);
-  near(output->pixels(0)[0].r, 0.0625f);
-  near(output->pixels(0)[0].g, 0.1625f);
-  near(output->pixels(0)[0].b, 0.125f);
-  near(output->pixels(0)[0].m, 0.5f);
+  expectClose(output->pixels(0)[0].r, 0.0625f);
+  expectClose(output->pixels(0)[0].g, 0.1625f);
+  expectClose(output->pixels(0)[0].b, 0.125f);
+  expectClose(output->pixels(0)[0].m, 0.5f);
   require(!fx.toBeComputedInLinearColorSpace(true, true),
           "LUT sampled in linear RGB");
   const auto oldAlias = fx.getAlias(0, ri);
   writeFile(path, cube(2, 2) + "# changed file size\n");
   require(oldAlias != fx.getAlias(0, ri), "Stale render cache alias");
   fx.doCompute(tile, 0, ri);
-  near(output->pixels(0)[0].r, 0.25f);
-  near(output->pixels(0)[0].g, 0.375f);
+  expectClose(output->pixels(0)[0].r, 0.25f);
+  expectClose(output->pixels(0)[0].g, 0.375f);
   writeFile(path, cube(2, 3) + "# clipping fixture\n");
   fx.doCompute(tile, 0, ri);
-  near(output->pixels(0)[0].r, 0);
-  near(output->pixels(0)[0].g, 0.5f);
-  near(output->pixels(0)[0].b, 0.25f);
+  expectClose(output->pixels(0)[0].r, 0);
+  expectClose(output->pixels(0)[0].g, 0.5f);
+  expectClose(output->pixels(0)[0].b, 0.25f);
   std::vector<std::future<void>> tasks;
   for (int i = 0; i < 8; ++i)
     tasks.push_back(std::async(std::launch::async, [&]() {
@@ -246,7 +246,7 @@ void testFloatAndReload(const QString &path) {
       TTile t;
       t.setRaster(raster);
       fx.doCompute(t, 0, ri);
-      near(raster->pixels(0)[0].g, 0.5f);
+      expectClose(raster->pixels(0)[0].g, 0.5f);
     }));
   for (auto &task : tasks) task.get();
   const auto validAlias = fx.getAlias(0, ri);
