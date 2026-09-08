@@ -795,4 +795,7 @@ if(WITH_LAYER_TESTS)
         tnzcore tnzbase toonzlib toonzqt tnztools image
         Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test
     )
+    enable_testing()
+    add_test(NAME layers-integration COMMAND layers_test)
+    set_tests_properties(layers-integration PROPERTIES TIMEOUT 90)
 endif()

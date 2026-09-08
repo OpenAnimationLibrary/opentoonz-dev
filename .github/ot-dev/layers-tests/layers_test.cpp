@@ -261,6 +261,7 @@ void commitEditor(DrawingLayers &panel, const QString &name) {
   events();
 }
 void panelAndUndoTests() {
+  std::cout << "Testing Layers editing and undo\n";
   App app;
   ToonzScene scene;
   TestTool tool;
@@ -324,6 +325,7 @@ void panelAndUndoTests() {
   CHECK(image->isInsideGroup() == 0);
   outer = expand(panel)->child(1);
   panel.setCurrentItem(outer);
+  std::cout << "Testing context-menu rename\n";
   QTimer::singleShot(10, [] {
     auto menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
     if (menu) {
@@ -427,6 +429,7 @@ void panelAndUndoTests() {
                "group/ungroup undo/redo\n";
 }
 int main(int argc, char **argv) {
+  std::cout << std::unitbuf << "Starting Layers integration tests\n";
 #ifdef __linux__
   std::signal(SIGSEGV, [](int) {
     void *trace[40];

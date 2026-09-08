@@ -320,11 +320,13 @@ jobs:
 
       - name: Test Layers panel and persistent vector group names
         shell: pwsh
+        timeout-minutes: 3
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PATH = "$env:GITHUB_WORKSPACE\toonz\build\Opentoonz;$env:QT_PATH\bin;$env:PATH"
           $env:QT_QPA_PLATFORM = 'offscreen'
-          & toonz/build/layer-tests/RelWithDebInfo/layers_test.exe
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = "$env:QT_PATH\plugins\platforms"
+          ctest --test-dir toonz/build -C RelWithDebInfo --output-on-failure -R '^layers-integration$'
           if ($LASTEXITCODE) { throw 'Layers integration tests failed' }
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
