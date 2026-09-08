@@ -29,6 +29,9 @@ private:
   void scheduleRebuild();
   void rebuild();
   void refreshCurrent();
+  void expandItem(QTreeWidgetItem *item);
+  void refreshDrawing(QTreeWidgetItem *levelItem);
+  void selectVectorItem(QTreeWidgetItem *item);
   void activateItem(QTreeWidgetItem *item, int section);
 };
 
