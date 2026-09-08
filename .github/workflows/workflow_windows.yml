@@ -41,7 +41,13 @@ jobs:
         with:
           lfs: false
           sparse-checkout: .github/ot-dev/recorder
+      - uses: actions/cache@v5
+        id: recorder-cache
+        with:
+          path: recorder-encoder
+          key: otdev-recorder-windows-2025-x64-${{ hashFiles('.github/ot-dev/recorder/build-ffmpeg.sh') }}
       - uses: msys2/setup-msys2@v2
+        if: steps.recorder-cache.outputs.cache-hit != 'true'
         with:
           msystem: UCRT64
           update: false
@@ -52,6 +58,7 @@ jobs:
             tar
             curl
       - name: Build input-restricted recorder encoder
+        if: steps.recorder-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
         run: bash .github/ot-dev/recorder/build-ffmpeg.sh
       - uses: actions/upload-artifact@v6

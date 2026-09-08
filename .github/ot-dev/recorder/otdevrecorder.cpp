@@ -23,7 +23,9 @@
 #include <QUuid>
 
 #ifdef Q_OS_WIN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #endif
 
@@ -123,18 +125,32 @@ QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size) {
   QList<QWidget *> windows{window};
   QRect bounds(window->mapToGlobal(QPoint()), window->size());
   QWidget *active = QApplication::activeWindow();
+  QWidget *popup  = QApplication::activePopupWidget();
+  auto candidates = QApplication::topLevelWidgets();
+#ifdef Q_OS_WIN
+  // Preserve native top-level stacking order using handles, not screen pixels.
+  candidates.clear();
+  for (HWND handle = GetTopWindow(nullptr); handle;
+       handle      = GetWindow(handle, GW_HWNDNEXT)) {
+    QWidget *widget = QWidget::find(WId(handle));
+    if (widget && widget->isWindow()) candidates.prepend(widget);
+  }
+#endif
   // Only Qt-owned windows in the main window's parent chain are composed.
   // Detached windows outside that chain are omitted, never desktop-captured.
-  for (auto *widget : QApplication::topLevelWidgets()) {
+  for (auto *widget : candidates) {
     if (widget == window || !widget->isVisible() || widget->isMinimized() ||
         excluded(widget) || !ownedBy(widget, window))
       continue;
-    if (widget != active) windows.append(widget);
+    if (widget != active && widget != popup) windows.append(widget);
     bounds |= QRect(widget->mapToGlobal(QPoint()), widget->size());
   }
   if (active && active != window && !excluded(active) &&
       ownedBy(active, window) && active->isVisible())
     windows.append(active);
+  if (popup && popup != active && !excluded(popup) && ownedBy(popup, window) &&
+      popup->isVisible())
+    windows.append(popup);
   // Paint directly into a fixed, bounded canvas. Moving/resizing windows or
   // changing DPI cannot change raw-frame byte counts or expose desktop gaps.
   QImage frame(size, QImage::Format_RGB32);
@@ -251,6 +267,8 @@ void OtDevRecorder::updateStatus(const QString &text) {
   m_status->setToolTip(m_outputFile.isEmpty() ? m_outputDir : m_outputFile);
   const QSignalBlocker blocker(m_toggle);
   m_toggle->setChecked(m_enabled);
+  m_toggle->setText(m_enabled ? tr("Stop Recording")
+                              : tr("Record OT-Dev Session"));
 }
 
 void OtDevRecorder::initialize() {
@@ -281,8 +299,18 @@ void OtDevRecorder::initialize() {
 
 void OtDevRecorder::requestRecording() {
   if (m_prompting || m_enabled) return;
-  m_errorReported = false;
-  m_prompting     = true;
+  m_errorReported    = false;
+  const QString root = QFileInfo(m_portableRoot).canonicalFilePath() + "/";
+  if (!QFileInfo(m_portableRoot).isDir() ||
+      !QFileInfo(m_preferencesPath)
+           .canonicalFilePath()
+           .startsWith(root, Qt::CaseInsensitive)) {
+    fail(
+        tr("Recording requires preferences.ini inside this build's "
+           "portablestuff."));
+    return;
+  }
+  m_prompting = true;
   QMessageBox dialog(m_window);
   dialog.setProperty("otdevNoCapture", true);
   dialog.setWindowTitle(tr("OT-Dev Session Recording"));
@@ -342,6 +370,12 @@ void OtDevRecorder::begin() {
   }
   if (!QDir().mkpath(m_outputDir)) {
     fail(tr("Cannot create recordings folder: %1").arg(m_outputDir));
+    return;
+  }
+  if (!QFileInfo(m_outputDir)
+           .canonicalFilePath()
+           .startsWith(root, Qt::CaseInsensitive)) {
+    fail(tr("Recordings folder must stay inside portablestuff."));
     return;
   }
   QTemporaryFile probe(QDir(m_outputDir).filePath("write-test-XXXXXX"));
@@ -418,12 +452,16 @@ void OtDevRecorder::tick() {
   }
   m_backpressure.invalidate();
   const QImage frame = capture(m_window, frameSize);
+  if (frame.isNull()) {
+    fail(tr("Unable to allocate a recording frame."));
+    return;
+  }
   if (m_encoder.write(reinterpret_cast<const char *>(frame.constBits()),
                       frameBytes) != frameBytes) {
     fail(tr("Unable to send video frame to FFmpeg."));
     return;
   }
-  updateStatus(tr("RECORDING - use checkbox to stop"));
+  updateStatus(tr("RECORDING"));
   if (++m_frames >= clipFrames) finishClip();
 }
 
