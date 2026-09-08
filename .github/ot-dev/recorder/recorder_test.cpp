@@ -18,6 +18,131 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolBar>
+#include <QtEndian>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <mfapi.h>
+#include <mferror.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+#include <wrl/client.h>
+#endif
+
+namespace {
+// Hybrid MP4 hides old fragment headers inside mdat after finalization.
+// Inspect real top-level boxes, not arbitrary byte strings in compressed data.
+QList<QByteArray> mp4Boxes(const QByteArray &video) {
+  QList<QByteArray> boxes;
+  for (qint64 offset = 0; offset < video.size();) {
+    if (video.size() - offset < 8) return {};
+    quint64 size          = qFromBigEndian<quint32>(video.constData() + offset);
+    const QByteArray type = video.mid(offset + 4, 4);
+    if (size == 1) {
+      if (video.size() - offset < 16) return {};
+      size = qFromBigEndian<quint64>(video.constData() + offset + 8);
+      if (size < 16) return {};
+    } else if (size == 0) {
+      size = video.size() - offset;
+    }
+    if (size < 8 || size > quint64(video.size() - offset)) return {};
+    boxes.append(type);
+    offset += size;
+  }
+  return boxes;
+}
+
+void verifyPlaybackFile(const QString &path) {
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::ReadOnly));
+  const QByteArray video = file.readAll();
+  const auto boxes       = mp4Boxes(video);
+  QVERIFY(boxes.contains("ftyp"));
+  QVERIFY(boxes.contains("mdat"));
+  QCOMPARE(boxes.count("moov"), 1);
+  QVERIFY2(!boxes.contains("moof"),
+           "Finished MP4 still requires fragment support");
+  QVERIFY(video.contains("avc1"));
+  QVERIFY(video.contains("avcC"));
+}
+
+#ifdef Q_OS_WIN
+// Exercise Windows' own MP4 source and H.264 decoder, without FFmpeg or a
+// separately installed codec pack. This also catches readable-but-unseekable
+// MP4.
+void verifyWindowsPlayback(const QString &path, const QSize &size, int frames) {
+  using Microsoft::WRL::ComPtr;
+  const HRESULT initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  QVERIFY(SUCCEEDED(initialized) || initialized == RPC_E_CHANGED_MODE);
+  struct ComScope {
+    bool initialized;
+    ~ComScope() {
+      if (initialized) CoUninitialize();
+    }
+  } com{SUCCEEDED(initialized)};
+  const HRESULT startup = MFStartup(MF_VERSION);
+  QVERIFY2(SUCCEEDED(startup),
+           "Windows Media Foundation is required for playback tests");
+  struct MediaScope {
+    ~MediaScope() { MFShutdown(); }
+  } media;
+  ComPtr<IMFSourceReader> reader;
+  QVERIFY(SUCCEEDED(
+      MFCreateSourceReaderFromURL(reinterpret_cast<LPCWSTR>(path.utf16()),
+                                  nullptr, reader.GetAddressOf())));
+  ComPtr<IMFMediaType> native;
+  QVERIFY(SUCCEEDED(reader->GetNativeMediaType(
+      MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, native.GetAddressOf())));
+  GUID subtype;
+  QVERIFY(SUCCEEDED(native->GetGUID(MF_MT_SUBTYPE, &subtype)));
+  QVERIFY(subtype == MFVideoFormat_H264);
+  ComPtr<IMFMediaType> decoded;
+  QVERIFY(SUCCEEDED(MFCreateMediaType(decoded.GetAddressOf())));
+  QVERIFY(SUCCEEDED(decoded->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)));
+  QVERIFY(SUCCEEDED(decoded->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12)));
+  QVERIFY(SUCCEEDED(reader->SetCurrentMediaType(
+      MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, decoded.Get())));
+  ComPtr<IMFMediaType> current;
+  QVERIFY(SUCCEEDED(reader->GetCurrentMediaType(
+      MF_SOURCE_READER_FIRST_VIDEO_STREAM, current.GetAddressOf())));
+  UINT32 width = 0, height = 0;
+  QVERIFY(SUCCEEDED(
+      MFGetAttributeSize(current.Get(), MF_MT_FRAME_SIZE, &width, &height)));
+  QCOMPARE(QSize(width, height), size);
+  int count = 0;
+  for (int read = 0; read < frames + 10; ++read) {
+    DWORD flags        = 0;
+    LONGLONG timestamp = 0;
+    ComPtr<IMFSample> sample;
+    QVERIFY(SUCCEEDED(reader->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
+                                         nullptr, &flags, &timestamp,
+                                         sample.GetAddressOf())));
+    QVERIFY(!(flags & MF_SOURCE_READERF_ERROR));
+    if (sample) {
+      DWORD bytes = 0;
+      QVERIFY(SUCCEEDED(sample->GetTotalLength(&bytes)));
+      QVERIFY(bytes >= DWORD(size.width() * size.height() * 3 / 2));
+      ++count;
+    }
+    if (flags & MF_SOURCE_READERF_ENDOFSTREAM) break;
+  }
+  QCOMPARE(count, frames);
+  PROPVARIANT position   = {};
+  position.vt            = VT_I8;
+  position.hVal.QuadPart = 10000000;  // One second in 100-nanosecond units.
+  QVERIFY(SUCCEEDED(reader->SetCurrentPosition(GUID_NULL, position)));
+  ComPtr<IMFSample> sought;
+  DWORD flags = 0;
+  QVERIFY(SUCCEEDED(reader->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
+                                       nullptr, &flags, nullptr,
+                                       sought.GetAddressOf())));
+  QVERIFY(sought);
+}
+#endif
+}  // namespace
 
 class ColorGL final : public QOpenGLWidget, protected QOpenGLFunctions {
 protected:
@@ -139,6 +264,10 @@ private slots:
                                   .isEmpty(),
                              10000);
     QTest::qWait(500);
+    QCOMPARE(QDir(dir.filePath("recordings"))
+                 .entryList({"*.recording.mp4"}, QDir::Files)
+                 .size(),
+             1);
     auto *bar = window.findChild<QToolBar *>("OtDevSessionRecorder");
     QVERIFY(bar->actions().first()->isChecked());
     bar->actions().first()->trigger();
@@ -148,9 +277,35 @@ private slots:
     const auto files =
         QDir(dir.filePath("recordings")).entryList({"*.mp4"}, QDir::Files);
     QCOMPARE(files.size(), 1);
-    QFile file(dir.filePath("recordings/" + files.first()));
-    QVERIFY(file.open(QIODevice::ReadOnly));
-    QVERIFY(file.readAll().contains("moof"));
+    QVERIFY(!files.first().endsWith(".recording.mp4"));
+    verifyPlaybackFile(dir.filePath("recordings/" + files.first()));
+  }
+
+  void shutdownFinalizesWithoutEventLoop() {
+    QTemporaryDir dir;
+    const QString prefs = dir.filePath("preferences.ini");
+    QVERIFY(OtDevRecorder::saveChoice(prefs, "test-build", 1));
+    QMainWindow window;
+    window.resize(320, 240);
+    window.show();
+    window.activateWindow();
+    QTest::qWait(100);
+    {
+      OtDevRecorder recorder(&window, prefs, "test-build", dir.path(),
+                             qEnvironmentVariable("OTDEV_TEST_FFMPEG"));
+      recorder.initialize();
+      auto *bar = window.findChild<QToolBar *>("OtDevSessionRecorder");
+      QTRY_COMPARE_WITH_TIMEOUT(bar->findChild<QLabel *>()->text(),
+                                QString("RECORDING"), 10000);
+      QTest::qWait(500);
+      recorder.stop();  // aboutToQuit; no further event processing before
+                        // destruction.
+    }
+    const auto files =
+        QDir(dir.filePath("recordings")).entryList({"*.mp4"}, QDir::Files);
+    QCOMPARE(files.size(), 1);
+    QVERIFY(!files.first().endsWith(".recording.mp4"));
+    verifyPlaybackFile(dir.filePath("recordings/" + files.first()));
   }
 
   void openGLFramebuffer() {
@@ -222,6 +377,44 @@ private slots:
     QTest::newRow("full-hd") << QSize(1920, 1080);
   }
 
+  void interruptedCaptureKeepsReadableFragments() {
+    QTemporaryDir dir;
+    const QString output = dir.filePath("interrupted.recording.mp4");
+    QProcess encoder;
+    encoder.start(qEnvironmentVariable("OTDEV_TEST_FFMPEG"),
+                  OtDevRecorder::encoderArguments(QSize(64, 64), output));
+    QVERIFY(encoder.waitForStarted());
+    QImage frame(64, 64, QImage::Format_RGB32);
+    for (int i = 0; i < 60; ++i) {
+      frame.fill(i % 2 ? Qt::red : Qt::blue);
+      QCOMPARE(encoder.write(reinterpret_cast<const char *>(frame.constBits()),
+                             frame.sizeInBytes()),
+               frame.sizeInBytes());
+      while (encoder.bytesToWrite() > 0)
+        QVERIFY(encoder.waitForBytesWritten(15000));
+    }
+    auto fragments = [&] {
+      QFile file(output);
+      return file.open(QIODevice::ReadOnly)
+                 ? mp4Boxes(file.readAll()).count("moof")
+                 : 0;
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(fragments() >= 2, 10000);
+    encoder
+        .kill();  // Intentionally omit EOF, as in a crash or forced shutdown.
+    QVERIFY(encoder.waitForFinished());
+    const QString decoded = dir.filePath("recovered.bgra");
+    QProcess decoder;
+    decoder.start(qEnvironmentVariable("OTDEV_TEST_DECODER"),
+                  {"-v", "error", "-nostdin", "-n", "-i", output, "-an", "-c:v",
+                   "rawvideo", "-pix_fmt", "bgra", "-f", "rawvideo", decoded});
+    QVERIFY(decoder.waitForStarted());
+    QVERIFY(decoder.waitForFinished(15000));
+    QVERIFY2(decoder.exitCode() == 0,
+             decoder.readAllStandardError().constData());
+    QVERIFY(QFileInfo(decoded).size() >= 48LL * 64 * 64 * 4);
+  }
+
   void actualEncoder() {
     QFETCH(QSize, size);
     const QString encoder = qEnvironmentVariable("OTDEV_TEST_FFMPEG");
@@ -231,7 +424,7 @@ private slots:
     QVERIFY2(!decoder.isEmpty(),
              "Set OTDEV_TEST_DECODER to a separate reference FFmpeg decoder");
     QTemporaryDir dir;
-    const QString output = dir.filePath("test.mp4");
+    const QString output  = dir.filePath("test.mp4");
     const QString decoded = dir.filePath("decoded.bgra");
     // Include neutral tones, each primary and multiple frame changes across
     // the 24-frame keyframe boundary. Black-only/container-only smoke tests
@@ -239,14 +432,14 @@ private slots:
     const QColor colors[] = {Qt::black,  Qt::white, QColor(128, 128, 128),
                              Qt::red,    Qt::green, Qt::blue,
                              Qt::yellow, Qt::cyan};
-    auto frameFor = [&](int index) {
+    auto frameFor         = [&](int index) {
       QImage frame(size, QImage::Format_RGB32);
       QPainter painter(&frame);
       for (int row = 0; row < 2; ++row)
         for (int column = 0; column < 8; ++column)
           painter.fillRect(column * size.width() / 8, row * size.height() / 2,
-                           size.width() / 8, size.height() / 2,
-                           colors[(column + row * 3 + index / 6) % 8]);
+                                   size.width() / 8, size.height() / 2,
+                                   colors[(column + row * 3 + index / 6) % 8]);
       return frame;
     };
     constexpr int frames = 30;
@@ -266,11 +459,10 @@ private slots:
     QCOMPARE(process.exitStatus(), QProcess::NormalExit);
     QVERIFY2(process.exitCode() == 0,
              process.readAllStandardError().constData());
-    QFile file(output);
-    QVERIFY(file.open(QIODevice::ReadOnly));
-    const QByteArray video = file.readAll();
-    QVERIFY(video.contains("ftyp"));
-    QVERIFY(video.contains("moof"));
+    verifyPlaybackFile(output);
+#ifdef Q_OS_WIN
+    verifyWindowsPlayback(output, size, frames);
+#endif
 
     // Decode every frame through a separate executable, not the recorder's
     // deliberately raw-input-only binary. No playback dependencies are shipped.
@@ -299,8 +491,7 @@ private slots:
         for (int row = 0; row < 32; ++row) {
           const int y = (2 * row + 1) * size.height() / 64;
           // Lossy 4:2:0 conversion blends the boundary between the two rows.
-          if (qAbs(y - size.height() / 2) < 4)
-            continue;
+          if (qAbs(y - size.height() / 2) < 4) continue;
           const QColor a = actual.pixelColor(x, y);
           const QColor e = expected.pixelColor(x, y);
           const QString message =
