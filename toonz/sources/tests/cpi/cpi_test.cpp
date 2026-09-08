@@ -161,6 +161,30 @@ void integration(const QString &directory) {
   auto reordered = TVectorImageP(image->clone());
   reordered->moveStrokes(0, 1, 2);
   check(!binding.matches(reordered), "detect reordered equal-count strokes");
+  auto twins = makeImage(2);
+  for (int p = 0; p < 3; ++p)
+    twins->getStroke(1)->setControlPoint(
+        p, twins->getStroke(0)->getControlPoint(p));
+  twins->getStroke(1)->setStyle(2);
+  auto twinBinding =
+      Cpi::Binding::capture(level.getPointer(), TFrameId(5), twins);
+  twins->moveStrokes(0, 1, 2);
+  check(!twinBinding.matches(twins),
+        "identical geometry with different styles cannot be reassigned");
+  auto widths = makeImage(2);
+  for (int p = 0; p < 3; ++p) {
+    auto point  = widths->getStroke(0)->getControlPoint(p);
+    point.thick = 10;
+    widths->getStroke(1)->setControlPoint(p, point);
+  }
+  auto widthBinding =
+      Cpi::Binding::capture(level.getPointer(), TFrameId(6), widths);
+  widths->moveStrokes(0, 1, 2);
+  check(!widthBinding.matches(widths),
+        "identical geometry with different widths cannot be reassigned");
+  auto regrouped = TVectorImageP(image->clone());
+  regrouped->group(0, 2);
+  check(!binding.matches(regrouped), "native regrouping requires rebinding");
   auto wrong                        = data;
   wrong.group(id)->pairs[0].keys[0] = Cpi::Pose();
   check(!wrong.valid(), "common key cannot replace endpoint");

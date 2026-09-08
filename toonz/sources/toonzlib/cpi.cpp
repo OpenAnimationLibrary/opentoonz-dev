@@ -309,12 +309,21 @@ Binding Binding::capture(TXshLevel *level, const TFrameId &fid,
   for (unsigned s = 0; s < image->getStrokeCount(); ++s) {
     auto stroke = image->getStroke(s);
     std::vector<Vec3> points;
+    std::vector<double> widths;
     for (int p = 0; p < stroke->getControlPointCount(); ++p) {
       auto v = stroke->getControlPoint(p);
       points.emplace_back(v.x, v.y);
+      widths.push_back(v.thick);
     }
     b.strokes.push_back(std::move(points));
     b.loops.push_back(stroke->isSelfLoop());
+    b.thickness.push_back(std::move(widths));
+    b.styles.push_back(stroke->getStyle());
+    b.groupDepths.push_back(image->getGroupDepth(s));
+    b.commonGroupDepths.push_back(
+        s ? std::min({image->getCommonGroupDepth(s - 1, s),
+                      image->getGroupDepth(s - 1), image->getGroupDepth(s)})
+          : 0);
   }
   return b;
 }
@@ -334,15 +343,27 @@ bool Binding::matches(const TVectorImageP &image) const {
   for (unsigned s = 0; s < strokes.size(); ++s) {
     auto stroke = image->getStroke(s);
     if (strokes[s].size() != size_t(stroke->getControlPointCount()) ||
-        loops[s] != stroke->isSelfLoop())
+        loops[s] != stroke->isSelfLoop() || styles[s] != stroke->getStyle() ||
+        groupDepths[s] != image->getGroupDepth(s) ||
+        commonGroupDepths[s] !=
+            (s ? std::min({image->getCommonGroupDepth(s - 1, s),
+                           image->getGroupDepth(s - 1),
+                           image->getGroupDepth(s)})
+               : 0))
       return false;
+    double widthTolerance =
+        std::max(1.0, std::ceil(*std::max_element(thickness[s].begin(),
+                                                  thickness[s].end()))) /
+            255.0 +
+        tolerance;
     Vec3 previous, previousRest;
     for (unsigned p = 0; p < strokes[s].size(); ++p) {
       auto cp = stroke->getControlPoint(p);
       Vec3 point(cp.x, cp.y), rest = strokes[s][p];
       auto d = (point - previous) - (rest - previousRest);
-      if (!point.finite() || std::abs(d.x) > tolerance ||
-          std::abs(d.y) > tolerance)
+      if (!point.finite() || !std::isfinite(cp.thick) ||
+          std::abs(cp.thick - thickness[s][p]) > widthTolerance ||
+          std::abs(d.x) > tolerance || std::abs(d.y) > tolerance)
         return false;
       previous     = point;
       previousRest = rest;
@@ -456,12 +477,23 @@ bool Data::valid() const {
     if (QUuid(qs(b.id)).isNull() || !ids.insert(b.id).second || !b.level ||
         b.level->getType() != PLI_XSHLEVEL ||
         !sources[b.level.getPointer()].insert(b.fid).second ||
-        b.strokes.size() != b.loops.size())
+        b.strokes.size() != b.loops.size() ||
+        b.strokes.size() != b.thickness.size() ||
+        b.strokes.size() != b.styles.size() ||
+        b.strokes.size() != b.groupDepths.size() ||
+        b.strokes.size() != b.commonGroupDepths.size())
       return false;
-    for (const auto &s : b.strokes) {
-      if (s.empty()) return false;
-      for (const auto &p : s)
+    for (size_t s = 0; s < b.strokes.size(); ++s) {
+      if (b.strokes[s].empty() ||
+          b.strokes[s].size() != b.thickness[s].size() || b.styles[s] < 0 ||
+          b.groupDepths[s] < 0 || b.commonGroupDepths[s] < 0 ||
+          b.commonGroupDepths[s] > b.groupDepths[s] ||
+          (s && b.commonGroupDepths[s] > b.groupDepths[s - 1]))
+        return false;
+      for (const auto &p : b.strokes[s])
         if (!p.finite()) return false;
+      for (double width : b.thickness[s])
+        if (!std::isfinite(width) || width < 0) return false;
     }
   }
   std::set<std::pair<std::string, PointId>> used;
@@ -503,6 +535,11 @@ size_t Data::memorySize() const {
              b.strokes.capacity() * sizeof(std::vector<Vec3>) +
              b.loops.capacity() / 8;
     for (const auto &s : b.strokes) bytes += s.capacity() * sizeof(Vec3);
+    bytes += b.thickness.capacity() * sizeof(std::vector<double>) +
+             (b.styles.capacity() + b.groupDepths.capacity() +
+              b.commonGroupDepths.capacity()) *
+                 sizeof(int);
+    for (const auto &s : b.thickness) bytes += s.capacity() * sizeof(double);
   }
   auto poseBytes = [](const Pose &p) {
     return p.offsets.size() *
@@ -576,9 +613,15 @@ void Data::saveData(TOStream &os) const {
        << b.fid.getLetter();
     QJsonArray strokes;
     for (size_t s = 0; s < b.strokes.size(); ++s) {
-      QJsonArray points;
+      QJsonArray points, widths;
       for (const auto &p : b.strokes[s]) points.append(vec(p));
-      strokes.append(QJsonObject{{"loop", b.loops[s]}, {"points", points}});
+      for (double w : b.thickness[s]) widths.append(w);
+      strokes.append(QJsonObject{{"loop", b.loops[s]},
+                                 {"points", points},
+                                 {"thickness", widths},
+                                 {"style", b.styles[s]},
+                                 {"depth", b.groupDepths[s]},
+                                 {"commonDepth", b.commonGroupDepths[s]}});
     }
     os << QJsonDocument(strokes).toJson(QJsonDocument::Compact).toStdString();
     os.closeChild();
@@ -619,6 +662,14 @@ void Data::loadData(TIStream &is) {
         for (const auto &point : o["points"].toArray())
           points.push_back(readVec(point));
         b.strokes.push_back(std::move(points));
+        require(o["thickness"].isArray());
+        std::vector<double> widths;
+        for (const auto &width : o["thickness"].toArray())
+          widths.push_back(number(width));
+        b.thickness.push_back(std::move(widths));
+        b.styles.push_back(integer(o["style"]));
+        b.groupDepths.push_back(integer(o["depth"]));
+        b.commonGroupDepths.push_back(integer(o["commonDepth"]));
       }
       data.bindings.push_back(std::move(b));
     } else if (tag == "groups") {

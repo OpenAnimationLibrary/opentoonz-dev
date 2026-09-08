@@ -85,11 +85,13 @@ Scenes using CPI require a build supporting this scene extension. Older builds
 reject the new column tag. Scenes without CPI omit the tag and keep existing
 behavior. Use a separate scene copy for experimental CPI work.
 
-Binding validation checks ordered geometry, point counts and closed/open status.
+Binding validation checks ordered geometry, point counts, thickness, stroke styles,
+native group structure and closed/open status.
 PLI's coordinate quantization is accommodated. Source topology or geometry edits
 suspend CPI instead of redirecting animation to unrelated points. Remove that
 drawing's CPI groups and recreate bindings after changing the source geometry.
-Style and palette changes are independent of the binding.
+Palette color changes and fill styling remain independent. Reassigning a stroke
+style or changing its width or native grouping requires rebinding.
 
 The dedicated CPI window owns pair/key operations. Historical Function Editor
 curves, Xsheet diamonds, Global Key, key clipboard, cycle and global retiming

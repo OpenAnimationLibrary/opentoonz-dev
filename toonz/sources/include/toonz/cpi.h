@@ -73,6 +73,8 @@ struct DVAPI Binding {
   TFrameId fid;
   std::vector<std::vector<Vec3>> strokes;
   std::vector<bool> loops;
+  std::vector<std::vector<double>> thickness;
+  std::vector<int> styles, groupDepths, commonGroupDepths;
   static Binding capture(TXshLevel *level, const TFrameId &fid,
                          const TVectorImageP &image);
   bool matches(const TVectorImageP &image) const;
