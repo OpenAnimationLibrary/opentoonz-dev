@@ -45,10 +45,6 @@ namespace {
 
 using namespace ProductionArchive;
 
-QString tr(const char *text) {
-  return QCoreApplication::translate("ExportProductionArchivePopup", text);
-}
-
 struct Cancelled {};
 
 struct ExportGuard {
@@ -67,6 +63,7 @@ struct Root {
 };
 
 class ArchiveBuilder {
+  Q_DECLARE_TR_FUNCTIONS(ExportProductionArchivePopup)
   CopyPlan m_plan;
   QVector<Root> m_roots;
   Progress m_progress;
@@ -671,6 +668,7 @@ public:
 };
 
 class ExportProductionArchiveCommand final : public MenuItemHandler {
+  Q_DECLARE_TR_FUNCTIONS(ExportProductionArchivePopup)
 public:
   ExportProductionArchiveCommand()
       : MenuItemHandler(MI_ExportProductionArchive) {}
