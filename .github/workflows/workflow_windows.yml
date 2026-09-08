@@ -55,6 +55,8 @@ jobs:
           update: false
           install: >-
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nasm
             make
             diffutils
             tar
@@ -254,7 +256,7 @@ jobs:
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v3
 
-      - name: Test recorder consent, capture, and packaged encoder
+      - name: Test recorder consent, capture, and native Windows playback
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

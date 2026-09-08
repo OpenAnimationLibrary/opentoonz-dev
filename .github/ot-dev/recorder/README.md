@@ -33,14 +33,26 @@ UTC names and are split every 10 minutes of encoded frames.
   Resizing and DPI changes do not change raw-frame size. No audio is recorded.
   Captures run on the GUI thread; slow rendering or encoder backpressure can drop
   frames. Paused/dropped time is omitted, so this is not a timing/latency benchmark.
-- MPEG-4 video in fragmented MP4 keeps completed fragments readable after abrupt
-  termination, but the final fragment may still be lost. Stop and shutdown send
-  EOF and allow a bounded finalization interval. Disk and encoder errors are shown.
+- Playback output is H.264 Constrained Baseline, level 4.0, 8-bit YUV 4:2:0 in a
+  conventional MP4. Capture uses x264's ultrafast/zerolatency preset at CRF 18.
+  Working files end in `.recording.mp4`. FFmpeg's `hybrid_fragmented` mode keeps
+  completed fragments readable during capture, then writes the normal MP4 index
+  at EOF without re-encoding. Stop, clip rotation and orderly shutdown prepare
+  the video automatically, then rename it to `.mp4`. The toolbar shows
+  **Preparing recording for playback...** while finishing (up to 15 seconds).
+  Interrupted or failed files retain the working suffix for recovery; the last
+  fragment may be lost. Existing recordings are never overwritten.
+- This replaces MPEG-4 Part 2 in permanently fragmented MP4, which some players
+  could decode only after conversion. The new format applies to new recordings;
+  videos from older builds are not automatically converted. The MP4 index is at
+  the end, suitable for local playback/download; this is not a streaming server.
 - A pinned minimal FFmpeg n8.1.2 build has no network, capture-device, or audio
-  inputs. It accepts raw video over a pipe and writes MP4. The package includes
-  the matching FFmpeg source archive, LGPL text, license information, configuration
+  inputs. It accepts raw video over a pipe and writes MP4. The standalone encoder
+  links a pinned x264 build and is built with GPL enabled. The package includes
+  matching FFmpeg and x264 source archives, their GPL/license texts, configuration
   output, and build recipe. It lives in `otdev-recorder`, separate from OpenToonz's
-  existing user-configured FFmpeg export integration.
+  existing user-configured FFmpeg export integration; neither library is linked
+  into OpenToonz itself.
 
 ## Validation
 
@@ -56,6 +68,11 @@ and the actual 1920x1080 capture size, checking all 30 decoded frames across a
 keyframe boundary. The recorder explicitly uses `bicubic+accurate_rnd` scaling
 to avoid an incompatible MMX filter layout in the minimal FFmpeg build, which
 otherwise produced pink chroma and horizontal stripes despite valid MP4 output.
+Playback tests inspect top-level MP4 boxes to ensure completed files are no
+longer fragmented, verify Stop and shutdown publish completed filenames, and
+kill a live encoder to confirm earlier fragments remain decodable. On Windows,
+the actual encoded clips must also decode all frames and seek through the native
+Media Foundation H.264 decoder, without using FFmpeg or a third-party codec pack.
 
 Windows CI builds and runs these tests before building OpenToonz. Interactive
 acceptance in the extracted artifact must additionally check the Viewer, Style

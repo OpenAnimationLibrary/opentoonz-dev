@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
@@ -33,6 +34,7 @@ namespace {
 const QSize frameSize(1920, 1080);
 constexpr int frameRate      = 12;
 constexpr int clipFrames     = frameRate * 60 * 10;
+constexpr int finishTimeout  = 15000;
 constexpr qint64 diskReserve = 1024LL * 1024 * 1024;
 
 bool excluded(QWidget *widget) {
@@ -114,15 +116,31 @@ QStringList OtDevRecorder::encoderArguments(const QSize &size,
           "-sws_flags",
           "bicubic+accurate_rnd",
           "-c:v",
-          "mpeg4",
-          "-q:v",
-          "3",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-tune",
+          "zerolatency",
+          "-crf",
+          "18",
+          "-profile:v",
+          "baseline",
+          "-level:v",
+          "4.0",
+          "-maxrate",
+          "20M",
+          "-bufsize",
+          "20M",
+          "-threads",
+          "2",
           "-pix_fmt",
           "yuv420p",
           "-g",
           "24",
+          "-flush_packets",
+          "1",
           "-movflags",
-          "+frag_keyframe+empty_moov+default_base_moof",
+          "+hybrid_fragmented+frag_keyframe+empty_moov+default_base_moof",
           output};
 }
 
@@ -250,6 +268,12 @@ OtDevRecorder::OtDevRecorder(QMainWindow *window,
                    .arg(m_encoderError, m_outputFile));
           return;
         }
+        if (!publishClip()) {
+          fail(tr("Unable to finish the recording filename. The video remains "
+                  "at: %1")
+                   .arg(m_outputFile));
+          return;
+        }
         updateStatus(m_enabled ? tr("Recording armed") : tr("Recording off"));
       });
   connect(qApp, &QCoreApplication::aboutToQuit, this, &OtDevRecorder::stop);
@@ -259,12 +283,33 @@ OtDevRecorder::~OtDevRecorder() {
   m_timer.stop();
   m_finishTimer.stop();
   m_encoder.disconnect(this);
+  const bool pending = m_finishing || m_encoder.state() != QProcess::NotRunning;
   m_encoder.closeWriteChannel();
+  // aboutToQuit stops capture, but the event loop may already have ended.
+  // Let EOF finalize the MP4 before destroying QProcess, then publish it here
+  // if the asynchronous finished handler did not run.
   if (m_encoder.state() != QProcess::NotRunning &&
-      !m_encoder.waitForFinished(2000)) {
+      !m_encoder.waitForFinished(finishTimeout)) {
     m_encoder.kill();
     m_encoder.waitForFinished(1000);
   }
+  if (pending && m_encoder.state() == QProcess::NotRunning &&
+      m_encoder.exitStatus() == QProcess::NormalExit &&
+      m_encoder.exitCode() == 0)
+    publishClip();
+}
+
+bool OtDevRecorder::publishClip() {
+  // Only successfully finalized files receive the normal playback filename.
+  // Preserve interrupted/failed working files for recovery; never overwrite.
+  if (!m_outputFile.endsWith(".recording.mp4")) return true;
+  const QString completed =
+      m_outputFile.left(m_outputFile.size() -
+                        QString(".recording.mp4").size()) +
+      ".mp4";
+  if (!QFile::rename(m_outputFile, completed)) return false;
+  m_outputFile = completed;
+  return true;
 }
 
 void OtDevRecorder::updateStatus(const QString &text) {
@@ -441,7 +486,7 @@ void OtDevRecorder::tick() {
                       QDateTime::currentDateTimeUtc().toString(
                           "yyyyMMdd-hhmmss-zzz") +
                       "-" + QUuid::createUuid().toString(QUuid::WithoutBraces) +
-                      ".mp4");
+                      ".recording.mp4");
     m_encoderError.clear();
     m_encoder.start(m_encoderPath, encoderArguments(frameSize, m_outputFile));
     return;
@@ -474,8 +519,8 @@ void OtDevRecorder::finishClip() {
   if (m_encoder.state() == QProcess::NotRunning || m_finishing) return;
   m_finishing = true;
   m_encoder.closeWriteChannel();
-  m_finishTimer.start(5000);
-  updateStatus(tr("Finishing recording..."));
+  m_finishTimer.start(finishTimeout);
+  updateStatus(tr("Preparing recording for playback..."));
 }
 
 void OtDevRecorder::stop() {

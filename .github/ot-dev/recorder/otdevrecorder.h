@@ -32,6 +32,7 @@ private:
   void begin();
   void tick();
   void finishClip();
+  bool publishClip();
   void fail(const QString &message);
   void updateStatus(const QString &text);
   bool captureAllowed() const;
