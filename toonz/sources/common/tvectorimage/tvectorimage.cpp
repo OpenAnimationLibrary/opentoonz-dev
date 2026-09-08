@@ -2634,6 +2634,87 @@ int TVectorImage::getGroupDepth(UINT index) const {
   return m_imp->m_strokes[index]->m_groupId.isGrouped();
 }
 
+class TVectorImage::GroupStructure {
+public:
+  std::vector<int> strokes;
+  std::vector<TGroupId> groups;
+  TGroupId inside;
+  int maxGroup, maxGhost;
+};
+
+TVectorImage::GroupStructureP TVectorImage::getGroupStructure() const {
+  auto state = std::make_shared<GroupStructure>();
+  for (auto stroke : m_imp->m_strokes) {
+    state->strokes.push_back(stroke->m_s->getId());
+    state->groups.push_back(stroke->m_groupId);
+  }
+  state->inside   = m_imp->m_insideGroup;
+  state->maxGroup = m_imp->m_maxGroupId;
+  state->maxGhost = m_imp->m_maxGhostGroupId;
+  return state;
+}
+
+bool TVectorImage::restoreGroupStructure(const GroupStructureP &state) {
+  if (!state || state->strokes.size() != getStrokeCount()) return false;
+  std::set<int> ids;
+  for (auto stroke : m_imp->m_strokes) ids.insert(stroke->m_s->getId());
+  for (int id : state->strokes)
+    if (!ids.erase(id)) return false;
+  // Use the native move operation to keep edge/region stroke indices in sync.
+  // Defer regrouping until the complete recorded structure is in place.
+  std::vector<int> changed;
+  for (int i = 0; i < int(state->strokes.size()); ++i) {
+    int from = i;
+    while (m_imp->m_strokes[from]->m_s->getId() != state->strokes[i]) ++from;
+    if (from != i) m_imp->moveStrokes(from, 1, i, false);
+    m_imp->m_strokes[i]->m_groupId = state->groups[i];
+    changed.push_back(i);
+  }
+  m_imp->m_insideGroup = state->inside;
+  m_imp->m_maxGroupId  = std::max(m_imp->m_maxGroupId, state->maxGroup);
+  m_imp->m_maxGhostGroupId =
+      std::max(m_imp->m_maxGhostGroupId, state->maxGhost);
+  notifyChangedStrokes(changed, std::vector<TStroke *>(), false);
+  return true;
+}
+
+int TVectorImage::getGroupStructureSize(const GroupStructureP &state) {
+  if (!state) return 0;
+  size_t size = sizeof(GroupStructure) + state->strokes.size() * sizeof(int);
+  for (const auto &group : state->groups) {
+    size += sizeof(TGroupId) +
+            group.m_id.size() *
+                (sizeof(int) + sizeof(std::shared_ptr<const std::wstring>));
+    for (const auto &name : group.m_names)
+      if (name) size += name->size() * sizeof(wchar_t);
+  }
+  return int(std::min(size, size_t(std::numeric_limits<int>::max() / 2)));
+}
+
+std::wstring TVectorImage::getGroupName(UINT index, int depth) const {
+  if (index >= getStrokeCount() || depth < 1 || depth > getGroupDepth(index))
+    return std::wstring();
+  const TGroupId &group = m_imp->m_strokes[index]->m_groupId;
+  const auto &name      = group.m_names[group.getDepth() - depth];
+  return name ? *name : std::wstring();
+}
+
+bool TVectorImage::setGroupName(UINT index, int depth,
+                                const std::wstring &name) {
+  if (index >= getStrokeCount() || depth < 1 || depth > getGroupDepth(index) ||
+      getGroupName(index, depth) == name)
+    return false;
+  const TGroupId &group = m_imp->m_strokes[index]->m_groupId;
+  auto sharedName       = name.empty() ? std::shared_ptr<const std::wstring>()
+                                       : std::make_shared<const std::wstring>(name);
+  for (VIStroke *stroke : m_imp->m_strokes) {
+    TGroupId &id = stroke->m_groupId;
+    if (id.getCommonParentDepth(group) >= depth)
+      id.m_names[id.getDepth() - depth] = sharedName;
+  }
+  return true;
+}
+
 //-------------------------------------------------------------------
 
 int TVectorImage::areDifferentGroup(UINT index1, bool isRegion1, UINT index2,
@@ -2753,13 +2834,16 @@ TGroupId::TGroupId(const TGroupId &parent, const TGroupId &id) {
   assert(parent.m_id[0] > 0);
   assert(id.m_id.size() > 0);
 
-  if (id.isGrouped(true) != 0)
+  if (id.isGrouped(true) != 0) {
     m_id.push_back(parent.m_id[0]);
-  else {
+    m_names.push_back(parent.m_names[0]);
+  } else {
     m_id = id.m_id;
+    m_names = id.m_names;
     int i;
     for (i = 0; i < (int)parent.m_id.size(); i++)
       m_id.push_back(parent.m_id[i]);
+    m_names.insert(m_names.end(), parent.m_names.begin(), parent.m_names.end());
   }
 }
 
@@ -2776,6 +2860,7 @@ TGroupId TGroupId::getParent() const {
 
   TGroupId ret = *this;
   ret.m_id.erase(ret.m_id.begin());
+  ret.m_names.erase(ret.m_names.begin());
   return ret;
 }
 
@@ -2783,10 +2868,13 @@ void TGroupId::ungroup(const TGroupId &id) {
   assert(id.isGrouped(true) != 0);
   assert(!m_id.empty());
 
-  if (m_id.size() == 1)
+  if (m_id.size() == 1) {
     m_id[0] = id.m_id[0];
-  else
+    m_names[0].reset();
+  } else {
     m_id.pop_back();
+    m_names.pop_back();
+  }
 }
 
 bool TGroupId::operator==(const TGroupId &id) const {
@@ -2826,6 +2914,7 @@ int TGroupId::isGrouped(bool implicit) const {
 TGroupId::TGroupId(TVectorImage *vi, bool isGhost) {
   m_id.push_back((isGhost) ? -(++vi->m_imp->m_maxGhostGroupId)
                            : ++vi->m_imp->m_maxGroupId);
+  m_names.push_back(nullptr);
 }
 
 #ifdef _DEBUG

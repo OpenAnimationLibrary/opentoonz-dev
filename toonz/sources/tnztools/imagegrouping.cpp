@@ -73,57 +73,55 @@ void ungroupWithoutUndo(TVectorImage *vimg, StrokeSelection *selection) {
 }
 
 //=============================================================================
-// GroupUndo
+// GroupStructureUndo
 //-----------------------------------------------------------------------------
 
-class GroupUndo final : public ToolUtils::TToolUndo {
-  std::unique_ptr<StrokeSelection> m_selection;
+class GroupStructureUndo final : public ToolUtils::TToolUndo {
+  TVectorImage::GroupStructureP m_before, m_after;
+  int m_size;
+  bool m_grouping;
+  std::set<int> m_beforeSelection, m_afterSelection;
+
+  void restore(const TVectorImage::GroupStructureP &state,
+               const std::set<int> &indexes) const {
+    TVectorImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+    QMutexLocker lock(image->getMutex());
+    if (!image->restoreGroupStructure(state)) return;
+    auto selection = dynamic_cast<StrokeSelection *>(
+        TTool::getApplication()->getCurrentSelection()->getSelection());
+    if (selection && selection->getImage() == image) {
+      selection->selectNone();
+      for (int index : indexes) selection->select(index, true);
+      selection->notifyView();
+    }
+    m_level->touchFrame(m_frameId);
+    notifyImageChanged();
+    TTool::getApplication()->getCurrentLevel()->notifyLevelChange();
+    TTool::getApplication()->getCurrentScene()->notifySceneChanged();
+  }
 
 public:
-  GroupUndo(TXshSimpleLevel *level, const TFrameId &frameId,
-            StrokeSelection *selection)
-      : ToolUtils::TToolUndo(level, frameId), m_selection(selection) {}
+  GroupStructureUndo(TXshSimpleLevel *level, const TFrameId &frameId,
+                     const TVectorImage::GroupStructureP &before,
+                     const TVectorImage::GroupStructureP &after, bool grouping,
+                     const std::set<int> &beforeSelection,
+                     const std::set<int> &afterSelection)
+      : ToolUtils::TToolUndo(level, frameId)
+      , m_before(before)
+      , m_after(after)
+      , m_size(TVectorImage::getGroupStructureSize(before) +
+               TVectorImage::getGroupStructureSize(after))
+      , m_grouping(grouping)
+      , m_beforeSelection(beforeSelection)
+      , m_afterSelection(afterSelection) {}
 
-  void undo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) ungroupWithoutUndo(image.getPointer(), m_selection.get());
+  void undo() const override { restore(m_before, m_beforeSelection); }
+  void redo() const override { restore(m_after, m_afterSelection); }
+  int getSize() const override { return m_size; }
+  QString getToolName() override {
+    return m_grouping ? QObject::tr("Group") : QObject::tr("Ungroup");
   }
-
-  void redo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) groupWithoutUndo(image.getPointer(), m_selection.get());
-  }
-
-  int getSize() const override { return sizeof(*this); }
-
-  QString getToolName() override { return QObject::tr("Group"); }
-};
-
-//=============================================================================
-// UngroupUndo
-//-----------------------------------------------------------------------------
-
-class UngroupUndo final : public ToolUtils::TToolUndo {
-  std::unique_ptr<StrokeSelection> m_selection;
-
-public:
-  UngroupUndo(TXshSimpleLevel *level, const TFrameId &frameId,
-              StrokeSelection *selection)
-      : ToolUtils::TToolUndo(level, frameId), m_selection(selection) {}
-
-  void undo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) groupWithoutUndo(image.getPointer(), m_selection.get());
-  }
-
-  void redo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) ungroupWithoutUndo(image.getPointer(), m_selection.get());
-  }
-
-  int getSize() const override { return sizeof(*this); }
-
-  QString getToolName() override { return QObject::tr("Ungroup"); }
 };
 
 //=============================================================================
@@ -487,11 +485,15 @@ void TGroupCommand::group() {
   }
 
   QMutexLocker lock(vimg->getMutex());
+  auto before          = vimg->getGroupStructure();
+  auto beforeSelection = m_sel->getSelection();
   groupWithoutUndo(vimg, m_sel);
+  auto after = vimg->getGroupStructure();
   TXshSimpleLevel *level =
       TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
   TUndoManager::manager()->add(
-      new GroupUndo(level, tool->getCurrentFid(), new StrokeSelection(*m_sel)));
+      new GroupStructureUndo(level, tool->getCurrentFid(), before, after, true,
+                             beforeSelection, m_sel->getSelection()));
 }
 
 //-----------------------------------------------------------------------------
@@ -555,11 +557,15 @@ void TGroupCommand::ungroup() {
   }
 
   QMutexLocker lock(vimg->getMutex());
+  auto before          = vimg->getGroupStructure();
+  auto beforeSelection = m_sel->getSelection();
   ungroupWithoutUndo(vimg, m_sel);
+  auto after = vimg->getGroupStructure();
   TXshSimpleLevel *level =
       TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
-  TUndoManager::manager()->add(new UngroupUndo(level, tool->getCurrentFid(),
-                                               new StrokeSelection(*m_sel)));
+  TUndoManager::manager()->add(
+      new GroupStructureUndo(level, tool->getCurrentFid(), before, after, false,
+                             beforeSelection, m_sel->getSelection()));
 }
 
 //-----------------------------------------------------------------------------

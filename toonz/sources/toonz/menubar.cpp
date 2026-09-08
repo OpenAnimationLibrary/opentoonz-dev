@@ -369,6 +369,16 @@ bool StackedMenuBar::readMenuRecursive(QXmlStreamReader &reader, QMenu *menu) {
     }
   }
 
+  // Make the new panel available in existing room menus, too.
+  CommandManager *cm       = CommandManager::instance();
+  QAction *layers          = cm->getAction(MI_OpenDrawingLayers);
+  QList<QAction *> actions = menu->actions();
+  QAction *anchor          = cm->getAction(MI_OpenTimelineView);
+  if (!actions.contains(anchor)) anchor = cm->getAction(MI_OpenXshView);
+  int index = actions.indexOf(anchor);
+  if (layers && index >= 0 && !actions.contains(layers))
+    menu->insertAction(
+        index + 1 < actions.size() ? actions[index + 1] : nullptr, layers);
   return !reader.hasError();
 }
 
@@ -452,6 +462,7 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
   addMenuItem(windowsMenu, MI_OpenComboViewer);
   addMenuItem(windowsMenu, MI_OpenXshView);
   addMenuItem(windowsMenu, MI_OpenTimelineView);
+  addMenuItem(windowsMenu, MI_OpenDrawingLayers);
   windowsMenu->addSeparator();
   QMenu *otherWindowsMenu = windowsMenu->addMenu(tr("Other Windows"));
   {
@@ -630,6 +641,7 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
   addMenuItem(windowsMenu, MI_OpenComboViewer);
   addMenuItem(windowsMenu, MI_OpenXshView);
   addMenuItem(windowsMenu, MI_OpenTimelineView);
+  addMenuItem(windowsMenu, MI_OpenDrawingLayers);
   windowsMenu->addSeparator();
   QMenu *otherWindowsMenu = windowsMenu->addMenu(tr("Other Windows"));
   {
@@ -809,6 +821,7 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
   addMenuItem(windowsMenu, MI_OpenComboViewer);
   addMenuItem(windowsMenu, MI_OpenXshView);
   addMenuItem(windowsMenu, MI_OpenTimelineView);
+  addMenuItem(windowsMenu, MI_OpenDrawingLayers);
   addMenuItem(windowsMenu, MI_OpenColorModel);
   addMenuItem(windowsMenu, MI_OpenFileBrowser);
   addMenuItem(windowsMenu, MI_OpenPreproductionBoard);
@@ -1001,6 +1014,7 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
   addMenuItem(windowsMenu, MI_OpenLevelView);
   addMenuItem(windowsMenu, MI_OpenXshView);
   addMenuItem(windowsMenu, MI_OpenTimelineView);
+  addMenuItem(windowsMenu, MI_OpenDrawingLayers);
   windowsMenu->addSeparator();
   QMenu *otherWindowsMenu = windowsMenu->addMenu(tr("Other Windows"));
   {
@@ -1484,6 +1498,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   windowsMenu->addSeparator();
   addMenuItem(windowsMenu, MI_OpenXshView);
   addMenuItem(windowsMenu, MI_OpenTimelineView);
+  addMenuItem(windowsMenu, MI_OpenDrawingLayers);
   addMenuItem(windowsMenu, MI_OpenFunctionEditor);
   addMenuItem(windowsMenu, MI_OpenSchematic);
   addMenuItem(windowsMenu, MI_FxParamEditor);

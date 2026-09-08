@@ -2787,6 +2787,8 @@ void MainWindow::defineActions() {
   createMenuWindowsAction(MI_OpenXshView, QT_TR_NOOP("&Xsheet"), "", "xsheet");
   createMenuWindowsAction(MI_OpenTimelineView, QT_TR_NOOP("&Timeline"), "",
                           "timeline");
+  createMenuWindowsAction(MI_OpenDrawingLayers, QT_TR_NOOP("&Layers"), "",
+                          "level_strip");
   createMenuWindowsAction(MI_OpenComboViewer, QT_TR_NOOP("&ComboViewer"), "",
                           "comboviewer");
   createMenuWindowsAction(MI_OpenHistoryPanel, QT_TR_NOOP("&History"), "Ctrl+H",
