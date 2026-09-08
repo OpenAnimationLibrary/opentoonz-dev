@@ -284,7 +284,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DWITH_CPI_TEST=ON
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -328,6 +328,15 @@ jobs:
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
+
+      - name: Verify control point interpolation
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE\toonz\build\Opentoonz;$env:QT_PATH\bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = "$env:QT_PATH\plugins"
+          ctest --test-dir toonz/build -C RelWithDebInfo -R '^cpi' --output-on-failure
+          if ($LASTEXITCODE) { throw 'CPI integration tests failed' }
+          Remove-Item toonz/build/Opentoonz/cpi*_test.exe -ErrorAction SilentlyContinue
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
         shell: pwsh

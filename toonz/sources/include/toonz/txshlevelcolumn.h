@@ -4,6 +4,7 @@
 #define TXSHLEVELCOLUMN_INCLUDED
 
 #include "toonz/txshcolumn.h"
+#include "toonz/cpi.h"
 
 #undef DVAPI
 #undef DVVAR
@@ -39,8 +40,14 @@ class DVAPI TXshLevelColumn final : public TXshCellColumn {
 
   TLevelColumnFx *m_fx;
   bool m_iconVisible;
+  Cpi::Snapshot m_cpi;
 
 public:
+  Cpi::Snapshot getCpi() const;
+  void setCpi(Cpi::Snapshot data);
+  TImageP applyCpi(const TImageP &image, const TXshCell &cell,
+                   double frame) const;
+
   // Icon visibility management
   bool isIconVisible() const { return m_iconVisible; }
   void setIconVisible(bool visible) { m_iconVisible = visible; }

@@ -75,6 +75,7 @@ set(HEADERS
     ../include/toonz/cleanupcolorstyles.h
     ../include/toonz/cleanupparameters.h
     ../include/toonz/columnfan.h
+    ../include/toonz/cpi.h
     ../include/toonz/controlpointobserver.h
     ../include/toonz/customvectorbrushexporter.h
     ../include/toonz/currentimage.h
@@ -169,6 +170,7 @@ set(HEADERS
 )
 
 set(SOURCES
+    cpi.cpp
     autoadjust.cpp
     autoclose.cpp
     autopos.cpp

@@ -97,6 +97,7 @@ TXshColumn *TXshLevelColumn::clone() const {
   column->setOpacity(getOpacity());
   column->m_cells = m_cells;
   column->m_first = m_first;
+  column->setCpi(getCpi());
   column->setColorTag(getColorTag());
   column->setColorFilterId(getColorFilterId());
 
@@ -168,6 +169,10 @@ void TXshLevelColumn::loadData(TIStream &is) {
                "fxnodes") {  // For compatibility with 1.x and earlier
       TFxSet fxSet;
       fxSet.loadData(is);
+    } else if (tagName == "controlPointInterpolation") {
+      auto data = std::make_shared<Cpi::Data>();
+      data->loadData(is);
+      setCpi(data);
     } else if (loadCellMarks(tagName, is)) {
       // Do nothing
     } else {
@@ -237,6 +242,13 @@ void TXshLevelColumn::saveData(TOStream &os) {
   }
 
   os.child("fx") << m_fx;
+
+  auto cpi = getCpi();
+  if (cpi && !cpi->empty()) {
+    os.openChild("controlPointInterpolation");
+    cpi->saveData(os);
+    os.closeChild();
+  }
 
   // Save cell marks
   saveCellMarks(os);
@@ -373,3 +385,21 @@ bool TXshLevelColumn::setNumbers(int row, int rowCount, const TXshCell cells[],
 //-----------------------------------------------------------------------------
 
 PERSIST_IDENTIFIER(TXshLevelColumn, "levelColumn")
+
+Cpi::Snapshot TXshLevelColumn::getCpi() const {
+  return std::atomic_load(&m_cpi);
+}
+
+void TXshLevelColumn::setCpi(Cpi::Snapshot data) {
+  if (data && !data->valid())
+    throw TException("Invalid control point interpolation data");
+  std::atomic_store(&m_cpi, std::move(data));
+}
+
+TImageP TXshLevelColumn::applyCpi(const TImageP &image, const TXshCell &cell,
+                                  double frame) const {
+  auto cpi             = getCpi();
+  TVectorImageP vector = image;
+  if (!cpi || !vector) return image;
+  return cpi->deform(cell.m_level.getPointer(), cell.m_frameId, frame, vector);
+}

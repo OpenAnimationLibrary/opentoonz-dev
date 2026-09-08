@@ -1022,6 +1022,8 @@ void TLevelColumnFx::doCompute(TTile &tile, double frame,
     }
   }
 
+  img = m_levelColumn->applyCpi(img, cell, frame);
+
   // Extract the required geometry
   TRect tileBounds(tile.getRaster()->getBounds());
   TRectD tileRectD = TRectD(tileBounds.x0, tileBounds.y0, tileBounds.x1 + 1,
@@ -1450,7 +1452,7 @@ bool TLevelColumnFx::doGetBBox(double frame, TRectD &bBox,
     }
     dpi = imageInfo.m_dpix / Stage::inch;
   } else {
-    TImageP img = m_levelColumn->getCell(row).getImage(false);
+    TImageP img = m_levelColumn->applyCpi(cell.getImage(false), cell, frame);
     if (!img) return false;
     bBox = img->getBBox();
   }
@@ -1539,6 +1541,9 @@ std::string TLevelColumnFx::getAlias(double frame,
     fp = path;
 
   std::string rdata;
+  auto cpi = m_levelColumn->getCpi();
+  if (cpi)
+    rdata += cpi->alias(cell.m_level.getPointer(), cell.m_frameId, frame);
   std::vector<TRasterFxRenderDataP>::const_iterator it = info.m_data.begin();
   for (; it != info.m_data.end(); ++it) {
     TRasterFxRenderDataP data = *it;

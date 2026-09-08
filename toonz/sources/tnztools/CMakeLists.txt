@@ -21,6 +21,7 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    cpitool.h
     autofill.h
     bluredbrush.h
     hookselection.h
@@ -68,6 +69,7 @@ set(HEADERS
 )
 
 set(SOURCES
+    cpitool.cpp
     autofillpli.cpp
     autofilltlv.cpp
     cursormanager.cpp

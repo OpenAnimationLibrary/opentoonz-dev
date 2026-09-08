@@ -594,6 +594,10 @@ ArrowToolOptionsBox::ArrowToolOptionsBox(
   {
     mainLay->addWidget(m_currentStageObjectCombo, 0);
     mainLay->addWidget(m_chooseActiveAxisCombo, 0);
+    m_cpiChannels = new QPushButton(tr("CPI Channels..."), this);
+    mainLay->addWidget(m_cpiChannels, 0);
+    connect(m_cpiChannels, &QPushButton::clicked, editTool,
+            &EditTool::openCpiChannels);
 
     // Pick combobox only available on "All" axis mode
     QHBoxLayout *pickLay = new QHBoxLayout();
@@ -1050,6 +1054,13 @@ void ArrowToolOptionsBox::onCurrentAxisChanged(int axisId) {
   }
 
   m_pickWidget->setVisible(axisId == AllAxis);
+  bool cpi = axisId == AllAxis + 1;
+  m_cpiChannels->setVisible(cpi);
+  m_globalKey->setVisible(!cpi);
+  m_hFlipButton->setVisible(!cpi);
+  m_vFlipButton->setVisible(!cpi);
+  m_leftRotateButton->setVisible(!cpi);
+  m_rightRotateButton->setVisible(!cpi);
 }
 
 //-----------------------------------------------------------------------------

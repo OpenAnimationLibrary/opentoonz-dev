@@ -1,6 +1,7 @@
 
 
 #include "edittool.h"
+#include "cpitool.h"
 #include "tools/tool.h"
 #include "tools/cursors.h"
 #include "tproperty.h"
@@ -666,6 +667,7 @@ EditTool::EditTool()
     , m_showHVscale("Horizontal and Vertical Scale", true)
     , m_showShear("Shear", true)
     , m_showCenterPosition("Center Position", true)
+    , m_cpiTool(new CpiTool(this, this))
     , m_dragTool(0)
     , m_firstTime(true)
     , m_activeAxis("Active Axis")
@@ -715,6 +717,7 @@ EditTool::EditTool()
   m_activeAxis.addValue(L"Shear", "edit_shear");
   m_activeAxis.addValue(L"Center", "edit_center");
   m_activeAxis.addValue(L"All", "edit_all");
+  m_activeAxis.addValue(L"CPI", "edit_all");
   m_activeAxis.setValue(L"Position");
 
   m_activeAxis.setId("EditToolActiveAxis");
@@ -767,6 +770,7 @@ void EditTool::updateTranslation() {
   m_activeAxis.setItemUIName(L"Shear", tr("Shear"));
   m_activeAxis.setItemUIName(L"Center", tr("Center"));
   m_activeAxis.setItemUIName(L"All", tr("All"));
+  m_activeAxis.setItemUIName(L"CPI", tr("Control Point Interpolation"));
 }
 
 //-----------------------------------------------------------------------------
@@ -807,6 +811,7 @@ const TStroke *EditTool::getSpline() const {
 //-----------------------------------------------------------------------------
 
 void EditTool::mouseMove(const TPointD &, const TMouseEvent &e) {
+  if (isCpiMode()) return;
   /*-- return while left dragging --*/
   if (e.isLeftButtonPressed()) return;
 
@@ -846,6 +851,7 @@ TPoint lastScreenPos;
 //-----------------------------------------------------------------------------
 
 void EditTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
+  if (isCpiMode()) return m_cpiTool->down(ppos, e);
   TPointD pos = ppos;
   /*-- Do nothing for Sound column --*/
   if (!doesApply()) return;
@@ -980,6 +986,7 @@ void EditTool::onEditAllLeftButtonDown(TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void EditTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
+  if (isCpiMode()) return m_cpiTool->drag(pos, e);
   if (!m_dragTool) return;
   m_dragTool->leftButtonDrag(pos, e);
   TTool::getApplication()->getCurrentObject()->notifyObjectIdChanged(true);
@@ -989,6 +996,7 @@ void EditTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
 //-----------------------------------------------------------------------------
 
 void EditTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
+  if (isCpiMode()) return m_cpiTool->up(pos, e);
   if (m_dragTool) {
     m_dragTool->leftButtonUp(pos, e);
     TUndoManager::manager()->endBlock();
@@ -1281,6 +1289,7 @@ void EditTool::drawMainHandle() {
 //-----------------------------------------------------------------------------
 
 void EditTool::draw() {
+  if (isCpiMode()) return m_cpiTool->draw();
   // the tool is using the coordinate system of the parent object
   // glColor3d(1,0,1);
   // tglDrawCircle(crossHair,50);
@@ -1434,6 +1443,7 @@ void EditTool::draw() {
 //=============================================================================
 
 void EditTool::onActivate() {
+  if (isCpiMode()) m_cpiTool->activate();
   if (m_firstTime) {
     m_lockCenterX.setValue(LockCenterX ? 1 : 0);
     m_lockCenterY.setValue(LockCenterY ? 1 : 0);
@@ -1480,6 +1490,7 @@ m_foo.setFxHandle(getApplication()->getCurrentFx());
 //=============================================================================
 
 void EditTool::onDeactivate() {
+  m_cpiTool->deactivate();
   if (m_dragTool) {
     m_dragTool->leftButtonUp();
     TUndoManager::manager()->endBlock();
@@ -1558,8 +1569,14 @@ bool EditTool::onPropertyChanged(std::string propertyName) {
       m_what = Shear;
     else if (activeAxis == L"Center")
       m_what = Center;
-    else if (activeAxis == L"All")
+    else if (activeAxis == L"All" || activeAxis == L"CPI")
       m_what = None;
+    if (!isCpiMode())
+      m_cpiTool->deactivate();
+    else
+      m_cpiTool->activate();
+    updateMatrix();
+    invalidate();
   }
 
   return true;
@@ -1568,6 +1585,7 @@ bool EditTool::onPropertyChanged(std::string propertyName) {
 //-----------------------------------------------------------------------------
 
 int EditTool::getCursorId() const {
+  if (isCpiMode()) return ToolCursor::StrokeSelectCursor;
   int ret;
   // cursor for controlling the fx gadget
   if (m_highlightedDevice >= 1000)
@@ -1683,3 +1701,14 @@ QString EditTool::updateEnabled(int rowIndex, int columnIndex) {
 //=============================================================================
 
 EditTool arrowTool;
+
+void EditTool::openCpiChannels() { m_cpiTool->openChannels(); }
+void EditTool::addContextMenuItems(QMenu *menu) {
+  if (isCpiMode()) m_cpiTool->contextMenu(menu);
+}
+bool EditTool::keyDown(QKeyEvent *event) {
+  return isCpiMode() && m_cpiTool->keyDown(event);
+}
+void EditTool::onImageChanged() {
+  if (isCpiMode()) m_cpiTool->refresh();
+}
