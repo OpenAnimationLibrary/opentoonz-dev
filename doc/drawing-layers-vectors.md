@@ -107,10 +107,11 @@ packaging. The test executable is kept outside the application package.
 The checks cover nested/Unicode names, independent clones, entered-group context,
 PLI save/reopen and Save As, files without names, unknown and malformed metadata,
 double-click/F2/context-menu editing, two panels, clearing/cancelling names,
-locked columns, stale editors, and rename/group/ungroup undo and redo. The UI test
-uses Qt's offscreen platform, disables thumbnail painting and stops background
-thumbnail workers for the command checks; interactive visual
-and Viewer testing remains useful alongside these checks.
+locked columns, stale editors, and rename/group/ungroup undo and redo. The UI test uses Qt's native Windows platform in CI and the offscreen platform
+for local Linux checks. It disables thumbnail painting and stops background
+thumbnail workers for the command checks. CTest bounds execution with a
+90-second timeout. Interactive visual and Viewer testing remains useful
+alongside these checks.
 
 ## Manual checks
 

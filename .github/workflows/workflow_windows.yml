@@ -324,7 +324,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PATH = "$env:GITHUB_WORKSPACE\toonz\build\Opentoonz;$env:QT_PATH\bin;$env:PATH"
-          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QPA_PLATFORM = 'windows'
           $env:QT_QPA_PLATFORM_PLUGIN_PATH = "$env:QT_PATH\plugins\platforms"
           ctest --test-dir toonz/build -C RelWithDebInfo --output-on-failure -R '^layers-integration$'
           if ($LASTEXITCODE) { throw 'Layers integration tests failed' }

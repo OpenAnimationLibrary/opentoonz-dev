@@ -3,6 +3,7 @@
 #include "tenv.h"
 #include "texception.h"
 #include "tlevel_io.h"
+#include "tnzimage.h"
 #include "tools/imagegrouping.h"
 #include "tools/strokeselection.h"
 #include "tools/tool.h"
@@ -40,7 +41,6 @@
 #endif
 #include <stdexcept>
 
-extern void initImageIo(bool);
 #define CHECK(condition)                                                       \
   do {                                                                         \
     if (!(condition))                                                          \
@@ -380,7 +380,7 @@ void panelAndUndoTests() {
   std::cout << "PASS: Layers tree rename controls, two panels and stale-editor "
                "guards\n";
   // Native commands invalidate Filmstrip thumbnails even without a Viewer.
-  // Stop background workers in this offscreen harness; model/undo work stays
+  // Stop background workers in this UI harness; model/undo work stays
   // synchronous, and no GPU thumbnail tasks should run in the test process.
   TThread::Executor::shutdown();
   app.frame.setFid(TFrameId(1));
