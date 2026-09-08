@@ -324,7 +324,7 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
                                      QString &errorMessage) const {
   const QFileInfo sourceInfo(m_fullpath.getQString());
   const QFileInfo destinationInfo(path.getQString());
-  const QString sourcePath = sourceInfo.canonicalFilePath().isEmpty()
+  const QString sourcePath      = sourceInfo.canonicalFilePath().isEmpty()
                                  ? sourceInfo.absoluteFilePath()
                                  : sourceInfo.canonicalFilePath();
   const QString destinationPath = destinationInfo.canonicalFilePath().isEmpty()
@@ -363,7 +363,7 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
     return false;
   }
 
-  QJsonObject root = document.object();
+  QJsonObject root     = document.object();
   QJsonObject settings = root.value("settings").toObject();
   for (const auto &entry : m_baseValues) {
     const QString key =
@@ -377,8 +377,9 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
   root.insert("version", 3);
 
   if (!TSystem::touchParentDir(path)) {
-    errorMessage = QObject::tr("The destination folder could not be created: %1")
-                       .arg(path.getParentDir().getQString());
+    errorMessage =
+        QObject::tr("The destination folder could not be created: %1")
+            .arg(path.getParentDir().getQString());
     return false;
   }
 
