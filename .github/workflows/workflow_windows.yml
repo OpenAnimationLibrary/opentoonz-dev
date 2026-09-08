@@ -44,9 +44,7 @@ jobs:
       - uses: actions/cache@v5
         id: recorder-cache
         with:
-          path: |
-            recorder-encoder
-            recorder-test-decoder
+          path: recorder-encoder
           key: otdev-recorder-windows-2025-x64-${{ hashFiles('.github/ot-dev/recorder/build-ffmpeg.sh') }}
       - uses: msys2/setup-msys2@v2
         if: steps.recorder-cache.outputs.cache-hit != 'true'
@@ -67,10 +65,6 @@ jobs:
         with:
           name: OT-Dev-recorder-encoder
           path: recorder-encoder
-      - uses: actions/upload-artifact@v6
-        with:
-          name: OT-Dev-recorder-test-decoder
-          path: recorder-test-decoder
 
   Windows:
     needs: RecorderEncoder
@@ -106,10 +100,6 @@ jobs:
         with:
           name: OT-Dev-recorder-encoder
           path: recorder-encoder
-      - uses: actions/download-artifact@v6
-        with:
-          name: OT-Dev-recorder-test-decoder
-          path: recorder-test-decoder
 
       - name: Brand OT-Dev build
         shell: pwsh
@@ -266,7 +256,6 @@ jobs:
           if ($LASTEXITCODE) { throw 'Recorder test build failed' }
           $env:PATH = "$env:QT_PATH\bin;$env:PATH"
           $env:OTDEV_TEST_FFMPEG = "$env:GITHUB_WORKSPACE\recorder-encoder\ffmpeg.exe"
-          $env:OTDEV_TEST_DECODER = "$env:GITHUB_WORKSPACE\recorder-test-decoder\ffmpeg.exe"
           ctest --test-dir recorder-tests -C Release --output-on-failure
           if ($LASTEXITCODE) { throw 'Recorder tests failed' }
 

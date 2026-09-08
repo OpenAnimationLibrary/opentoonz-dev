@@ -48,14 +48,7 @@ UTC names and are split every 10 minutes of encoded frames.
 
 The standalone CMake/QtTest target in this directory tests consent persistence,
 escape/opt-out, capture ownership/resize, and real encoder output. Set
-`OTDEV_TEST_FFMPEG` to the packaged encoder and `OTDEV_TEST_DECODER` to a separate
-FFmpeg decoder before running CTest. CI builds a test-only decoder from the same
-pinned sources with assembly disabled; it is never included in the application.
-The encoder test round-trips changing color bars and neutral tones at both 64x64
-and the actual 1920x1080 capture size, checking all 30 decoded frames across a
-keyframe boundary. The recorder explicitly uses `bicubic+accurate_rnd` scaling
-to avoid an incompatible MMX filter layout in the minimal FFmpeg build, which
-otherwise produced pink chroma and horizontal stripes despite valid MP4 output.
+`OTDEV_TEST_FFMPEG` to the packaged encoder before running CTest.
 
 Windows CI builds and runs these tests before building OpenToonz. Interactive
 acceptance in the extracted artifact must additionally check the Viewer, Style

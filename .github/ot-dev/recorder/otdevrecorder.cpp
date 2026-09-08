@@ -94,9 +94,6 @@ bool OtDevRecorder::saveChoice(const QString &path, const QString &buildId,
 
 QStringList OtDevRecorder::encoderArguments(const QSize &size,
                                             const QString &output) {
-  // The minimal FFmpeg build disables external x86 assembly. Its default
-  // scaler can still select an incompatible MMX filter layout, corrupting
-  // chroma. Accurate rounding keeps the conversion consistent.
   return {"-hide_banner",
           "-loglevel",
           "error",
@@ -113,8 +110,6 @@ QStringList OtDevRecorder::encoderArguments(const QSize &size,
           "-i",
           "pipe:0",
           "-an",
-          "-sws_flags",
-          "bicubic+accurate_rnd",
           "-c:v",
           "mpeg4",
           "-q:v",

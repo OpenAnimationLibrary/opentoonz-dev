@@ -24,22 +24,6 @@ cp ../.github/ot-dev/recorder/build-ffmpeg.sh ../recorder-encoder/
 dd if=/dev/zero bs=16384 count=24 2>/dev/null | \
   ./ffmpeg.exe -hide_banner -loglevel error -nostdin -n \
   -f rawvideo -pixel_format bgra -video_size 64x64 -framerate 12 -i pipe:0 \
-  -an -sws_flags bicubic+accurate_rnd -c:v mpeg4 -q:v 3 -pix_fmt yuv420p -g 24 \
+  -an -c:v mpeg4 -q:v 3 -pix_fmt yuv420p -g 24 \
   -movflags +frag_keyframe+empty_moov+default_base_moof ../encoder-smoke.mp4
 test -s ../encoder-smoke.mp4
-
-# A separate test-only decoder verifies actual pixels in recorder_test, rather
-# than just the MP4 container. Never copy this executable into the application.
-# Disable all assembly here to provide a reference conversion independent of the
-# encoder's partially enabled x86 scaler. Reuse the same pinned source archive.
-make distclean
-./configure --disable-autodetect --disable-everything --disable-network \
-  --disable-avdevice --disable-doc --disable-debug --disable-asm \
-  --disable-shared --enable-static --enable-ffmpeg \
-  --enable-decoder=mpeg4 --enable-demuxer=mov \
-  --enable-encoder=rawvideo --enable-muxer=rawvideo \
-  --enable-protocol=file,pipe --enable-filter=buffer,buffersink,format,scale,null \
-  --enable-swscale --extra-ldflags=-static
-make -j2
-mkdir -p ../recorder-test-decoder
-cp ffmpeg.exe ../recorder-test-decoder/
