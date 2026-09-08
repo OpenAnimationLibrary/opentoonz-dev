@@ -35,6 +35,7 @@
 #include <QMutexLocker>
 
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -50,7 +51,7 @@ public:
   Kind kind;
   TFrameId fid;
   TVectorImageP image;
-  QVector<int> structure;
+  std::vector<int> structure;
   int firstStroke = -1, lastStroke = -1, depth = 0;
 
   LayerItem(TXshColumn *column, TXshLevel *level = nullptr, int row = -1)
@@ -76,12 +77,13 @@ public:
 
 // These are transient locators, not persistent group identities. Check the
 // complete structure before using an index after a model/tool notification.
-QVector<int> vectorStructure(const TVectorImageP &image) {
-  QVector<int> result;
+std::vector<int> vectorStructure(const TVectorImageP &image) {
+  std::vector<int> result;
   result.reserve(3 * image->getStrokeCount());
   for (UINT s = 0; s < image->getStrokeCount(); ++s) {
-    result << image->getStroke(s)->getId() << image->getGroupDepth(s)
-           << (s ? image->getCommonGroupDepth(s - 1, s) : 0);
+    result.push_back(image->getStroke(s)->getId());
+    result.push_back(image->getGroupDepth(s));
+    result.push_back(s ? image->getCommonGroupDepth(s - 1, s) : 0);
   }
   return result;
 }
@@ -96,7 +98,7 @@ struct ExpandedLevel {
   bool drawingExpanded = false;
   TFrameId fid;
   TVectorImageP image;
-  QVector<int> structure;
+  std::vector<int> structure;
   QSet<QPair<int, int>> groups;
 };
 
