@@ -325,8 +325,8 @@ bool TMyPaintBrushStyle::saveBrushAs(const TFilePath &path,
   const QFileInfo sourceInfo(m_fullpath.getQString());
   const QFileInfo destinationInfo(path.getQString());
   const QString sourcePath      = sourceInfo.canonicalFilePath().isEmpty()
-                                 ? sourceInfo.absoluteFilePath()
-                                 : sourceInfo.canonicalFilePath();
+                                      ? sourceInfo.absoluteFilePath()
+                                      : sourceInfo.canonicalFilePath();
   const QString destinationPath = destinationInfo.canonicalFilePath().isEmpty()
                                       ? destinationInfo.absoluteFilePath()
                                       : destinationInfo.canonicalFilePath();

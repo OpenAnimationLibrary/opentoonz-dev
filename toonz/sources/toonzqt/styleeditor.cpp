@@ -3059,7 +3059,6 @@ void StyleEditor::onMyPaintBrushSaved() {
 
 //-----------------------------------------------------------------------------
 
-
 //-----------------------------------------------------------------------------
 /*
 void StyleEditor::setPaletteHandle(TPaletteHandle* paletteHandle)
