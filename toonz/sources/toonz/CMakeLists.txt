@@ -243,6 +243,10 @@ set(SOURCES
     exportlevelpopup.cpp
     exportalllevelspopup.cpp
     exportscenepopup.cpp
+    exportproductionarchivepopup.cpp
+    productionarchive.cpp
+    ${SDKROOT}/zlib-1.2.8/contrib/minizip/zip.c
+    ${SDKROOT}/zlib-1.2.8/contrib/minizip/ioapi.c
     colormodelviewer.cpp
     exportpanel.cpp
     filebrowser.cpp
@@ -596,6 +600,9 @@ elseif(BUILD_ENV_UNIXLIKE)
         ${EXTRA_LIBS}
     )
 endif()
+
+target_include_directories(OpenToonz PRIVATE ${SDKROOT}/zlib-1.2.8/contrib/minizip)
+target_link_libraries(OpenToonz ${Z_LIB})
 
 if(BUILD_ENV_APPLE)
     # CMAKE_RUNTIME_OUTPUT_DIRECTORY should be equivalent to usage on windows despite empty

@@ -231,7 +231,7 @@ public:
 
   void setWorkingDirectory() {
     QString workingDirectoryTmp  = QDir::currentPath();
-    QByteArray ba                = workingDirectoryTmp.toLatin1();
+    QByteArray ba                = workingDirectoryTmp.toUtf8();
     const char *workingDirectory = ba.data();
     m_workingDirectory           = workingDirectory;
 

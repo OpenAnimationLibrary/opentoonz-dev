@@ -28,6 +28,9 @@ public:
   static QImage capture(QMainWindow *window, const QSize &size);
   static QStringList encoderArguments(const QSize &size, const QString &output);
 
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
   void begin();
   void tick();
