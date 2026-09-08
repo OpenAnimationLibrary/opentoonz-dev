@@ -36,6 +36,7 @@ Integer is pixel number since start of sound.
 DoublePair is computed according to frameRate, frameCount
 and soundtrack pressure. Means sound min and max.*/
   std::map<int, DoublePair> m_values[Orientations::COUNT];
+  int m_valueAmplitude[Orientations::COUNT] = {1, 1};
 
   TFilePath m_path;
 

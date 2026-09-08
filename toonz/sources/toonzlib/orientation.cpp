@@ -30,8 +30,9 @@ QRect iconRect(const QRect &areaRect, const int iconWidth, const int iconHeight,
 }  // namespace
 
 class TopToBottomOrientation : public Orientation {
+  const QString m_layout;
+  void initialize();
   int CELL_WIDTH = 74;
-  // const int CELL_WIDTH                 = 74;
   const int CELL_HEIGHT                = 20;
   const int CELL_DRAG_WIDTH            = 7;
   const int EXTENDER_WIDTH             = 20;
@@ -57,6 +58,8 @@ class TopToBottomOrientation : public Orientation {
 
 public:
   TopToBottomOrientation();
+  QString layout() const { return m_layout; }
+  void setColumnWidth(int width);
 
   virtual CellPosition xyToPosition(const QPoint &xy,
                                     const ColumnFan *fan) const override;
@@ -206,6 +209,14 @@ const Orientation *Orientations::topToBottom() {
 const Orientation *Orientations::leftToRight() {
   return instance()._leftToRight;
 }
+QString Orientations::xsheetLayout() {
+  return static_cast<TopToBottomOrientation *>(instance()._topToBottom)
+      ->layout();
+}
+void Orientations::setXsheetColumnWidth(int width) {
+  static_cast<TopToBottomOrientation *>(instance()._topToBottom)
+      ->setColumnWidth(width);
+}
 const std::vector<const Orientation *> &Orientations::all() {
   return instance()._all;
 }
@@ -280,8 +291,21 @@ void Orientation::addFlag(PredefinedFlag which, const bool &flag) {
 }
 /// -------------------------------------------------------------------------------
 
-TopToBottomOrientation::TopToBottomOrientation() {
-  QString layout = Preferences::instance()->getLoadedXsheetLayout();
+TopToBottomOrientation::TopToBottomOrientation()
+    : m_layout(Preferences::instance()->getLoadedXsheetLayout()) {
+  if (m_layout == "Adjustable")
+    CELL_WIDTH = Preferences::instance()->getXsheetColumnWidth();
+  initialize();
+}
+
+void TopToBottomOrientation::setColumnWidth(int width) {
+  if (m_layout != "Adjustable") return;
+  CELL_WIDTH = qBound(50, width, 200);
+  initialize();
+}
+
+void TopToBottomOrientation::initialize() {
+  QString layout = m_layout;
 
   int use_header_height = LAYER_HEADER_HEIGHT;
 
@@ -364,7 +388,8 @@ TopToBottomOrientation::TopToBottomOrientation() {
   addRect(PredefinedRect::NOTE_AREA,
           QRect(QPoint(0, 0), QSize(FRAME_HEADER_WIDTH, use_header_height)));
   addRect(PredefinedRect::NOTE_ICON,
-          QRect(QPoint(0, 0), QSize(CELL_WIDTH - 2, CELL_HEIGHT - 2)));
+          QRect(QPoint(0, 0),
+                QSize((layout == "Minimum" ? 50 : 74) - 2, CELL_HEIGHT - 2)));
 
   // Layer header panel
   addRect(PredefinedRect::LAYER_HEADER_PANEL, QRect(0, 0, -1, -1));   // hide
@@ -379,7 +404,7 @@ TopToBottomOrientation::TopToBottomOrientation() {
             QRect(0, 0, FRAME_HEADER_WIDTH - 2, CELL_HEIGHT));
   else
     addRect(PredefinedRect::FRAME_LABEL,
-            QRect(0, 0, CELL_WIDTH - 4, CELL_HEIGHT));
+            QRect(0, 0, FRAME_HEADER_WIDTH - 4, CELL_HEIGHT));
   addRect(PredefinedRect::FRAME_HEADER,
           QRect(0, 0, FRAME_HEADER_WIDTH, CELL_HEIGHT));
   addRect(PredefinedRect::PLAY_RANGE,
@@ -646,7 +671,7 @@ TopToBottomOrientation::TopToBottomOrientation() {
     addFlag(PredefinedFlag::CAMERA_ICON_VISIBLE, false);
     addFlag(PredefinedFlag::VOLUME_AREA_VERTICAL, false);
     addFlag(PredefinedFlag::NOTE_AREA_IN_POPUP, false);
-  } else if (layout == QString("Classic-revised")) {
+  } else if (layout == QString("Classic-revised") || layout == "Adjustable") {
     THUMBNAIL_HEIGHT = 44;
     HDRROW_HEIGHT    = CELL_HEIGHT - 2;
     INDENT           = 0;
