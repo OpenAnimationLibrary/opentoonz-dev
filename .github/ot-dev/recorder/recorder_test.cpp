@@ -12,6 +12,7 @@
 #include <QMessageBox>
 #include <QOpenGLFunctions>
 #include <QOpenGLWidget>
+#include <QPainter>
 #include <QPushButton>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -215,28 +216,106 @@ private slots:
     QCOMPARE(frame.sizeInBytes(), qint64(320 * 240 * 4));
   }
 
+  void actualEncoder_data() {
+    QTest::addColumn<QSize>("size");
+    QTest::newRow("small") << QSize(64, 64);
+    QTest::newRow("full-hd") << QSize(1920, 1080);
+  }
+
   void actualEncoder() {
+    QFETCH(QSize, size);
     const QString encoder = qEnvironmentVariable("OTDEV_TEST_FFMPEG");
+    const QString decoder = qEnvironmentVariable("OTDEV_TEST_DECODER");
     QVERIFY2(!encoder.isEmpty(),
              "Set OTDEV_TEST_FFMPEG to the packaged encoder");
+    QVERIFY2(!decoder.isEmpty(),
+             "Set OTDEV_TEST_DECODER to a separate reference FFmpeg decoder");
     QTemporaryDir dir;
     const QString output = dir.filePath("test.mp4");
+    const QString decoded = dir.filePath("decoded.bgra");
+    // Include neutral tones, each primary and multiple frame changes across
+    // the 24-frame keyframe boundary. Black-only/container-only smoke tests
+    // missed the pink chroma and horizontal stripes in real recordings.
+    const QColor colors[] = {Qt::black,  Qt::white, QColor(128, 128, 128),
+                             Qt::red,    Qt::green, Qt::blue,
+                             Qt::yellow, Qt::cyan};
+    auto frameFor = [&](int index) {
+      QImage frame(size, QImage::Format_RGB32);
+      QPainter painter(&frame);
+      for (int row = 0; row < 2; ++row)
+        for (int column = 0; column < 8; ++column)
+          painter.fillRect(column * size.width() / 8, row * size.height() / 2,
+                           size.width() / 8, size.height() / 2,
+                           colors[(column + row * 3 + index / 6) % 8]);
+      return frame;
+    };
+    constexpr int frames = 30;
     QProcess process;
-    process.start(encoder,
-                  OtDevRecorder::encoderArguments(QSize(64, 64), output));
+    process.start(encoder, OtDevRecorder::encoderArguments(size, output));
     QVERIFY(process.waitForStarted());
-    QByteArray frame(64 * 64 * 4, '\0');
-    for (int i = 0; i < 24; ++i)
-      QCOMPARE(process.write(frame), qint64(frame.size()));
+    for (int i = 0; i < frames; ++i) {
+      const QImage frame = frameFor(i);
+      QCOMPARE(process.write(reinterpret_cast<const char *>(frame.constBits()),
+                             frame.sizeInBytes()),
+               frame.sizeInBytes());
+      while (process.bytesToWrite() > 0)
+        QVERIFY(process.waitForBytesWritten(15000));
+    }
     process.closeWriteChannel();
     QVERIFY(process.waitForFinished(15000));
-    QCOMPARE(process.exitCode(), 0);
-    QVERIFY(QFileInfo(output).size() > 100);
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+    QVERIFY2(process.exitCode() == 0,
+             process.readAllStandardError().constData());
     QFile file(output);
     QVERIFY(file.open(QIODevice::ReadOnly));
-    QByteArray video = file.readAll();
+    const QByteArray video = file.readAll();
     QVERIFY(video.contains("ftyp"));
     QVERIFY(video.contains("moof"));
+
+    // Decode every frame through a separate executable, not the recorder's
+    // deliberately raw-input-only binary. No playback dependencies are shipped.
+    process.start(decoder,
+                  {"-v", "error", "-nostdin", "-n", "-i", output, "-an", "-c:v",
+                   "rawvideo", "-pix_fmt", "bgra", "-f", "rawvideo", decoded});
+    QVERIFY(process.waitForStarted());
+    QVERIFY(process.waitForFinished(20000));
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+    QVERIFY2(process.exitCode() == 0,
+             process.readAllStandardError().constData());
+    QVERIFY2(process.readAllStandardError().isEmpty(),
+             "Decoder reported errors");
+    QFile raw(decoded);
+    QVERIFY(raw.open(QIODevice::ReadOnly));
+    const qint64 frameBytes = qint64(size.width()) * size.height() * 4;
+    QCOMPARE(raw.size(), frames * frameBytes);
+    for (int i = 0; i < frames; ++i) {
+      const QByteArray bytes = raw.read(frameBytes);
+      QCOMPARE(qint64(bytes.size()), frameBytes);
+      const QImage actual(reinterpret_cast<const uchar *>(bytes.constData()),
+                          size.width(), size.height(), QImage::Format_RGB32);
+      const QImage expected = frameFor(i);
+      for (int column = 0; column < 8; ++column) {
+        const int x = (2 * column + 1) * size.width() / 16;
+        for (int row = 0; row < 32; ++row) {
+          const int y = (2 * row + 1) * size.height() / 64;
+          // Lossy 4:2:0 conversion blends the boundary between the two rows.
+          if (qAbs(y - size.height() / 2) < 4)
+            continue;
+          const QColor a = actual.pixelColor(x, y);
+          const QColor e = expected.pixelColor(x, y);
+          const QString message =
+              QString("Frame %1 at (%2,%3): expected %4, decoded %5")
+                  .arg(i)
+                  .arg(x)
+                  .arg(y)
+                  .arg(e.name(), a.name());
+          QVERIFY2(qAbs(a.red() - e.red()) <= 8 &&
+                       qAbs(a.green() - e.green()) <= 8 &&
+                       qAbs(a.blue() - e.blue()) <= 8,
+                   qPrintable(message));
+        }
+      }
+    }
   }
 };
 
