@@ -78,6 +78,11 @@ bool containsPath(const QString &parent, const QString &path) {
   return s == p || s.startsWith(p.endsWith('/') ? p : p + '/');
 }
 
+QString relativePath(const QString &from, const QString &to) {
+  return QDir(QFileInfo(from).absoluteFilePath())
+      .relativeFilePath(QFileInfo(to).absoluteFilePath());
+}
+
 QString safeName(QString name) {
   name.replace(QRegularExpression("[\\x00-\\x1f<>:\"/\\\\|?*]"), "_");
   name = name.trimmed().left(80);
@@ -93,6 +98,14 @@ QString safeName(QString name) {
 
 void CopyPlan::exclude(const QString &path) {
   m_excluded.append(normalizedPath(path));
+}
+
+void CopyPlan::preserveLinksInside(const QString &path) {
+#ifndef _WIN32
+  m_linkRoot = normalizedPath(path);
+#else
+  Q_UNUSED(path);
+#endif
 }
 
 void CopyPlan::add(const QString &source, const QString &destination) {
@@ -123,8 +136,14 @@ void CopyPlan::scan(const QString &source, const QString &destination,
          destination);
   }
   m_destinations.insert(key, pathKey(canonical));
+  QString link;
+  if (info.isSymLink() && !m_linkRoot.isEmpty() &&
+      containsPath(m_linkRoot, canonical))
+    link = QDir(info.absolutePath()).relativeFilePath(info.symLinkTarget());
   m_entries.append({canonical, destination, info.isDir() ? 0 : info.size(),
-                    info.lastModified(), info.permissions(), info.isDir()});
+                    info.lastModified(), info.permissions(), info.isDir(),
+                    link});
+  if (!link.isEmpty()) return;
   if (!info.isDir()) {
     if (info.size() > std::numeric_limits<qint64>::max() - m_size)
       fail(QObject::tr("The export is too large."), source);
@@ -147,6 +166,12 @@ void CopyPlan::copy(const QString &root) const {
   for (const Entry &entry : m_entries) {
     const QString target = QDir(root).filePath(entry.destination);
     m_progress(QObject::tr("Copying: %1").arg(entry.source), copied, m_size);
+    if (!entry.linkTarget.isEmpty()) {
+      if (!QDir().mkpath(QFileInfo(target).absolutePath()) ||
+          !QFile::link(entry.linkTarget, target))
+        fail(QObject::tr("Cannot create the archived symbolic link."), target);
+      continue;
+    }
     if (entry.directory) {
       if (!QDir().mkpath(target))
         fail(QObject::tr("Cannot create this folder."), target);
@@ -191,6 +216,7 @@ void writeFile(const QString &path, const QByteArray &data) {
 void zipDirectory(const QString &source, const QString &destination,
                   const Progress &progress) {
   CopyPlan plan(progress);
+  plan.preserveLinksInside(source);
   plan.add(source, QFileInfo(source).fileName());
   QFile output(destination);
   if (!output.open(QIODevice::ReadWrite | QIODevice::NewOnly))
@@ -217,11 +243,17 @@ void zipDirectory(const QString &source, const QString &destination,
       meta.tmz_date     = {uInt(time.second()),    uInt(time.minute()),
                            uInt(time.hour()),      uInt(date.day()),
                            uInt(date.month() - 1), uInt(qMax(1980, date.year()))};
-      quint32 mode      = entry.directory ? 0040755 : 0100644;
+      quint32 mode      = !entry.linkTarget.isEmpty() ? 0120777
+                          : entry.directory           ? 0040755
+                                                      : 0100644;
       if (entry.permissions & QFile::ExeOwner) mode |= 0111;
-      meta.external_fa = (mode << 16) | (entry.directory ? 0x10 : 0);
+      meta.external_fa =
+          (mode << 16) |
+          (entry.directory && entry.linkTarget.isEmpty() ? 0x10 : 0);
       QByteArray name =
-          (entry.destination + (entry.directory ? "/" : "")).toUtf8();
+          (entry.destination +
+           (entry.directory && entry.linkTarget.isEmpty() ? "/" : ""))
+              .toUtf8();
       if (name.size() > 65535 ||
           zipOpenNewFileInZip4_64(zip, name.constData(), &meta, nullptr, 0,
                                   nullptr, 0, nullptr, Z_DEFLATED,
@@ -229,7 +261,12 @@ void zipDirectory(const QString &source, const QString &destination,
                                   DEF_MEM_LEVEL, Z_DEFAULT_STRATEGY, nullptr, 0,
                                   (3 << 8) | 45, 0x0800, 1) != ZIP_OK)
         fail(QObject::tr("Cannot add this ZIP entry."), entry.source);
-      if (!entry.directory) {
+      if (!entry.linkTarget.isEmpty()) {
+        QByteArray target = entry.linkTarget.toUtf8();
+        if (zipWriteInFileInZip(zip, target.constData(), target.size()) !=
+            ZIP_OK)
+          fail(QObject::tr("Cannot write a ZIP symbolic link."), entry.source);
+      } else if (!entry.directory) {
         checkSource(entry);
         QFile input(entry.source);
         if (!input.open(QIODevice::ReadOnly))

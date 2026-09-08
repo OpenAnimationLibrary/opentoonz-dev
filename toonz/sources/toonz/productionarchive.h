@@ -19,9 +19,11 @@ struct Entry {
   QDateTime modified;
   QFile::Permissions permissions;
   bool directory;
+  QString linkTarget;
 };
 
 QString normalizedPath(const QString &path);
+QString relativePath(const QString &from, const QString &to);
 bool containsPath(const QString &parent, const QString &path);
 QString safeName(QString name);
 
@@ -31,6 +33,7 @@ class CopyPlan {
   QStringList m_excluded;
   qint64 m_size = 0;
   Progress m_progress;
+  QString m_linkRoot;
 
   void scan(const QString &source, const QString &destination,
             QSet<QString> ancestors);
@@ -38,6 +41,7 @@ class CopyPlan {
 public:
   explicit CopyPlan(const Progress &progress) : m_progress(progress) {}
   void exclude(const QString &path);
+  void preserveLinksInside(const QString &path);
   void add(const QString &source, const QString &destination);
   const QVector<Entry> &entries() const { return m_entries; }
   qint64 size() const { return m_size; }

@@ -201,8 +201,9 @@ class ArchiveBuilder {
             return value;
           TFilePath decoded = scene->decodeFilePath(path);
           QString mapped    = mapPath(decoded.getQString());
-          if (TSystem::doesExistFileOrLevel(decoded))
-            mapped = collectPath(decoded, true);
+          if (resource || TSystem::doesExistFileOrLevel(decoded))
+            mapped = collectPath(decoded,
+                                 tag == "scannedPath" || tag == "refImgPath");
           else if (resource && tag != "path")
             throw tr("A scene resource is missing:\n%1")
                 .arg(decoded.getQString());
@@ -210,7 +211,7 @@ class ArchiveBuilder {
             return value;
           if (portableProject.isEmpty())
             throw tr("Cannot locate the exported project for:\n%1").arg(source);
-          return QDir(portableProject).relativeFilePath(mapped);
+          return relativePath(portableProject, mapped);
         }));
   }
 
@@ -247,7 +248,8 @@ public:
       addRoot(projectSource, m_projectDestination);
     }
     for (int i = 0; i < m_project->getFolderCount(); ++i) {
-      QString folder = m_project->getFolder(i).getQString();
+      QString folder =
+          QDir::fromNativeSeparators(m_project->getFolder(i).getQString());
       if (folder.isEmpty()) continue;
       QString source = QDir::isAbsolutePath(folder)
                            ? folder
@@ -284,7 +286,7 @@ public:
               if (tag != "refImgPath" || value.isEmpty()) return value;
               QString mapped =
                   collectPath(scene->decodeFilePath(TFilePath(value)), true);
-              return QDir(m_projectDestination).relativeFilePath(mapped);
+              return relativePath(m_projectDestination, mapped);
             }));
       }
     }
@@ -298,6 +300,9 @@ public:
     plan.exclude(final + ".zip");
     plan.exclude(final + ".zip.partial");
     if (includeProgram) {
+#ifdef MACOSX
+      plan.preserveLinksInside(program);
+#endif
       if (QFileInfo(program).isFile()) {
         plan.add(program, QFileInfo(program).fileName());
       } else {
@@ -328,16 +333,16 @@ public:
     auto project                = std::make_shared<TProject>();
     project->load(m_project->getProjectPath());
     for (int i = 0; i < project->getFolderCount(); ++i) {
-      QString folder = project->getFolder(i).getQString();
+      QString folder =
+          QDir::fromNativeSeparators(project->getFolder(i).getQString());
       if (folder.isEmpty()) continue;
       QString source = QDir::isAbsolutePath(folder)
                            ? folder
                            : QDir(projectSource).filePath(folder);
       QString mapped = mapPath(source);
       if (mapped.isEmpty()) mapped = externalDestination(source);
-      project->setFolder(
-          project->getFolderName(i),
-          TFilePath(QDir(m_projectDestination).relativeFilePath(mapped)));
+      project->setFolder(project->getFolderName(i),
+                         TFilePath(relativePath(m_projectDestination, mapped)));
     }
     QString projectFile = QDir(stage).filePath(
         m_projectDestination + '/' +
@@ -357,8 +362,54 @@ public:
               ("<parentProject type=\"projectFolder\">\"" + relativeProject +
                "\"</parentProject>\n")
                   .toUtf8());
+    QString preferences = mapPath(
+        (ToonzFolder::getMyModuleDir() + "preferences.ini").getQString());
+    if (!preferences.isEmpty()) {
+      QSettings settings(QDir(stage).filePath(preferences),
+                         QSettings::IniFormat);
+      settings.setValue("projectRoot", 0x08);
+      settings.sync();
+      if (settings.status() != QSettings::NoError)
+        throw tr("Cannot save the portable project location in preferences.");
+    }
   }
 };
+
+void writeLauncher(const QString &stage, const QString &program,
+                   const QString &scene) {
+  QString executable =
+      QFileInfo(QCoreApplication::applicationFilePath()).fileName();
+#ifdef _WIN32
+  Q_UNUSED(program);
+  executable.replace('%', "%%");
+  QString argument = QDir::toNativeSeparators(scene);
+  argument.replace('%', "%%");
+  writeFile(
+      QDir(stage).filePath("Open Production Archive.cmd"),
+      ("@echo off\r\nsetlocal DisableDelayedExpansion\r\npushd \"%~dp0\"\r\n"
+       "\"%~dp0" +
+       executable + "\" \"%~dp0" + argument + "\"\r\npopd\r\n")
+          .toUtf8());
+#else
+#ifdef MACOSX
+  executable = QFileInfo(program).fileName() + "/Contents/MacOS/" + executable;
+#else
+  executable = QFileInfo(program).fileName();
+#endif
+  auto quote = [](QString text) {
+    return "'" + text.replace("'", "'\\''") + "'";
+  };
+  const QString path = QDir(stage).filePath("Open Production Archive.command");
+  writeFile(path,
+            ("#!/bin/sh\ncd -- \"$(dirname -- \"$0\")\" || exit 1\nexec " +
+             quote("./" + executable) + " " + quote(scene) + "\n")
+                .toUtf8());
+  QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner |
+                                  QFile::ExeOwner | QFile::ReadGroup |
+                                  QFile::ExeGroup | QFile::ReadOther |
+                                  QFile::ExeOther);
+#endif
+}
 
 QString programPath() {
 #ifdef MACOSX
@@ -433,7 +484,7 @@ class ExportProductionArchivePopup final : public QDialog {
     QElapsedTimer elapsed;
     elapsed.start();
     Progress update = [&](const QString &label, qint64 done, qint64 total) {
-      if (elapsed.elapsed() >= 80 || total == 0) {
+      if (elapsed.elapsed() >= 80) {
         progress.setLabelText(total > 0 ? tr("%1\n%2 / %3 MiB")
                                               .arg(label)
                                               .arg(done / (1024 * 1024))
@@ -475,6 +526,8 @@ class ExportProductionArchivePopup final : public QDialog {
           builder.size() > storage.bytesAvailable())
         throw tr("There is not enough free space for the export.");
       builder.copy(stage);
+      if (m_program->isChecked() && m_project->isChecked())
+        writeLauncher(stage, m_programPath, builder.sceneDestination());
       QJsonObject manifest{
           {"format", "OpenToonz Production Archive"},
           {"version", 1},

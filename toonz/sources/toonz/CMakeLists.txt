@@ -39,6 +39,7 @@ set(MOC_HEADERS
     exportalllevelspopup.h
     exportpanel.h
     exportscenepopup.h
+    productionarchive.h
     filebrowser.h
     filebrowsermodel.h
     filebrowserpopup.h
