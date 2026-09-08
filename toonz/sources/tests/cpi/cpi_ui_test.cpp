@@ -75,7 +75,7 @@ public:
 void check(bool ok, const char *message) {
   if (!ok) throw std::runtime_error(message);
 }
-void near(double a, double b, const char *message) {
+void checkNear(double a, double b, const char *message) {
   check(std::abs(a - b) < 1e-7, message);
 }
 QPushButton *button(QDialog *dialog, const QString &text) {
@@ -151,17 +151,17 @@ void run(App &app, Tool &tool, const QString &directory) {
   tool.cpi.down(TPointD(30, 50), e);
   tool.cpi.drag(TPointD(40, 70), e);
   auto during = col->getCpi();
-  near(during->group(id)->evaluate(72).offset(Cpi::pointId(0, 1)).x, 10,
-       "live drag preview");
+  checkNear(during->group(id)->evaluate(72).offset(Cpi::pointId(0, 1)).x, 10,
+            "live drag preview");
   tool.cpi.up(TPointD(40, 70), e);
   events();
   auto posed = col->getCpi();
-  near(posed->group(id)->evaluate(72).offset(Cpi::pointId(0, 1)).y, 20,
-       "individual CP endpoint edit");
-  near(posed->group(id)->evaluate(72).offset(Cpi::pointId(0, 0)).x, 0,
-       "individual edit preserves neighbors");
-  near(image->getStroke(0)->getControlPoint(1).x, 30,
-       "source drawing unchanged");
+  checkNear(posed->group(id)->evaluate(72).offset(Cpi::pointId(0, 1)).y, 20,
+            "individual CP endpoint edit");
+  checkNear(posed->group(id)->evaluate(72).offset(Cpi::pointId(0, 0)).x, 0,
+            "individual edit preserves neighbors");
+  checkNear(image->getStroke(0)->getControlPoint(1).x, 30,
+            "source drawing unchanged");
   app.frame.setFrame(36);
   events();
   tool.cpi.down(TPointD(35, 60), e);
@@ -170,8 +170,8 @@ void run(App &app, Tool &tool, const QString &directory) {
   events();
   check(col->getCpi()->group(id)->pairs[0].keys.count(36),
         "interior drag creates common offset key");
-  near(col->getCpi()->group(id)->evaluate(36).offset(1).x, 15,
-       "interior drag position");
+  checkNear(col->getCpi()->group(id)->evaluate(36).offset(1).x, 15,
+            "interior drag position");
   auto committed = col->getCpi();
   tool.cpi.down(TPointD(45, 65), e);
   tool.cpi.drag(TPointD(55, 75), e);
@@ -193,8 +193,8 @@ void run(App &app, Tool &tool, const QString &directory) {
   tool.cpi.drag(TPointD(60, 75), e);
   tool.cpi.up(TPointD(60, 75), e);
   events();
-  near(col->getCpi()->group(id)->evaluate(36).translation.x, 15,
-       "entire-group drag");
+  checkNear(col->getCpi()->group(id)->evaluate(36).translation.x, 15,
+            "entire-group drag");
   auto saved = col->getCpi();
   col->lock(true);
   tool.cpi.down(TPointD(60, 75), e);

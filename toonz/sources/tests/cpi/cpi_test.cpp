@@ -28,13 +28,13 @@ namespace {
 void check(bool ok, const char *message) {
   if (!ok) throw std::runtime_error(message);
 }
-void near(double a, double b, const char *message) {
+void checkNear(double a, double b, const char *message) {
   check(std::abs(a - b) < 1e-7, message);
 }
 void vec(const Cpi::Vec3 &a, const Cpi::Vec3 &b, const char *message) {
-  near(a.x, b.x, message);
-  near(a.y, b.y, message);
-  near(a.z, b.z, message);
+  checkNear(a.x, b.x, message);
+  checkNear(a.y, b.y, message);
+  checkNear(a.z, b.z, message);
 }
 TVectorImageP makeImage(int strokes = 1, int points = 3) {
   TVectorImageP image = new TVectorImage;
@@ -71,24 +71,26 @@ void model() {
   offset.offsets[Cpi::pointId(0, 0)] = Cpi::Vec3(0, 20, 0);
   p.setPose(36, offset);
   vec(p.keys.at(36).translation, Cpi::Vec3(12, 0, 0), "common key is delta");
-  near(g.evaluate(18).translation.x, 24, "offset ramps from neutral start");
-  near(g.evaluate(54).translation.x, 60, "offset returns to neutral end");
+  checkNear(g.evaluate(18).translation.x, 24,
+            "offset ramps from neutral start");
+  checkNear(g.evaluate(54).translation.x, 60, "offset returns to neutral end");
   auto newEnd          = end;
   newEnd.translation.x = 144;
   p.setPose(72, newEnd);
-  near(g.evaluate(36).translation.x, 84, "common key follows changed extremes");
-  near(g.evaluate(0).translation.x, 0, "start unaffected by common key");
-  near(g.evaluate(72).translation.x, 144, "end unaffected by common key");
-  near(g.evaluate(-10).translation.x, 0, "hold before pair");
-  near(g.evaluate(90).translation.x, 144, "hold after pair");
+  checkNear(g.evaluate(36).translation.x, 84,
+            "common key follows changed extremes");
+  checkNear(g.evaluate(0).translation.x, 0, "start unaffected by common key");
+  checkNear(g.evaluate(72).translation.x, 144, "end unaffected by common key");
+  checkNear(g.evaluate(-10).translation.x, 0, "hold before pair");
+  checkNear(g.evaluate(90).translation.x, 144, "hold after pair");
   check(g.createPair(100, 24), "second pair");
-  near(g.evaluate(112).translation.x, 144, "new pair captures held pose");
+  checkNear(g.evaluate(112).translation.x, 144, "new pair captures held pose");
   Cpi::Rotation q = Cpi::Rotation::axisAngle(Cpi::Vec3(0, 0, 1), 90);
   vec(q.apply(Cpi::Vec3(1, 0)), Cpi::Vec3(0, 1), "z rotation");
   vec(q.inverse().apply(q.apply(Cpi::Vec3(2, 3, 4))), Cpi::Vec3(2, 3, 4),
       "quaternion inverse");
   auto half = Cpi::Rotation::interpolate(Cpi::Rotation(), q, 0.5);
-  near(half.apply(Cpi::Vec3(1, 0)).x, std::sqrt(0.5), "slerp midpoint");
+  checkNear(half.apply(Cpi::Vec3(1, 0)).x, std::sqrt(0.5), "slerp midpoint");
   auto neg = q;
   neg.w    = -q.w;
   neg.x    = -q.x;
@@ -101,8 +103,8 @@ void model() {
   Cpi::Vec3 delta;
   check(g.localDelta(tilted, TPointD(5, 7), delta), "inverse tilted plane");
   auto projected = tilted.rotation.apply(delta);
-  near(projected.x, 5, "tilted plane x");
-  near(projected.y, 7, "tilted plane y");
+  checkNear(projected.x, 5, "tilted plane x");
+  checkNear(projected.y, 7, "tilted plane y");
   tilted.rotation = Cpi::Rotation::axisAngle(Cpi::Vec3(1, 0, 0), 90);
   check(!g.localDelta(tilted, TPointD(5, 7), delta), "reject edge-on inverse");
   check(Cpi::pointId(0, 1) != Cpi::pointId(1, 0),
@@ -140,14 +142,15 @@ void integration(const QString &directory) {
   check(data.valid(), "valid data");
   auto halfway = data.deform(level.getPointer(), TFrameId(1), 36, image);
   check(halfway.getPointer() != image.getPointer(), "deform copies source");
-  near(halfway->getStroke(0)->getControlPoint(0).x, 50, "deformed position");
-  near(halfway->getStroke(0)->getControlPoint(1).y, 43,
-       "deformed individual offset");
-  near(image->getStroke(0)->getControlPoint(0).x, 0, "source preserved");
-  near(halfway->getStroke(1)->getControlPoint(0).x, 0,
-       "unselected stroke preserved");
-  near(halfway->getStroke(0)->getControlPoint(0).thick, 1,
-       "thickness preserved");
+  checkNear(halfway->getStroke(0)->getControlPoint(0).x, 50,
+            "deformed position");
+  checkNear(halfway->getStroke(0)->getControlPoint(1).y, 43,
+            "deformed individual offset");
+  checkNear(image->getStroke(0)->getControlPoint(0).x, 0, "source preserved");
+  checkNear(halfway->getStroke(1)->getControlPoint(0).x, 0,
+            "unselected stroke preserved");
+  checkNear(halfway->getStroke(0)->getControlPoint(0).thick, 1,
+            "thickness preserved");
   check(data.alias(level.getPointer(), TFrameId(1), 0) !=
             data.alias(level.getPointer(), TFrameId(1), 72),
         "frame-sensitive cache alias");
@@ -201,7 +204,8 @@ void integration(const QString &directory) {
   player.m_frame       = 36;
   TVectorImageP viewed = player.image();
   check(bool(viewed), "viewer image");
-  near(viewed->getStroke(0)->getControlPoint(0).x, 50, "viewer evaluates CPI");
+  checkNear(viewed->getStroke(0)->getControlPoint(0).x, 50,
+            "viewer evaluates CPI");
   TRectD renderBounds;
   check(col->getLevelColumnFx()->getBBox(36, renderBounds, TRenderSettings()),
         "render bounds available");
@@ -332,8 +336,8 @@ void integration(const QString &directory) {
   QElapsedTimer timer;
   timer.start();
   auto result = big.deform(level.getPointer(), TFrameId(2), 36, large);
-  near(result->getStroke(99)->getControlPoint(100).x, 306,
-       "large group last point");
+  checkNear(result->getStroke(99)->getControlPoint(100).x, 306,
+            "large group last point");
   std::cout << "10,100-point deformation: " << timer.elapsed() << " ms\n";
 }
 }  // namespace
