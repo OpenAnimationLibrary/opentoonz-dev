@@ -20,6 +20,7 @@
 #include "tools/tool.h"
 #include "tools/strokeselection.h"
 #include "tstroke.h"
+#include "tundo.h"
 
 #include <QApplication>
 #include <QHeaderView>
@@ -33,6 +34,10 @@
 #include <QTimer>
 #include <QToolTip>
 #include <QMutexLocker>
+#include <QContextMenuEvent>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPersistentModelIndex>
 
 #include <limits>
 #include <vector>
@@ -40,7 +45,13 @@
 namespace {
 
 enum Section { Name, View, Render, Lock };
-enum Role { StateRole = Qt::UserRole, ColumnRole, RowRole, KindRole };
+enum Role {
+  StateRole = Qt::UserRole,
+  ColumnRole,
+  RowRole,
+  KindRole,
+  GroupNameRole
+};
 enum Kind { Column, Level, Drawing, Group, Stroke };
 
 class LayerItem final : public QTreeWidgetItem {
@@ -61,7 +72,7 @@ public:
       , kind(level ? Level : Column) {
     setData(Name, KindRole, kind);
     setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-    setSizeHint(Name, QSize(0, 52));
+    setSizeHint(Name, QSize(0, level ? 40 : 28));
   }
 
   LayerItem(LayerItem *parent, Kind type)
@@ -71,7 +82,7 @@ public:
     setData(Name, ColumnRole, parent->data(Name, ColumnRole));
     setData(Name, RowRole, parent->data(Name, RowRole));
     fid = parent->fid;
-    setSizeHint(Name, QSize(0, 28));
+    setSizeHint(Name, QSize(0, 24));
   }
 };
 
@@ -100,6 +111,46 @@ struct ExpandedLevel {
   TVectorImageP image;
   std::vector<int> structure;
   QSet<QPair<int, int>> groups;
+};
+
+class RenameVectorGroupUndo final : public TUndo {
+  TApplication *m_app;
+  TXshSimpleLevelP m_level;
+  TFrameId m_fid;
+  int m_stroke, m_depth;
+  std::wstring m_before, m_after;
+
+  void apply(const std::wstring &name) const {
+    TVectorImageP image = m_level->getFrame(m_fid, true);
+    if (!image) return;
+    {
+      QMutexLocker lock(image->getMutex());
+      if (!image->setGroupName(m_stroke, m_depth, name)) return;
+    }
+    m_level->touchFrame(m_fid);
+    m_app->getCurrentScene()->setDirtyFlag(true);
+    m_app->getCurrentLevel()->notifyLevelChange();
+  }
+
+public:
+  RenameVectorGroupUndo(TApplication *app, TXshSimpleLevel *level,
+                        const TFrameId &fid, int stroke, int depth,
+                        const std::wstring &before, const std::wstring &after)
+      : m_app(app)
+      , m_level(level)
+      , m_fid(fid)
+      , m_stroke(stroke)
+      , m_depth(depth)
+      , m_before(before)
+      , m_after(after) {}
+  void undo() const override { apply(m_before); }
+  void redo() const override { apply(m_after); }
+  int getSize() const override {
+    return sizeof(*this) + (m_before.size() + m_after.size()) * sizeof(wchar_t);
+  }
+  QString getHistoryString() override {
+    return DrawingLayers::tr("Rename Vector Group");
+  }
 };
 
 QString levelType(TXshLevel *level) {
@@ -135,11 +186,27 @@ public:
   LayersDelegate(TApplication *app, QObject *parent)
       : QStyledItemDelegate(parent), m_app(app) {}
 
+  void setEditorData(QWidget *editor, const QModelIndex &index) const override {
+    if (index.data(KindRole).toInt() == Group) {
+      auto line = qobject_cast<QLineEdit *>(editor);
+      if (line) {
+        line->setMaxLength(256);
+        line->setPlaceholderText(DrawingLayers::tr("Group name"));
+        line->setText(index.data(GroupNameRole).toString());
+        line->selectAll();
+        return;
+      }
+    }
+    QStyledItemDelegate::setEditorData(editor, index);
+  }
+
   void paint(QPainter *painter, const QStyleOptionViewItem &option,
              const QModelIndex &index) const override {
     QStyleOptionViewItem opt(option);
     initStyleOption(&opt, index);
     if (index.column() == Name) {
+      opt.decorationSize =
+          index.data(KindRole).toInt() == Level ? QSize(32, 24) : QSize(16, 16);
       if (index.data(KindRole).toInt() == Level) {
         TXsheet *xsheet = m_app->getCurrentXsheet()->getXsheet();
         if (xsheet) {
@@ -197,9 +264,9 @@ DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
     , m_xsheet(nullptr)
     , m_rebuildTimer(new QTimer(this)) {
   setObjectName("DrawingLayers");
-  setAccessibleName(tr("Drawing Layers"));
+  setAccessibleName(tr("Layers"));
   setColumnCount(4);
-  setHeaderLabels({tr("Drawing Layers"), QString(), QString(), QString()});
+  setHeaderLabels({tr("Layers"), QString(), QString(), QString()});
   headerItem()->setIcon(View, createQIcon("viewer"));
   headerItem()->setIcon(Render, createQIcon("render"));
   headerItem()->setIcon(Lock, createQIcon("lock"));
@@ -216,19 +283,25 @@ DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
     header()->setSectionResizeMode(section, QHeaderView::Fixed);
     setColumnWidth(section, 30);
   }
-  setIconSize(QSize(48, 36));
-  setIndentation(18);
+  setIconSize(QSize(32, 24));
+  setIndentation(14);
   setUniformRowHeights(false);
   setRootIsDecorated(true);
   setAllColumnsShowFocus(true);
   setSelectionMode(QAbstractItemView::SingleSelection);
   setSelectionBehavior(QAbstractItemView::SelectRows);
   setEditTriggers(QAbstractItemView::NoEditTriggers);
+  setExpandsOnDoubleClick(false);
   setItemDelegate(new LayersDelegate(app, this));
   m_rebuildTimer->setSingleShot(true);
   connect(m_rebuildTimer, &QTimer::timeout, this, &DrawingLayers::rebuild);
   connect(this, &QTreeWidget::itemClicked, this, &DrawingLayers::activateItem);
   connect(this, &QTreeWidget::itemExpanded, this, &DrawingLayers::expandItem);
+  connect(this, &QTreeWidget::itemDoubleClicked, this,
+          [this](QTreeWidgetItem *item, int section) {
+            if (section == Name) beginRename(item);
+          });
+  connect(this, &QTreeWidget::itemChanged, this, &DrawingLayers::renameGroup);
 }
 
 void DrawingLayers::showEvent(QShowEvent *event) {
@@ -528,13 +601,20 @@ void DrawingLayers::expandItem(QTreeWidgetItem *treeItem) {
     child->lastStroke  = last;
     child->depth       = item->depth + (grouped ? 1 : 0);
     if (grouped) {
-      child->setText(Name, tr("Group (%1 strokes)").arg(last - s + 1));
+      QString name =
+          QString::fromStdWString(image->getGroupName(s, child->depth));
+      child->setData(Name, GroupNameRole, name);
+      child->setText(Name, name.isEmpty()
+                               ? tr("Group (%1 strokes)").arg(last - s + 1)
+                               : name);
+      child->setFlags(child->flags() | Qt::ItemIsEditable);
       child->setIcon(Name, createQIcon("folder"));
       child->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
       child->setToolTip(Name, tr("Vector group containing strokes %1–%2. "
                                  "Click to select it at the current editing "
                                  "depth. Enter its parent groups in the Viewer "
-                                 "to select deeper content.")
+                                 "to select deeper content. Double-click or "
+                                 "right-click to rename the group.")
                                   .arg(s + 1)
                                   .arg(last + 1));
     } else {
@@ -696,7 +776,71 @@ void DrawingLayers::activateItem(QTreeWidgetItem *treeItem, int section) {
   refreshCurrent();
 }
 
+void DrawingLayers::beginRename(QTreeWidgetItem *treeItem) {
+  if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item = static_cast<LayerItem *>(treeItem);
+  if (item->kind != Group) return;
+  auto drawing = drawingParent(item);
+  auto level   = drawing->level ? drawing->level->getSimpleLevel() : nullptr;
+  auto column  = m_xsheet->getColumn(item->data(Name, ColumnRole).toInt());
+  if (!level || column != item->column) return;
+  if (column->isLocked() || level->isReadOnly() ||
+      level->isFrameReadOnly(drawing->fid)) {
+    QToolTip::showText(viewport()->mapToGlobal(visualItemRect(item).center()),
+                       tr("This drawing is locked or read-only."), this);
+    return;
+  }
+  editItem(item, Name);
+}
+
+void DrawingLayers::renameGroup(QTreeWidgetItem *treeItem, int section) {
+  if (section != Name || !treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item = static_cast<LayerItem *>(treeItem);
+  if (item->kind != Group) return;
+  auto drawing = drawingParent(item);
+  auto level   = drawing->level ? drawing->level->getSimpleLevel() : nullptr;
+  auto column  = m_xsheet->getColumn(item->data(Name, ColumnRole).toInt());
+  scheduleRebuild();
+  if (!level || column != item->column || column->isLocked() ||
+      level->isReadOnly() || level->isFrameReadOnly(drawing->fid))
+    return;
+  TVectorImageP image = level->getFrame(drawing->fid, false);
+  if (!image) return;
+  QMutexLocker lock(image->getMutex());
+  if (image != drawing->image || drawing->structure != vectorStructure(image))
+    return;
+  std::wstring before = image->getGroupName(item->firstStroke, item->depth);
+  std::wstring after  = item->text(Name).trimmed().toStdWString();
+  if (before == after) return;
+  auto undo =
+      new RenameVectorGroupUndo(m_app, level, drawing->fid, item->firstStroke,
+                                item->depth, before, after);
+  lock.unlock();
+  undo->redo();
+  TUndoManager::manager()->add(undo);
+}
+
+void DrawingLayers::contextMenuEvent(QContextMenuEvent *event) {
+  QTreeWidgetItem *item = itemAt(event->pos());
+  if (event->reason() == QContextMenuEvent::Keyboard) item = currentItem();
+  if (!item || static_cast<LayerItem *>(item)->kind != Group) return;
+  QPersistentModelIndex index(indexFromItem(item));
+  QMenu menu(this);
+  QAction *rename = menu.addAction(tr("Rename Group..."));
+  if (menu.exec(event->globalPos()) == rename && index.isValid())
+    beginRename(itemFromIndex(index));
+}
+
 void DrawingLayers::keyPressEvent(QKeyEvent *event) {
+  if (event->key() == Qt::Key_F2) {
+    beginRename(currentItem());
+    event->accept();
+    return;
+  }
   if (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return ||
       event->key() == Qt::Key_Enter) {
     activateItem(currentItem(), currentColumn());

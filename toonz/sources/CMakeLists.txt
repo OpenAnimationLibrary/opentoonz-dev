@@ -773,3 +773,26 @@ endif()
 if(BUILD_ENV_UNIXLIKE AND NOT BUILD_TARGET_WIN)
     add_subdirectory(xdg-data)
 endif()
+
+# Optional integration checks, linked to the same libraries as OpenToonz.
+option(WITH_LAYER_TESTS "Build Layers panel and vector-name integration tests" OFF)
+if(WITH_LAYER_TESTS)
+    find_package(Qt5 REQUIRED COMPONENTS Test)
+    add_executable(layers_test
+        ../../.github/ot-dev/layers-tests/layers_test.cpp
+        toonz/drawinglayers.cpp
+        toonz/drawinglayers.h
+    )
+    set_target_properties(layers_test PROPERTIES
+        AUTOMOC ON
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/layer-tests"
+    )
+    if(MSVC)
+        target_compile_options(layers_test PRIVATE /utf-8)
+    endif()
+    target_include_directories(layers_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/toonz")
+    target_link_libraries(layers_test PRIVATE
+        tnzcore tnzbase toonzlib toonzqt tnztools image
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test
+    )
+endif()

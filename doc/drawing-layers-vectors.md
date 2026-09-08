@@ -1,11 +1,12 @@
-# Drawing Layers: vectors
+# Layers: vectors
 
-Drawing Layers is an alternate view of the Xsheet. The vector work incorporates
+Layers is an alternate view of the Xsheet. The vector work incorporates
 the read-only hierarchy and native-selection approach explored in
 [PR #71](https://github.com/OpenAnimationLibrary/opentoonz-dev/pull/71).
-This is an exploratory step toward **nameable vector groups**. Editable names
-and persistence are not implemented in this iteration; the generated group
-labels describe their contents.
+The window is now named **Layers** to leave room for more of OpenToonz's layer
+concepts. This iteration provides compact column folders, level thumbnails, and
+editable names for native vector groups. Existing saved panel layouts and
+shortcuts keep working through the original internal panel/command IDs.
 
 ## What the panel represents
 
@@ -66,44 +67,50 @@ Independent group visibility, opacity, masks, and stroke visibility are not
 implied by the tree. Drag/drop reparenting, reverse selection highlighting, and
 raster channel inspection are outside this iteration.
 
-## Naming: integration requirements
+## Naming vector groups
 
-PR #71's explicit `.pli.namedgroups.json` loading/saving is a useful prototype,
-but its `(first stroke, last stroke, depth)` locators are deliberately temporary.
-The native integer group IDs are image-local; they are not a durable identity
-serialized by PLI. Stroke IDs also do not provide a persistent file identity.
-Attaching names to these values would risk giving an unrelated group an old name
-after editing or reloading.
+Double-click a group label, press F2 on a group, or choose **Rename Group...**
+from its context menu. Names can contain Unicode and need not be unique. Clear
+the name to restore the generated stroke-count label. Escape cancels editing.
+Locked columns and read-only drawings cannot be renamed. Renaming a nested group
+does not require entering it in the Viewer and does not change editing depth,
+stroke order, geometry, fills, or selection ownership.
 
-The next implementation should first establish image-owned group metadata and
-its lifecycle, then expose Rename in this panel:
+Names belong to native image groups, including every ancestor of a stroke. They
+follow clone, split/merge and native stroke/group reordering operations. Copies
+start with the same labels and can subsequently be renamed independently.
+Group/ungroup undo records names, membership, entered context and original stroke
+order, preserving the actual stroke objects rather than replacing the drawing.
+Rename is undoable and marks the level frame and scene dirty; both open Layers
+panels observe the same model-owned data.
 
-1. Each actual group needs an identity/name that follows its logical group
-   through drawing edits, clone/copy operations, and stroke reordering. Define
-   duplication as a new identity with a copied display name. Drawing and level
-   scope must prevent collisions.
-2. Rename must be undoable. Group/ungroup undo must restore the original names;
-   ungrouping removes only that group's name and preserves surviving nested
-   names. Moving strokes between groups must not transfer the source name to
-   an unrelated range.
-3. Save and reload must restore names for the correct drawing and hierarchy.
-   A sidecar remains a candidate to preserve older PLI readers, but it must be
-   coordinated with level saving, Save As, rename/copy, export, and recovery.
-   Missing, malformed, incompatible, or stale metadata must never be silently
-   applied to another group or overwritten by merely opening the panel.
-4. Keep display names separate from identity. Duplicate and Unicode names should
-   be valid; unnamed groups should retain generated labels. Two Drawing Layers
-   panels must observe the same model-owned name.
+PLI saving writes an optional, versioned UTF-8 group-name tag immediately after
+its native group record. The tag points back to that exact serialized group;
+geometry and image records never reference it. This avoids a sidecar and makes
+ordinary level saving, Save As and copied PLI files carry names automatically.
+The PLI version and all existing tag numbers remain unchanged. Legacy files
+without names retain their generated labels. Invalid name versions, targets and
+UTF-8 are ignored without changing the artwork.
 
-Putting this metadata directly in PLI is an alternative requiring a deliberate
-compatibility decision. Existing nested group records cannot simply accept an
-arbitrary text tag: older readers expect stroke/group records there. This PR
-does not change the PLI format or adopt a sidecar schema prematurely.
+Older readers skip the new unreferenced tag and can still read the artwork.
+**Resaving in an older build drops group names.** The extension does not import
+PR #71's experimental `.pli.namedgroups.json` sidecars: their temporary stroke
+ranges cannot safely identify a group after editing. PR #71 remains a reference
+for the hierarchy and selection behavior, rather than a required second panel.
 
-Naming should be considered integrated only after edit/undo/redo, nested
-grouping, save/reopen, duplicated drawings, copied levels, Save As, and missing
-metadata have been exercised. PR #71 remains open while these parts are still
-unresolved.
+## Automated checks
+
+Configure with `-DWITH_LAYER_TESTS=ON` to build `layers_test`. The Windows workflow
+runs it against the same native libraries and Qt build as OpenToonz, after DLL
+packaging. The test executable is kept outside the application package.
+
+The checks cover nested/Unicode names, independent clones, entered-group context,
+PLI save/reopen and Save As, files without names, unknown and malformed metadata,
+double-click/F2/context-menu editing, two panels, clearing/cancelling names,
+locked columns, stale editors, and rename/group/ungroup undo and redo. The UI test
+uses Qt's offscreen platform, disables thumbnail painting and stops background
+thumbnail workers for the command checks; interactive visual
+and Viewer testing remains useful alongside these checks.
 
 ## Manual checks
 
@@ -115,3 +122,8 @@ group, ungroup, undo, delete, and reorder strokes with the panel open. Repeat in
 Filmstrip mode, in a Sub-Xsheet, with two panels, and after hiding/showing a panel.
 Confirm inspection never marks the scene dirty and stale rows cannot select
 different strokes after a model change.
+
+Rename sibling and nested groups, undo/redo each operation, save/reopen the level,
+and repeat with Save As and a copied drawing. Ungroup several separate groups
+and undo; each name and boundary should return. Compare the compact folder rows
+with the level thumbnails in a narrow and a wide panel.

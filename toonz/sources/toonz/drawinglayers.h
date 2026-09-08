@@ -24,6 +24,7 @@ protected:
   void hideEvent(QHideEvent *event) override;
   void paintEvent(QPaintEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
+  void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
   void scheduleRebuild();
@@ -32,6 +33,8 @@ private:
   void expandItem(QTreeWidgetItem *item);
   void refreshDrawing(QTreeWidgetItem *levelItem);
   void selectVectorItem(QTreeWidgetItem *item);
+  void beginRename(QTreeWidgetItem *item);
+  void renameGroup(QTreeWidgetItem *item, int section);
   void activateItem(QTreeWidgetItem *item, int section);
 };
 

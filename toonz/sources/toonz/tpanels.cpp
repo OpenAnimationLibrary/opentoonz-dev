@@ -138,7 +138,7 @@ public:
   DrawingLayersFactory() : TPanelFactory("DrawingLayers") {}
   void initialize(TPanel *panel) override {
     panel->setWidget(new DrawingLayers(TApp::instance(), panel));
-    panel->setWindowTitle(QObject::tr("Drawing Layers"));
+    panel->setWindowTitle(QObject::tr("Layers"));
     panel->setMinimumSize(250, 180);
     panel->resize(360, 520);
   }
@@ -146,7 +146,7 @@ public:
 
 OpenFloatingPanel openDrawingLayersCommand(MI_OpenDrawingLayers,
                                            "DrawingLayers",
-                                           QObject::tr("Drawing Layers"));
+                                           QObject::tr("Layers"));
 
 //=============================================================================
 // SchematicSceneViewer

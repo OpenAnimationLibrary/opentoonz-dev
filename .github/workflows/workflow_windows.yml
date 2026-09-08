@@ -273,7 +273,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DWITH_LAYER_TESTS=ON
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -317,6 +317,15 @@ jobs:
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
+
+      - name: Test Layers panel and persistent vector group names
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:GITHUB_WORKSPACE\toonz\build\Opentoonz;$env:QT_PATH\bin;$env:PATH"
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & toonz/build/layer-tests/RelWithDebInfo/layers_test.exe
+          if ($LASTEXITCODE) { throw 'Layers integration tests failed' }
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
         shell: pwsh
