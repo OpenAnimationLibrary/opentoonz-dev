@@ -306,9 +306,7 @@ public:
   QString getDefAssistantType() const {
     return getStringValue(DefAssistantType);
   }
-  bool isNewLevelSizeToCameraSizeEnabled() const {
-    return getBoolValue(newLevelSizeToCameraSizeEnabled);
-  }
+  int getDefLevelSizePolicy() const { return getIntValue(DefLevelSizePolicy); }
   double getDefLevelWidth() const { return getDoubleValue(DefLevelWidth); }
   double getDefLevelHeight() const { return getDoubleValue(DefLevelHeight); }
   double getDefLevelDpi() const { return getDoubleValue(DefLevelDpi); }

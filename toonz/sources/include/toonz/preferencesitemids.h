@@ -95,7 +95,7 @@ enum PreferencesItemId {
   // scanLevelType,// deprecated
   DefLevelType,
   DefAssistantType,
-  newLevelSizeToCameraSizeEnabled,
+  DefLevelSizePolicy,
   DefLevelWidth,
   DefLevelHeight,
   DefLevelDpi,
