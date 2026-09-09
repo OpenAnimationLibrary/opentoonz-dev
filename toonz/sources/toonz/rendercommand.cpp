@@ -812,7 +812,6 @@ void RenderCommand::onRender() {
 }
 
 void RenderCommand::onFastRender() {
-  if (!saveBeforeRender()) return;
   TOutputProperties *prop = TApp::instance()
                                 ->getCurrentScene()
                                 ->getScene()
