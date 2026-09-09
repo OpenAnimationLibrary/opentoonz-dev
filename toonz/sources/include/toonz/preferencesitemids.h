@@ -236,6 +236,9 @@ enum PreferencesItemId {
   // LineTestFpsCapture,
   // guidedDrawingType,
 
+  // Tape Tool confirmation (stored only; no Preferences popup control)
+  tapeToolFillRiskPolicy,
+
   PreferencesItemCount
 };
 

@@ -701,6 +701,8 @@ void Preferences::definePreferenceItems() {
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
+  // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.
+  define(tapeToolFillRiskPolicy, "tapeToolFillRiskPolicy", QMetaType::Int, 0);
   // Shortcut popup settings
   define(shortcutPreset, "shortcutPreset", QMetaType::QString, "defopentoonz");
   // Viewer context menu
