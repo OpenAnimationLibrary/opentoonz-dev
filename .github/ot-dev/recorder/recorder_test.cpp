@@ -442,6 +442,19 @@ private slots:
       move(&window, point);
       const QImage without = OtDevRecorder::capture(&window, size, false);
       const QImage with    = OtDevRecorder::capture(&window, size);
+      if (with == without) {
+        CURSORINFO state     = {};
+        state.cbSize         = sizeof(state);
+        const bool available = GetCursorInfo(&state);
+        auto *under          = QWidget::find(
+                     WId(GetAncestor(WindowFromPoint(state.ptScreenPos), GA_ROOT)));
+        qWarning() << "Missing cursor: native sample" << available << "flags"
+                   << state.flags << "expected shape"
+                   << (state.hCursor == cursor) << "over main"
+                   << (under == &window) << "Qt position"
+                   << window.mapFromGlobal(QCursor::pos()) << "native position"
+                   << state.ptScreenPos.x << state.ptScreenPos.y;
+      }
       QRect changed;
       for (int y = 0; y < size.height(); ++y)
         for (int x = 0; x < size.width(); ++x)
