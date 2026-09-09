@@ -2268,6 +2268,8 @@ void MainWindow::defineActions() {
                        QT_TR_NOOP("&Set Scene Settings as Default"), "",
                        "save_default_settings");
   createMenuFileAction(MI_SoundTrack, QT_TR_NOOP("&Export Soundtrack"), "");
+  createMenuFileAction(MI_ExportProductionArchive,
+                       QT_TR_NOOP("Full Production Archive..."), "");
   createMenuFileAction(MI_Preferences, QT_TR_NOOP("&Preferences..."), "Ctrl+U",
                        "gear");
   createMenuFileAction(MI_ShortcutPopup, QT_TR_NOOP("&Configure Shortcuts..."),

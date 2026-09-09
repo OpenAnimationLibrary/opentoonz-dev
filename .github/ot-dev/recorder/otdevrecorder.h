@@ -29,6 +29,9 @@ public:
                         bool includeCursor = true);
   static QStringList encoderArguments(const QSize &size, const QString &output);
 
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override;
+
 private:
   void begin();
   void tick();
