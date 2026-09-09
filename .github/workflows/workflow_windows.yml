@@ -33,7 +33,49 @@ permissions:
   contents: read
 
 jobs:
+  RecorderEncoder:
+    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+          sparse-checkout: .github/ot-dev/recorder
+      - uses: actions/cache@v5
+        id: recorder-cache
+        with:
+          path: |
+            recorder-encoder
+            recorder-test-decoder
+          key: otdev-recorder-windows-2025-x64-${{ hashFiles('.github/ot-dev/recorder/build-ffmpeg.sh') }}
+      - uses: msys2/setup-msys2@v2
+        if: steps.recorder-cache.outputs.cache-hit != 'true'
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nasm
+            make
+            diffutils
+            tar
+            curl
+      - name: Build input-restricted recorder encoder
+        if: steps.recorder-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: bash .github/ot-dev/recorder/build-ffmpeg.sh
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OT-Dev-recorder-encoder
+          path: recorder-encoder
+      - uses: actions/upload-artifact@v6
+        with:
+          name: OT-Dev-recorder-test-decoder
+          path: recorder-test-decoder
+
   Windows:
+    needs: RecorderEncoder
     runs-on: windows-2025
     env:
       # QT related variable
@@ -55,6 +97,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           lfs: false
+
+      - name: Inject OT-Dev recorder (Windows CI only)
+        shell: pwsh
+        env:
+          OTDEV_BUILD_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python .github/ot-dev/recorder/enable.py --build-id $env:OTDEV_BUILD_ID
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: OT-Dev-recorder-encoder
+          path: recorder-encoder
+      - uses: actions/download-artifact@v6
+        with:
+          name: OT-Dev-recorder-test-decoder
+          path: recorder-test-decoder
 
       - name: Brand OT-Dev build
         shell: pwsh
@@ -199,6 +256,24 @@ jobs:
       - name: Add msbuild to PATH
         uses: microsoft/setup-msbuild@v3
 
+      - name: Test recorder consent, capture, and native Windows playback
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m unittest discover -s .github/ot-dev/recorder -p 'test_*.py' -v
+          if ($LASTEXITCODE) { throw 'Recorder injection tests failed' }
+          cmake -S .github/ot-dev/recorder -B recorder-tests -G "$env:MSVCVERSION" -A x64 "-DCMAKE_PREFIX_PATH=$env:QT_PATH"
+          if ($LASTEXITCODE) { throw 'Recorder test configure failed' }
+          cmake --build recorder-tests --config Release --parallel 2
+          if ($LASTEXITCODE) { throw 'Recorder test build failed' }
+          $env:PATH = "$env:QT_PATH\bin;$env:PATH"
+          $env:OTDEV_TEST_FFMPEG = "$env:GITHUB_WORKSPACE\recorder-encoder\ffmpeg.exe"
+          $env:OTDEV_TEST_DECODER = "$env:GITHUB_WORKSPACE\recorder-test-decoder\ffmpeg.exe"
+          ctest --test-dir recorder-tests -C Release --output-on-failure
+          $recorderTestExit = $LASTEXITCODE
+          Get-ChildItem recorder-tests/recorder-*.txt | ForEach-Object { Get-Content $_.FullName }
+          if ($recorderTestExit) { throw 'Recorder tests failed' }
+
       # CMake configuration step
       - name: CMake configuration
         run: |
@@ -276,6 +351,17 @@ jobs:
           lut3dbake_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
           del lut3dbake_test.exe
+
+      - name: Package OT-Dev recorder and matching FFmpeg sources
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = 'toonz/build/Opentoonz/otdev-recorder'
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          Copy-Item recorder-encoder/* $destination -Recurse
+          Copy-Item .github/ot-dev/recorder/README.md $destination
+          & "$destination/ffmpeg.exe" -version
+          if ($LASTEXITCODE) { throw 'Packaged recorder encoder does not launch' }
 
       # Create artifact from the build
       - name: Create Artifact
