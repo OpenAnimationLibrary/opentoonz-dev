@@ -34,6 +34,7 @@ if(NOT WIN32)
 endif()
 target_sources(OpenToonz PRIVATE "${CMAKE_SOURCE_DIR}/../../.github/ot-dev/recorder/otdevrecorder.cpp")
 target_include_directories(OpenToonz PRIVATE "${CMAKE_SOURCE_DIR}/../../.github/ot-dev/recorder")
+target_link_libraries(OpenToonz PRIVATE user32 gdi32)
 ''')
 
 
