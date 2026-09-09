@@ -288,8 +288,19 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_LUT3D_TESTS=ON
         shell: cmd
+
+      # Run the focused regression before the longer application build.
+      - name: Build and test 3D LUT Bake
+        shell: cmd
+        run: |
+          cd toonz\build
+          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal stdfx\lut3dbake_test.vcxproj
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          set "PATH=%QT_PATH%\bin;%GITHUB_WORKSPACE%\thirdparty\glut\3.7.6\lib;%GITHUB_WORKSPACE%\thirdparty\glew\glew-1.9.0\bin\64bit;%GITHUB_WORKSPACE%\thirdparty\libmypaint\dist\64;C:\tools\opencv\build\x64\vc16\bin;%PATH%"
+          RelWithDebInfo\lut3dbake_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
 
       # Build Opentoonz using MSBuild
       - name: Build Opentoonz
@@ -332,6 +343,14 @@ jobs:
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
+
+      - name: Test 3D LUT Bake
+        shell: cmd
+        run: |
+          cd toonz\build\Opentoonz
+          lut3dbake_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          del lut3dbake_test.exe
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
         shell: pwsh

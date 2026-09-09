@@ -165,6 +165,10 @@ void ParamsPage::setPageField(TIStream &is, const TFxP &fx, bool isVertical) {
         QString str =
             QString::fromStdWString(TStringTable::translate(paramName));
         ParamField *field = ParamField::create(this, str, param);
+        if (paramName == "STD_lut3DBakeFx.lutFile") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableLutFileControls();
+        }
         if (field) {
           if (decimals >= 0) field->setPrecision(decimals);
           m_fields.push_back(field);

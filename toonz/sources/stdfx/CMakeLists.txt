@@ -130,6 +130,7 @@ set(SOURCES
     linearwavefx.cpp
     localblurfx.cpp
     localtransparencyfx.cpp
+    lut3dbakefx.cpp
     mosaicfx.cpp
     motionblurfx.cpp
     multitonefx.cpp
@@ -338,4 +339,11 @@ target_link_libraries(tnzstdfx Qt5::Core Qt5::Gui Qt5::OpenGL ${GL_LIB} ${GLEW_L
 
 if(OpenCV_FOUND)
     target_link_libraries(tnzstdfx ${OpenCV_LIBS})
+endif()
+
+# Optional regression target for the production LUT parser and raster FX.
+option(BUILD_LUT3D_TESTS "Build the 3D LUT Bake regression executable" OFF)
+if(BUILD_LUT3D_TESTS)
+    add_executable(lut3dbake_test tests/lut3dbake_test.cpp)
+    target_link_libraries(lut3dbake_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
 endif()
