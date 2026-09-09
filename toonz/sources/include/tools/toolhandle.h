@@ -39,6 +39,7 @@ class DVAPI ToolHandle final : public QObject {
   QElapsedTimer m_storedToolTime;
   QString m_oldToolName;
   bool m_toolIsBusy;
+  bool m_cpiMode = false;
 
 public:
   ToolHandle();
@@ -46,6 +47,8 @@ public:
 
   TTool *getTool() const;
   void setTool(QString name);
+  bool isCpiMode() const { return m_cpiMode; }
+  void setCpiMode(bool enabled);
   void setTargetType(int targetType);  // TODO: unused, remove?
 
   const QString &getRequestedToolName() const { return m_toolName; }

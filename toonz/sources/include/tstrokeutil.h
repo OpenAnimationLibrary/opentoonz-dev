@@ -56,6 +56,10 @@ DVAPI bool increaseControlPoints(
 DVAPI void modifyControlPoints(TStroke &stroke,
                                const TStrokeDeformation &deformer);
 
+DVAPI TPointD smoothControlPoint(const TPointD &point, const TPointD &first,
+                                 const TPointD &last, double t,
+                                 double strength);
+
 DVAPI void modifyControlPoints(TStroke &stroke,
                                const TStrokeDeformation &deformer,
                                std::vector<double> &controlPointLen);

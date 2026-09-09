@@ -1425,7 +1425,13 @@ int TXsheet::getColumnCount() const {
 
 int TXsheet::getFirstFreeColumnIndex() const {
   int i = getColumnCount();
-  while (i > 0 && isColumnEmpty(i - 1)) --i;
+  while (i > 0 && isColumnEmpty(i - 1)) {
+    auto column      = getColumn(i - 1);
+    auto levelColumn = column ? column->getLevelColumn() : nullptr;
+    auto cpi         = levelColumn ? levelColumn->getCpi() : Cpi::Snapshot();
+    if (cpi && !cpi->empty()) break;
+    --i;
+  }
   return i;
 }
 

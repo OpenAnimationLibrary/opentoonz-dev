@@ -1,6 +1,7 @@
 
 
 #include "edittool.h"
+#include "cpitool.h"
 #include "tools/tool.h"
 #include "tools/cursors.h"
 #include "tproperty.h"
@@ -715,6 +716,7 @@ EditTool::EditTool()
   m_activeAxis.addValue(L"Shear", "edit_shear");
   m_activeAxis.addValue(L"Center", "edit_center");
   m_activeAxis.addValue(L"All", "edit_all");
+  m_activeAxis.addValue(L"CPI", "edit_all");
   m_activeAxis.setValue(L"Position");
 
   m_activeAxis.setId("EditToolActiveAxis");
@@ -767,6 +769,7 @@ void EditTool::updateTranslation() {
   m_activeAxis.setItemUIName(L"Shear", tr("Shear"));
   m_activeAxis.setItemUIName(L"Center", tr("Center"));
   m_activeAxis.setItemUIName(L"All", tr("All"));
+  m_activeAxis.setItemUIName(L"CPI", tr("Control Point Interpolation"));
 }
 
 //-----------------------------------------------------------------------------
@@ -1558,8 +1561,16 @@ bool EditTool::onPropertyChanged(std::string propertyName) {
       m_what = Shear;
     else if (activeAxis == L"Center")
       m_what = Center;
-    else if (activeAxis == L"All")
+    else if (activeAxis == L"All" || activeAxis == L"CPI")
       m_what = None;
+    if (activeAxis == L"CPI") {
+      m_activeAxis.setValue(L"Position");
+      m_what = Translation;
+      getApplication()->getCurrentTool()->setCpiMode(true);
+      return true;
+    }
+    updateMatrix();
+    invalidate();
   }
 
   return true;
@@ -1683,3 +1694,8 @@ QString EditTool::updateEnabled(int rowIndex, int columnIndex) {
 //=============================================================================
 
 EditTool arrowTool;
+
+void EditTool::openCpiChannels() {
+  getApplication()->getCurrentTool()->setCpiMode(true);
+  CpiTool::session()->openChannels();
+}

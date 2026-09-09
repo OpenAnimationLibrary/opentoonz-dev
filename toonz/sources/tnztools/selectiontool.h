@@ -407,7 +407,7 @@ protected:
 public:
   DragSelectionTool::DeformValues m_deformValues;
 
-  SelectionTool(int targetType);
+  SelectionTool(int targetType, const std::string &name = "T_Selection");
   ~SelectionTool() override;
 
   ToolType getToolType() const override { return TTool::LevelWriteTool; }

@@ -200,6 +200,7 @@ class ArrowToolOptionsBox final : public ToolOptionsBox {
 
   // General
   ToolOptionCombo *m_chooseActiveAxisCombo;
+  QPushButton *m_cpiChannels;
   ToolOptionCombo *m_pickCombo;
   // enable to choose the target pegbar from the combobox
   QComboBox *m_currentStageObjectCombo;

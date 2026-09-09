@@ -331,6 +331,11 @@ bool increaseControlPoints(TStroke &stroke, const TStrokeDeformation &deformer,
 
 //-----------------------------------------------------------------------------
 
+TPointD smoothControlPoint(const TPointD &point, const TPointD &first,
+                           const TPointD &last, double t, double strength) {
+  return point * (1.0 - strength) + (first * (1.0 - t) + last * t) * strength;
+}
+
 void modifyControlPoints(TStroke &stroke, const TStrokeDeformation &deformer) {
   int cpCount = stroke.getControlPointCount();
 

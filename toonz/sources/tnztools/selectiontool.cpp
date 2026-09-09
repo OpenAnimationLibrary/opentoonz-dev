@@ -838,8 +838,8 @@ void DragSelectionTool::Scale::leftButtonUp() {
 // SelectionTool
 //-----------------------------------------------------------------------------
 
-SelectionTool::SelectionTool(int targetType)
-    : TTool("T_Selection")
+SelectionTool::SelectionTool(int targetType, const std::string &name)
+    : TTool(name)
     , m_firstTime(true)
     , m_dragTool(0)
     , m_what(Outside)

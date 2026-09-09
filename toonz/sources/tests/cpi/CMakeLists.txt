@@ -1,0 +1,11 @@
+add_executable(cpi_test cpi_test.cpp)
+target_include_directories(cpi_test PRIVATE ../../include)
+target_link_libraries(cpi_test PRIVATE toonzlib tnzbase tnzcore image Qt5::Core Qt5::Gui Qt5::Widgets)
+add_test(NAME cpi COMMAND cpi_test)
+
+find_package(Qt5 REQUIRED COMPONENTS Test)
+add_executable(cpi_ui_test cpi_ui_test.cpp)
+target_include_directories(cpi_ui_test PRIVATE ../../include ../../include/tools ../../tnztools)
+target_link_libraries(cpi_ui_test PRIVATE tnztools toonzqt toonzlib tnzbase tnzcore Qt5::Test Qt5::Widgets)
+add_test(NAME cpi_ui COMMAND cpi_ui_test)
+set_tests_properties(cpi_ui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 60)

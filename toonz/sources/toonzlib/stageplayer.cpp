@@ -12,6 +12,7 @@
 #include "imagebuilders.h"
 
 #include "toonz/stageplayer.h"
+#include "toonz/txshlevelcolumn.h"
 #include "toonz/tstageobjecttree.h"
 
 using namespace Stage;
@@ -57,18 +58,27 @@ TImageP Stage::Player::image() const {
   int slType     = m_sl->getType();
   ImageLoader::BuildExtData extData(m_sl, m_fid);
 
-  if (slType == PLI_XSHLEVEL && TXshSimpleLevel::m_rasterizePli) {
+  TXshLevelColumn *column = nullptr;
+  if (m_xsh && !m_isEditingLevel && m_column >= 0) {
+    auto col = m_xsh->getColumn(m_column);
+    if (col) column = col->getLevelColumn();
+  }
+  auto cpi    = column ? column->getCpi() : Cpi::Snapshot();
+  bool hasCpi = cpi && cpi->binding(m_sl, m_fid);
+  if (slType == PLI_XSHLEVEL && TXshSimpleLevel::m_rasterizePli && !hasCpi) {
     if (!(m_isCurrentColumn && m_isCurrentXsheetLevel)) id = id + "_rasterized";
     if(m_xsh)
       extData.m_cameraDPI = m_xsh->getStageObjectTree()->getCurrentCamera()->getDpi();
   }  // use cameraDpi to rasterize vector
-        
 
   if (TXshSimpleLevel::m_fillFullColorRaster &&
       (slType == OVL_XSHLEVEL || slType == TZI_XSHLEVEL))
     id = id + "_filled";
 
-  return ImageManager::instance()->getImage(id, ImageManager::none, &extData);
+  TImageP image =
+      ImageManager::instance()->getImage(id, ImageManager::none, &extData);
+  return column ? column->applyCpi(image, TXshCell(m_sl, m_fid), m_frame)
+                : image;
 }
 
 //-----------------------------------------------------------------------------

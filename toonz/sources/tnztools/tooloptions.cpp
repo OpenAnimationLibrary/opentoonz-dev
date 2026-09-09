@@ -594,6 +594,10 @@ ArrowToolOptionsBox::ArrowToolOptionsBox(
   {
     mainLay->addWidget(m_currentStageObjectCombo, 0);
     mainLay->addWidget(m_chooseActiveAxisCombo, 0);
+    m_cpiChannels = new QPushButton(tr("CPI Mode..."), this);
+    mainLay->addWidget(m_cpiChannels, 0);
+    connect(m_cpiChannels, &QPushButton::clicked, editTool,
+            &EditTool::openCpiChannels);
 
     // Pick combobox only available on "All" axis mode
     QHBoxLayout *pickLay = new QHBoxLayout();
@@ -1050,6 +1054,13 @@ void ArrowToolOptionsBox::onCurrentAxisChanged(int axisId) {
   }
 
   m_pickWidget->setVisible(axisId == AllAxis);
+  bool cpi = axisId == AllAxis + 1;
+  m_cpiChannels->setVisible(true);
+  m_globalKey->setVisible(!cpi);
+  m_hFlipButton->setVisible(!cpi);
+  m_vFlipButton->setVisible(!cpi);
+  m_leftRotateButton->setVisible(!cpi);
+  m_rightRotateButton->setVisible(!cpi);
 }
 
 //-----------------------------------------------------------------------------
@@ -3030,7 +3041,10 @@ void ToolOptions::onToolSwitched() {
   TTool *tool             = currTool->getTool();
 
   // Skip panel updates if we're in navigation mode
-  if (currTool && currTool->isViewerNavigationToolSelected()) {
+  if (currTool && (currTool->isViewerNavigationToolSelected() ||
+                   (currTool->isCpiMode() && tool &&
+                    (tool->getName() == T_Hand || tool->getName() == T_Zoom ||
+                     tool->getName() == T_Rotate)))) {
     return;
   }
 

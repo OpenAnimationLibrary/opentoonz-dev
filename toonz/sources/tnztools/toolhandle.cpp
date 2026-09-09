@@ -1,6 +1,7 @@
 
 
 #include "tools/toolhandle.h"
+#include "cpitool.h"
 #include "toonz/stage2.h"
 #include "tools/tool.h"
 #include "tools/toolcommandids.h"
@@ -35,11 +36,16 @@ TTool *ToolHandle::getTool() const { return m_tool; }
 //-----------------------------------------------------------------------------
 
 void ToolHandle::setTool(QString name) {
+  const bool requestChanged = m_toolName != name;
   m_oldToolName = m_toolName = name;
 
-  TTool *tool = TTool::getTool(m_toolName.toStdString(),
-                               (TTool::ToolTargetType)m_toolTargetType);
-  if (tool == m_tool) return;
+  const bool navigation = isViewerNavigationToolSelected() || name == T_Hand ||
+                          name == T_Zoom || name == T_Rotate;
+  TTool *tool = m_cpiMode && !navigation
+                    ? CpiTool::interactionTool()
+                    : TTool::getTool(m_toolName.toStdString(),
+                                     (TTool::ToolTargetType)m_toolTargetType);
+  if (tool == m_tool && (!m_cpiMode || !requestChanged)) return;
 
   if (m_tool) m_tool->onDeactivate();
 
@@ -48,6 +54,8 @@ void ToolHandle::setTool(QString name) {
     CameraTestCheck::instance()->setIsEnabled(false);
 
   m_tool = tool;
+  if (m_cpiMode && !navigation)
+    CpiTool::session()->setOperation(name.toStdString());
 
   if (name != T_Hand && CleanupPreviewCheck::instance()->isEnabled()) {
     // When using a tool, you have to exit from cleanup preview mode
@@ -60,6 +68,18 @@ void ToolHandle::setTool(QString name) {
     m_tool->onActivate();
     emit toolSwitched();
   }
+}
+
+void ToolHandle::setCpiMode(bool enabled) {
+  if (enabled == m_cpiMode) return;
+  m_cpiMode = enabled;
+  if (!enabled) CpiTool::session()->deactivate();
+  const bool navigation = isViewerNavigationToolSelected() ||
+                          m_toolName == T_Hand || m_toolName == T_Zoom ||
+                          m_toolName == T_Rotate;
+  setTool(m_toolName.isEmpty() || (!enabled && navigation)
+              ? QString(T_Selection)
+              : m_toolName);
 }
 
 //-----------------------------------------------------------------------------
