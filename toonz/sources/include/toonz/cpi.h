@@ -21,6 +21,9 @@
 
 namespace Cpi {
 
+class Data;
+using Snapshot = std::shared_ptr<const Data>;
+
 // Point addresses are local to an immutable binding UUID. Hashes accelerate
 // lookup; equality uses the complete address, never a hash alone.
 using PointId = std::uint64_t;
@@ -57,6 +60,15 @@ struct DVAPI Pose {
   Vec3 offset(PointId id) const;
   static Pose interpolate(const Pose &a, const Pose &b, double t);
 };
+
+struct DVAPI Preview {
+  Snapshot base;
+  std::string groupId;
+  int frame = 0;
+  Pose pose;
+  bool valid() const;
+};
+using PreviewSnapshot = std::shared_ptr<const Preview>;
 
 struct DVAPI ExtremePair {
   int first = 0, last = 72;  // Scene rows, zero based; inclusive endpoints.
@@ -112,13 +124,14 @@ public:
   size_t memorySize() const;
   bool empty() const { return groups.empty(); }
   TVectorImageP deform(TXshLevel *level, const TFrameId &fid, double frame,
-                       const TVectorImageP &source) const;
-  std::string alias(TXshLevel *level, const TFrameId &fid, double frame) const;
+                       const TVectorImageP &source,
+                       const Preview *preview = nullptr) const;
+  std::string alias(TXshLevel *level, const TFrameId &fid, double frame,
+                    const Preview *preview = nullptr) const;
   void saveData(TOStream &os) const;
   void loadData(TIStream &is);
 };
 
-using Snapshot = std::shared_ptr<const Data>;
 }  // namespace Cpi
 
 #endif

@@ -70,6 +70,7 @@ set(HEADERS
 
 set(SOURCES
     cpitool.cpp
+    cpiinteraction.cpp
     autofillpli.cpp
     autofilltlv.cpp
     cursormanager.cpp

@@ -275,9 +275,8 @@ public:
 
     double smoothFP = smoothFactor / wDistance;
 
-    TPointD pf0 = m_strokeRef->getControlPoint(iCP0) * smoothFP;
-    TPointD pf1 = m_strokeRef->getControlPoint(iCP1) * smoothFP;
-
+    const TPointD smoothStart = m_strokeRef->getControlPoint(iCP0);
+    const TPointD smoothEnd   = m_strokeRef->getControlPoint(iCP1);
     TPointD appDPoint;
     TThickPoint appThickPoint;
 
@@ -314,7 +313,8 @@ public:
                           oppSmoothFactor - 1.0));
 
       m_strokeRef->setControlPoint(
-          i, TThickPoint(pf0 * v1vp + pf1 * vpv0 + appDPoint * oppSmoothFactor,
+          i, TThickPoint(smoothControlPoint(appDPoint, smoothStart, smoothEnd,
+                                            vpv0 / wDistance, smoothFactor),
                          appThickPoint.thick));
       // this is like
       //

@@ -558,8 +558,14 @@ size_t Data::memorySize() const {
   }
   return bytes;
 }
+bool Preview::valid() const {
+  auto g = base ? base->group(groupId) : nullptr;
+  auto b = g ? base->binding(g->bindingId) : nullptr;
+  return g && b && g->pairAt(frame) && validPose(pose, *g, *b);
+}
 TVectorImageP Data::deform(TXshLevel *level, const TFrameId &fid, double frame,
-                           const TVectorImageP &source) const {
+                           const TVectorImageP &source,
+                           const Preview *preview) const {
   const auto b = binding(level, fid);
   if (!b || !source) return source;
   TThread::MutexLocker lock(source->getMutex());
@@ -569,7 +575,10 @@ TVectorImageP Data::deform(TXshLevel *level, const TFrameId &fid, double frame,
   for (const auto &g : groups) {
     if (g.bindingId != b->id || g.pairs.empty()) continue;
     if (!result) result = source->clone();
-    Pose pose = g.evaluate(frame);
+    Pose pose = preview && preview->base.get() == this &&
+                        preview->frame == frame && preview->groupId == g.id
+                    ? preview->pose
+                    : g.evaluate(frame);
     for (auto id : g.points) {
       int s = int(strokeIndex(id)), p = int(pointIndex(id));
       auto stroke = result->getStroke(s);
@@ -588,16 +597,20 @@ TVectorImageP Data::deform(TXshLevel *level, const TFrameId &fid, double frame,
   result->notifyChangedStrokes(indices, originals);
   return result;
 }
-std::string Data::alias(TXshLevel *level, const TFrameId &fid,
-                        double frame) const {
+std::string Data::alias(TXshLevel *level, const TFrameId &fid, double frame,
+                        const Preview *preview) const {
   auto b = binding(level, fid);
   if (!b) return {};
   QJsonArray data;
   data.append(qs(b->id));
   for (const auto &g : groups)
     if (g.bindingId == b->id && !g.pairs.empty())
-      data.append(
-          QJsonArray{qs(g.id), vec(g.pivot), poseJson(g.evaluate(frame))});
+      data.append(QJsonArray{
+          qs(g.id), vec(g.pivot),
+          poseJson(preview && preview->base.get() == this &&
+                           preview->frame == frame && preview->groupId == g.id
+                       ? preview->pose
+                       : g.evaluate(frame))});
   return "cpi:" + QCryptographicHash::hash(
                       QJsonDocument(data).toJson(QJsonDocument::Compact),
                       QCryptographicHash::Sha256)

@@ -12,8 +12,6 @@
 
 using EditToolGadgets::DragTool;
 
-class CpiTool;
-
 //=============================================================================
 // EditTool
 //-----------------------------------------------------------------------------
@@ -22,7 +20,6 @@ class EditTool final : public QObject, public TTool {
   Q_OBJECT
 
   DragTool* m_dragTool;
-  CpiTool* m_cpiTool;
 
   bool m_firstTime;
 
@@ -95,11 +92,7 @@ public:
 
   ToolType getToolType() const override { return TTool::ColumnTool; }
 
-  bool isCpiMode() const { return m_activeAxis.getValue() == L"CPI"; }
   void openCpiChannels();
-  void addContextMenuItems(QMenu* menu) override;
-  bool keyDown(QKeyEvent* event) override;
-  void onImageChanged() override;
 
   bool doesApply() const;  // ritorna vero se posso deformare l'oggetto corrente
   void saveOldValues();
@@ -137,11 +130,7 @@ public:
 
   TPropertyGroup* getProperties(int targetType) override { return &m_prop; }
 
-  void updateMatrix() override {
-    setMatrix(isCpiMode() && getObjectId().isColumn()
-                  ? getColumnMatrix(getObjectId().getIndex())
-                  : getCurrentObjectParentMatrix2());
-  }
+  void updateMatrix() override { setMatrix(getCurrentObjectParentMatrix2()); }
 
   void drawText(const TPointD& p, double unit, std::string text);
 

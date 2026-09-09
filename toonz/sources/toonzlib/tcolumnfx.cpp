@@ -1541,9 +1541,7 @@ std::string TLevelColumnFx::getAlias(double frame,
     fp = path;
 
   std::string rdata;
-  auto cpi = m_levelColumn->getCpi();
-  if (cpi)
-    rdata += cpi->alias(cell.m_level.getPointer(), cell.m_frameId, frame);
+  rdata += m_levelColumn->cpiAlias(cell, frame);
   std::vector<TRasterFxRenderDataP>::const_iterator it = info.m_data.begin();
   for (; it != info.m_data.end(); ++it) {
     TRasterFxRenderDataP data = *it;

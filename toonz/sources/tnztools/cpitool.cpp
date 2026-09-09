@@ -1,6 +1,12 @@
 #include "cpitool.h"
 #include "tools/tool.h"
 #include "tools/toolhandle.h"
+#include "tools/tooloptions.h"
+#include "tools/toolcommandids.h"
+#include "toonzqt/selectioncommandids.h"
+#include "tstrokeutil.h"
+#include "tstrokedeformations.h"
+#include <QPolygonF>
 #include "toonz/tframehandle.h"
 #include "toonz/tobjecthandle.h"
 #include "toonz/txsheethandle.h"
@@ -36,6 +42,8 @@
 
 namespace {
 TEnv::IntVar CpiExtremeDistance("CpiExtremeDistance", 72);
+TEnv::DoubleVar CpiBrushRadius("CpiBrushRadius", 40);
+TEnv::DoubleVar CpiBrushStrength("CpiBrushStrength", 0.25);
 void notifyCpi() {
   auto app = TTool::getApplication();
   app->getCurrentScene()->setDirtyFlag(true);
@@ -81,22 +89,27 @@ public:
 };
 }  // namespace
 
-CpiTool::CpiTool(TTool *tool, QObject *parent)
-    : QObject(parent), m_tool(tool) {}
-CpiTool::~CpiTool() { delete m_dialog.data(); }
+CpiTool::CpiTool(TTool *tool, QObject *parent) : QObject(parent), m_tool(tool) {
+  m_brushRadius = std::max(1.0, std::min(1000.0, double(CpiBrushRadius)));
+  m_strength    = std::max(0.01, std::min(1.0, double(CpiBrushStrength)));
+}
+CpiTool::~CpiTool() {
+  cancelPreview();
+  delete m_dialog.data();
+}
 bool CpiTool::context(TXshLevelColumnP &column, TXshCell &cell,
                       TVectorImageP &image, bool editing) const {
   auto app = TTool::getApplication();
   if (!app) return false;
-  auto axis = dynamic_cast<TEnumProperty *>(
-      m_tool->getProperties(0)->getProperty("Active Axis"));
-  if (!axis || axis->getValue() != L"CPI") return false;
+  if (!m_enabled) return false;
   auto frame = app->getCurrentFrame();
   auto id    = m_tool->getObjectId();
   if (!frame->isEditingScene() || (editing && frame->isPlaying()) ||
       !id.isColumn())
     return false;
-  auto col = m_tool->getXsheet()->getColumn(id.getIndex());
+  auto xsheet = m_tool->getXsheet();
+  if (!xsheet) return false;
+  auto col = xsheet->getColumn(id.getIndex());
   if (!col || !col->getLevelColumn() || (editing && col->isLocked()))
     return false;
   column     = col->getLevelColumn();
@@ -107,12 +120,15 @@ bool CpiTool::context(TXshLevelColumnP &column, TXshCell &cell,
   return bool(image);
 }
 void CpiTool::cancelPreview() {
-  if (m_column && m_preview && m_column->getCpi() == m_preview)
-    m_column->setCpi(m_before);
+  if (m_column && m_preview && m_column->getCpiPreview() == m_preview)
+    m_column->setCpiPreview({});
   m_preview.reset();
   m_before.reset();
-  m_dragging  = false;
-  m_rectangle = false;
+  m_startImage = TVectorImageP();
+  m_movingPoints.clear();
+  m_brushWeights.clear();
+  m_dragging = m_rectangle = m_changed = false;
+  m_lasso.clear();
 }
 void CpiTool::syncContext() {
   TXshLevelColumnP column;
@@ -130,10 +146,16 @@ void CpiTool::syncContext() {
     m_column = ok ? column : TXshLevelColumnP();
     m_cell   = ok ? cell : TXshCell();
   }
+  auto data = m_column ? m_column->getCpi() : Cpi::Snapshot();
+  if (!m_group.empty() && (!data || !data->group(m_group))) m_group.clear();
 }
 void CpiTool::activate() {
+  m_enabled = true;
+  makeCurrent();
   if (!m_connected) {
     auto app = TTool::getApplication();
+    connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this,
+            [this] { deactivate(); });
     connect(app->getCurrentFrame(), &TFrameHandle::frameSwitched, this,
             [this] { refresh(); });
     connect(app->getCurrentXsheet(), &TXsheetHandle::xsheetSwitched, this,
@@ -148,6 +170,8 @@ void CpiTool::activate() {
 }
 void CpiTool::deactivate() {
   cancelPreview();
+  m_enabled = false;
+  makeNotCurrent();
   if (m_dialog) m_dialog->hide();
 }
 void CpiTool::message(const QString &text) {
@@ -180,6 +204,7 @@ void CpiTool::selectLinkedEndpoints(const TVectorImageP &image) {
   }
 }
 void CpiTool::newGroup() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP column;
   TXshCell cell;
@@ -218,6 +243,7 @@ void CpiTool::newGroup() {
          tr("Create CPI Group"));
 }
 void CpiTool::renameGroup() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -242,6 +268,7 @@ void CpiTool::renameGroup() {
          tr("Rename CPI Group"));
 }
 void CpiTool::removeGroup() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -269,6 +296,7 @@ void CpiTool::removeGroup() {
          tr("Remove CPI Group"));
 }
 void CpiTool::key(bool newPair) {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -321,6 +349,7 @@ void CpiTool::key(bool newPair) {
          newPair ? tr("Create CPI Key Extremes") : tr("Set CPI Key"), exposed);
 }
 void CpiTool::removeKey() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -347,6 +376,7 @@ void CpiTool::removeKey() {
          extreme ? tr("Remove CPI Extreme Pair") : tr("Remove CPI Offset Key"));
 }
 void CpiTool::rotateGroup() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -387,6 +417,7 @@ void CpiTool::rotateGroup() {
          tr("Rotate CPI Group"));
 }
 void CpiTool::translateGroup() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -428,6 +459,7 @@ void CpiTool::translateGroup() {
          tr("Set CPI Group Position"));
 }
 void CpiTool::selectAll() {
+  cancelPreview();
   syncContext();
   TXshLevelColumnP col;
   TXshCell cell;
@@ -470,6 +502,13 @@ void CpiTool::openChannels() {
     auto form = new QFormLayout;
     m_target  = new QComboBox;
     m_target->addItems({tr("Individual points"), tr("Entire group")});
+    m_target->setCurrentIndex(m_entireGroup ? 1 : 0);
+    connect(m_target, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int index) {
+              cancelPreview();
+              m_entireGroup = index == 1;
+              refresh();
+            });
     form->addRow(tr("Drag:"), m_target);
     m_distance = new QSpinBox;
     m_distance->setRange(1, 1000000);
@@ -526,6 +565,7 @@ void CpiTool::openChannels() {
     connect(m_groups, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int index) {
               if (m_refreshing) return;
+              cancelPreview();
               m_group = m_groups->itemData(index).toString().toStdString();
               m_selection.clear();
               selectAll();
@@ -546,284 +586,724 @@ void CpiTool::openChannels() {
 void CpiTool::refresh() {
   if (m_refreshing) return;
   syncContext();
-  if (!m_dialog) return;
   m_refreshing = true;
-  QSignalBlocker block(m_groups);
-  m_groups->clear();
-  m_groups->addItem(tr("Unassigned points"), QString());
-  auto data = m_column ? m_column->getCpi() : Cpi::Snapshot();
+  if (m_dialog) {
+    QSignalBlocker block(m_groups);
+    m_groups->clear();
+    m_groups->addItem(tr("All points"), QString());
+    auto data = m_column ? m_column->getCpi() : Cpi::Snapshot();
+    auto binding =
+        data ? data->binding(m_cell.m_level.getPointer(), m_cell.m_frameId)
+             : nullptr;
+    if (binding)
+      for (const auto &g : data->groups)
+        if (g.bindingId == binding->id)
+          m_groups->addItem(QString::fromStdString(g.name),
+                            QString::fromStdString(g.id));
+    int index = m_groups->findData(QString::fromStdString(m_group));
+    m_groups->setCurrentIndex(std::max(0, index));
+    if (index < 0) m_group.clear();
+    auto group = data ? data->group(m_group) : nullptr;
+    m_keys->setRowCount(0);
+    if (group)
+      for (const auto &p : group->pairs) {
+        auto add = [this](int frame, const QString &kind,
+                          const Cpi::Pose &pose) {
+          int r = m_keys->rowCount();
+          m_keys->insertRow(r);
+          QStringList values = {QString::number(frame + 1), kind,
+                                QString::number(pose.translation.x, 'g', 8),
+                                QString::number(pose.translation.y, 'g', 8),
+                                QString::number(pose.translation.z, 'g', 8)};
+          for (int c = 0; c < 5; ++c)
+            m_keys->setItem(r, c, new QTableWidgetItem(values[c]));
+          m_keys->item(r, 0)->setData(Qt::UserRole, frame);
+        };
+        add(p.first, tr("Extreme A"), p.start);
+        for (const auto &k : p.keys) add(k.first, tr("Offset"), k.second);
+        add(p.last, tr("Extreme B"), p.end);
+      }
+    TXshLevelColumnP col;
+    TXshCell cell;
+    TVectorImageP image;
+    bool editable  = context(col, cell, image);
+    QString status = !editable
+                         ? tr("Choose an unlocked vector column in scene mode.")
+                         : tr("Frame %1 — %2 points selected")
+                               .arg(m_tool->getFrame() + 1)
+                               .arg(qulonglong(m_selection.size()));
+    if (editable && binding && !binding->matches(image))
+      status =
+          tr("Source drawing changed: CPI is suspended. Remove its groups and "
+             "bind the revised drawing again.");
+    else if (group) {
+      auto p = group->pairAt(m_tool->getFrame());
+      status += p ? tr(" — Extremes %1 / %2").arg(p->first + 1).arg(p->last + 1)
+                  : tr(" — No extreme pair at this frame");
+    }
+    m_status->setText(status);
+    QSignalBlocker targetBlock(m_target);
+    m_target->setCurrentIndex(m_entireGroup ? 1 : 0);
+  }
+  for (auto bar : m_bars) {
+    if (!bar) continue;
+    auto groups = bar->findChild<QComboBox *>("cpiGroup");
+    QSignalBlocker block(groups);
+    groups->clear();
+    groups->addItem(tr("All points"), QString());
+    auto data = m_column ? m_column->getCpi() : Cpi::Snapshot();
+    auto binding =
+        data ? data->binding(m_cell.m_level.getPointer(), m_cell.m_frameId)
+             : nullptr;
+    if (binding)
+      for (const auto &g : data->groups)
+        if (g.bindingId == binding->id)
+          groups->addItem(QString::fromStdString(g.name),
+                          QString::fromStdString(g.id));
+    groups->setCurrentIndex(
+        std::max(0, groups->findData(QString::fromStdString(m_group))));
+    auto target = bar->findChild<QComboBox *>("cpiTarget");
+    QSignalBlocker targetBlock(target);
+    target->setCurrentIndex(m_entireGroup ? 1 : 0);
+    auto operation = bar->findChild<QComboBox *>("cpiOperation");
+    QSignalBlocker operationBlock(operation);
+    operation->setCurrentIndex(int(m_operation));
+    auto shape = bar->findChild<QComboBox *>("cpiShape");
+    QSignalBlocker shapeBlock(shape);
+    shape->setCurrentIndex(m_lassoSelection ? 1 : 0);
+    shape->setVisible(m_operation == Select);
+    bool brush = m_operation == Magnet || m_operation == Smooth;
+    for (const char *name :
+         {"cpiRadius", "cpiStrength", "cpiRadiusLabel", "cpiStrengthLabel"})
+      bar->findChild<QWidget *>(name)->setVisible(brush);
+    auto radius   = bar->findChild<QDoubleSpinBox *>("cpiRadius");
+    auto strength = bar->findChild<QDoubleSpinBox *>("cpiStrength");
+    QSignalBlocker radiusBlock(radius), strengthBlock(strength);
+    radius->setValue(m_brushRadius);
+    strength->setValue(m_strength * 100);
+    bar->findChild<QLabel *>("cpiStatus")->setText(statusText());
+  }
+  m_refreshing = false;
+}
+
+namespace {
+bool poseChanged(const Cpi::Pose &a, const Cpi::Pose &b) {
+  auto different = [](const Cpi::Vec3 &x, const Cpi::Vec3 &y) {
+    auto d = x - y;
+    return d.x * d.x + d.y * d.y + d.z * d.z > 1e-18;
+  };
+  if (different(a.translation, b.translation)) return true;
+  double dot = a.rotation.w * b.rotation.w + a.rotation.x * b.rotation.x +
+               a.rotation.y * b.rotation.y + a.rotation.z * b.rotation.z;
+  if (std::abs(std::abs(dot) - 1) > 1e-12) return true;
+  for (const auto &v : a.offsets)
+    if (different(v.second, b.offset(v.first))) return true;
+  for (const auto &v : b.offsets)
+    if (different(v.second, a.offset(v.first))) return true;
+  return false;
+}
+class CpiOptions final : public ToolOptionsBox {
+  CpiTool *m_session;
+
+public:
+  CpiOptions(CpiTool *session) : ToolOptionsBox(nullptr), m_session(session) {}
+  void updateStatus() override { m_session->refresh(); }
+};
+}  // namespace
+
+void CpiTool::setOperation(const std::string &name) {
+  cancelPreview();
+  m_operation = name == T_Edit || name == T_Selection ? Select
+                : name == T_Magnet                    ? Magnet
+                : name == T_Iron                      ? Smooth
+                                                      : Unavailable;
+  refresh();
+}
+bool CpiTool::editable() const {
+  TXshLevelColumnP col;
+  TXshCell cell;
+  TVectorImageP source;
+  if (m_operation == Unavailable || !context(col, cell, source)) return false;
+  auto data = col->getCpi();
+  auto b =
+      data ? data->binding(cell.m_level.getPointer(), cell.m_frameId) : nullptr;
+  return !b || b->matches(source);
+}
+TVectorImageP CpiTool::image() const {
+  TXshLevelColumnP col;
+  TXshCell cell;
+  TVectorImageP source;
+  if (!context(col, cell, source, false)) return {};
+  return col->applyCpi(source, cell, m_tool->getFrame());
+}
+TRectD CpiTool::selectionBounds() const {
+  auto current = image();
+  if (!current || m_selection.empty()) return {};
+  auto points = m_selection;
+  auto data   = m_column ? m_column->getCpi() : Cpi::Snapshot();
+  auto group  = data ? data->group(m_group) : nullptr;
+  if (m_entireGroup && group) points = group->points;
+  TRectD bounds;
+  bool first = true;
+  for (auto id : points) {
+    auto s = Cpi::strokeIndex(id), p = Cpi::pointIndex(id);
+    if (s >= current->getStrokeCount() ||
+        p >= unsigned(current->getStroke(s)->getControlPointCount()))
+      continue;
+    TPointD v = current->getStroke(s)->getControlPoint(p);
+    if (first) {
+      bounds = TRectD(v.x, v.y, v.x, v.y);
+      first  = false;
+    } else {
+      bounds.x0 = std::min(bounds.x0, v.x);
+      bounds.x1 = std::max(bounds.x1, v.x);
+      bounds.y0 = std::min(bounds.y0, v.y);
+      bounds.y1 = std::max(bounds.y1, v.y);
+    }
+  }
+  return first ? TRectD() : bounds.enlarge(8 * m_tool->getPixelSize());
+}
+QString CpiTool::statusText() const {
+  if (m_operation == Unavailable)
+    return tr("Choose Selection, Magnet or Iron/Smooth, or exit CPI.");
+  if (!editable())
+    return tr(
+        "CPI: choose an unlocked, unchanged vector drawing in scene mode.");
+  return tr("%1 CPs — frame %2")
+      .arg(qulonglong(m_selection.size()))
+      .arg(m_tool->getFrame() + 1);
+}
+ToolOptionsBox *CpiTool::createOptionsBox() {
+  auto bar = new CpiOptions(this);
+  m_bars.push_back(bar);
+  auto layout = bar->hLayout();
+  auto label  = new QLabel(tr("CPI"));
+  label->setStyleSheet("font-weight: bold;");
+  layout->addWidget(label);
+  auto operation = new QComboBox;
+  operation->setObjectName("cpiOperation");
+  operation->addItems({tr("Selection / Transform"), tr("Magnet"), tr("Smooth"),
+                       tr("Unavailable tool")});
+  layout->addWidget(operation);
+  connect(
+      operation, QOverload<int>::of(&QComboBox::activated), bar, [this](int i) {
+        if (i < 3)
+          TTool::getApplication()->getCurrentTool()->setTool(i == 0
+                                                                 ? T_Selection
+                                                             : i == 1 ? T_Magnet
+                                                                      : T_Iron);
+      });
+  auto groups = new QComboBox;
+  groups->setObjectName("cpiGroup");
+  groups->setMinimumWidth(125);
+  layout->addWidget(groups);
+  connect(groups, QOverload<int>::of(&QComboBox::currentIndexChanged), bar,
+          [this, groups](int i) {
+            if (m_refreshing) return;
+            cancelPreview();
+            m_group = groups->itemData(i).toString().toStdString();
+            m_selection.clear();
+            selectAll();
+            refresh();
+          });
+  auto target = new QComboBox;
+  target->setObjectName("cpiTarget");
+  target->setToolTip(
+      tr("Brushes affect the active group when no CPs are selected."));
+  target->addItems({tr("Selected CPs"), tr("Entire group")});
+  layout->addWidget(target);
+  connect(target, QOverload<int>::of(&QComboBox::currentIndexChanged), bar,
+          [this](int i) {
+            if (m_refreshing) return;
+            cancelPreview();
+            m_entireGroup = i == 1;
+            refresh();
+            m_tool->invalidate();
+          });
+  auto shape = new QComboBox;
+  shape->setObjectName("cpiShape");
+  shape->addItems({tr("Rectangle"), tr("Lasso")});
+  layout->addWidget(shape);
+  connect(shape, QOverload<int>::of(&QComboBox::currentIndexChanged), bar,
+          [this](int i) {
+            if (!m_refreshing) {
+              cancelPreview();
+              m_lassoSelection = i == 1;
+            }
+          });
+  auto addButton = [this, bar, layout](const QString &title, const char *name,
+                                       auto action) {
+    auto button = new QPushButton(title);
+    button->setObjectName(name);
+    layout->addWidget(button);
+    connect(button, &QPushButton::clicked, bar, action);
+  };
+  addButton(tr("New Group"), "cpiNewGroup", [this] {
+    cancelPreview();
+    newGroup();
+  });
+  addButton(tr("Set Key"), "cpiSetKey", [this] {
+    cancelPreview();
+    key(false);
+  });
+  addButton(tr("Channels..."), "cpiChannels", [this] { openChannels(); });
+  auto radiusLabel = new QLabel(tr("Radius:"));
+  radiusLabel->setObjectName("cpiRadiusLabel");
+  layout->addWidget(radiusLabel);
+  auto radius = new QDoubleSpinBox;
+  radius->setObjectName("cpiRadius");
+  radius->setRange(1, 1000);
+  radius->setDecimals(1);
+  layout->addWidget(radius);
+  auto strengthLabel = new QLabel(tr("Strength:"));
+  strengthLabel->setObjectName("cpiStrengthLabel");
+  layout->addWidget(strengthLabel);
+  auto strength = new QDoubleSpinBox;
+  strength->setObjectName("cpiStrength");
+  strength->setRange(1, 100);
+  strength->setSuffix("%");
+  strength->setDecimals(0);
+  layout->addWidget(strength);
+  connect(radius, QOverload<double>::of(&QDoubleSpinBox::valueChanged), bar,
+          [this](double v) {
+            if (m_refreshing) return;
+            cancelPreview();
+            m_brushRadius  = v;
+            CpiBrushRadius = v;
+            refresh();
+            m_tool->invalidate();
+          });
+  connect(strength, QOverload<double>::of(&QDoubleSpinBox::valueChanged), bar,
+          [this](double v) {
+            if (m_refreshing) return;
+            cancelPreview();
+            m_strength       = v / 100;
+            CpiBrushStrength = m_strength;
+            refresh();
+          });
+  addButton(tr("Exit CPI"), "cpiExit", [] {
+    TTool::getApplication()->getCurrentTool()->setCpiMode(false);
+  });
+  auto status = new QLabel;
+  status->setObjectName("cpiStatus");
+  layout->addWidget(status);
+  layout->addStretch(1);
+  refresh();
+  return bar;
+}
+void CpiTool::selectNone() {
+  // Changing the global selection owner (for example to the Xsheet) should
+  // retain the CPI workspace selection. Escape explicitly clears it.
+  cancelPreview();
+  if (!m_enabled) m_selection.clear();
+}
+void CpiTool::clearSelection() {
+  cancelPreview();
+  m_selection.clear();
+  refresh();
+  m_tool->invalidate();
+}
+void CpiTool::resolveSelectionGroup() {
+  if (m_selection.empty() || !m_column) return;
+  auto data = m_column->getCpi();
   auto binding =
       data ? data->binding(m_cell.m_level.getPointer(), m_cell.m_frameId)
            : nullptr;
-  if (binding)
-    for (const auto &g : data->groups)
-      if (g.bindingId == binding->id)
-        m_groups->addItem(QString::fromStdString(g.name),
-                          QString::fromStdString(g.id));
-  int index = m_groups->findData(QString::fromStdString(m_group));
-  m_groups->setCurrentIndex(std::max(0, index));
-  if (index < 0) m_group.clear();
-  auto group = data ? data->group(m_group) : nullptr;
-  m_keys->setRowCount(0);
-  if (group)
-    for (const auto &p : group->pairs) {
-      auto add = [this](int frame, const QString &kind, const Cpi::Pose &pose) {
-        int r = m_keys->rowCount();
-        m_keys->insertRow(r);
-        QStringList values = {QString::number(frame + 1), kind,
-                              QString::number(pose.translation.x, 'g', 8),
-                              QString::number(pose.translation.y, 'g', 8),
-                              QString::number(pose.translation.z, 'g', 8)};
-        for (int c = 0; c < 5; ++c)
-          m_keys->setItem(r, c, new QTableWidgetItem(values[c]));
-        m_keys->item(r, 0)->setData(Qt::UserRole, frame);
-      };
-      add(p.first, tr("Extreme A"), p.start);
-      for (const auto &k : p.keys) add(k.first, tr("Offset"), k.second);
-      add(p.last, tr("Extreme B"), p.end);
+  m_group.clear();
+  if (!binding) return;
+  for (const auto &g : data->groups)
+    if (g.bindingId == binding->id &&
+        std::all_of(m_selection.begin(), m_selection.end(),
+                    [&g](Cpi::PointId id) { return g.points.count(id); })) {
+      m_group = g.id;
+      return;
     }
-  TXshLevelColumnP col;
-  TXshCell cell;
-  TVectorImageP image;
-  bool editable  = context(col, cell, image);
-  QString status = !editable
-                       ? tr("Choose an unlocked vector column in scene mode.")
-                       : tr("Frame %1 — %2 points selected")
-                             .arg(m_tool->getFrame() + 1)
-                             .arg(qulonglong(m_selection.size()));
-  if (editable && binding && !binding->matches(image))
-    status =
-        tr("Source drawing changed: CPI is suspended. Remove its groups and "
-           "bind the revised drawing again.");
-  else if (group) {
-    auto p = group->pairAt(m_tool->getFrame());
-    status += p ? tr(" — Extremes %1 / %2").arg(p->first + 1).arg(p->last + 1)
-                : tr(" — No extreme pair at this frame");
-  }
-  m_status->setText(status);
-  m_refreshing = false;
+}
+void CpiTool::invertSelection() {
+  auto previous = m_selection;
+  m_selection.clear();
+  selectAll();
+  for (auto id : previous) m_selection.erase(id);
+  resolveSelectionGroup();
+  refresh();
+  m_tool->invalidate();
+}
+void CpiTool::enableCommands() {
+  enableCommand(this, MI_SelectAll, &CpiTool::selectAll);
+  enableCommand(this, MI_InvertSelection, &CpiTool::invertSelection);
 }
 void CpiTool::draw() {
   syncContext();
-  TXshLevelColumnP col;
-  TXshCell cell;
-  TVectorImageP source;
-  if (!context(col, cell, source, false)) return;
-  auto data = col->getCpi();
-  auto b =
-      data ? data->binding(cell.m_level.getPointer(), cell.m_frameId) : nullptr;
-  if (b && !b->matches(source)) return;
-  TVectorImageP image = col->applyCpi(source, cell, m_tool->getFrame());
-  glPushAttrib(GL_CURRENT_BIT | GL_POINT_BIT | GL_LINE_BIT);
-  glPointSize(5.0f);
-  glBegin(GL_POINTS);
-  for (unsigned s = 0; s < image->getStrokeCount(); ++s)
-    for (int p = 0; p < image->getStroke(s)->getControlPointCount(); ++p) {
+  auto current = image();
+  if (!current) return;
+  double pixel = m_tool->getPixelSize();
+  for (unsigned s = 0; s < current->getStrokeCount(); ++s)
+    for (int p = 0; p < current->getStroke(s)->getControlPointCount(); ++p) {
+      TPointD v     = current->getStroke(s)->getControlPoint(p);
       bool selected = m_selection.count(Cpi::pointId(s, p));
-      glColor3d(selected ? 1.0 : 0.2, selected ? 0.6 : 0.8,
+      glColor3d(selected ? 1.0 : 0.35, selected ? 0.6 : 0.75,
                 selected ? 0.1 : 1.0);
-      auto point = image->getStroke(s)->getControlPoint(p);
-      glVertex2d(point.x, point.y);
+      tglDrawDisk(v, (selected ? 3.5 : 2.5) * pixel);
     }
-  glEnd();
   if (m_rectangle) {
-    glColor3d(1, 0.6, 0.1);
-    glBegin(GL_LINE_LOOP);
-    glVertex2d(m_first.x, m_first.y);
-    glVertex2d(m_last.x, m_first.y);
-    glVertex2d(m_last.x, m_last.y);
-    glVertex2d(m_first.x, m_last.y);
-    glEnd();
+    glColor3d(0.9, 0.7, 0.1);
+    if (m_lassoSelection) {
+      glBegin(GL_LINE_STRIP);
+      for (const auto &p : m_lasso) glVertex2d(p.x, p.y);
+      glEnd();
+    } else
+      tglDrawRect(TRectD(m_first, m_last));
   }
-  glPopAttrib();
+  if (m_cursorVisible && (m_operation == Magnet || m_operation == Smooth)) {
+    glColor3d(0.9, 0.7, 0.1);
+    tglDrawCircle(m_cursor, m_brushRadius);
+  }
 }
-void CpiTool::down(const TPointD &pos, const TMouseEvent &e) {
+void CpiTool::move(const TPointD &pos) {
+  m_cursor        = pos;
+  m_cursorVisible = true;
+  if (m_operation == Magnet || m_operation == Smooth) m_tool->invalidate();
+}
+void CpiTool::leave() {
+  m_cursorVisible = false;
+  m_tool->invalidate();
+}
+
+bool CpiTool::beginTransform(const TPointD &pos) {
+  cancelPreview();
   syncContext();
-  TXshLevelColumnP col;
-  TXshCell cell;
-  TVectorImageP source;
-  if (!context(col, cell, source)) return;
-  auto data = col->getCpi();
-  auto b =
-      data ? data->binding(cell.m_level.getPointer(), cell.m_frameId) : nullptr;
-  if (b && !b->matches(source)) {
-    message(
-        tr("The source drawing has changed. Rebind its CP groups before "
-           "animating."));
-    return;
+  if (!editable() || !m_column) return false;
+  auto data = m_column->getCpi();
+  auto g    = data ? data->group(m_group) : nullptr;
+  if (!g) {
+    message(tr("Select and name a CP group before editing its pose."));
+    return false;
   }
-  TVectorImageP image = col->applyCpi(source, cell, m_tool->getFrame());
-  double best         = std::pow(8 * m_tool->getPixelSize(), 2);
-  Cpi::PointId hit    = 0;
-  bool found          = false;
-  for (unsigned s = 0; s < image->getStrokeCount(); ++s)
-    for (int p = 0; p < image->getStroke(s)->getControlPointCount(); ++p) {
-      auto v   = image->getStroke(s)->getControlPoint(p);
-      double d = std::pow(v.x - pos.x, 2) + std::pow(v.y - pos.y, 2);
-      if (d < best) {
-        best  = d;
+  if (!g->pairAt(m_tool->getFrame())) {
+    message(tr(
+        "Use Set Key to create a pair of Key Extremes at this frame first."));
+    return false;
+  }
+  if (!m_entireGroup &&
+      std::any_of(m_selection.begin(), m_selection.end(),
+                  [g](Cpi::PointId id) { return !g->points.count(id); })) {
+    message(tr("Choose points from one CPI group for this edit."));
+    return false;
+  }
+  m_movingPoints =
+      m_entireGroup || m_selection.empty() ? g->points : m_selection;
+  if (m_movingPoints.empty()) return false;
+  m_startPose = m_workingPose = g->evaluate(m_tool->getFrame());
+  Cpi::Vec3 local;
+  if ((!m_entireGroup || m_operation != Select) &&
+      !g->localDelta(m_startPose, TPointD(1, 0), local)) {
+    message(
+        tr("This group is edge-on. Rotate it away from the edge-on view before "
+           "editing points."));
+    m_movingPoints.clear();
+    return false;
+  }
+  m_before     = data;
+  m_startImage = image();
+  m_first = m_last = pos;
+  m_row            = m_tool->getFrame();
+  m_dragging       = true;
+  return true;
+}
+bool CpiTool::publishPose(const Cpi::Pose &pose) {
+  if (!m_dragging || !m_before || !m_column || m_column->getCpi() != m_before ||
+      m_tool->getFrame() != m_row || !editable()) {
+    cancelPreview();
+    return false;
+  }
+  auto preview     = std::make_shared<Cpi::Preview>();
+  preview->base    = m_before;
+  preview->groupId = m_group;
+  preview->frame   = m_row;
+  preview->pose    = pose;
+  if (!preview->valid()) return false;
+  m_workingPose = pose;
+  m_changed     = poseChanged(m_startPose, pose);
+  m_column->setCpiPreview(preview);
+  m_preview = preview;
+  m_tool->invalidate();
+  return true;
+}
+bool CpiTool::transform(const TAffine &affine) {
+  if (!m_dragging || !m_before || !m_startImage) return false;
+  auto g    = m_before->group(m_group);
+  auto pose = m_startPose;
+  if (m_entireGroup && std::abs(affine.det() - 1) < 1e-10 &&
+      std::abs(affine.a11 * affine.a11 + affine.a21 * affine.a21 - 1) < 1e-10 &&
+      std::abs(affine.a12 * affine.a12 + affine.a22 * affine.a22 - 1) < 1e-10) {
+    auto origin      = g->pivot + pose.translation;
+    auto transformed = affine * TPointD(origin.x, origin.y);
+    pose.translation =
+        Cpi::Vec3(transformed.x - g->pivot.x, transformed.y - g->pivot.y,
+                  pose.translation.z);
+    double degrees = std::atan2(affine.a21, affine.a11) * 180 / std::acos(-1.0);
+    pose.rotation =
+        (Cpi::Rotation::axisAngle(Cpi::Vec3(0, 0, 1), degrees) * pose.rotation)
+            .normalized();
+    return publishPose(pose);
+  }
+  for (auto id : m_movingPoints) {
+    TPointD v = m_startImage->getStroke(Cpi::strokeIndex(id))
+                    ->getControlPoint(Cpi::pointIndex(id));
+    Cpi::Vec3 local;
+    if (!g->localDelta(m_startPose, affine * v - v, local)) return false;
+    pose.offsets[id] = m_startPose.offset(id) + local;
+  }
+  return publishPose(pose);
+}
+void CpiTool::finishEdit() {
+  if (!m_dragging) return;
+  auto before  = m_before;
+  auto pose    = m_workingPose;
+  bool changed = m_changed && editable() && m_column &&
+                 m_column->getCpi() == before && m_tool->getFrame() == m_row;
+  int row = m_row;
+  cancelPreview();
+  if (!changed || !before) return;
+  Cpi::Data data = *before;
+  auto group     = data.group(m_group);
+  if (!group || !group->pairAt(row)) return;
+  group->pairAt(row)->setPose(row, pose);
+  commit(before, std::make_shared<Cpi::Data>(std::move(data)),
+         m_operation == Magnet   ? tr("CPI Magnet")
+         : m_operation == Smooth ? tr("CPI Smooth")
+                                 : tr("Transform CPI Points"));
+}
+void CpiTool::endTransform() { finishEdit(); }
+
+bool CpiTool::hitPoint(const TPointD &pos, Cpi::PointId &hit) const {
+  auto current = image();
+  if (!current) return false;
+  double best = std::pow(6 * m_tool->getPixelSize(), 2);
+  bool found  = false;
+  for (unsigned s = 0; s < current->getStrokeCount(); ++s)
+    for (int p = 0; p < current->getStroke(s)->getControlPointCount(); ++p) {
+      TPointD v       = current->getStroke(s)->getControlPoint(p);
+      double distance = norm2(v - pos);
+      if (distance < best) {
+        best  = distance;
         hit   = Cpi::pointId(s, p);
         found = true;
       }
     }
+  return found;
+}
+
+void CpiTool::down(const TPointD &pos, const TMouseEvent &e) {
+  syncContext();
+  if (!editable()) return;
+  makeCurrent();
+  auto current = image();
+  if (!current) return;
+  if (m_operation == Magnet || m_operation == Smooth) {
+    if (!beginTransform(pos)) return;
+    TStrokePointDeformation weights(TPointD(1, 0), pos, m_brushRadius);
+    for (auto id : m_movingPoints)
+      m_brushWeights[id] =
+          weights
+              .getDisplacementForControlPoint(
+                  *m_startImage->getStroke(Cpi::strokeIndex(id)),
+                  Cpi::pointIndex(id))
+              .x;
+    if (m_operation == Smooth) smoothAt(pos);
+    return;
+  }
+  Cpi::PointId hit = 0;
+  bool found       = hitPoint(pos, hit);
   if (found) {
-    if (e.isShiftPressed() && m_selection.count(hit)) {
-      m_selection.erase(hit);
-      auto stroke = image->getStroke(Cpi::strokeIndex(hit));
-      if (stroke->isSelfLoop() &&
-          (Cpi::pointIndex(hit) == 0 ||
-           Cpi::pointIndex(hit) ==
-               unsigned(stroke->getControlPointCount() - 1))) {
-        m_selection.erase(Cpi::pointId(Cpi::strokeIndex(hit), 0));
-        m_selection.erase(Cpi::pointId(Cpi::strokeIndex(hit),
-                                       stroke->getControlPointCount() - 1));
-      }
+    if (e.isShiftPressed() || e.isCtrlPressed()) {
+      if (e.isCtrlPressed() || m_selection.count(hit)) {
+        m_selection.erase(hit);
+        auto stroke   = current->getStroke(Cpi::strokeIndex(hit));
+        unsigned last = stroke->getControlPointCount() - 1;
+        if (stroke->isSelfLoop() &&
+            (Cpi::pointIndex(hit) == 0 || Cpi::pointIndex(hit) == last)) {
+          m_selection.erase(Cpi::pointId(Cpi::strokeIndex(hit), 0));
+          m_selection.erase(Cpi::pointId(Cpi::strokeIndex(hit), last));
+        }
+      } else
+        m_selection.insert(hit);
+      selectLinkedEndpoints(current);
+      resolveSelectionGroup();
       refresh();
       m_tool->invalidate();
       return;
     }
-    if (!e.isShiftPressed() && !m_selection.count(hit)) m_selection.clear();
-    m_selection.insert(hit);
-    selectLinkedEndpoints(image);
-    std::string hitGroup;
-    if (data && b)
+    if (!m_selection.count(hit)) {
+      m_selection.clear();
+      m_selection.insert(hit);
+    }
+    selectLinkedEndpoints(current);
+    auto data = m_column->getCpi();
+    auto binding =
+        data ? data->binding(m_cell.m_level.getPointer(), m_cell.m_frameId)
+             : nullptr;
+    m_group.clear();
+    if (binding)
       for (const auto &g : data->groups)
-        if (g.bindingId == b->id && g.points.count(hit)) {
-          hitGroup = g.id;
+        if (g.bindingId == binding->id && g.points.count(hit)) {
+          m_group = g.id;
           break;
         }
-    m_group = hitGroup;
-  } else if (!e.isShiftPressed())
-    m_selection.clear();
-  m_dragGroup = m_target && m_target->currentIndex() == 1;
-  m_preview.reset();
-  m_first = m_last = pos;
-  m_dragging       = true;
-  m_rectangle      = !found;
-  m_changed        = false;
-  m_row            = m_tool->getFrame();
-  m_before         = data;
-  auto g           = data ? data->group(m_group) : nullptr;
-  if (g) m_startPose = g->evaluate(m_row);
-  refresh();
+    refresh();
+    m_tool->invalidate();
+    // Unassigned points can be selected and named without a modal interruption.
+    if (!m_group.empty()) beginTransform(pos);
+    return;
+  }
+  cancelPreview();
+  m_first = m_last  = pos;
+  m_addSelection    = e.isShiftPressed();
+  m_removeSelection = e.isCtrlPressed();
+  if (!m_addSelection && !m_removeSelection) m_selection.clear();
+  m_rectangle = m_dragging = true;
+  m_row                    = m_tool->getFrame();
+  m_lasso                  = {pos};
   m_tool->invalidate();
+}
+void CpiTool::smoothAt(const TPointD &pos) {
+  if (!m_before || !m_startImage) return;
+  const auto g = m_before->group(m_group);
+  const auto b = m_before->binding(g->bindingId);
+  auto pose    = m_workingPose;
+  std::map<unsigned, std::unique_ptr<TStroke>> strokes;
+  for (auto id : m_movingPoints) {
+    auto s = Cpi::strokeIndex(id);
+    if (strokes.count(s)) continue;
+    auto stroke =
+        std::unique_ptr<TStroke>(new TStroke(*m_startImage->getStroke(s)));
+    for (int p = 0; p < stroke->getControlPointCount(); ++p) {
+      auto pid = Cpi::pointId(s, p);
+      if (!g->points.count(pid)) continue;
+      auto v = g->position(*b, pid, m_workingPose);
+      stroke->setControlPoint(p, TPointD(v.x, v.y));
+    }
+    strokes.emplace(s, std::move(stroke));
+  }
+  TStrokePointDeformation weights(TPointD(1, 0), pos, m_brushRadius);
+  for (auto id : m_movingPoints) {
+    unsigned s = Cpi::strokeIndex(id), p = Cpi::pointIndex(id);
+    unsigned last = unsigned(b->strokes[s].size() - 1);
+    bool closed   = b->loops[s];
+    if ((!closed && (p == 0 || p == last)) || (closed && p == last)) continue;
+    double weight = weights.getDisplacementForControlPoint(*strokes[s], p).x;
+    if (weight <= 0) continue;
+    auto left        = Cpi::pointId(s, p == 0 ? last - 1 : p - 1);
+    auto right       = Cpi::pointId(s, p + 1 == last && closed ? 0 : p + 1);
+    auto stroke      = strokes[s].get();
+    TPointD v        = stroke->getControlPoint(p);
+    TPointD a        = stroke->getControlPoint(Cpi::pointIndex(left));
+    TPointD c        = stroke->getControlPoint(Cpi::pointIndex(right));
+    TPointD smoothed = smoothControlPoint(v, a, c, 0.5, m_strength * weight);
+    Cpi::Vec3 local;
+    if (!g->localDelta(m_workingPose, smoothed - v, local)) continue;
+    pose.offsets[id] = m_workingPose.offset(id) + local;
+    if (closed && p == 0) pose.offsets[Cpi::pointId(s, last)] = pose.offset(id);
+  }
+  publishPose(pose);
 }
 void CpiTool::drag(const TPointD &pos, const TMouseEvent &) {
   if (!m_dragging) return;
-  TXshLevelColumnP col;
-  TXshCell cell;
-  TVectorImageP source;
-  if (!context(col, cell, source) || col != m_column || cell != m_cell ||
-      m_tool->getFrame() != m_row ||
-      col->getCpi() != (m_preview ? m_preview : m_before)) {
+  syncContext();
+  if (!m_dragging || !editable() || m_tool->getFrame() != m_row) {
     cancelPreview();
-    refresh();
     return;
-  }
-  m_last    = pos;
-  m_changed = norm2(m_last - m_first) > 1e-12;
-  if (!m_rectangle && m_before) {
-    auto preview = std::make_shared<Cpi::Data>(*m_before);
-    auto g       = preview->group(m_group);
-    auto b       = g ? preview->binding(g->bindingId) : nullptr;
-    if (g && b && b->matches(source) && g->pairAt(m_row) &&
-        (m_dragGroup ||
-         std::all_of(m_selection.begin(), m_selection.end(),
-                     [g](Cpi::PointId id) { return g->points.count(id); }))) {
-      auto pose     = m_startPose;
-      TPointD delta = pos - m_first;
-      if (m_dragGroup)
-        pose.translation = pose.translation + Cpi::Vec3(delta.x, delta.y);
-      else {
-        Cpi::Vec3 local;
-        if (!g->localDelta(pose, delta, local)) return;
-        for (auto id : m_selection)
-          if (g->points.count(id)) pose.offsets[id] = pose.offset(id) + local;
-      }
-      g->pairAt(m_row)->setPose(m_row, pose);
-      m_preview = preview;
-      col->setCpi(m_preview);
-    }
-  }
-  m_tool->invalidate();
-}
-void CpiTool::up(const TPointD &pos, const TMouseEvent &) {
-  if (!m_dragging) return;
-  drag(pos, TMouseEvent());
-  if (!m_dragging) return;
-  m_last     = pos;
-  m_dragging = false;
-  TXshLevelColumnP col;
-  TXshCell cell;
-  TVectorImageP source;
-  if (!context(col, cell, source) || col != m_column || cell != m_cell ||
-      m_tool->getFrame() != m_row ||
-      col->getCpi() != (m_preview ? m_preview : m_before)) {
-    cancelPreview();
-    refresh();
-    return;
-  }
-  if (m_preview) {
-    col->setCpi(m_before);
-    m_preview.reset();
   }
   if (m_rectangle) {
-    m_rectangle         = false;
-    TVectorImageP image = col->applyCpi(source, cell, m_row);
-    TRectD box(std::min(m_first.x, pos.x), std::min(m_first.y, pos.y),
-               std::max(m_first.x, pos.x), std::max(m_first.y, pos.y));
-    for (unsigned s = 0; s < image->getStrokeCount(); ++s)
-      for (int p = 0; p < image->getStroke(s)->getControlPointCount(); ++p)
-        if (box.contains(image->getStroke(s)->getControlPoint(p)))
-          m_selection.insert(Cpi::pointId(s, p));
-    selectLinkedEndpoints(image);
+    m_last = pos;
+    if (m_lasso.empty() ||
+        norm2(pos - m_lasso.back()) > std::pow(m_tool->getPixelSize(), 2))
+      m_lasso.push_back(pos);
+    m_tool->invalidate();
+    return;
+  }
+  if (!m_before || m_column->getCpi() != m_before) {
+    cancelPreview();
+    return;
+  }
+  auto g = m_before->group(m_group);
+  if (m_operation == Smooth) {
+    // Stamp by travelled distance so smoothing does not depend on event rate.
+    double spacing  = std::max(m_tool->getPixelSize(), m_brushRadius * 0.12);
+    double distance = norm(pos - m_last);
+    int count       = int(std::min(2048.0, std::floor(distance / spacing)));
+    if (count > 0) {
+      TPointD step  = (pos - m_last) * (spacing / distance);
+      TPointD start = m_last;
+      for (int i = 1; i <= count && m_dragging; ++i) smoothAt(start + step * i);
+      m_last = start + step * count;
+    }
+  } else {
+    auto pose     = m_startPose;
+    TPointD delta = pos - m_first;
+    if (m_operation == Select && m_entireGroup)
+      pose.translation = pose.translation + Cpi::Vec3(delta.x, delta.y);
+    else {
+      Cpi::Vec3 local;
+      if (!g->localDelta(m_startPose, delta, local)) return;
+      for (auto id : m_movingPoints)
+        pose.offsets[id] =
+            m_startPose.offset(id) +
+            local *
+                (m_operation == Magnet ? m_strength * m_brushWeights[id] : 1.0);
+    }
+    publishPose(pose);
+    m_last = pos;
+  }
+  move(pos);
+}
+void CpiTool::up(const TPointD &pos, const TMouseEvent &e) {
+  if (!m_dragging) return;
+  syncContext();
+  if (!m_dragging || !editable()) {
+    cancelPreview();
+    return;
+  }
+  if (m_rectangle) {
+    m_last       = pos;
+    auto current = image();
+    QPolygonF polygon;
+    for (const auto &p : m_lasso) polygon << QPointF(p.x, p.y);
+    polygon << QPointF(pos.x, pos.y);
+    TRectD rect(m_first, m_last);
+    if (current)
+      for (unsigned s = 0; s < current->getStrokeCount(); ++s)
+        for (int p = 0; p < current->getStroke(s)->getControlPointCount();
+             ++p) {
+          TPointD v = current->getStroke(s)->getControlPoint(p);
+          bool inside =
+              m_lassoSelection
+                  ? polygon.containsPoint(QPointF(v.x, v.y), Qt::OddEvenFill)
+                  : rect.contains(v);
+          if (inside) {
+            auto id = Cpi::pointId(s, p);
+            if (m_removeSelection)
+              m_selection.erase(id);
+            else
+              m_selection.insert(id);
+          }
+        }
+    if (current) selectLinkedEndpoints(current);
+    resolveSelectionGroup();
+    cancelPreview();
     refresh();
     m_tool->invalidate();
     return;
   }
-  if (!m_changed || !m_before) {
-    m_tool->invalidate();
-    return;
-  }
-  Cpi::Data data = *m_before;
-  auto g         = data.group(m_group);
-  auto b         = g ? data.binding(g->bindingId) : nullptr;
-  if (!g || !b || !b->matches(source)) return;
-  if (!m_dragGroup &&
-      std::any_of(m_selection.begin(), m_selection.end(),
-                  [g](Cpi::PointId id) { return !g->points.count(id); })) {
-    message(tr("Animate points from one CP group at a time."));
-    m_tool->invalidate();
-    return;
-  }
-  if (!g->pairAt(m_row)) {
-    message(tr("Create Key Extremes for this group before moving its points."));
-    return;
-  }
-  auto pose     = m_startPose;
-  TPointD delta = pos - m_first;
-  if (m_dragGroup)
-    pose.translation = pose.translation + Cpi::Vec3(delta.x, delta.y);
-  else {
-    Cpi::Vec3 local;
-    if (!g->localDelta(pose, delta, local)) {
-      message(
-          tr("This group's plane is edge-on. Rotate it away from 90 degrees "
-             "before dragging points."));
-      return;
-    }
-    for (auto id : m_selection)
-      if (g->points.count(id)) pose.offsets[id] = pose.offset(id) + local;
-  }
-  g->pairAt(m_row)->setPose(m_row, pose);
-  commit(m_before, std::make_shared<Cpi::Data>(std::move(data)),
-         tr("Move CPI Control Points"));
-  m_before.reset();
+  drag(pos, e);
+  finishEdit();
 }
 bool CpiTool::keyDown(QKeyEvent *e) {
   if (e->key() == Qt::Key_Escape) {
-    cancelPreview();
-    m_selection.clear();
+    if (m_dragging)
+      cancelPreview();
+    else
+      clearSelection();
     refresh();
     m_tool->invalidate();
     return true;
@@ -836,8 +1316,24 @@ bool CpiTool::keyDown(QKeyEvent *e) {
 }
 void CpiTool::contextMenu(QMenu *menu) {
   menu->addAction(tr("CPI Channels..."), this, [this] { openChannels(); });
-  menu->addAction(tr("New CP Group..."), this, [this] { newGroup(); });
+  menu->addAction(tr("New CP Group..."), this, [this] {
+    cancelPreview();
+    newGroup();
+  });
   menu->addAction(tr("Select All CPs"), this, [this] { selectAll(); });
-  menu->addAction(tr("Create Key Extremes"), this, [this] { key(true); });
-  menu->addAction(tr("Set CPI Key"), this, [this] { key(false); });
+  menu->addAction(tr("Deselect CPs"), this, [this] { clearSelection(); });
+  menu->addAction(tr("Invert CP Selection"), this,
+                  [this] { invertSelection(); });
+  menu->addAction(tr("Create Key Extremes"), this, [this] {
+    cancelPreview();
+    key(true);
+  });
+  menu->addAction(tr("Set CPI Key"), this, [this] {
+    cancelPreview();
+    key(false);
+  });
+  menu->addSeparator();
+  menu->addAction(tr("Exit CPI"), this, [] {
+    TTool::getApplication()->getCurrentTool()->setCpiMode(false);
+  });
 }

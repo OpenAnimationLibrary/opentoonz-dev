@@ -214,6 +214,34 @@ void integration(const QString &directory) {
   auto renderAlias = col->getLevelColumnFx()->getAlias(36, TRenderSettings());
   check(renderAlias.find("cpi:") != std::string::npos,
         "render cache includes CPI data");
+  auto preview     = std::make_shared<Cpi::Preview>();
+  preview->base    = col->getCpi();
+  preview->groupId = id;
+  preview->frame   = 36;
+  preview->pose    = preview->base->group(id)->evaluate(36);
+  preview->pose.translation.x += 100;
+  col->setCpiPreview(preview);
+  TVectorImageP live = player.image();
+  checkNear(live->getStroke(0)->getControlPoint(0).x, 150,
+            "viewer consumes transient pose preview");
+  check(col->getLevelColumnFx()->getAlias(36, TRenderSettings()) != renderAlias,
+        "render alias includes preview pose");
+  check(col->getLevelColumnFx()->getBBox(36, renderBounds, TRenderSettings()) &&
+            renderBounds.x1 > live->getStroke(0)->getControlPoint(0).x,
+        "render bounds consume preview pose");
+  checkNear(col->getCpi()->group(id)->evaluate(36).translation.x, 50,
+            "preview does not change saved channels");
+  checkNear(TVectorImageP(col->applyCpi(image, col->getCell(0), 0))
+                ->getStroke(0)
+                ->getControlPoint(0)
+                .x,
+            0, "preview is limited to its scene frame");
+  TXshColumnP previewClone = col->clone();
+  check(!previewClone->getLevelColumn()->getCpiPreview(),
+        "column copies omit transient preview");
+  col->setCpiPreview({});
+  check(col->getLevelColumnFx()->getAlias(36, TRenderSettings()) == renderAlias,
+        "cancelling preview restores render cache identity");
   auto fractional = makeImage(1, 501);
   for (int p = 0; p < 501; ++p)
     fractional->getStroke(0)->setControlPoint(
@@ -273,6 +301,7 @@ void integration(const QString &directory) {
   clone->getLevelColumn()->setCpi(edited);
   check(col->getCpi()->group(id)->name == "手 / Arm",
         "clone edits independent");
+  col->setCpiPreview(preview);
   TFilePath path(directory + "/cpi-column.xml");
   {
     TOStream os(path);
@@ -286,6 +315,9 @@ void integration(const QString &directory) {
     loaded = dynamic_cast<TXshColumn *>(p);
   }
   check(bool(loaded), "column reload");
+  check(!loaded->getLevelColumn()->getCpiPreview(),
+        "scene serialization omits transient preview");
+  col->setCpiPreview({});
   auto saved = loaded->getLevelColumn()->getCpi();
   check(saved && saved->valid(), "saved data valid");
   auto savedGroup = saved->group(id);

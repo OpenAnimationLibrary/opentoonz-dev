@@ -41,10 +41,14 @@ class DVAPI TXshLevelColumn final : public TXshCellColumn {
   TLevelColumnFx *m_fx;
   bool m_iconVisible;
   Cpi::Snapshot m_cpi;
+  Cpi::PreviewSnapshot m_cpiPreview;
 
 public:
   Cpi::Snapshot getCpi() const;
   void setCpi(Cpi::Snapshot data);
+  Cpi::PreviewSnapshot getCpiPreview() const;
+  void setCpiPreview(Cpi::PreviewSnapshot preview);
+  std::string cpiAlias(const TXshCell &cell, double frame) const;
   TImageP applyCpi(const TImageP &image, const TXshCell &cell,
                    double frame) const;
 

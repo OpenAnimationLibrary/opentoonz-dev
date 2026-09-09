@@ -394,6 +394,26 @@ void TXshLevelColumn::setCpi(Cpi::Snapshot data) {
   if (data && !data->valid())
     throw TException("Invalid control point interpolation data");
   std::atomic_store(&m_cpi, std::move(data));
+  setCpiPreview({});
+}
+
+Cpi::PreviewSnapshot TXshLevelColumn::getCpiPreview() const {
+  return std::atomic_load(&m_cpiPreview);
+}
+
+void TXshLevelColumn::setCpiPreview(Cpi::PreviewSnapshot preview) {
+  if (preview && (preview->base != getCpi() || !preview->valid()))
+    throw TException("Invalid control point interpolation preview");
+  std::atomic_store(&m_cpiPreview, std::move(preview));
+}
+
+std::string TXshLevelColumn::cpiAlias(const TXshCell &cell,
+                                      double frame) const {
+  auto data    = getCpi();
+  auto preview = getCpiPreview();
+  return data ? data->alias(cell.m_level.getPointer(), cell.m_frameId, frame,
+                            preview.get())
+              : std::string();
 }
 
 TImageP TXshLevelColumn::applyCpi(const TImageP &image, const TXshCell &cell,
@@ -401,5 +421,7 @@ TImageP TXshLevelColumn::applyCpi(const TImageP &image, const TXshCell &cell,
   auto cpi             = getCpi();
   TVectorImageP vector = image;
   if (!cpi || !vector) return image;
-  return cpi->deform(cell.m_level.getPointer(), cell.m_frameId, frame, vector);
+  auto preview = getCpiPreview();
+  return cpi->deform(cell.m_level.getPointer(), cell.m_frameId, frame, vector,
+                     preview.get());
 }
