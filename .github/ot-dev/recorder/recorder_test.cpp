@@ -431,15 +431,28 @@ private slots:
     QTest::qWait(100);
     auto move = [&](QWidget *target, QPoint point) {
       QCursor::setPos(target->mapToGlobal(point));
+      // The hosted Windows desktop may start with CURSOR_SUPPRESSED (pen/touch
+      // input). SetCursorPos alone does not restore mouse input. Send opposite
+      // mouse moves so the real cursor becomes visible without shifting the
+      // tip.
+      INPUT input[2] = {};
+      for (auto &event : input) {
+        event.type       = INPUT_MOUSE;
+        event.mi.dwFlags = MOUSEEVENTF_MOVE;
+      }
+      input[0].mi.dx  = 1;
+      input[1].mi.dx  = -1;
+      const UINT sent = SendInput(2, input, sizeof(INPUT));
       QTest::qWait(50);
       SetCursor(cursor);
+      return sent == 2;
     };
     const qreal scale = size.width() / 320.0;
     const qreal dpi   = window.devicePixelRatioF();
     if (qEnvironmentVariable("QT_SCALE_FACTOR") == "2") QVERIFY(dpi >= 2);
     const QColor inverted(55, 215, 175);
     for (const QPoint point : {QPoint(80, 70), QPoint(130, 110)}) {
-      move(&window, point);
+      QVERIFY(move(&window, point));
       const QImage without = OtDevRecorder::capture(&window, size, false);
       const QImage with    = OtDevRecorder::capture(&window, size);
       if (with == without) {
@@ -483,12 +496,12 @@ private slots:
     panel.move(window.mapToGlobal(QPoint(360, 20)));
     panel.show();
     panel.activateWindow();
-    move(&panel, QPoint(20, 20));
+    QVERIFY(move(&panel, QPoint(20, 20)));
     QVERIFY(OtDevRecorder::capture(&window, size) !=
             OtDevRecorder::capture(&window, size, false));
     // A cursor crossing a client's right edge must not appear in the black
     // gap between windows or in the letterbox around the composed UI.
-    move(&window, QPoint(319, 120));
+    QVERIFY(move(&window, QPoint(319, 120)));
     const QImage edge  = OtDevRecorder::capture(&window, size);
     const QImage plain = OtDevRecorder::capture(&window, size, false);
     QVERIFY(edge != plain);
@@ -497,12 +510,12 @@ private slots:
         if (plain.pixelColor(x, y) == QColor(Qt::black))
           QCOMPARE(edge.pixelColor(x, y), QColor(Qt::black));
     // The pointer itself is outside both clients, although inside their bounds.
-    move(&window, QPoint(340, 120));
+    QVERIFY(move(&window, QPoint(340, 120)));
     QCOMPARE(OtDevRecorder::capture(&window, size),
              OtDevRecorder::capture(&window, size, false));
 
     panel.setProperty("otdevNoCapture", true);
-    move(&panel, QPoint(20, 20));
+    QVERIFY(move(&panel, QPoint(20, 20)));
     QCOMPARE(OtDevRecorder::capture(&window, size),
              OtDevRecorder::capture(&window, size, false));
     panel.hide();
@@ -511,7 +524,7 @@ private slots:
         QRect(window.mapToGlobal(QPoint(40, 40)), QSize(100, 80)));
     foreign.show();
     foreign.raise();
-    move(&foreign, QPoint(20, 20));
+    QVERIFY(move(&foreign, QPoint(20, 20)));
     QCOMPARE(OtDevRecorder::capture(&window, size),
              OtDevRecorder::capture(&window, size, false));
 #endif
