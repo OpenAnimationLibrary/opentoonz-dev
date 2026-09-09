@@ -713,7 +713,7 @@ void InsertFxPopup::updatePresets() {
       }
   }
   loadMacro();
-  m_fxTree->searchItems(m_searchText);
+  if (!m_searchText.isEmpty()) m_fxTree->searchItems(m_searchText);
 
   update();
 }
