@@ -217,6 +217,7 @@ enum PreferencesItemId {
 
   //----------
   // Others (not appeared in the popup)
+  saveBeforeRendering,
   // Shortcut popup settings
   shortcutPreset,
   // Viewer context menu

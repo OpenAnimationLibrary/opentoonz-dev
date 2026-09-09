@@ -8,6 +8,7 @@
 #include "flipbook.h"
 #include "filebrowsermodel.h"
 #include "previewfxmanager.h"
+#include "iocommand.h"
 
 // TnzQt includes
 #include "toonzqt/menubarcommand.h"
@@ -58,6 +59,24 @@
 //---------------------------------------------------------
 
 namespace {
+
+bool saveBeforeRender() {
+  int mode = Preferences::instance()->getIntValue(saveBeforeRendering);
+  if (mode != 0 && mode != 1) return true;
+
+  if (mode == 0) {
+    int ret = DVGui::MsgBox(
+        QObject::tr("Save the scene and all its resources before rendering?\n"
+                    "To save only selected files, cancel rendering and save "
+                    "them individually."),
+        QObject::tr("Save All and Render"),
+        QObject::tr("Render Without Saving"), QObject::tr("Cancel"), 2);
+    if (ret == 2) return true;
+    if (ret != 1) return false;
+  }
+
+  return IoCmd::saveAll();
+}
 
 #include "bravomark.h"
 
@@ -213,6 +232,8 @@ public:
       , m_timeStretchFactor(1)
       , m_multimediaRender(0) {
     setCommandHandler("MI_Render", this, &RenderCommand::onRender);
+    setCommandHandler("MI_SaveAndRender", this,
+                      &RenderCommand::onSaveAndRender);
     setCommandHandler("MI_FastRender", this, &RenderCommand::onFastRender);
     setCommandHandler("MI_Preview", this, &RenderCommand::onPreview);
   }
@@ -221,6 +242,7 @@ public:
   void rasterRender(bool isPreview);
   void multimediaRender();
   void onRender();
+  void onSaveAndRender();
   void onFastRender();
   void onPreview();
   static void resetBgColor();
@@ -787,7 +809,15 @@ void RenderCommand::multimediaRender() {
 
 //===================================================================
 
-void RenderCommand::onRender() { doRender(false); }
+void RenderCommand::onRender() {
+  if (!saveBeforeRender()) return;
+  doRender(false);
+}
+
+void RenderCommand::onSaveAndRender() {
+  if (!IoCmd::saveAll()) return;
+  doRender(false);
+}
 
 void RenderCommand::onFastRender() {
   TOutputProperties *prop = TApp::instance()
