@@ -1285,6 +1285,11 @@ void CellArea::drawCells(QPainter &p, const QRect toBeUpdated) {
 
   drawNonEmptyBackground(p);
 
+  if (!o->isVerticalTimeline()) {
+    int y = m_viewer->positionToXY(CellPosition(0, xsh->getColumnCount())).y();
+    p.fillRect(0, y, width(), o->cellHeight(), FreeColumnTint);
+  }
+
   drawSelectionBackground(p);
 
   int currentRow = m_viewer->getCurrentRow();

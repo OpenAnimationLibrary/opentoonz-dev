@@ -909,6 +909,9 @@ void ColumnArea::DrawHeader::drawBaseFill(const QColor &columnColor,
     }
   }
 
+  if (!o->isVerticalTimeline() && col == xsh->getColumnCount())
+    p.fillRect(rect, FreeColumnTint);
+
   p.setPen(m_viewer->getVerticalLineHeadColor());
   QLine vertical =
       o->verticalLine(m_viewer->columnToLayerAxis(col), o->frameSide(rect));
