@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCursor>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -69,6 +70,98 @@ QImage widgetImage(QWidget *widget) {
   }
   return image;
 }
+
+#ifdef Q_OS_WIN
+void paintCursor(QPainter &painter, const QImage &frame,
+                 const QList<QWidget *> &windows) {
+  CURSORINFO cursor = {};
+  cursor.cbSize     = sizeof(cursor);
+  if (!GetCursorInfo(&cursor) || !(cursor.flags & CURSOR_SHOWING)) return;
+
+  // Native hit testing reads only window metadata. A cursor over another
+  // application, a native dialog, or a window frame is not part of the video.
+  HWND under            = WindowFromPoint(cursor.ptScreenPos);
+  auto *widget          = QWidget::find(WId(GetAncestor(under, GA_ROOT)));
+  const QPoint position = QCursor::pos();  // Same logical coordinates as Qt UI.
+  if (!widget || !windows.contains(widget) ||
+      !widget->rect().contains(widget->mapFromGlobal(position)))
+    return;
+
+  ICONINFO icon = {};
+  if (!GetIconInfo(cursor.hCursor, &icon)) return;
+  BITMAP bitmap    = {};
+  const bool valid = GetObject(icon.hbmColor ? icon.hbmColor : icon.hbmMask,
+                               sizeof(bitmap), &bitmap) != 0;
+  // Monochrome cursors store the AND and XOR masks one above the other.
+  const int height = icon.hbmColor ? bitmap.bmHeight : bitmap.bmHeight / 2;
+  if (icon.hbmColor) DeleteObject(icon.hbmColor);
+  if (icon.hbmMask) DeleteObject(icon.hbmMask);
+  if (!valid || bitmap.bmWidth <= 0 || height <= 0 || bitmap.bmWidth > 1024 ||
+      height > 1024)
+    return;
+
+  // Cursor bitmap/hotspot sizes are native pixels. Convert through the hovered
+  // window's DPI and the existing UI-to-video transform (including letterbox).
+  const QTransform transform = painter.transform();
+  const qreal sx             = transform.m11() / widget->devicePixelRatioF();
+  const qreal sy             = transform.m22() / widget->devicePixelRatioF();
+  const QPoint topLeft       = (transform.map(QPointF(position)) -
+                          QPointF(icon.xHotspot * sx, icon.yHotspot * sy))
+                             .toPoint();
+  const QSize size(qMax(1, qRound(bitmap.bmWidth * sx)),
+                   qMax(1, qRound(height * sy)));
+  const QRect area = QRect(topLeft, size).intersected(frame.rect());
+  if (area.isEmpty()) return;
+
+  // Draw only into a memory bitmap seeded with our own composed frame. This
+  // preserves alpha AND/XOR cursor shapes (e.g. I-beams) without screen reads.
+  HDC dc = CreateCompatibleDC(nullptr);
+  if (!dc) return;
+  BITMAPINFO dib              = {};
+  dib.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+  dib.bmiHeader.biWidth       = area.width();
+  dib.bmiHeader.biHeight      = -area.height();
+  dib.bmiHeader.biPlanes      = 1;
+  dib.bmiHeader.biBitCount    = 32;
+  dib.bmiHeader.biCompression = BI_RGB;
+  void *pixels                = nullptr;
+  HBITMAP image =
+      CreateDIBSection(dc, &dib, DIB_RGB_COLORS, &pixels, nullptr, 0);
+  if (image) {
+    HGDIOBJ previous = SelectObject(dc, image);
+    if (previous && previous != HGDI_ERROR) {
+      QImage patch(static_cast<uchar *>(pixels), area.width(), area.height(),
+                   QImage::Format_RGB32);
+      patch.fill(Qt::black);
+      {
+        QPainter background(&patch);
+        background.drawImage(-area.topLeft(), frame);
+      }
+      if (DrawIconEx(dc, topLeft.x() - area.x(), topLeft.y() - area.y(),
+                     cursor.hCursor, size.width(), size.height(), 0, nullptr,
+                     DI_NORMAL)) {
+        GdiFlush();
+        // GDI may clear alpha bytes; the recorded canvas is always opaque.
+        for (int y = 0; y < patch.height(); ++y) {
+          auto *row = reinterpret_cast<QRgb *>(patch.scanLine(y));
+          for (int x = 0; x < patch.width(); ++x) row[x] |= 0xff000000;
+        }
+        QRegion clients;
+        for (auto *window : windows)
+          clients += QRect(window->mapToGlobal(QPoint()), window->size());
+        painter.save();
+        painter.resetTransform();
+        painter.setClipRegion(transform.map(clients));
+        painter.drawImage(area.topLeft(), patch);
+        painter.restore();
+      }
+      SelectObject(dc, previous);
+    }
+    DeleteObject(image);
+  }
+  DeleteDC(dc);
+}
+#endif
 }  // namespace
 
 int OtDevRecorder::rememberedChoice(const QString &path,
@@ -144,7 +237,8 @@ QStringList OtDevRecorder::encoderArguments(const QSize &size,
           output};
 }
 
-QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size) {
+QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size,
+                              bool includeCursor) {
   QList<QWidget *> windows{window};
   QRect bounds(window->mapToGlobal(QPoint()), window->size());
   QWidget *active = QApplication::activeWindow();
@@ -188,6 +282,11 @@ QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size) {
   for (auto *widget : windows)
     painter.drawImage(QRect(widget->mapToGlobal(QPoint()), widget->size()),
                       widgetImage(widget));
+#ifdef Q_OS_WIN
+  if (includeCursor) paintCursor(painter, frame, windows);
+#else
+  Q_UNUSED(includeCursor);
+#endif
   return frame;
 }
 

@@ -270,7 +270,9 @@ jobs:
           $env:OTDEV_TEST_FFMPEG = "$env:GITHUB_WORKSPACE\recorder-encoder\ffmpeg.exe"
           $env:OTDEV_TEST_DECODER = "$env:GITHUB_WORKSPACE\recorder-test-decoder\ffmpeg.exe"
           ctest --test-dir recorder-tests -C Release --output-on-failure
-          if ($LASTEXITCODE) { throw 'Recorder tests failed' }
+          $recorderTestExit = $LASTEXITCODE
+          Get-ChildItem recorder-tests/recorder-*.txt | ForEach-Object { Get-Content $_.FullName }
+          if ($recorderTestExit) { throw 'Recorder tests failed' }
 
       # CMake configuration step
       - name: CMake configuration

@@ -33,6 +33,13 @@ UTC names and are split every 10 minutes of encoded frames.
   Resizing and DPI changes do not change raw-frame size. No audio is recorded.
   Captures run on the GUI thread; slow rendering or encoder backpressure can drop
   frames. Paused/dropped time is omitted, so this is not a timing/latency benchmark.
+- The visible Windows cursor is composed into the video, including native and
+  custom tool cursor shapes and their hotspots. Cursor position and size follow
+  the same UI scaling and letterboxing as the panels. It appears only over a
+  captured client area and is clipped to those areas, never drawn over desktop
+  gaps, unrelated windows or excluded dialogs. Hidden cursors remain hidden;
+  animated system cursors currently use their first image. Windows draws the
+  cursor into an in-memory copy of our own frame, without reading screen pixels.
 - Playback output is H.264 Constrained Baseline, level 4.0, 8-bit YUV 4:2:0 in a
   conventional MP4. Capture uses x264's ultrafast/zerolatency preset at CRF 18.
   Working files end in `.recording.mp4`. FFmpeg's `hybrid_fragmented` mode keeps
@@ -73,6 +80,9 @@ longer fragmented, verify Stop and shutdown publish completed filenames, and
 kill a live encoder to confirm earlier fragments remain decodable. On Windows,
 the actual encoded clips must also decode all frames and seek through the native
 Media Foundation H.264 decoder, without using FFmpeg or a third-party codec pack.
+Windows cursor tests cover movement, shape changes, hotspots, inversion masks,
+hidden cursors, floating panels and clipping/exclusion. They run at normal and
+200% DPI with two video sizes.
 
 Windows CI builds and runs these tests before building OpenToonz. Interactive
 acceptance in the extracted artifact must additionally check the Viewer, Style

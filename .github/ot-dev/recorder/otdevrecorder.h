@@ -25,7 +25,8 @@ public:
   static int rememberedChoice(const QString &path, const QString &buildId);
   static bool saveChoice(const QString &path, const QString &buildId,
                          int choice);
-  static QImage capture(QMainWindow *window, const QSize &size);
+  static QImage capture(QMainWindow *window, const QSize &size,
+                        bool includeCursor = true);
   static QStringList encoderArguments(const QSize &size, const QString &output);
 
 private:

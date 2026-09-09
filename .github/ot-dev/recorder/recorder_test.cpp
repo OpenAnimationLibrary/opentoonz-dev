@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCursor>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
@@ -319,7 +320,8 @@ private slots:
       QSKIP(
           "No OpenGL context on this test platform; interactive GL acceptance "
           "still required");
-    const QImage frame = OtDevRecorder::capture(&window, QSize(320, 240));
+    const QImage frame =
+        OtDevRecorder::capture(&window, QSize(320, 240), false);
     QCOMPARE(frame.pixelColor(160, 120), QColor(Qt::green));
   }
 
@@ -341,7 +343,7 @@ private slots:
     window.resize(201, 151);
     window.show();
     QTest::qWait(50);
-    QImage frame = OtDevRecorder::capture(&window, QSize(320, 240));
+    QImage frame = OtDevRecorder::capture(&window, QSize(320, 240), false);
     QCOMPARE(frame.size(), QSize(320, 240));
     QCOMPARE(frame.sizeInBytes(), qint64(320 * 240 * 4));
     QCOMPARE(frame.pixelColor(160, 120), QColor(Qt::red));
@@ -353,7 +355,7 @@ private slots:
     foreign.show();
     foreign.raise();
     QTest::qWait(50);
-    frame = OtDevRecorder::capture(&window, QSize(320, 240));
+    frame = OtDevRecorder::capture(&window, QSize(320, 240), false);
     QCOMPARE(frame.pixelColor(160, 120), QColor(Qt::red));
 
     QDialog dialog(&window);
@@ -363,12 +365,169 @@ private slots:
     dialog.show();
     dialog.activateWindow();
     QTest::qWait(50);
-    frame = OtDevRecorder::capture(&window, QSize(320, 240));
+    frame = OtDevRecorder::capture(&window, QSize(320, 240), false);
     QCOMPARE(frame.pixelColor(160, 120), QColor(Qt::blue));
     dialog.hide();
     window.resize(301, 203);
-    frame = OtDevRecorder::capture(&window, QSize(320, 240));
+    frame = OtDevRecorder::capture(&window, QSize(320, 240), false);
     QCOMPARE(frame.sizeInBytes(), qint64(320 * 240 * 4));
+  }
+
+  void cursorCapture_data() {
+    QTest::addColumn<QSize>("size");
+    QTest::newRow("native-size") << QSize(320, 240);
+    QTest::newRow("scaled-video") << QSize(640, 480);
+  }
+
+  void cursorCapture() {
+#ifndef Q_OS_WIN
+    QSKIP("Native cursor composition is Windows CI only");
+#else
+    QFETCH(QSize, size);
+    // A monochrome cursor which inverts all 32x32 pixels catches missing XOR
+    // support, wrong hotspot offsets, scaling mistakes and transparent halos.
+    const QByteArray mask(128, char(0xff));
+    HCURSOR cursor = CreateCursor(nullptr, 8, 12, 32, 32, mask.constData(),
+                                  mask.constData());
+    QVERIFY(cursor);
+    struct CursorScope {
+      HCURSOR cursor, previous;
+      QPoint position;
+      int visibility = 0;
+      void show() {
+        int count;
+        do {
+          count = ShowCursor(TRUE);
+          ++visibility;
+        } while (count < 0);
+      }
+      void hide() {
+        int count;
+        do {
+          count = ShowCursor(FALSE);
+          --visibility;
+        } while (count >= 0);
+      }
+      ~CursorScope() {
+        SetCursor(previous);
+        QCursor::setPos(position);
+        while (visibility > 0) {
+          ShowCursor(FALSE);
+          --visibility;
+        }
+        while (visibility < 0) {
+          ShowCursor(TRUE);
+          ++visibility;
+        }
+        DestroyCursor(cursor);
+      }
+    } restore{cursor, GetCursor(), QCursor::pos()};
+    restore.show();
+    QMainWindow window;
+    window.setStyleSheet("background: rgb(200,40,80)");
+    window.setGeometry(50, 50, 320, 240);
+    window.show();
+    window.activateWindow();
+    QTest::qWait(100);
+    auto move = [&](QWidget *target, QPoint point) {
+      QCursor::setPos(target->mapToGlobal(point));
+      // The hosted Windows desktop may start with CURSOR_SUPPRESSED (pen/touch
+      // input). SetCursorPos alone does not restore mouse input. Send opposite
+      // mouse moves so the real cursor becomes visible without shifting the
+      // tip.
+      INPUT input[2] = {};
+      for (auto &event : input) {
+        event.type       = INPUT_MOUSE;
+        event.mi.dwFlags = MOUSEEVENTF_MOVE;
+      }
+      input[0].mi.dx  = 1;
+      input[1].mi.dx  = -1;
+      const UINT sent = SendInput(2, input, sizeof(INPUT));
+      QTest::qWait(50);
+      SetCursor(cursor);
+      return sent == 2;
+    };
+    const qreal scale = size.width() / 320.0;
+    const qreal dpi   = window.devicePixelRatioF();
+    if (qEnvironmentVariable("QT_SCALE_FACTOR") == "2") QVERIFY(dpi >= 2);
+    const QColor inverted(55, 215, 175);
+    for (const QPoint point : {QPoint(80, 70), QPoint(130, 110)}) {
+      QVERIFY(move(&window, point));
+      const QImage without = OtDevRecorder::capture(&window, size, false);
+      const QImage with    = OtDevRecorder::capture(&window, size);
+      if (with == without) {
+        CURSORINFO state     = {};
+        state.cbSize         = sizeof(state);
+        const bool available = GetCursorInfo(&state);
+        auto *under          = QWidget::find(
+                     WId(GetAncestor(WindowFromPoint(state.ptScreenPos), GA_ROOT)));
+        qWarning() << "Missing cursor: native sample" << available << "flags"
+                   << state.flags << "expected shape"
+                   << (state.hCursor == cursor) << "over main"
+                   << (under == &window) << "Qt position"
+                   << window.mapFromGlobal(QCursor::pos()) << "native position"
+                   << state.ptScreenPos.x << state.ptScreenPos.y;
+      }
+      QRect changed;
+      for (int y = 0; y < size.height(); ++y)
+        for (int x = 0; x < size.width(); ++x)
+          if (with.pixel(x, y) != without.pixel(x, y)) {
+            QCOMPARE(with.pixelColor(x, y), inverted);
+            changed |= QRect(x, y, 1, 1);
+          }
+      QCOMPARE(changed, QRect(QPoint(qRound((point.x() - 8 / dpi) * scale),
+                                     qRound((point.y() - 12 / dpi) * scale)),
+                              QSize(qRound(32 * scale / dpi),
+                                    qRound(32 * scale / dpi))));
+    }
+    const QImage custom = OtDevRecorder::capture(&window, size);
+    SetCursor(LoadCursor(nullptr, IDC_ARROW));
+    const QImage arrow = OtDevRecorder::capture(&window, size);
+    QVERIFY(arrow != custom);
+    QVERIFY(arrow != OtDevRecorder::capture(&window, size, false));
+    restore.hide();
+    QCOMPARE(OtDevRecorder::capture(&window, size),
+             OtDevRecorder::capture(&window, size, false));
+    restore.show();
+
+    QDialog panel(&window);
+    panel.setStyleSheet("background: rgb(20,100,200)");
+    panel.resize(80, 60);
+    panel.move(window.mapToGlobal(QPoint(360, 20)));
+    panel.show();
+    panel.activateWindow();
+    QVERIFY(move(&panel, QPoint(20, 20)));
+    QVERIFY(OtDevRecorder::capture(&window, size) !=
+            OtDevRecorder::capture(&window, size, false));
+    // A cursor crossing a client's right edge must not appear in the black
+    // gap between windows or in the letterbox around the composed UI.
+    QVERIFY(move(&window, QPoint(319, 120)));
+    const QImage edge  = OtDevRecorder::capture(&window, size);
+    const QImage plain = OtDevRecorder::capture(&window, size, false);
+    QVERIFY(edge != plain);
+    for (int y = 0; y < size.height(); ++y)
+      for (int x = 0; x < size.width(); ++x)
+        if (plain.pixelColor(x, y) == QColor(Qt::black))
+          QCOMPARE(edge.pixelColor(x, y), QColor(Qt::black));
+    // The pointer itself is outside both clients, although inside their bounds.
+    QVERIFY(move(&window, QPoint(340, 120)));
+    QCOMPARE(OtDevRecorder::capture(&window, size),
+             OtDevRecorder::capture(&window, size, false));
+
+    panel.setProperty("otdevNoCapture", true);
+    QVERIFY(move(&panel, QPoint(20, 20)));
+    QCOMPARE(OtDevRecorder::capture(&window, size),
+             OtDevRecorder::capture(&window, size, false));
+    panel.hide();
+    QWidget foreign;
+    foreign.setGeometry(
+        QRect(window.mapToGlobal(QPoint(40, 40)), QSize(100, 80)));
+    foreign.show();
+    foreign.raise();
+    QVERIFY(move(&foreign, QPoint(20, 20)));
+    QCOMPARE(OtDevRecorder::capture(&window, size),
+             OtDevRecorder::capture(&window, size, false));
+#endif
   }
 
   void actualEncoder_data() {
