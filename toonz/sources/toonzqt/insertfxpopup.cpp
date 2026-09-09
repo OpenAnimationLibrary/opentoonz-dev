@@ -182,10 +182,10 @@ void FxTree::startFxDrag(QTreeWidgetItem *item) {
   }
 
   // QDrag takes ownership of the mime data, which owns the Fx reference
-  QDrag drag(this);
-  drag.setMimeData(fxData);
-  drag.setPixmap(pix);
-  drag.exec(Qt::CopyAction);
+  QDrag *drag = new QDrag(this);
+  drag->setMimeData(fxData);
+  drag->setPixmap(pix);
+  drag->exec(Qt::CopyAction);
 }
 
 //-----------------------------------------------------------------------------
