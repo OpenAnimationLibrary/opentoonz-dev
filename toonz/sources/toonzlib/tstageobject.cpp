@@ -1110,6 +1110,42 @@ double TStageObject::getParam(Channel type, double frame) const {
 
 //-----------------------------------------------------------------------------
 
+const std::array<TStageObject::ChannelDescriptor, TStageObject::T_ChannelCount> &
+TStageObject::getChannelDescriptors() {
+  static_assert(T_ChannelCount == 11,
+                "Review historical mappings when changing the legacy enum");
+  // Explicit compatibility bridge, not enum arithmetic. Parameter ownership,
+  // observers, expressions and scene serialization remain with the legacy API.
+  static const std::array<ChannelDescriptor, T_ChannelCount> channels = {{
+      {TChannelIds::Angle, T_Angle},
+      {TChannelIds::X, T_X},
+      {TChannelIds::Y, T_Y},
+      {TChannelIds::Z, T_Z},
+      {TChannelIds::StackingOrder, T_SO},
+      {TChannelIds::ScaleX, T_ScaleX},
+      {TChannelIds::ScaleY, T_ScaleY},
+      {TChannelIds::Scale, T_Scale},
+      {TChannelIds::Path, T_Path},
+      {TChannelIds::ShearX, T_ShearX},
+      {TChannelIds::ShearY, T_ShearY},
+  }};
+  return channels;
+}
+
+TChannelId TStageObject::getChannelId(Channel channel) {
+  for (const auto &descriptor : getChannelDescriptors())
+    if (descriptor.legacyChannel == channel) return descriptor.id;
+  return TChannelIds::Invalid;
+}
+
+TDoubleParam *TStageObject::findChannel(TChannelId id) const {
+  for (const auto &descriptor : getChannelDescriptors())
+    if (descriptor.id == id) return getParam(descriptor.legacyChannel);
+  return nullptr;
+}
+
+//-----------------------------------------------------------------------------
+
 TDoubleParam *TStageObject::getParam(Channel channel) const {
   switch (channel) {
   case T_X:
