@@ -8,6 +8,7 @@
 #include "flipbook.h"
 #include "filebrowsermodel.h"
 #include "previewfxmanager.h"
+#include "iocommand.h"
 
 // TnzQt includes
 #include "toonzqt/menubarcommand.h"
@@ -58,6 +59,24 @@
 //---------------------------------------------------------
 
 namespace {
+
+bool saveBeforeRender() {
+  int mode = Preferences::instance()->getIntValue(saveBeforeRendering);
+  if (mode != 0 && mode != 1) return true;
+
+  if (mode == 0) {
+    int ret = DVGui::MsgBox(
+        QObject::tr("Save the scene and all its resources before rendering?\n"
+                    "To save only selected files, cancel rendering and save "
+                    "them individually."),
+        QObject::tr("Save All and Render"),
+        QObject::tr("Render Without Saving"), QObject::tr("Cancel"), 2);
+    if (ret == 2) return true;
+    if (ret != 1) return false;
+  }
+
+  return IoCmd::saveAll();
+}
 
 #include "bravomark.h"
 
@@ -787,9 +806,13 @@ void RenderCommand::multimediaRender() {
 
 //===================================================================
 
-void RenderCommand::onRender() { doRender(false); }
+void RenderCommand::onRender() {
+  if (!saveBeforeRender()) return;
+  doRender(false);
+}
 
 void RenderCommand::onFastRender() {
+  if (!saveBeforeRender()) return;
   TOutputProperties *prop = TApp::instance()
                                 ->getCurrentScene()
                                 ->getScene()

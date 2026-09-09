@@ -701,6 +701,8 @@ void Preferences::definePreferenceItems() {
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
+  // -1: normal rendering, 0: ask, 1: save all before rendering.
+  define(saveBeforeRendering, "saveBeforeRendering", QMetaType::Int, -1, -1, 1);
   // Shortcut popup settings
   define(shortcutPreset, "shortcutPreset", QMetaType::QString, "defopentoonz");
   // Viewer context menu
