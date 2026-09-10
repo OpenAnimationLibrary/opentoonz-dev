@@ -30,6 +30,61 @@
 
 using namespace std;
 
+static bool isSelectedInk(const CCIL &ink, int inkId) {
+  for (int i = 0; i < ink.m_nb; i++)
+    if (ink.m_ci[i] == inkId) return true;
+  return false;
+}
+
+template <class P>
+static bool hasAdjacentFullInk(const CSTColSelPic<P> &pic, int x, int y,
+                               int inkId) {
+  int x0 = std::max(0, x - 1);
+  int x1 = std::min(pic.m_lX - 1, x + 1);
+  int y0 = std::max(0, y - 1);
+  int y1 = std::min(pic.m_lY - 1, y + 1);
+
+  for (int yy = y0; yy <= y1; yy++)
+    for (int xx = x0; xx <= x1; xx++) {
+      int xyRas = yy * pic.m_ras->wrap + xx;
+      UD44_CMAPINDEX32 ci32 =
+          *((UD44_CMAPINDEX32 *)(pic.m_ras->buffer) + xyRas);
+      int tone = (int)(ci32 & 0x000000ff);
+      int nearbyInkId = (int)((ci32 >> 20) & 0x00000fff);
+      if (tone == 0 && nearbyInkId == inkId) return true;
+    }
+  return false;
+}
+
+template <class P>
+static int includeAntialiasedOnlyInkPixels(CSTColSelPic<P> &pic,
+                                           const CCIL &ink) {
+  if (!pic.m_ras || pic.m_ras->type != RAS_CM32 || !pic.m_sel) return 0;
+
+  int nbAdded = 0;
+  UCHAR *pSel = pic.m_sel.get();
+  for (int y = 0; y < pic.m_lY; y++)
+    for (int x = 0; x < pic.m_lX; x++, pSel++) {
+      int xyRas = y * pic.m_ras->wrap + x;
+      UD44_CMAPINDEX32 ci32 =
+          *((UD44_CMAPINDEX32 *)(pic.m_ras->buffer) + xyRas);
+      int tone = (int)(ci32 & 0x000000ff);
+      if (tone == 0 || tone == 255 || *pSel > 0) continue;
+
+      int inkId = (int)((ci32 >> 20) & 0x00000fff);
+      if (!isSelectedInk(ink, inkId) ||
+          hasAdjacentFullInk(pic, x, y, inkId))
+        continue;
+
+      // Promote only antialiased-only portions of a selected ink. Mixed pixels
+      // beside a solid ink core retain the legacy Toonz Raster mask, while thin
+      // vector or Toonz Raster strokes with no full-ink sample stay continuous.
+      *pSel = 255;
+      nbAdded++;
+    }
+  return nbAdded;
+}
+
 #ifdef __cplusplus
 
 extern "C" {
@@ -38,7 +93,7 @@ extern "C" {
 #define P(d) tmsg_info(" - %d -\n", d)
 #define COPY_RASTER(inr, outr, border)                                         \
   tP.copy_raster(inr, outr, border, border, inr->lx - border - 1,              \
-                 inr->ly - border - 1, 0, 0)
+                  inr->ly - border - 1, 0, 0)
 
 // ----- CALLIGRAPH for UCHAR pixels (range 0-255) --------------------------
 static void calligraphUC(
@@ -54,6 +109,7 @@ static void calligraphUC(
     ipUC.initSel();
     // Selection of pixels using CM
     int nbSel = ipUC.makeSelectionCMAP(par.m_ink, par.m_paint);
+    nbSel += includeAntialiasedOnlyInkPixels(ipUC, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
@@ -105,6 +161,7 @@ static void calligraphUS(
     ipUS.initSel();
     // Selection of pixels using CM
     int nbSel = ipUS.makeSelectionCMAP(par.m_ink, par.m_paint);
+    nbSel += includeAntialiasedOnlyInkPixels(ipUS, par.m_ink);
     if (nbSel > 0) {
       // Calculation of 'DIRECTION MAP'
       double fSize = par.m_accuracy / 5.0;
