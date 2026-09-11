@@ -1,4 +1,4 @@
-<fxlayout>
+<fxlayout help_file="3DLUTBakeFx.pdf">
   <page name="3D LUT Bake">
     <control>lutFile</control>
   </page>
