@@ -51,7 +51,10 @@ bool parse3dl(QTextStream &stream, int &meshSize, std::vector<float> &data,
   QString line;
   int lineNumber = 0;
   if (!readDataLine(stream, line, lineNumber) || line != "3DMESH") {
-    error = lineError(lineNumber, QObject::tr("Expected the 3DMESH keyword."));
+    error = lineError(
+        lineNumber,
+        QObject::tr("Only Lustre-format .3dl LUTs with a 3DMESH header are "
+                    "supported. Flame-format .3dl LUTs are not supported."));
     return false;
   }
   if (!readDataLine(stream, line, lineNumber)) {
