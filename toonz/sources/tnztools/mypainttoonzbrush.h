@@ -90,6 +90,8 @@ public:
 //
 //=======================================================
 
+enum class MyPaintToonzEraserMode { Lines, Areas, LinesAndAreas };
+
 class MyPaintToonzBrush {
 private:
   struct Params {
@@ -135,7 +137,10 @@ public:
 
   // colormapped
   void updateDrawing(const TRasterCM32P rasCM, const TRasterCM32P rasBackupCM,
-                     const TRect &bbox, int styleId, bool lockAlpha) const;
+                     const TRect &bbox, int styleId, bool lockAlpha,
+                     bool eraser = false,
+                     MyPaintToonzEraserMode eraserMode =
+                         MyPaintToonzEraserMode::Lines) const;
 
   const TRaster32P &getRaster() const { return m_ras; }
   RasterController &getController() {
