@@ -774,13 +774,12 @@ void ToonzVectorBrushTool::inputMouseMove(
   TPointD halfThick(m_maxThick * 0.5, m_maxThick * 0.5);
   TRectD invalidateRect(m_brushPos - halfThick, m_brushPos + halfThick);
 
-  bool alt     = state.isKeyPressed(TInputState::Key::alt);
-  bool shift   = state.isKeyPressed(TInputState::Key::shift);
-  bool control = state.isKeyPressed(TInputState::Key::control);
-  
-  if ( alt && control && !shift
-    && Preferences::instance()->useCtrlAltToResizeBrushEnabled() )
-  {
+  const bool resizeBrush =
+      Preferences::instance()->useCtrlAltToResizeBrushEnabled() &&
+      state.isKeyPressed(TKey::control) && state.isKeyPressed(TKey::alt) &&
+      !state.isKeyPressed(TKey::shift);
+
+  if (resizeBrush) {
     // Resize the brush if CTRL+ALT is pressed and the preference is enabled.
     const TPointD &diff = position - m_mousePos;
     double max          = diff.x / 2;
@@ -791,9 +790,11 @@ void ToonzVectorBrushTool::inputMouseMove(
     double radius = m_thickness.getValue().second * 0.5;
     halfThick = TPointD(radius, radius);
   } else {
-    m_brushPos = m_mousePos = position;
+    m_brushPos = position;
   }
-  
+
+  m_mousePos = position;
+
   invalidateRect += TRectD(m_brushPos - halfThick, m_brushPos + halfThick);
 
   if (m_minThick == 0 && m_maxThick == 0) {
