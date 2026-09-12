@@ -1331,6 +1331,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
 
       // Import / Export
       {ffmpegPath, tr("FFmpeg Path:")},
+      {pdfRendererPath, tr("PDF Converter Path:")},
       {ffmpegTimeout, tr("FFmpeg Timeout:")},
       {fastRenderPath, tr("Fast Render Path:")},
       {ffmpegMultiThread,
@@ -2051,6 +2052,11 @@ QWidget* PreferencesPopup::createCodecPage() {
                   "computer."),
            lay);
   insertUI(ffmpegPath, lay);
+
+  putLabel(tr("OpenToonz can use Poppler's pdftoppm to load PDF pages as a "
+              "raster level. Poppler is not bundled with OpenToonz."),
+           lay);
+  insertUI(pdfRendererPath, lay);
 
   putLabel(tr("Number of seconds to wait for FFmpeg to complete processing the "
               "output:"),
