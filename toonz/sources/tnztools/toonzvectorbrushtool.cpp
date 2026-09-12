@@ -771,7 +771,9 @@ void ToonzVectorBrushTool::inputMouseMove(
 
   } locals = {this};
 
-  TPointD halfThick(m_maxThick * 0.5, m_maxThick * 0.5);
+  const double pixelToStage = Stage::inch / m_cameraDpi;
+  TPointD halfThick(m_maxThick * 0.5 * pixelToStage,
+                    m_maxThick * 0.5 * pixelToStage);
   TRectD invalidateRect(m_brushPos - halfThick, m_brushPos + halfThick);
 
   const bool resizeBrush =
@@ -782,12 +784,12 @@ void ToonzVectorBrushTool::inputMouseMove(
   if (resizeBrush) {
     // Resize the brush if CTRL+ALT is pressed and the preference is enabled.
     const TPointD &diff = position - m_mousePos;
-    double max          = diff.x / 2;
-    double min          = diff.y / 2;
+    double max          = diff.x / (2.0 * pixelToStage);
+    double min          = diff.y / (2.0 * pixelToStage);
 
     locals.addMinMax(m_thickness, min, max);
 
-    double radius = m_thickness.getValue().second * 0.5;
+    double radius = m_thickness.getValue().second * 0.5 * pixelToStage;
     halfThick = TPointD(radius, radius);
   } else {
     m_brushPos = position;
