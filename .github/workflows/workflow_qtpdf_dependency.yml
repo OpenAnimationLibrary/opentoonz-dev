@@ -1,6 +1,10 @@
 name: Build Qt 5.15.2 PDF dependency
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/workflow_qtpdf_dependency.yml
+      - thirdparty/qt/README-qtpdf.md
   workflow_dispatch:
 
 permissions:
