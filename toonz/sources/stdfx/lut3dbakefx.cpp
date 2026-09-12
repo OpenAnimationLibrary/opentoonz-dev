@@ -64,11 +64,16 @@ void applyLut<TPixelF>(TRasterFP raster, const Lut3D &lut) {
 class Lut3DBakeFx final : public GlobalControllableFx {
   FX_PLUGIN_DECLARATION(Lut3DBakeFx)
 
+  struct LutCache {
+    QMutex mutex;
+    QString revision;
+    QString error;
+    std::shared_ptr<const Lut3D> lut;
+  };
+
   TRasterFxPort m_input;
-  TStringParamP m_lutPath;
-  mutable std::shared_ptr<const Lut3D> m_lut;
-  mutable QString m_loadedRevision;
-  mutable QMutex m_lutMutex;
+  TFilePathParamP m_lutPath;
+  std::shared_ptr<LutCache> m_cache;
 
   QString fileRevision() const {
     const QFileInfo info(QString::fromStdWString(m_lutPath->getValue()));
@@ -81,20 +86,30 @@ class Lut3DBakeFx final : public GlobalControllableFx {
   std::shared_ptr<const Lut3D> loadCurrentLut(QString &error) const {
     const QString path     = QString::fromStdWString(m_lutPath->getValue());
     const QString revision = fileRevision();
-    QMutexLocker lock(&m_lutMutex);
-    if (revision == m_loadedRevision && m_lut) return m_lut;
-    auto loaded = std::make_shared<Lut3D>();
-    if (!loaded->load(path, &error)) return nullptr;
-    m_lut            = loaded;
-    m_loadedRevision = revision;
-    return m_lut;
+    QMutexLocker lock(&m_cache->mutex);
+    if (revision != m_cache->revision) {
+      auto loaded = std::make_shared<Lut3D>();
+      QString loadError;
+      m_cache->lut      = loaded->load(path, &loadError) ? loaded : nullptr;
+      m_cache->error    = loadError;
+      m_cache->revision = revision;
+    }
+    error = m_cache->error;
+    return m_cache->lut;
   }
 
 public:
-  Lut3DBakeFx() : m_lutPath(L"") {
+  Lut3DBakeFx() : m_lutPath(L""), m_cache(std::make_shared<LutCache>()) {
     addInputPort("Source", m_input);
     bindParam(this, "lutFile", m_lutPath);
+    m_lutPath->setFileFilter("3D LUT files (*.cube *.3dl)");
     enableComputeInFloat(true);
+  }
+
+  TFx *clone(bool recursive = true) const override {
+    auto fx     = static_cast<Lut3DBakeFx *>(TFx::clone(recursive));
+    fx->m_cache = m_cache;
+    return fx;
   }
 
   bool canHandle(const TRenderSettings &, double) override { return true; }
@@ -123,15 +138,19 @@ public:
   void doCompute(TTile &tile, double frame,
                  const TRenderSettings &ri) override {
     if (!m_input.isConnected()) return;
-    m_input->compute(tile, frame, ri);
     const QString path = QString::fromStdWString(m_lutPath->getValue());
-    if (path.isEmpty()) return;
+    if (path.isEmpty()) {
+      m_input->compute(tile, frame, ri);
+      return;
+    }
     QString error;
     const auto lut = loadCurrentLut(error);
     if (!lut)
       throw TException(QString("3D LUT Bake [%1]: %2\n%3")
                            .arg(QString::fromStdWString(getFxId()), path, error)
                            .toStdWString());
+
+    m_input->compute(tile, frame, ri);
 
     // Keep an immutable snapshot alive while other render tiles run or reload.
     // Do not hold the file-cache mutex during pixel processing.

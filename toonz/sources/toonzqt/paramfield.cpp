@@ -10,9 +10,6 @@
 #include "toonzqt/tonecurvefield.h"
 #include "toonzqt/checkbox.h"
 #include "toonzqt/menubarcommand.h"
-#include "toonzqt/lutcalibrator.h"
-#include "toonzqt/dvdialog.h"
-#include "toonz/preferences.h"
 
 #include "tdoubleparam.h"
 #include "tnotanimatableparam.h"
@@ -27,8 +24,6 @@
 #include <QFontComboBox>
 #include <QKeyEvent>
 #include <QFileDialog>
-#include <QFileInfo>
-#include <QVBoxLayout>
 
 using namespace DVGui;
 
@@ -1614,59 +1609,6 @@ StringParamField::StringParamField(QWidget *parent, QString name,
 
 //-----------------------------------------------------------------------------
 
-void StringParamField::enableLutFileControls() {
-  if (!m_textFld || m_lutFileControls) return;
-  m_lutFileControls = true;
-  auto column       = new QVBoxLayout();
-  column->setContentsMargins(0, 0, 0, 0);
-  m_layout->removeWidget(m_textFld);
-  column->addWidget(m_textFld);
-  auto buttons        = new QHBoxLayout();
-  auto browse         = new QPushButton(tr("Browse..."), this);
-  auto usePreferences = new QPushButton(tr("Use Preferences LUT"), this);
-  buttons->addWidget(browse);
-  buttons->addWidget(usePreferences);
-  column->addLayout(buttons);
-  m_layout->addLayout(column);
-  m_textFld->setToolTip(
-      tr("Apply the LUT once, at the end of the FX chain. "
-         "Disable the same display LUT when inspecting the "
-         "baked result to avoid applying it twice."));
-  usePreferences->setToolTip(
-      tr("Copy the configured Preferences LUT path into "
-         "this scene. Later preference changes do not "
-         "change the rendered look."));
-
-  const auto assignPath = [this](const QString &path) {
-    if (path.isEmpty()) return;
-    Lut3D lut;
-    QString error;
-    if (!lut.load(path, &error)) {
-      DVGui::warning(tr("Cannot load LUT: %1\n%2").arg(path, error));
-      return;
-    }
-    m_textFld->setText(QFileInfo(path).absoluteFilePath());
-    onChange();
-  };
-  connect(browse, &QPushButton::clicked, this, [this, assignPath]() {
-    assignPath(QFileDialog::getOpenFileName(this, tr("Load 3D LUT"),
-                                            m_textFld->text(),
-                                            tr("3D LUT files (*.cube *.3dl)")));
-  });
-  connect(usePreferences, &QPushButton::clicked, this, [this, assignPath]() {
-    QString monitor = LutManager::instance()->getMonitorName();
-    const QString path =
-        Preferences::instance()->getColorCalibrationLutPath(monitor);
-    if (path.isEmpty()) {
-      DVGui::warning(tr("No LUT file is configured in Preferences."));
-      return;
-    }
-    assignPath(path);
-  });
-}
-
-//-----------------------------------------------------------------------------
-
 void StringParamField::onChange() {
   std::wstring value;
   if (m_multiTextFld)
@@ -1721,6 +1663,32 @@ void StringParamField::update(int frame) {
     if (m_multiTextFld->toPlainText() == strValue) return;
     m_multiTextFld->setPlainText(strValue);
   }
+}
+
+//=============================================================================
+// FilePathParamField
+//-----------------------------------------------------------------------------
+
+FilePathParamField::FilePathParamField(QWidget *parent, QString name,
+                                       const TFilePathParamP &param)
+    : StringParamField(parent, name, TStringParamP(param.getPointer())) {
+  auto browse = new QPushButton(tr("Browse..."), this);
+  m_layout->addWidget(browse);
+  connect(browse, &QPushButton::clicked, this, [this]() {
+    TFilePathParamP pathParam(m_actualParam.getPointer());
+    if (!pathParam) return;
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select File"), m_textFld->text(),
+        QString::fromStdString(pathParam->getFileFilter()));
+    if (!path.isEmpty()) setPath(path);
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void FilePathParamField::setPath(const QString &path) {
+  m_textFld->setText(path);
+  onChange();
 }
 
 //=============================================================================
@@ -2062,6 +2030,8 @@ ParamField *ParamField::create(QWidget *parent, QString name,
     return new BoolParamField(parent, name, boolParam);
   else if (TSpectrumParamP spectrumParam = param)
     return new SpectrumParamField(parent, name, spectrumParam);
+  else if (TFilePathParamP filePathParam = param)
+    return new FilePathParamField(parent, name, filePathParam);
   else if (TStringParamP stringParam = param)
     return new StringParamField(parent, name, stringParam);
   else if (TToneCurveParamP toneCurveParam = param)

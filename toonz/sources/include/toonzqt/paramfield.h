@@ -624,34 +624,44 @@ signals:
 };
 };  // namespace component
 
-class DVAPI StringParamField final : public ParamField {
+class DVAPI StringParamField : public ParamField {
   Q_OBJECT
 
+protected:
   TStringParamP m_currentParam, m_actualParam;
   DVGui::LineEdit *m_textFld            = nullptr;
   component::MyTextEdit *m_multiTextFld = nullptr;
-  bool m_lutFileControls                = false;
 
 public:
   StringParamField(QWidget *parent, QString name, const TStringParamP &param);
-
-  // File selection for the scene-owned LUT Bake parameter. Changes use the
-  // same undo and preview notifications as edits to the string field.
-  void enableLutFileControls();
 
   void setParam(const TParamP &current, const TParamP &actual,
                 int frame) override;
   void update(int frame) override;
 
   QSize getPreferredSize() override {
-    if (m_lutFileControls) return sizeHint().expandedTo(QSize(260, 54));
     if (m_textFld)
       return QSize(100, 20);
     else
       return QSize(100, 80);
   }
 protected slots:
-  void onChange();
+  virtual void onChange();
+};
+
+//=============================================================================
+// FilePathParamField
+//-----------------------------------------------------------------------------
+
+class DVAPI FilePathParamField : public StringParamField {
+  Q_OBJECT
+
+public:
+  FilePathParamField(QWidget *parent, QString name,
+                     const TFilePathParamP &param);
+
+  void setPath(const QString &path);
+  QSize getPreferredSize() override { return QSize(260, 24); }
 };
 
 //=============================================================================
