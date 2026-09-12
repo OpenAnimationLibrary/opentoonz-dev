@@ -1,9 +1,16 @@
 #include "iocommand.h"
 #include "menubarcommandids.h"
+#include "tapp.h"
 
+#include "toonz/txshlevelhandle.h"
+#include "toonz/txshleveltypes.h"
+#include "toonz/txshsimplelevel.h"
+#include "toonzqt/gutil.h"
 #include "toonzqt/menubarcommand.h"
 
 #include "tfilepath.h"
+#include "trasterimage.h"
+#include "trop.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -14,18 +21,25 @@
 #include <QImage>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QPageLayout>
+#include <QPageSize>
+#include <QPainter>
+#include <QPdfWriter>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include <cmath>
 #include <map>
+#include <vector>
 
 namespace {
 
-constexpr int LowDpi         = 72;
-constexpr int StandardDpi    = 120;
-constexpr int HighQualityDpi = 300;
+constexpr int MinimumDpi  = 36;
+constexpr int StandardDpi = 120;
+constexpr int MaximumDpi  = 1200;
 
 QString findPdfRenderer() {
 #ifdef _WIN32
@@ -104,6 +118,110 @@ bool convertPages(const QStringList &sourcePages, const QDir &destination,
   return false;
 }
 
+QImage levelFrameToQImage(TXshSimpleLevel *level, const TFrameId &fid,
+                          int pageNumber, QString &error) {
+  TRasterImageP rasterImage = (TRasterImageP)level->getFrame(fid, false);
+  if (!rasterImage || !rasterImage->getRaster()) {
+    error = QObject::tr("Could not read raster level frame %1.")
+                .arg(pageNumber);
+    return QImage();
+  }
+
+  TRasterP raster     = rasterImage->getRaster();
+  TRaster32P raster32 = raster;
+  if (!raster32) {
+    raster32 = TRaster32P(raster->getSize());
+    TRop::convert(raster32, raster);
+  }
+
+  QImage image = rasterToQImage(raster32);
+  if (image.isNull())
+    error = QObject::tr("Could not convert raster level frame %1.")
+                .arg(pageNumber);
+  return image;
+}
+
+QPageLayout pageLayoutForImage(const QImage &image, const TPointD &dpi) {
+  const double dpiX =
+      std::isfinite(dpi.x) && dpi.x > 0.0 ? dpi.x : StandardDpi;
+  const double dpiY =
+      std::isfinite(dpi.y) && dpi.y > 0.0 ? dpi.y : StandardDpi;
+  const double widthMm  = image.width() * 25.4 / dpiX;
+  const double heightMm = image.height() * 25.4 / dpiY;
+  const bool landscape  = widthMm > heightMm;
+  const QSizeF portraitSize = landscape ? QSizeF(heightMm, widthMm)
+                                        : QSizeF(widthMm, heightMm);
+  return QPageLayout(QPageSize(portraitSize, QPageSize::Millimeter),
+                     landscape ? QPageLayout::Landscape
+                               : QPageLayout::Portrait,
+                     QMarginsF(), QPageLayout::Millimeter);
+}
+
+bool exportLevelToPdf(TXshSimpleLevel *level, const QString &outputPath,
+                      QString &error) {
+  const std::vector<TFrameId> fids = level->getFids();
+  if (fids.empty()) {
+    error = QObject::tr("The current raster level contains no frames.");
+    return false;
+  }
+
+  QImage page = levelFrameToQImage(level, fids.front(), 1, error);
+  if (page.isNull()) return false;
+
+  QSaveFile output(outputPath);
+  if (!output.open(QIODevice::WriteOnly)) {
+    error = QObject::tr("Could not create %1: %2")
+                .arg(outputPath, output.errorString());
+    return false;
+  }
+
+  bool completed = false;
+  {
+    QPdfWriter writer(&output);
+    writer.setCreator(QCoreApplication::applicationName());
+    writer.setTitle(QString::fromStdWString(level->getName()));
+    writer.setResolution(StandardDpi);
+    if (!writer.setPageLayout(pageLayoutForImage(
+            page, level->getDpi(fids.front())))) {
+      error = QObject::tr("Could not set the PDF page size.");
+    } else {
+      QPainter painter(&writer);
+      if (!painter.isActive()) {
+        error = QObject::tr("Could not start writing the PDF.");
+      } else {
+        painter.drawImage(QRect(0, 0, writer.width(), writer.height()), page);
+
+        for (int index = 1; index < static_cast<int>(fids.size()); ++index) {
+          page = levelFrameToQImage(level, fids[index], index + 1, error);
+          if (page.isNull()) break;
+
+          if (!writer.setPageLayout(
+                  pageLayoutForImage(page, level->getDpi(fids[index]))) ||
+              !writer.newPage()) {
+            error = QObject::tr("Could not create PDF page %1.")
+                        .arg(index + 1);
+            break;
+          }
+          painter.drawImage(QRect(0, 0, writer.width(), writer.height()), page);
+        }
+        painter.end();
+        completed = error.isEmpty();
+      }
+    }
+  }
+
+  if (!completed) {
+    output.cancelWriting();
+    return false;
+  }
+  if (!output.commit()) {
+    error = QObject::tr("Could not save %1: %2")
+                .arg(outputPath, output.errorString());
+    return false;
+  }
+  return true;
+}
+
 class ImportPdfCommand final : public MenuItemHandler {
 public:
   ImportPdfCommand() : MenuItemHandler(MI_ImportPDF) {}
@@ -125,26 +243,17 @@ public:
         QObject::tr("PDF Documents (*.pdf)"));
     if (source.isEmpty()) return;
 
+    bool accepted = false;
+    const int dpi  = QInputDialog::getInt(
+        parent, QObject::tr("PDF Import Resolution"),
+        QObject::tr("Rasterization DPI (72 low, 120 standard, 300 high):"),
+        StandardDpi, MinimumDpi, MaximumDpi, 1, &accepted);
+    if (!accepted) return;
+
     const QString destinationPath = QFileDialog::getExistingDirectory(
         parent, QObject::tr("Choose PDF Import Destination"),
         QFileInfo(source).absolutePath());
     if (destinationPath.isEmpty()) return;
-
-    const QStringList qualities = {
-        QObject::tr("Low (72 DPI)"),
-        QObject::tr("Standard (120 DPI)"),
-        QObject::tr("High Quality (300 DPI)")};
-    bool accepted = false;
-    const QString quality = QInputDialog::getItem(
-        parent, QObject::tr("PDF Import Resolution"),
-        QObject::tr("Resolution:"), qualities, 1, false, &accepted);
-    if (!accepted) return;
-    const int qualityIndex = qualities.indexOf(quality);
-    int dpi                = StandardDpi;
-    if (qualityIndex == 0)
-      dpi = LowDpi;
-    else if (qualityIndex == 2)
-      dpi = HighQualityDpi;
 
     QTemporaryDir temporary;
     if (!temporary.isValid()) {
@@ -218,5 +327,46 @@ public:
             .arg(dpi));
   }
 } importPdfCommand;
+
+class ExportPdfCommand final : public MenuItemHandler {
+public:
+  ExportPdfCommand() : MenuItemHandler(MI_ExportPDF) {}
+
+  void execute() override {
+    QWidget *parent        = QApplication::activeWindow();
+    TXshSimpleLevel *level =
+        TApp::instance()->getCurrentLevel()->getSimpleLevel();
+    if (!level || level->getType() != OVL_XSHLEVEL) {
+      QMessageBox::warning(
+          parent, QObject::tr("Export Level as PDF"),
+          QObject::tr("Select a full-color raster level to export."));
+      return;
+    }
+
+    const QString levelName = QString::fromStdWString(level->getName());
+    const QString initialPath = QDir(level->getPath().getParentDir().getQString())
+                                    .absoluteFilePath(levelName + ".pdf");
+    QString outputPath = QFileDialog::getSaveFileName(
+        parent, QObject::tr("Export Level as PDF"), initialPath,
+        QObject::tr("PDF Documents (*.pdf)"));
+    if (outputPath.isEmpty()) return;
+    if (!outputPath.endsWith(".pdf", Qt::CaseInsensitive)) outputPath += ".pdf";
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    QString error;
+    const bool exported = exportLevelToPdf(level, outputPath, error);
+    QApplication::restoreOverrideCursor();
+    if (!exported) {
+      QMessageBox::warning(parent, QObject::tr("Export Level as PDF"), error);
+      return;
+    }
+
+    QMessageBox::information(
+        parent, QObject::tr("Export Level as PDF"),
+        QObject::tr("Exported %1 frames from %2 as a multipage raster PDF.")
+            .arg(level->getFrameCount())
+            .arg(levelName));
+  }
+} exportPdfCommand;
 
 }  // namespace

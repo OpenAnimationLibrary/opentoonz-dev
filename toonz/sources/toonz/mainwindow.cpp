@@ -2269,6 +2269,9 @@ void MainWindow::defineActions() {
   createMenuFileAction(MI_ImportPDF,
                        QT_TRANSLATE_NOOP("MainWindow", "Import PDF..."), "");
   createMenuFileAction(
+      MI_ExportPDF,
+      QT_TRANSLATE_NOOP("MainWindow", "Export Level as PDF..."), "");
+  createMenuFileAction(
       MI_ExportTvpJson,
       QT_TRANSLATE_NOOP("MainWindow", "Export TVPaint JSON File"), "");
   createMenuFileAction("MI_RunScript", QT_TR_NOOP("Run Script..."), "",

@@ -499,6 +499,7 @@
 #define MI_ExportOCA "MI_ExportOCA"
 #define MI_ImportOCA "MI_ImportOCA"
 #define MI_ImportPDF "MI_ImportPDF"
+#define MI_ExportPDF "MI_ExportPDF"
 #define MI_ExportTvpJson "MI_ExportTvpJson"
 #define MI_ExportXsheetPDF "MI_ExportXsheetPDF"
 #define MI_ExportCameraTrack "MI_ExportCameraTrack"
