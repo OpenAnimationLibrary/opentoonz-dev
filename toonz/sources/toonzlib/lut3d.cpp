@@ -87,6 +87,41 @@ bool parse3dl(QTextStream &stream, int &meshSize, std::vector<float> &data,
                       QObject::tr("The input grid has the wrong size."));
     return false;
   }
+  const QStringList gridFields = splitFields(line);
+  std::vector<int> grid(meshSize);
+  for (int i = 0; i < meshSize; ++i) {
+    bool ok = false;
+    grid[i] = gridFields.at(i).toInt(&ok);
+    if (!ok || grid[i] < 0 || (i > 0 && grid[i] <= grid[i - 1])) {
+      error = lineError(
+          lineNumber,
+          QObject::tr("The input grid must contain strictly increasing "
+                      "nonnegative integers."));
+      return false;
+    }
+  }
+  bool hasFullRange = false;
+  for (int maximum : {255, 1023, 4095, 65535})
+    if (std::abs(grid.back() - maximum) <= 1) hasFullRange = true;
+  if (grid.front() != 0 || !hasFullRange) {
+    error = lineError(
+        lineNumber,
+        QObject::tr("Only full-range .3dl input grids starting at 0 and ending "
+                    "at 255, 1023, 4095 or 65535 (within one code value) are "
+                    "supported."));
+    return false;
+  }
+  for (int i = 1; i < meshSize - 1; ++i) {
+    const double expected =
+        static_cast<double>(i) * grid.back() / (meshSize - 1);
+    if (std::abs(grid[i] - expected) > 1.0) {
+      error = lineError(
+          lineNumber,
+          QObject::tr("Nonuniform .3dl input grids are not supported. Grid "
+                      "points must be evenly spaced within one code value."));
+      return false;
+    }
+  }
   const size_t entryCount = static_cast<size_t>(meshSize) * meshSize * meshSize;
   data.resize(entryCount * 3);
   const float maxValue = std::ldexp(1.0f, outputBitDepth) - 1.0f;
@@ -121,6 +156,30 @@ bool parse3dl(QTextStream &stream, int &meshSize, std::vector<float> &data,
           data[offset + channel] = static_cast<float>(value) / maxValue;
         }
       }
+  if (readDataLine(stream, line, lineNumber)) {
+    if (line != "LUT8") {
+      error = lineError(
+          lineNumber,
+          QObject::tr("Unexpected data after the .3dl color table. Only the "
+                      "LUT8 / gamma 1 footer is supported."));
+      return false;
+    }
+    if (readDataLine(stream, line, lineNumber)) {
+      const QStringList footer = splitFields(line);
+      float gamma              = 0.0f;
+      if (footer.size() != 2 || footer.at(0) != "gamma" ||
+          !parseFiniteFloat(footer.at(1), gamma) || gamma != 1.0f) {
+        error = lineError(
+            lineNumber, QObject::tr("Only gamma 1 is supported in .3dl LUTs."));
+        return false;
+      }
+      if (readDataLine(stream, line, lineNumber)) {
+        error = lineError(
+            lineNumber, QObject::tr("Unexpected data after the .3dl footer."));
+        return false;
+      }
+    }
+  }
   std::fill(domainMin, domainMin + 3, 0.0f);
   std::fill(domainMax, domainMax + 3, 1.0f);
   return true;
