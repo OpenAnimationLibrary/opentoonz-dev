@@ -1,0 +1,193 @@
+name: Build Qt 5.15.2 PDF dependency
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_ARCHIVE: Qt5.15.2_wintab.zip
+  QT_ARCHIVE_SHA256: eba1a5da9cb631ccd11991e38e0aab6cd7ecb506436389b397abb6ccf591111a
+  QT_SOURCE_ARCHIVE: qtwebengine-everywhere-src-5.15.2.tar.xz
+  QT_SOURCE_SHA256: c8afca0e43d84f7bd595436fbe4d13a5bbdb81ec5104d605085d07545b6f91e0
+  PACKAGE_NAME: Qt5.15.2_wintab_pdf-full-v1
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 360
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable the MSVC x64 environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt PDF build prerequisites
+        shell: powershell
+        run: |
+          choco install python2 gperf winflexbison3 -y --no-progress
+          "C:\Python27" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Download and verify inputs
+        shell: powershell
+        run: |
+          curl.exe -fsSL --retry 3 -o $env:QT_ARCHIVE `
+            https://github.com/shun-iwasawa/qt5/releases/download/v5.15.2_wintab/Qt5.15.2_wintab.zip
+          curl.exe -fsSL --retry 3 -o $env:QT_SOURCE_ARCHIVE `
+            https://download.qt.io/archive/qt/5.15/5.15.2/submodules/qtwebengine-everywhere-src-5.15.2.tar.xz
+
+          if ((Get-FileHash $env:QT_ARCHIVE -Algorithm SHA256).Hash.ToLower() -ne $env:QT_ARCHIVE_SHA256) {
+            throw "Unexpected custom Qt archive checksum"
+          }
+          if ((Get-FileHash $env:QT_SOURCE_ARCHIVE -Algorithm SHA256).Hash.ToLower() -ne $env:QT_SOURCE_SHA256) {
+            throw "Unexpected Qt WebEngine source checksum"
+          }
+
+      - name: Extract inputs
+        shell: powershell
+        run: |
+          7z x $env:QT_ARCHIVE -oqt-package
+          7z x $env:QT_SOURCE_ARCHIVE
+          7z x qtwebengine-everywhere-src-5.15.2.tar -oqtwebengine-src
+
+      - name: Configure full Qt PDF feature set
+        shell: cmd
+        run: |
+          set QT_ROOT=%CD%\qt-package\Qt5.15.2_wintab\5.15.2_wintab\msvc2019_64
+          set PATH=C:\Python27;%QT_ROOT%\bin;%PATH%
+          mkdir qtwebengine-build
+          cd qtwebengine-build
+          "%QT_ROOT%\bin\qmake.exe" ..\qtwebengine-src\qtwebengine-everywhere-src-5.15.2\qtwebengine.pro -- ^
+            -feature-build-qtpdf ^
+            -no-feature-build-qtwebengine-core ^
+            -feature-pdf-v8 ^
+            -feature-pdf-xfa ^
+            -feature-pdf-xfa-bmp ^
+            -feature-pdf-xfa-gif ^
+            -feature-pdf-xfa-png ^
+            -feature-pdf-xfa-tiff
+
+      - name: Build and install Qt PDF
+        shell: cmd
+        run: |
+          set QT_ROOT=%CD%\qt-package\Qt5.15.2_wintab\5.15.2_wintab\msvc2019_64
+          set PATH=C:\Python27;%QT_ROOT%\bin;%PATH%
+          cd qtwebengine-build
+          nmake release
+          nmake debug
+          nmake install
+
+      - name: Verify complete SDK and runtime payload
+        shell: powershell
+        run: |
+          $qt = Join-Path $PWD "qt-package\Qt5.15.2_wintab\5.15.2_wintab\msvc2019_64"
+          $required = @(
+            "bin\Qt5Pdf.dll",
+            "bin\Qt5Pdfd.dll",
+            "bin\Qt5PdfWidgets.dll",
+            "bin\Qt5PdfWidgetsd.dll",
+            "include\QtPdf\QPdfDocument",
+            "include\QtPdfWidgets\QPdfView",
+            "lib\Qt5Pdf.lib",
+            "lib\Qt5Pdfd.lib",
+            "lib\cmake\Qt5Pdf\Qt5PdfConfig.cmake",
+            "lib\cmake\Qt5PdfWidgets\Qt5PdfWidgetsConfig.cmake",
+            "qml\QtQuick\Pdf\qmldir"
+          )
+          foreach ($relativePath in $required) {
+            if (-not (Test-Path (Join-Path $qt $relativePath))) {
+              throw "Missing Qt PDF package component: $relativePath"
+            }
+          }
+
+          $config = Get-Content (Join-Path $qt "mkspecs\modules\qt_lib_pdf_private.pri") -Raw
+          foreach ($feature in @("pdf-v8", "pdf-xfa", "pdf-xfa-bmp", "pdf-xfa-gif", "pdf-xfa-png", "pdf-xfa-tiff")) {
+            if ($config -notmatch [regex]::Escape($feature)) {
+              throw "Qt PDF feature was not enabled: $feature"
+            }
+          }
+
+      - name: Link and run a PDF render smoke test
+        shell: powershell
+        run: |
+          $qt = Join-Path $PWD "qt-package\Qt5.15.2_wintab\5.15.2_wintab\msvc2019_64"
+          New-Item -ItemType Directory -Force qtpdf-smoke | Out-Null
+          @'
+          QT += core gui pdf
+          CONFIG += console release
+          CONFIG -= app_bundle
+          SOURCES += main.cpp
+          '@ | Set-Content qtpdf-smoke\smoke.pro
+          @'
+          #include <QGuiApplication>
+          #include <QImage>
+          #include <QPainter>
+          #include <QPdfDocument>
+          #include <QPdfWriter>
+
+          int main(int argc, char **argv) {
+            QGuiApplication app(argc, argv);
+            {
+              QPdfWriter writer("input.pdf");
+              QPainter painter(&writer);
+              painter.drawText(20, 40, "OpenToonz Qt PDF smoke test");
+            }
+            QPdfDocument document;
+            if (document.load("input.pdf") != QPdfDocument::NoError || document.pageCount() != 1)
+              return 1;
+            QImage image = document.render(0, QSize(320, 240));
+            return image.isNull() || !image.save("rendered.png") ? 2 : 0;
+          }
+          '@ | Set-Content qtpdf-smoke\main.cpp
+
+          Push-Location qtpdf-smoke
+          & "$qt\bin\qmake.exe" smoke.pro
+          if ($LASTEXITCODE) { throw "qmake smoke test failed" }
+          nmake
+          if ($LASTEXITCODE) { throw "smoke test build failed" }
+          $env:PATH = "$qt\bin;$env:PATH"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          .\release\smoke.exe
+          if ($LASTEXITCODE -or -not (Test-Path rendered.png)) { throw "Qt PDF render smoke test failed" }
+          Pop-Location
+
+      - name: Add source and licensing record
+        shell: powershell
+        run: |
+          $root = "qt-package\Qt5.15.2_wintab"
+          $notices = Join-Path $root "Licenses\QtPdf"
+          New-Item -ItemType Directory -Force $notices | Out-Null
+          Copy-Item "qtwebengine-src\qtwebengine-everywhere-src-5.15.2\LICENSE.Chromium" $notices
+          Copy-Item "qtwebengine-src\qtwebengine-everywhere-src-5.15.2\LICENSE.LGPL3" $notices
+          Copy-Item "qtwebengine-src\qtwebengine-everywhere-src-5.15.2\LICENSE.GPL2" $notices
+          Copy-Item "qtwebengine-src\qtwebengine-everywhere-src-5.15.2\LICENSE.GPL3" $notices
+          Copy-Item "thirdparty\qt\README-qtpdf.md" (Join-Path $root "README-qtpdf.md")
+
+          @"
+          Base archive SHA-256: $env:QT_ARCHIVE_SHA256
+          Qt WebEngine/PDF source SHA-256: $env:QT_SOURCE_SHA256
+          Qt WebEngine/PDF source: https://download.qt.io/archive/qt/5.15/5.15.2/submodules/$env:QT_SOURCE_ARCHIVE
+          Features: pdf-v8 pdf-xfa pdf-xfa-bmp pdf-xfa-gif pdf-xfa-png pdf-xfa-tiff
+          "@ | Set-Content (Join-Path $root "QtPdf-build-manifest.txt")
+
+      - name: Package complete Qt SDK
+        shell: powershell
+        run: |
+          Compress-Archive -Path "qt-package\Qt5.15.2_wintab" -DestinationPath "$env:PACKAGE_NAME.zip"
+          (Get-FileHash "$env:PACKAGE_NAME.zip" -Algorithm SHA256).Hash.ToLower() |
+            Set-Content "$env:PACKAGE_NAME.zip.sha256"
+
+      - name: Upload versioned dependency archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            ${{ env.PACKAGE_NAME }}.zip
+            ${{ env.PACKAGE_NAME }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
