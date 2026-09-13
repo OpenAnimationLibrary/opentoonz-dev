@@ -68,7 +68,7 @@ render clones. A mutex protects preparation; rasterization runs without holding
 that mutex. Changing file path, modification time, size or availability
 invalidates the loader and raster cache keys on the next render request.
 Replacing a file while preserving both its timestamp and size is not detected;
-use a different filename or recreate the FX in that case. There is no background
+use a different filename in that case. There is no background
 file watcher, so request a new preview after externally changing the source.
 
 Projected geometry has a separate 256 MiB budget, including vector growth.

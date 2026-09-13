@@ -211,10 +211,11 @@ void testVisible(GlbModelFx &fx, int bpp) {
   require(output->pixels(0)[0].m == 0, "Background is not transparent");
 
   // Exercise OpenToonz's actual downstream Over operation at every precision.
-  TRasterPT<PIXEL> background(80, 80), composite(80, 80);
+  TRasterPT<PIXEL> composite(80, 80);
   const auto maximum = PIXEL::maxChannelValue;
-  background->fill(PIXEL(0, 0, maximum, maximum));
-  TRop::over(composite, background, output);
+  composite->fill(PIXEL(0, 0, maximum, maximum));
+  // Match OverFx::process, including its floating-point path.
+  TRop::over(composite, output);
   require(composite->pixels(0)[0].b == maximum && composite->pixels(0)[0].r == 0,
           "Composite lost its background outside the model");
   require(composite->pixels(40)[40].r == center.r && composite->pixels(40)[40].b == center.b,
