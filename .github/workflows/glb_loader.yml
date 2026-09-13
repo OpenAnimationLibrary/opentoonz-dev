@@ -1,0 +1,56 @@
+name: GLB Loader
+
+on:
+  pull_request:
+    paths:
+      - 'toonz/sources/glb/**'
+      - 'thirdparty/cgltf/**'
+      - '.github/workflows/glb_loader.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'toonz/sources/glb/**'
+      - 'thirdparty/cgltf/**'
+      - '.github/workflows/glb_loader.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  loader:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Configure standalone loader
+        run: cmake -S toonz/sources/glb -B glb-build -DCMAKE_BUILD_TYPE=Release -DBUILD_GLB_LOADER_TOOLS=ON
+      - name: Build
+        run: cmake --build glb-build --config Release --parallel 2
+      - name: Test
+        run: ctest --test-dir glb-build -C Release --output-on-failure
+      - name: Stage inspection utility
+        shell: bash
+        run: |
+          mkdir glb-package
+          if [ -f glb-build/Release/glb_inspect.exe ]; then
+            cp glb-build/Release/glb_inspect.exe glb-package/
+          else
+            cp glb-build/glb_inspect glb-package/
+          fi
+          cp thirdparty/cgltf/LICENSE glb-package/cgltf-LICENSE.txt
+          cp LICENSE.txt glb-package/OpenToonz-LICENSE.txt
+          cp doc/glb_loader.md glb-package/README.md
+      - uses: actions/upload-artifact@v6
+        with:
+          name: glb-inspect-${{ matrix.os }}
+          path: glb-package
+      - name: Check memory and undefined behavior
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S toonz/sources/glb -B glb-sanitize -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build glb-sanitize --parallel 2
+          ctest --test-dir glb-sanitize --output-on-failure
