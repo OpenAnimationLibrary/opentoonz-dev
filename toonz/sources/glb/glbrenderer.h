@@ -14,6 +14,10 @@ struct RenderOptions {
   double cameraDistance = 10.0, fieldOfView = 45.0, orthoHeight = 10.0;
   double nearClip = 0.1, farClip = 1000.0;
   bool perspective = false, headlight = false, wireframe = false;
+  bool materialColors = false;  // False preserves the original grayscale output.
+  // Display-referred RGB, one per asset material plus the default material.
+  // Empty uses the asset's linear baseColor factors, converted to sRGB.
+  std::vector<std::array<float, 3>> colors;
   bool operator==(const RenderOptions &other) const;
 };
 
@@ -23,7 +27,7 @@ struct ProjectedVertex {
 struct RenderTriangle {
   std::array<ProjectedVertex, 3> vertices;
   std::array<bool, 3> edges;  // Excludes triangulation diagonals after clipping.
-  float gray;
+  std::array<float, 3> color;
 };
 struct RenderScene {
   std::vector<RenderTriangle> triangles;
@@ -31,8 +35,8 @@ struct RenderScene {
   std::vector<std::string> warnings;
   bool wireframe = false;
 };
-struct GrayPixel {
-  float gray = 0, alpha = 0;  // Premultiplied, display-referred, in [0,1].
+struct ColorPixel {
+  float r = 0, g = 0, b = 0, alpha = 0;  // Premultiplied sRGB, in [0,1].
 };
 struct RenderTile {
   int width = 0, height = 0;
@@ -41,7 +45,7 @@ struct RenderTile {
   std::array<double, 6> affine{{1, 0, 0, 0, 1, 0}};
 };
 
-// Opaque, two-sided base geometry. Materials/textures/deformation are not
+// Opaque, two-sided base geometry. Textures/deformation are not
 // evaluated. Uses the declared default scene, otherwise the first scene.
 // Throws std::runtime_error on invalid settings or resource limits.
 RenderScene prepareRender(const Asset &asset, const RenderOptions &options,
@@ -49,7 +53,11 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &options,
 
 // Four coverage/depth samples per pixel; coordinates and coverage do not
 // depend on tile boundaries. No graphics context or global mutable state.
-std::vector<GrayPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
+std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
                                  const int *canceled = nullptr);
+
+float linearToSrgb(float value);
+float srgbToLinear(float value);
+std::array<float, 3> materialColor(const Asset &asset, std::size_t index);
 
 }  // namespace otglb

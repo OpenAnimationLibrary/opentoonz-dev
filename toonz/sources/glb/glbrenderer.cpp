@@ -71,7 +71,21 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          cameraDistance == b.cameraDistance && fieldOfView == b.fieldOfView &&
          orthoHeight == b.orthoHeight && nearClip == b.nearClip &&
          farClip == b.farClip && perspective == b.perspective &&
-         headlight == b.headlight && wireframe == b.wireframe;
+         headlight == b.headlight && wireframe == b.wireframe &&
+         materialColors == b.materialColors && colors == b.colors;
+}
+
+float linearToSrgb(float v) {
+  v = std::clamp(v, 0.0f, 1.0f);
+  return v <= 0.0031308f ? 12.92f * v : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f;
+}
+float srgbToLinear(float v) {
+  return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+}
+std::array<float, 3> materialColor(const Asset &asset, std::size_t index) {
+  if (index >= asset.materials.size()) return {{1, 1, 1}};
+  const auto &c = asset.materials[index].baseColor;
+  return {{linearToSrgb(c[0]), linearToSrgb(c[1]), linearToSrgb(c[2])}};
 }
 
 RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
@@ -87,6 +101,11 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
                         : (std::isfinite(o.orthoHeight) && o.orthoHeight > 0),
           "Invalid GLB projection height or field of view.");
   RenderScene out;
+  require(o.colors.empty() || o.colors.size() == asset.materials.size() + 1,
+          "GLB material color count does not match the asset.");
+  for (const auto &color : o.colors)
+    for (float v : color) require(std::isfinite(v) && v >= 0 && v <= 1,
+                                 "Invalid GLB material color.");
   out.wireframe = o.wireframe;
   if (asset.scenes.empty()) return out;
   const int scene = asset.defaultScene == NoIndex ? 0 : asset.defaultScene;
@@ -117,6 +136,11 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
     if (node.mesh == NoIndex) continue;
     require(node.mesh >= 0 && std::size_t(node.mesh) < asset.meshes.size(), "Invalid GLB mesh index.");
     for (const Primitive &p : asset.meshes[node.mesh].primitives) {
+      require(p.material == NoIndex || (p.material >= 0 &&
+                  std::size_t(p.material) < asset.materials.size()),
+              "Invalid GLB material index.");
+      const std::size_t material = p.material == NoIndex ? asset.materials.size() : p.material;
+      const auto base = o.colors.empty() ? materialColor(asset, material) : o.colors[material];
       if (p.mode < 4 || p.mode > 6) { skipped = true; continue; }
       const auto pos = std::find_if(p.attributes.begin(), p.attributes.end(),
           [](const Attribute &a) { return a.semantic == "POSITION"; });
@@ -141,13 +165,19 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
         const double light = denominator > 0 && std::isfinite(denominator)
             ? std::abs(dot(normal, view)) / denominator : 0;
         const float gray = o.headlight ? float(0.2 + 0.6 * std::clamp(light, 0.0, 1.0)) : 0.75f;
+        std::array<float, 3> color{{gray, gray, gray}};
+        if (o.materialColors) {
+          color = base;
+          if (o.headlight)
+            for (auto &v : color) v = linearToSrgb(srgbToLinear(v) * gray);
+        }
         const auto polygon = clip(clip({a, b, c}, o.nearClip, true), o.farClip, false);
         for (std::size_t j = 1; j + 1 < polygon.size(); ++j) {
           // Include both old and new allocations during vector growth.
           require(out.triangles.size() < MemoryLimit / (3 * sizeof(RenderTriangle)),
                   "GLB projected geometry exceeds the 256 MiB render budget.");
           RenderTriangle triangle{{{project(polygon[0]), project(polygon[j]), project(polygon[j + 1])}},
-                                  {{j == 1, true, j + 2 == polygon.size()}}, gray};
+                                  {{j == 1, true, j + 2 == polygon.size()}}, color};
           if (std::abs(edge(triangle.vertices[0], triangle.vertices[1],
                             triangle.vertices[2].x, triangle.vertices[2].y)) < 1e-12) continue;
           if (out.triangles.empty()) {
@@ -167,16 +197,16 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
   return out;
 }
 
-std::vector<GrayPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
+std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
                                  const int *canceled) {
   require(tile.width >= 0 && tile.height >= 0, "Invalid GLB tile dimensions.");
   const std::size_t count = std::size_t(tile.width) * std::size_t(tile.height);
-  struct Sample { double depth = -std::numeric_limits<double>::infinity(); float gray = 0, alpha = 0; };
-  require(count <= MemoryLimit / (sizeof(GrayPixel) + 4 * sizeof(Sample)),
+  struct Sample { double depth = -std::numeric_limits<double>::infinity(); ColorPixel color; };
+  require(count <= MemoryLimit / (sizeof(ColorPixel) + 4 * sizeof(Sample)),
           "GLB tile exceeds the 256 MiB render budget; reduce the render tile size.");
   for (double value : tile.affine) require(std::isfinite(value), "Invalid GLB image affine.");
   require(std::isfinite(tile.x) && std::isfinite(tile.y), "Invalid GLB tile origin.");
-  std::vector<GrayPixel> output(count);
+  std::vector<ColorPixel> output(count);
   if (!count || scene.triangles.empty()) return output;
   std::vector<Sample> samples(count * 4);
   const auto &m = tile.affine;
@@ -214,16 +244,19 @@ std::vector<GrayPixel> renderTile(const RenderScene &scene, const RenderTile &ti
             (triangle.edges[2] && std::abs(e2) <= 0.65 * lengths[2]);
         const double epsilon = 1e-10 * std::max(1.0, std::abs(depth));
         if (depth > sample.depth + epsilon) {
-          sample = {depth, line ? triangle.gray : 0.0f, line ? 1.0f : 0.0f};
+          sample = {depth, line ? ColorPixel{triangle.color[0], triangle.color[1], triangle.color[2], 1} : ColorPixel{}};
         } else if (scene.wireframe && line && std::abs(depth - sample.depth) <= epsilon) {
-          sample.gray = triangle.gray; sample.alpha = 1;
+          sample.color = {triangle.color[0], triangle.color[1], triangle.color[2], 1};
         }
       }
     }
   }
   for (std::size_t i = 0; i < count; ++i) for (int s = 0; s < 4; ++s) {
-    output[i].gray += samples[i * 4 + s].gray * 0.25f;
-    output[i].alpha += samples[i * 4 + s].alpha * 0.25f;
+    const auto &c = samples[i * 4 + s].color;
+    output[i].r += c.r * 0.25f;
+    output[i].g += c.g * 0.25f;
+    output[i].b += c.b * 0.25f;
+    output[i].alpha += c.alpha * 0.25f;
   }
   return output;
 }

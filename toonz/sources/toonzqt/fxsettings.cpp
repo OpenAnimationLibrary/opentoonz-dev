@@ -561,6 +561,7 @@ void ParamsPage::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame) {
         actualFx->getParams()->getParam(fieldName.toStdString());
     assert(currentParam);
     assert(actualParam);
+    field->setFx(currentFx, actualFx);
     field->setParam(currentParam, actualParam, frame);
   }
   if (actualFx->getInputPortCount() > 0)

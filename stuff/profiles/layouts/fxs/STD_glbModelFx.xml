@@ -1,6 +1,6 @@
 <fxlayout>
   <page name="Model">
-    <label>"Read-only GLB. Grayscale base geometry; no deformation."</label>
+    <label>"Read-only GLB base geometry; no deformation."</label>
     <control>modelFile</control>
     <separator label="Instance Transform"/>
     <control>positionX</control>
@@ -25,10 +25,15 @@
     <control>farClip</control>
   </page>
   <page name="Appearance">
-    <label>"Opaque, two-sided surfaces. Materials and textures are not rendered."</label>
+    <label>"Opaque, two-sided surfaces. Textures and PBR shading are not rendered."</label>
+    <control>colorMode</control>
     <control>renderStyle</control>
     <vbox modeSensitive="renderStyle" mode="0">
       <control>lighting</control>
     </vbox>
+  </page>
+  <page name="Materials">
+    <label>"Select a material to edit or keyframe its color. The GLB stays unchanged."</label>
+    <control>materialColors</control>
   </page>
 </fxlayout>
