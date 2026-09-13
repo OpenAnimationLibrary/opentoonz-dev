@@ -2097,6 +2097,7 @@ class MaterialColorsParamField final : public ParamField {
   std::string m_key;
   int m_frame = 0;
   bool m_refreshPending = false;
+  bool m_currentAttached = false, m_actualAttached = false;
 
   static TPixelParamP find(const TParamSetP &set, const std::string &key) {
     if (!set) return {};
@@ -2109,6 +2110,8 @@ class MaterialColorsParamField final : public ParamField {
     // parameter on first edit so its undo records remain valid thereafter.
     if (!find(m_current, m_key)) m_current->addParam(m_currentColor, m_key);
     if (actual && !find(m_actual, m_key)) m_actual->addParam(m_actualColor, m_key);
+    m_currentAttached = true;
+    if (actual) m_actualAttached = true;
   }
 
   void selectMaterial() {
@@ -2121,8 +2124,10 @@ class MaterialColorsParamField final : public ParamField {
     const auto &material = m_materials[i];
     m_key = material.key;
     m_actualColor = find(m_actual, m_key);
+    m_actualAttached = bool(m_actualColor);
     if (!m_actualColor) m_actualColor = new TPixelParam(material.color);
     m_currentColor = find(m_current, m_key);
+    m_currentAttached = bool(m_currentColor);
     if (!m_currentColor) m_currentColor = TParamP(m_actualColor->clone());
     m_actualColor->enableMatte(false);
     m_currentColor->enableMatte(false);
@@ -2163,8 +2168,8 @@ class MaterialColorsParamField final : public ParamField {
         m_selector->setCurrentIndex(selected);
         m_selector->blockSignals(false);
         selectMaterial();
-      } else if (!m_color || (find(m_actual, m_key) && find(m_actual, m_key) != m_actualColor) ||
-                 (find(m_current, m_key) && find(m_current, m_key) != m_currentColor)) {
+      } else if (!m_color || ((m_actualAttached || find(m_actual, m_key)) && find(m_actual, m_key) != m_actualColor) ||
+                 ((m_currentAttached || find(m_current, m_key)) && find(m_current, m_key) != m_currentColor)) {
         selectMaterial();
       }
       int inactive = m_actual->getParamCount();

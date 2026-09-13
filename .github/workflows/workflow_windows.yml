@@ -19,6 +19,7 @@ on:
   pull_request:
     branches:
       - main
+      - feat/glb-fx-render  # Run the application gate for the stacked material FX.
     paths:
       - '**/*'
       - '!appveyor.yml'

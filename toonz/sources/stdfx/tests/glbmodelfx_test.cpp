@@ -378,6 +378,17 @@ void testMaterialControls(const QString &path, const QString &saved) {
   field->update(12); QApplication::processEvents();
   expectColor<TPixel32>(fx, 12, 0, 0, 1);
   require(selector->count() == 2, "Restored GLB did not restore material listing");
+  actual->removeAllParam();
+  static_cast<TParamSet *>(current.getPointer())->removeAllParam();
+  field->update(0); QApplication::processEvents();
+  require(actual->getParamCount() == 0, "Refreshing after reset resurrected detached overrides");
+  color = field->findChild<PixelParamField *>();
+  selector->setCurrentIndex(0);
+  color = field->findChild<PixelParamField *>();
+  color->setColor(TPixel32(255, 255, 0, 255));
+  expectColor<TPixel32>(fx, 0, 1, 1, 0);
+  TPixelParamP resetColor = actual->getParam(0);
+  require(!resetColor->hasKeyframes(), "Reset editor resurrected old color animation");
   TUndoManager::manager()->reset();
 }
 }  // namespace
