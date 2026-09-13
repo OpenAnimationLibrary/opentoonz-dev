@@ -17,6 +17,7 @@
 #include "tdoubleparam.h"
 #include "tnotanimatableparam.h"
 #include "tparamset.h"
+#include "tfxmaterial.h"
 #include "tw/stringtable.h"
 
 #include <QString>
@@ -29,6 +30,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QVBoxLayout>
+#include <QTimer>
+#include <stdexcept>
 
 using namespace DVGui;
 
@@ -2079,6 +2082,165 @@ void ToneCurveParamField::onKeyToggled() { onKeyToggle(); }
 // ParamField::create()
 //-----------------------------------------------------------------------------
 
+namespace {
+// A model-derived selector with one native animated color editor. Keeping a
+// single editor makes large material lists usable without thousands of widgets.
+class MaterialColorsParamField final : public ParamField {
+  TFxP m_currentFx, m_actualFx;
+  TParamSetP m_current, m_actual;
+  std::vector<TFxMaterial> m_materials;
+  QComboBox *m_selector;
+  QLabel *m_status;
+  QVBoxLayout *m_body;
+  PixelParamField *m_color = nullptr;
+  TPixelParamP m_currentColor, m_actualColor;
+  std::string m_key;
+  int m_frame = 0;
+  bool m_refreshPending = false;
+  bool m_currentAttached = false, m_actualAttached = false;
+
+  static TPixelParamP find(const TParamSetP &set, const std::string &key) {
+    if (!set) return {};
+    int i = set->getParamIdx(key);
+    return i < set->getParamCount() ? TPixelParamP(set->getParam(i)) : TPixelParamP();
+  }
+
+  void attach(bool actual) {
+    // Viewing the list does not alter the scene. Attach the very same native
+    // parameter on first edit so its undo records remain valid thereafter.
+    if (!find(m_current, m_key)) m_current->addParam(m_currentColor, m_key);
+    if (actual && !find(m_actual, m_key)) m_actual->addParam(m_actualColor, m_key);
+    m_currentAttached = true;
+    if (actual) m_actualAttached = true;
+  }
+
+  void selectMaterial() {
+    delete m_color;
+    m_color = nullptr;
+    m_currentColor = TPixelParamP();
+    m_actualColor = TPixelParamP();
+    const int i = m_selector->currentIndex();
+    if (!m_current || !m_actual || i < 0 || i >= int(m_materials.size())) return;
+    const auto &material = m_materials[i];
+    m_key = material.key;
+    m_actualColor = find(m_actual, m_key);
+    m_actualAttached = bool(m_actualColor);
+    if (!m_actualColor) m_actualColor = new TPixelParam(material.color);
+    m_currentColor = find(m_current, m_key);
+    m_currentAttached = bool(m_currentColor);
+    if (!m_currentColor) m_currentColor = TParamP(m_actualColor->clone());
+    m_actualColor->enableMatte(false);
+    m_currentColor->enableMatte(false);
+    m_color = new PixelParamField(this, QString::fromStdString(material.name), m_actualColor);
+    m_color->setParam(m_currentColor, m_actualColor, m_frame);
+    m_body->insertWidget(1, m_color);
+    connect(m_color, &ParamField::actualParamChanged, this, [this] {
+      attach(true);
+      emit actualParamChanged();
+    });
+    connect(m_color, &ParamField::currentParamChanged, this, [this] {
+      attach(false);
+      emit currentParamChanged();
+    });
+    connect(m_color, &ParamField::paramKeyToggle, this, &ParamField::paramKeyToggle);
+  }
+
+  void refresh() {
+    if (!m_actualFx || !m_current || !m_actual) return;
+    auto *source = dynamic_cast<TFxMaterialSource *>(m_actualFx.getPointer());
+    if (!source) return;
+    try {
+      auto materials = source->getMaterials();
+      bool changed = materials.size() != m_materials.size();
+      for (std::size_t i = 0; !changed && i < materials.size(); ++i)
+        changed = materials[i].key != m_materials[i].key;
+      if (changed) {
+        m_materials = std::move(materials);
+        m_selector->blockSignals(true);
+        m_selector->clear();
+        int selected = 0;
+        for (int i = 0; i < int(m_materials.size()); ++i) {
+          const auto &m = m_materials[i];
+          // The index also distinguishes duplicate material names.
+          m_selector->addItem(QString("%1: %2").arg(i + 1).arg(QString::fromStdString(m.name)));
+          if (m.key == m_key) selected = i;
+        }
+        m_selector->setCurrentIndex(selected);
+        m_selector->blockSignals(false);
+        selectMaterial();
+      } else if (!m_color || ((m_actualAttached || find(m_actual, m_key)) && find(m_actual, m_key) != m_actualColor) ||
+                 ((m_currentAttached || find(m_current, m_key)) && find(m_current, m_key) != m_currentColor)) {
+        selectMaterial();
+      }
+      int inactive = m_actual->getParamCount();
+      for (const auto &m : m_materials) if (find(m_actual, m.key)) --inactive;
+      m_selector->setEnabled(!m_materials.empty());
+      if (m_color) m_color->setEnabled(true);
+      m_status->setText(m_materials.empty() ? tr("Choose a GLB file on the Model page.") :
+          inactive > 0 ? tr("%1 overrides from other GLB contents are retained but inactive.").arg(inactive) :
+          tr("Use Material Colors mode. Click the diamond to set a color key."));
+    } catch (const std::exception &e) {
+      m_selector->setEnabled(false);
+      if (m_color) m_color->setEnabled(false);
+      m_status->setText(QString::fromUtf8(e.what()));
+    }
+  }
+
+  void scheduleRefresh() {
+    if (m_refreshPending) return;
+    m_refreshPending = true;
+    // Never destroy an editor while one of its change/undo handlers is active.
+    QTimer::singleShot(0, this, [this] { m_refreshPending = false; refresh(); });
+  }
+
+public:
+  MaterialColorsParamField(QWidget *parent, QString name, const TParamP &param)
+      : ParamField(parent, name, param) {
+    m_paramName = QString::fromStdString(param->getName());
+    m_selector = new QComboBox(this);
+    m_selector->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_selector->setMinimumContentsLength(20);
+    m_status = new QLabel(this);
+    m_status->setWordWrap(true);
+    m_body = new QVBoxLayout;
+    m_body->addWidget(m_selector);
+    m_body->addWidget(m_status);
+    m_layout->addLayout(m_body);
+    setLayout(m_layout);
+    connect(m_selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { selectMaterial(); });
+    auto *timer = new QTimer(this);
+    timer->setInterval(1000);
+    connect(timer, &QTimer::timeout, this, [this] { if (isVisible()) scheduleRefresh(); });
+    timer->start();
+  }
+
+  void setFx(const TFxP &current, const TFxP &actual) override {
+    m_currentFx = current;
+    m_actualFx = actual;
+  }
+  void setParam(const TParamP &current, const TParamP &actual, int frame) override {
+    if (m_current.getPointer() != current.getPointer() || m_actual.getPointer() != actual.getPointer()) {
+      m_materials.clear();
+      m_selector->blockSignals(true);
+      m_selector->clear();
+      m_selector->blockSignals(false);
+      delete m_color;
+      m_color = nullptr;
+    }
+    m_current = current;
+    m_actual = actual;
+    update(frame);
+  }
+  void update(int frame) override {
+    m_frame = frame;
+    if (m_color) m_color->update(frame);
+    scheduleRefresh();
+  }
+  QSize getPreferredSize() override { return QSize(320, 130); }
+};
+}  // namespace
+
 ParamField *ParamField::create(QWidget *parent, QString name,
                                const TParamP &param) {
   if (TDoubleParamP doubleParam = param)
@@ -2103,6 +2265,8 @@ ParamField *ParamField::create(QWidget *parent, QString name,
     return new ToneCurveParamField(parent, name, toneCurveParam);
   else if (TFontParamP fontParam = param)
     return new FontParamField(parent, name, fontParam);
+  else if (param->getName() == "materialColors" && dynamic_cast<TParamSet *>(param.getPointer()))
+    return new MaterialColorsParamField(parent, name, param);
   else
     return 0;
 }

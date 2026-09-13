@@ -136,6 +136,7 @@ signals:
 public slots:
 
   void refreshModel();
+  void refreshMaterialChannels();
   void rebuildModel();
   void onFrameSwitched();
   void toggleMode();

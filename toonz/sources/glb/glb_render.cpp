@@ -7,7 +7,7 @@
 
 namespace {
 int render(const std::filesystem::path &model, const std::filesystem::path &output,
-           double height, double distance) {
+           double height, double distance, bool materials) {
   // Never overwrite a model or any existing output, including symlink targets.
   if (std::filesystem::exists(output))
     throw std::runtime_error("Output already exists; choose a new .tga filename.");
@@ -15,6 +15,7 @@ int render(const std::filesystem::path &model, const std::filesystem::path &outp
   if (!loaded) throw std::runtime_error(loaded.error);
   for (const auto &warning : loaded.warnings) std::cerr << warning << '\n';
   otglb::RenderOptions options;
+  options.materialColors = materials;
   options.headlight = true; options.orthoHeight = height; options.cameraDistance = distance;
   const auto scene = otglb::prepareRender(*loaded.asset, options);
   for (const auto &warning : scene.warnings) std::cerr << warning << '\n';
@@ -32,8 +33,8 @@ int render(const std::filesystem::path &model, const std::filesystem::path &outp
   file.write(reinterpret_cast<const char *>(header), sizeof(header));
   for (int y = 511; y >= 0; --y) for (int x = 0; x < 512; ++x) {
     const auto &p = pixels[std::size_t(y) * 512 + x];
-    const auto gray = static_cast<unsigned char>(p.alpha > 0 ? std::lround(p.gray / p.alpha * 255) : 0);
-    const unsigned char rgba[] = {gray, gray, gray, static_cast<unsigned char>(std::lround(p.alpha * 255))};
+    auto channel = [&](float c) { return static_cast<unsigned char>(p.alpha > 0 ? std::lround(c / p.alpha * 255) : 0); };
+    const unsigned char rgba[] = {channel(p.b), channel(p.g), channel(p.r), static_cast<unsigned char>(std::lround(p.alpha * 255))};
     file.write(reinterpret_cast<const char *>(rgba), sizeof(rgba));
   }
   if (!file) throw std::runtime_error("Cannot finish writing output image.");
@@ -47,14 +48,16 @@ int wmain(int argc, wchar_t **argv) {
 #else
 int main(int argc, char **argv) {
 #endif
-  if (argc < 3 || argc > 5) {
-    std::cerr << "Usage: glb_render <model.glb> <new-image.tga> [orthographic-height=10] [camera-distance=10]\n";
+  if (argc < 3 || argc > 6) {
+    std::cerr << "Usage: glb_render <model.glb> <new-image.tga> [orthographic-height=10] [camera-distance=10] [materials=0|1]\n";
     return 2;
   }
   try {
     const double height = argc >= 4 ? std::stod(argv[3]) : 10;
     const double distance = argc >= 5 ? std::stod(argv[4]) : 10;
-    return render(std::filesystem::path(argv[1]), std::filesystem::path(argv[2]), height, distance);
+    const int materials = argc >= 6 ? std::stoi(argv[5]) : 0;
+    if (materials != 0 && materials != 1) throw std::runtime_error("Materials must be 0 or 1.");
+    return render(std::filesystem::path(argv[1]), std::filesystem::path(argv[2]), height, distance, materials == 1);
   } catch (const std::exception &e) {
     std::cerr << "GLB render failed: " << e.what() << '\n'; return 1;
   }
