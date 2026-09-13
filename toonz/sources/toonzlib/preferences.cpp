@@ -524,8 +524,7 @@ void Preferences::definePreferenceItems() {
   define(DefRasterFormat, "DefRasterFormat", QMetaType::QString, "tif");
   define(DefLevelType, "DefLevelType", QMetaType::Int, TZP_XSHLEVEL);
   define(DefAssistantType, "DefAssistantType", QMetaType::QString, "");
-  define(newLevelSizeToCameraSizeEnabled, "newLevelSizeToCameraSizeEnabled",
-         QMetaType::Bool, false);
+  define(DefLevelSizePolicy, "DefLevelSizePolicy", QMetaType::Int, 2);
   define(DefLevelWidth, "DefLevelWidth", QMetaType::Double,
          TCamera().getSize().lx, 0.1, std::numeric_limits<double>::max());
   define(DefLevelHeight, "DefLevelHeight", QMetaType::Double,
@@ -856,6 +855,13 @@ void Preferences::resolveCompatibility() {
     if (m_settings->value("inputCellsWithoutDoubleClickingEnabled").toBool() ==
         true)
       setValue(cellInputMethod, 2);
+  }
+  // "newLevelSizeToCameraSizeEnabled" is changed to "DefLevelSizePolicy"
+  if (m_settings->contains("newLevelSizeToCameraSizeEnabled") &&
+      !m_settings->contains("DefLevelSizePolicy")) {
+    if (m_settings->value("newLevelSizeToCameraSizeEnabled").toBool() ==
+        true)
+      setValue(DefLevelSizePolicy, 1);
   }
 }
 
