@@ -5,11 +5,13 @@
 // Tnz6 includes
 #include "keyframedata.h"
 #include "cellkeyframedata.h"
+#include "timestretchpopup.h"
 #include "tapp.h"
 #include "menubarcommandids.h"
 #include "xsheetviewer.h"
 
 // TnzQt includes
+#include "historytypes.h"
 #include "toonzqt/menubarcommand.h"
 
 // TnzLib includes
@@ -19,6 +21,7 @@
 #include "toonz/tobjecthandle.h"
 #include "toonz/tscenehandle.h"
 #include "toonz/stageobjectutil.h"
+#include "toonz/tstageobject.h"
 #include "toonz/txsheet.h"
 #include "toonz/tstageobjecttree.h"
 #include "toonz/txshcolumn.h"
@@ -29,6 +32,12 @@
 // Qt includes
 #include <QApplication>
 #include <QClipboard>
+
+// C++ includes
+#include <algorithm>
+#include <climits>
+#include <cmath>
+#include <map>
 
 //-----------------------------------------------------------------------------
 namespace {
@@ -290,6 +299,8 @@ void TKeyframeSelection::enableCommands() {
                 &TKeyframeSelection::shiftKeyframesDown);
   enableCommand(this, MI_ShiftKeyframesUp,
                 &TKeyframeSelection::shiftKeyframesUp);
+  enableCommand(this, MI_TimeStretch,
+                &TKeyframeSelection::openTimeStretchPopup);
 }
 
 //-----------------------------------------------------------------------------
@@ -385,6 +396,181 @@ void TKeyframeSelection::deleteKeyframes() {
 void TKeyframeSelection::cutKeyframes() {
   copyKeyframes();
   deleteKeyframesWithShift(0, -1, 0, -1);
+}
+
+//-----------------------------------------------------------------------------
+// Time Stretch Keyframes
+//-----------------------------------------------------------------------------
+
+namespace {
+
+TStageObject *stageObjectForColumn(TXsheet *xsh, int column) {
+  TStageObjectId id =
+      column >= 0 ? TStageObjectId::ColumnId(column)
+                  : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
+  return xsh->getStageObject(id);
+}
+
+enum class KeyframeStretchError { None, Collision, OccupiedRange };
+
+int stretchedKeyframeRow(int row, int r0, int r1, int newRange) {
+  double scale = static_cast<double>(newRange - 1) / (r1 - r0);
+  return r0 + static_cast<int>(std::lround((row - r0) * scale));
+}
+
+KeyframeStretchError validateKeyframeStretch(int r0, int r1, int newRange,
+                                             const std::set<int> &columns) {
+  TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+
+  for (int column : columns) {
+    TStageObject *object = stageObjectForColumn(xsh, column);
+    if (!object) continue;
+
+    std::set<int> destinationRows;
+    for (int row = r0; row <= r1; ++row) {
+      if (!object->isKeyframe(row)) continue;
+      int newRow = stretchedKeyframeRow(row, r0, r1, newRange);
+      if (!destinationRows.insert(newRow).second)
+        return KeyframeStretchError::Collision;
+    }
+
+    for (int row = r1 + 1; row < r0 + newRange; ++row)
+      if (object->isKeyframe(row)) return KeyframeStretchError::OccupiedRange;
+  }
+
+  return KeyframeStretchError::None;
+}
+
+class KeyframeStretchUndo final : public TUndo {
+  int m_r0, m_r1, m_newRange;
+  std::set<int> m_cols;
+  std::map<int, std::map<int, TStageObject::Keyframe>> m_snapshot;
+
+  int oldRange() const { return m_r1 - m_r0 + 1; }
+
+  int affectedEnd() const {
+    return m_r0 + std::max(oldRange(), m_newRange) - 1;
+  }
+
+public:
+  KeyframeStretchUndo(int r0, int r1, int newRange,
+                      const std::set<int> &columns)
+      : m_r0(r0), m_r1(r1), m_newRange(newRange), m_cols(columns) {
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    for (int column : m_cols) {
+      TStageObject *object = stageObjectForColumn(xsh, column);
+      if (!object) continue;
+
+      std::map<int, TStageObject::Keyframe> snapshot;
+      for (int row = m_r0; row <= affectedEnd(); ++row)
+        if (object->isKeyframe(row)) snapshot[row] = object->getKeyframe(row);
+      m_snapshot[column] = snapshot;
+    }
+  }
+
+  void redo() const override {
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+
+    for (int column : m_cols) {
+      TStageObject *object = stageObjectForColumn(xsh, column);
+      if (!object) continue;
+
+      auto snapshotIt = m_snapshot.find(column);
+      if (snapshotIt == m_snapshot.end()) continue;
+
+      for (int row = m_r0; row <= affectedEnd(); ++row)
+        if (object->isKeyframe(row)) object->removeKeyframeWithoutUndo(row);
+
+      for (const auto &keyframe : snapshotIt->second) {
+        if (keyframe.first < m_r0 || keyframe.first > m_r1) continue;
+        int newRow =
+            stretchedKeyframeRow(keyframe.first, m_r0, m_r1, m_newRange);
+        object->setKeyframeWithoutUndo(newRow, keyframe.second);
+      }
+    }
+
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  void undo() const override {
+    TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+    for (int column : m_cols) {
+      TStageObject *object = stageObjectForColumn(xsh, column);
+      if (!object) continue;
+
+      for (int row = m_r0; row <= affectedEnd(); ++row)
+        if (object->isKeyframe(row)) object->removeKeyframeWithoutUndo(row);
+
+      auto snapshotIt = m_snapshot.find(column);
+      if (snapshotIt == m_snapshot.end()) continue;
+      for (const auto &keyframe : snapshotIt->second)
+        object->setKeyframeWithoutUndo(keyframe.first, keyframe.second);
+    }
+
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  int getSize() const override { return sizeof(*this); }
+
+  QString getHistoryString() override {
+    return QObject::tr("Time Stretch Keyframes");
+  }
+
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
+
+}  // namespace
+
+void TKeyframeSelection::timeStretchKeyframes(int newRange) {
+  unselectLockedColumn();
+  if (isEmpty() || newRange < 1) return;
+
+  int r0 = INT_MAX, r1 = -1;
+  std::set<int> columns;
+  for (const auto &position : m_positions) {
+    r0 = std::min(r0, position.first);
+    r1 = std::max(r1, position.first);
+    columns.insert(position.second);
+  }
+
+  int oldRange = r1 - r0 + 1;
+  if (oldRange < 2 || newRange == oldRange) return;
+
+  KeyframeStretchError error =
+      validateKeyframeStretch(r0, r1, newRange, columns);
+  if (error == KeyframeStretchError::Collision) {
+    DVGui::warning(QObject::tr(
+        "The new range would place multiple keyframes on the same frame."));
+    return;
+  }
+  if (error == KeyframeStretchError::OccupiedRange) {
+    DVGui::warning(
+        QObject::tr("The stretched range would overwrite existing keyframes."));
+    return;
+  }
+
+  TUndo *undo = new KeyframeStretchUndo(r0, r1, newRange, columns);
+  TUndoManager::manager()->add(undo);
+  undo->redo();
+
+  selectNone();
+  TXsheet *xsh = TApp::instance()->getCurrentXsheet()->getXsheet();
+  for (int column : columns) {
+    TStageObject *object = stageObjectForColumn(xsh, column);
+    if (!object) continue;
+    for (int row = r0; row < r0 + newRange; ++row)
+      if (object->isKeyframe(row)) select(row, column);
+  }
+}
+
+void TKeyframeSelection::openTimeStretchPopup() {
+  static TimeStretchPopup *popup = nullptr;
+  if (!popup) popup = new TimeStretchPopup();
+  popup->show();
+  popup->raise();
+  popup->activateWindow();
 }
 
 //-----------------------------------------------------------------------------

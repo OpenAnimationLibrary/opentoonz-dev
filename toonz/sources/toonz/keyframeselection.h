@@ -72,6 +72,9 @@ public:
   void shiftKeyframesDown() { shiftKeyframes(1); }
   void shiftKeyframesUp() { shiftKeyframes(-1); }
 
+  void timeStretchKeyframes(int newRange);
+  void openTimeStretchPopup();
+
   void pasteKeyframesWithShift(int r0, int r1, int c0, int c1);
   void deleteKeyframesWithShift(int r0, int r1, int c0, int c1);
   void shiftKeyframes(int r0, int r1, int c0, int c1,
