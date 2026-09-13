@@ -3,6 +3,7 @@
 
 #include "toonz/sceneproperties.h"
 #include "toonz/tcamera.h"
+#include "toonz/tscenehandle.h"
 #include "toonz/toonzscene.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/txshleveltypes.h"
@@ -151,7 +152,7 @@ bool collectScenePages(std::vector<QImage> &pages,
   TCamera *camera             = scene->getCurrentCamera();
   const TDimension resolution = camera->getRes();
   const TPointD dpi           = camera->getDpi();
-  title = QString::fromStdWString(scene->getScenePath().getName());
+  title = QString::fromStdString(scene->getScenePath().getName());
   if (title.isEmpty()) title = QObject::tr("OpenToonz Scene");
 
   TXsheet *xsheet = TApp::instance()->getCurrentXsheet()->getXsheet();
