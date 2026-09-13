@@ -1667,6 +1667,41 @@ void StringParamField::enableLutFileControls() {
 
 //-----------------------------------------------------------------------------
 
+void StringParamField::enableGlbFileControls() {
+  if (!m_textFld || m_glbFileControls) return;
+  m_glbFileControls = true;
+  auto column = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  m_layout->removeWidget(m_textFld);
+  column->addWidget(m_textFld);
+  auto buttons = new QHBoxLayout();
+  auto browse  = new QPushButton(tr("Browse..."), this);
+  auto clear   = new QPushButton(tr("Clear"), this);
+  buttons->addWidget(browse);
+  buttons->addWidget(clear);
+  column->addLayout(buttons);
+  m_layout->addLayout(column);
+  m_textFld->setToolTip(
+      tr("Store a GLB file reference in the scene. Framework only: "
+         "the file is not loaded, modified, or rendered."));
+  clear->setToolTip(tr("Clear the reference without deleting the GLB file."));
+
+  connect(browse, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select GLB Model"), m_textFld->text(),
+        tr("Binary glTF models (*.glb *.GLB)"));
+    if (path.isEmpty()) return;
+    m_textFld->setText(QFileInfo(path).absoluteFilePath());
+    onChange();
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
 void StringParamField::onChange() {
   std::wstring value;
   if (m_multiTextFld)

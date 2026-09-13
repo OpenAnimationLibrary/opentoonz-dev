@@ -1,0 +1,34 @@
+<fxlayout>
+  <page name="Model">
+    <label>"Framework only: no GLB loading or rendering."</label>
+    <control>modelFile</control>
+    <separator label="Instance Transform"/>
+    <control>positionX</control>
+    <control>positionY</control>
+    <control>positionZ</control>
+    <control>rotationX</control>
+    <control>rotationY</control>
+    <control>rotationZ</control>
+    <control>scale</control>
+  </page>
+  <page name="Camera">
+    <label>"Settings are stored only; output is transparent."</label>
+    <control>projection</control>
+    <control>cameraDistance</control>
+    <vbox modeSensitive="projection" mode="0">
+      <control>orthoSize</control>
+    </vbox>
+    <vbox modeSensitive="projection" mode="1">
+      <control>fieldOfView</control>
+    </vbox>
+    <control>nearClip</control>
+    <control>farClip</control>
+  </page>
+  <page name="Appearance">
+    <label>"Settings are stored only; output is transparent."</label>
+    <control>renderStyle</control>
+    <vbox modeSensitive="renderStyle" mode="0">
+      <control>lighting</control>
+    </vbox>
+  </page>
+</fxlayout>

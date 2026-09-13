@@ -121,6 +121,7 @@ set(SOURCES
     fourpointsgradientfx.cpp
     freedistortfx.cpp
     gammafx.cpp
+    glbmodelfx.cpp
     glowfx.cpp
     gradients.cpp
     hsvkeyfx.cpp
@@ -346,4 +347,11 @@ option(BUILD_LUT3D_TESTS "Build the 3D LUT Bake regression executable" OFF)
 if(BUILD_LUT3D_TESTS)
     add_executable(lut3dbake_test tests/lut3dbake_test.cpp)
     target_link_libraries(lut3dbake_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+endif()
+
+# Optional regression target for the read-only GLB Model FX framework.
+option(BUILD_GLB_FX_TESTS "Build the GLB Model FX framework regression executable" OFF)
+if(BUILD_GLB_FX_TESTS)
+    add_executable(glbmodelfx_test tests/glbmodelfx_test.cpp)
+    target_link_libraries(glbmodelfx_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
 endif()

@@ -1,4 +1,21 @@
 <stringtable>
+  <item>"STD_glbModelFx" "GLB Model" </item>
+  <item>"STD_glbModelFx.modelFile" "GLB File" </item>
+  <item>"STD_glbModelFx.positionX" "Position X" </item>
+  <item>"STD_glbModelFx.positionY" "Position Y" </item>
+  <item>"STD_glbModelFx.positionZ" "Position Z" </item>
+  <item>"STD_glbModelFx.rotationX" "Rotation X" </item>
+  <item>"STD_glbModelFx.rotationY" "Rotation Y" </item>
+  <item>"STD_glbModelFx.rotationZ" "Rotation Z" </item>
+  <item>"STD_glbModelFx.scale" "Scale (%)" </item>
+  <item>"STD_glbModelFx.projection" "Projection" </item>
+  <item>"STD_glbModelFx.cameraDistance" "Camera Distance" </item>
+  <item>"STD_glbModelFx.fieldOfView" "Vertical Field of View" </item>
+  <item>"STD_glbModelFx.orthoSize" "Orthographic Height" </item>
+  <item>"STD_glbModelFx.nearClip" "Near Clip" </item>
+  <item>"STD_glbModelFx.farClip" "Far Clip" </item>
+  <item>"STD_glbModelFx.lighting" "Lighting" </item>
+  <item>"STD_glbModelFx.renderStyle" "Display Style" </item>
   <item>"STD_lut3DBakeFx" "3D LUT Bake" </item>
   <item>"STD_lut3DBakeFx.lutFile" "LUT File" </item>
 <!------------------------------ FX ------------------------------------------->
