@@ -50,7 +50,7 @@ jobs:
           cp thirdparty/cgltf/LICENSE glb-package/cgltf-LICENSE.txt
           cp LICENSE.txt glb-package/OpenToonz-LICENSE.txt
           cp doc/glb_loader.md glb-package/README.md
-          cp doc/glb_model_fx.md glb-package/GLB-Model-FX.md
+          cp doc/glb_loader.md doc/glb_model_fx.md glb-package/
       - uses: actions/upload-artifact@v6
         with:
           name: glb-inspect-${{ matrix.os }}
