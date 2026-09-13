@@ -269,7 +269,9 @@ void SceneViewer::onButtonPressed(FlipConsole::EGadget button) {
 void SceneViewer::tabletEvent(QTabletEvent *e) {
   if (m_freezedStatus != NO_FREEZED) return;
 
-  if (m_touchSuppressToolInput) {
+  if (e->type() == QEvent::TabletPress) m_touchAwaitFreshContact = false;
+
+  if (touchToolInputBlocked()) {
     if (e->type() == QEvent::TabletPress) m_touchSuppressedPointerDown = true;
     if (e->type() == QEvent::TabletRelease) {
       if (m_tabletState == StartStroke || m_tabletState == OnStroke)
@@ -517,7 +519,7 @@ void SceneViewer::onEnter() {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mouseMoveEvent(QMouseEvent *event) {
-  if (m_touchSuppressToolInput) return;
+  if (touchToolInputBlocked()) return;
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) return;
   // and touchscreens but not touchpads...
@@ -546,7 +548,7 @@ void SceneViewer::mouseMoveEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 void SceneViewer::onMove(const TMouseEvent &event) {
   if (m_freezedStatus != NO_FREEZED) return;
-  if (m_touchSuppressToolInput) return;
+  if (touchToolInputBlocked()) return;
 
   // in case mouseReleaseEvent is not called, finish the action for the previous
   // button first.
@@ -753,11 +755,14 @@ void SceneViewer::onMove(const TMouseEvent &event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mousePressEvent(QMouseEvent *event) {
+  if (!touchGestureControlEnabled()) resetTouchGestureSuppression();
   // source can be useful for detecting touch vs mouse,
   // but has reports of being unreliable on mac
   // so m_gestureActive is the marker for rejecting touch events
   int source = event->source();
-  if (m_touchSuppressToolInput) {
+  if (event->source() == Qt::MouseEventNotSynthesized)
+    m_touchAwaitFreshContact = false;
+  if (touchToolInputBlocked()) {
     m_touchSuppressedPointerDown = true;
     return;
   }
@@ -783,7 +788,7 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::onPress(const TMouseEvent &event) {
-  if (m_touchSuppressToolInput) {
+  if (touchToolInputBlocked()) {
     m_mouseButton = event.button();
     m_touchSuppressedPointerDown = true;
     return;
@@ -920,7 +925,7 @@ void SceneViewer::onPress(const TMouseEvent &event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
-  if (m_touchSuppressToolInput) {
+  if (touchToolInputBlocked()) {
     m_touchSuppressedPointerDown = false;
     releaseTouchToolSuppressionIfIdle();
     return;
@@ -1216,15 +1221,43 @@ void SceneViewer::gestureEvent(QGestureEvent *e) {
   e->accept();
 }
 
+bool SceneViewer::touchGestureControlEnabled() const {
+  QAction *touchCtrl =
+      CommandManager::instance()->getAction(MI_TouchGestureControl);
+  return touchCtrl && touchCtrl->isChecked();
+}
+
+bool SceneViewer::touchToolInputBlocked() const {
+  if (!touchGestureControlEnabled()) return false;
+  return m_touchToolInputLockedUntilEnd || m_touchSuppressToolInput ||
+         m_touchAwaitFreshContact;
+}
+
+void SceneViewer::resetTouchGestureSuppression() {
+  m_touchSuppressToolInput       = false;
+  m_touchSuppressedPointerDown   = false;
+  m_touchToolInputLockedUntilEnd = false;
+  m_touchAwaitFreshContact       = false;
+  m_touchPeakLiveCount           = 0;
+  m_gestureActive                = false;
+  m_touchActive                  = false;
+  m_panning                      = false;
+}
+
 void SceneViewer::touchEvent(QTouchEvent *e, int type) {
   const int live = liveTouchPointCount(e);
   const bool stylusCombo = m_tabletEvent && live <= 1;
 
-  if (!stylusCombo &&
-      ((live >= 2) || (m_touchSuppressToolInput && live >= 1)))
-    touchGestureBlocksToolInput();
+  if (live >= 2) m_panning = false;
+
+  if (!stylusCombo && live >= 2) {
+    m_touchToolInputLockedUntilEnd = true;
+    if (m_touchPeakLiveCount < 2) touchGestureBlocksToolInput();
+  }
+  m_touchPeakLiveCount = qMax(m_touchPeakLiveCount, live);
 
   if (type == QEvent::TouchBegin) {
+    m_touchAwaitFreshContact = false;
     if (m_touchRecognizer) m_touchRecognizer->begin(e, stylusCombo, size());
     if (!stylusCombo) {
       m_touchActive   = true;
@@ -1250,16 +1283,33 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
     if (m_touchRecognizer)
       m_touchRecognizer->update(e, m_zooming || m_rotating || m_panning);
   }
-  if (type == QEvent::TouchEnd || type == QEvent::TouchCancel) {
-    if (m_touchRecognizer) {
-      if (type == QEvent::TouchCancel)
-        m_touchRecognizer->cancel();
-      else
-        m_touchRecognizer->end(e);
+  if (type == QEvent::TouchCancel) {
+    if (m_touchRecognizer) m_touchRecognizer->cancel();
+    if (live == 0) {
+      m_touchActive = false;
+      m_panning     = false;
+      m_touchPeakLiveCount         = 0;
+      m_touchSuppressedPointerDown = false;
+      m_touchToolInputLockedUntilEnd = false;
+      m_touchSuppressToolInput     = false;
+    } else {
+      m_touchActive = true;
     }
-    m_touchActive = false;
-    m_panning     = false;
-    releaseTouchToolSuppressionIfIdle();
+    e->accept();
+    return;
+  }
+  if (type == QEvent::TouchEnd) {
+    if (m_touchRecognizer) m_touchRecognizer->end(e);
+    if (live == 0) {
+      m_touchActive = false;
+      m_panning     = false;
+      m_touchPeakLiveCount         = 0;
+      m_touchSuppressedPointerDown = false;
+      m_touchToolInputLockedUntilEnd = false;
+      m_touchSuppressToolInput     = false;
+    } else {
+      m_touchActive = true;
+    }
   }
   e->accept();
 }
@@ -1322,6 +1372,7 @@ void SceneViewer::cancelTouchToolStroke() {
 }
 
 void SceneViewer::releaseTouchToolSuppressionIfIdle() {
+  if (m_touchToolInputLockedUntilEnd || m_touchAwaitFreshContact) return;
   if (!m_touchSuppressToolInput) return;
   if (m_touchSuppressedPointerDown) return;
   if (m_touchActive) return;
@@ -1406,11 +1457,12 @@ bool SceneViewer::event(QEvent *e) {
     gestureEvent(static_cast<QGestureEvent *>(e));
     return true;
   }
-  if ((e->type() == QEvent::TouchBegin || e->type() == QEvent::TouchEnd ||
-       e->type() == QEvent::TouchCancel || e->type() == QEvent::TouchUpdate) &&
-      CommandManager::instance()
-          ->getAction(MI_TouchGestureControl)
-          ->isChecked()) {
+  if (e->type() == QEvent::TouchBegin || e->type() == QEvent::TouchEnd ||
+      e->type() == QEvent::TouchCancel || e->type() == QEvent::TouchUpdate) {
+    if (!touchGestureControlEnabled()) {
+      resetTouchGestureSuppression();
+      return QWidget::event(e);
+    }
     touchEvent(static_cast<QTouchEvent *>(e), e->type());
     m_gestureActive = true;
     return true;
@@ -1898,13 +1950,19 @@ void SceneViewer::contextMenuEvent(QContextMenuEvent *e) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
-  if (repeat) return;
   const TouchSlotFamily family = touchSlotFamily((TouchSlot)slot);
+  // Swipe steps use repeat; hold/tap/pinch do not.
+  if (repeat && family != TouchSlotFamily_Swipe) return;
   const bool blocksInput =
       family == TouchSlotFamily_Hold || family == TouchSlotFamily_Stylus;
-  if (blocksInput) touchGestureBlocksToolInput();
+  if (blocksInput) {
+    m_touchToolInputLockedUntilEnd = true;
+    m_touchAwaitFreshContact       = true;
+    touchGestureBlocksToolInput();
+  }
   TouchPresetManager::instance()->execute((TouchSlot)slot);
   if (blocksInput) {
+    m_touchSuppressedPointerDown = true;
     m_buttonClicked = false;
     m_dragging      = false;
     m_tabletState   = None;
@@ -1918,7 +1976,6 @@ void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
 void SceneViewer::onContextMenu(const QPoint &pos, const QPoint &globalPos) {
   if (m_freezedStatus != NO_FREEZED) return;
   if (m_isLocator) return;
-  if (m_touchSuppressToolInput) return;
   static bool menuVisible = false;
   if (menuVisible) return;
   menuVisible     = true;

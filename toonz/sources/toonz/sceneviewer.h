@@ -95,7 +95,13 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_panning                         = false;
   bool m_touchSuppressToolInput          = false;
   bool m_touchSuppressedPointerDown      = false;
+  bool m_touchToolInputLockedUntilEnd    = false;
+  bool m_touchAwaitFreshContact          = false;
+  int m_touchPeakLiveCount               = 0;
   TouchGestureRecognizer *m_touchRecognizer = nullptr;
+
+  bool touchToolInputBlocked() const;
+  void resetTouchGestureSuppression();
 
   TPointD m_oldPos;
   bool m_dragging;
@@ -360,6 +366,7 @@ protected:
   void touchGestureBlocksToolInput();
   void cancelTouchToolStroke();
   void releaseTouchToolSuppressionIfIdle();
+  bool touchGestureControlEnabled() const;
   void tabletEvent(QTabletEvent *) override;
   void leaveEvent(QEvent *) override;
   void enterEvent(QEvent *) override;
