@@ -202,15 +202,15 @@ void TreeModel::endRefresh() {
     endRemoveRows();
   }*/
 
-  qDeleteAll(m_itemsToDelete);
-  m_itemsToDelete.clear();
-
   if (!persistentIndexList().empty()) {
     for (i = 0; i < persistentIndexList().size(); i++) {
       QModelIndex oldIndex = persistentIndexList()[i];
       Item *item           = static_cast<Item *>(oldIndex.internalPointer());
       if (item) {
-        QModelIndex newIndex = item->createIndex();
+        bool removed = false;
+        for (Item *ancestor = item; ancestor; ancestor = ancestor->getParent())
+          if (m_itemsToDelete.contains(ancestor)) { removed = true; break; }
+        QModelIndex newIndex = removed ? QModelIndex() : item->createIndex();
         if (oldIndex != newIndex) {
           oldIndices.push_back(oldIndex);
           newIndices.push_back(newIndex);
@@ -219,6 +219,11 @@ void TreeModel::endRefresh() {
     }
     changePersistentIndexList(oldIndices, newIndices);
   }
+
+  // Dynamic groups can remove selected curves. Invalidate their persistent
+  // indices before deleting the objects those indices point to.
+  qDeleteAll(m_itemsToDelete);
+  m_itemsToDelete.clear();
 
   emit layoutChanged();
 }

@@ -8,6 +8,10 @@
 #include "trop.h"
 #include "../../glb/tests/glbfixture.h"
 #include "toonzqt/paramfield.h"
+#include "toonzqt/functiontreeviewer.h"
+#include "toonz/txsheet.h"
+#include "toonz/fxdag.h"
+#include "toonz/tcolumnfxset.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -311,6 +315,22 @@ void testMaterialControls(const QString &path, const QString &saved) {
   expectColor<TPixel64>(fx, 0, 1, 0, 0);
   expectColor<TPixelF>(fx, 0, 1, 0, 0);
   auto *actual = parameter<TParamSet>(fx, "materialColors");
+  TXsheet sheet;
+  sheet.getFxDag()->getInternalFxs()->addFx(&fx);
+  FunctionTreeModel tree;
+  tree.setFxHandle(nullptr);
+  tree.setObjectHandle(nullptr);
+  tree.refreshData(&sheet);
+  auto *fxChannels = tree.getFxChannel(0);
+  require(fxChannels, "Missing FX channel group");
+  TreeModel::Item *materialChannels = nullptr;
+  for (int i = 0; i < fxChannels->getChildCount(); ++i) {
+    auto *wrapper = dynamic_cast<FunctionTreeModel::ParamWrapper *>(fxChannels->getChild(i));
+    if (wrapper && wrapper->getParam().getPointer() == actual)
+      materialChannels = fxChannels->getChild(i);
+  }
+  require(materialChannels && materialChannels->getChildCount() == 0,
+          "Empty material channel group missing or created scene overrides");
   TFxP preview = fx.clone(false);
   TParamP current = preview->getParams()->getParam("materialColors");
   std::unique_ptr<ParamField> field(ParamField::create(nullptr, "Material", TParamP(actual)));
@@ -339,6 +359,27 @@ void testMaterialControls(const QString &path, const QString &saved) {
   require(QMetaObject::invokeMethod(color, "onKeyToggled", Qt::DirectConnection), "Cannot set the second color key");
   TPixelParamP animated = actual->getParam(0);
   require(animated && animated->isKeyframe(0) && animated->isKeyframe(12), "Native controls did not create color keyframes");
+  tree.refreshData(&sheet);
+  require(materialChannels->getChildCount() == 1, "First material did not appear in the existing FX listing");
+  auto *bodyChannels = materialChannels->getChild(0);
+  require(bodyChannels->getChildCount() == 3 && bodyChannels->data(Qt::DisplayRole).toString().contains("Body"),
+          "Material name or RGB channels missing");
+  auto *redCurve = dynamic_cast<FunctionTreeModel::Channel *>(bodyChannels->getChild(0));
+  auto *greenCurve = dynamic_cast<FunctionTreeModel::Channel *>(bodyChannels->getChild(1));
+  auto *blueCurve = dynamic_cast<FunctionTreeModel::Channel *>(bodyChannels->getChild(2));
+  require(redCurve && greenCurve && blueCurve && redCurve->getParam() == animated->getRed().getPointer() &&
+          greenCurve->getParam() == animated->getGreen().getPointer() && blueCurve->getParam() == animated->getBlue().getPointer(),
+          "Channel listing duplicated or misbound the material animation");
+  require(redCurve->getChannelGroup() == fxChannels && redCurve->getExprRefName().isEmpty(),
+          "Material channel lost its FX owner or advertised an unsupported expression reference");
+  greenCurve->setIsActive(true);
+  QPersistentModelIndex selected(greenCurve->createIndex());
+  redCurve->getParam()->setValue(12, .25);
+  expectColor<TPixelF>(fx, 12, .25, 0, 1);
+  field->update(12);
+  require(color->getColor().r >= 63 && color->getColor().r <= 64,
+          "Function channel edit did not update the FX color control");
+  redCurve->getParam()->setValue(12, 0);
   expectColor<TPixel32>(fx, 0, 0, 1, 0);
   expectColor<TPixel64>(fx, 12, 0, 0, 1);
   const auto middle = animated->getValueD(6);
@@ -365,6 +406,10 @@ void testMaterialControls(const QString &path, const QString &saved) {
   color->setColor(TPixel32::White);
   expectColor<TPixel32>(fx, 12, 0, 0, 1);  // Another material must not recolor Body.
   require(actual->getParamCount() == 2, "Second material override missing");
+  tree.refreshData(&sheet);
+  require(materialChannels->getChildCount() == 2 && materialChannels->getChild(0) == bodyChannels &&
+          selected.isValid() && QModelIndex(selected).internalPointer() == greenCurve && greenCurve->isActive(),
+          "Adding a material disturbed an existing active curve or selection");
   { QFile f(path); require(f.open(QIODevice::ReadOnly), "Cannot verify source preservation");
     require(f.readAll() == QByteArray(reinterpret_cast<const char *>(bytes.data()), int(bytes.size())), "Color editing wrote to the GLB"); }
   writeModel(path);  // Different contents, same path, implicit default material.
@@ -373,13 +418,23 @@ void testMaterialControls(const QString &path, const QString &saved) {
   require(fx.getMaterials()[0].key != materials[0].key, "Replacement reused material identity");
   expectColor<TPixel32>(fx, 0, 1, 1, 1);
   require(actual->getParamCount() == 2 && animated->isKeyframe(12), "Replacement discarded old animation");
+  tree.refreshData(&sheet);
+  require(bodyChannels->data(Qt::DisplayRole).toString().contains("Inactive") && selected.isValid(),
+          "Replacement silently reassigned or removed saved material channels");
   { QFile f(path); require(f.open(QIODevice::WriteOnly), "Cannot restore model fixture");
     f.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()); }
   field->update(12); QApplication::processEvents();
   expectColor<TPixel32>(fx, 12, 0, 0, 1);
   require(selector->count() == 2, "Restored GLB did not restore material listing");
+  tree.refreshData(&sheet);
+  require(bodyChannels->data(Qt::DisplayRole).toString().contains("Body"),
+          "Restoring the model did not restore its channel labels");
   actual->removeAllParam();
   static_cast<TParamSet *>(current.getPointer())->removeAllParam();
+  tree.refreshData(&sheet);
+  require(materialChannels->getChildCount() == 0 && !selected.isValid() &&
+          tree.getActiveChannelCount() == 0 && !tree.getCurrentChannel(),
+          "Reset left stale selected/active material channels");
   field->update(0); QApplication::processEvents();
   require(actual->getParamCount() == 0, "Refreshing after reset resurrected detached overrides");
   color = field->findChild<PixelParamField *>();

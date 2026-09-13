@@ -68,8 +68,19 @@ another frame, change the color, and click the diamond again. These are native
 OpenToonz color parameters: the FX interpolates between keys, and color edits and
 key changes support undo/redo. As with other animated FX controls, changing a
 color between existing keys previews the change until you set a key. The FX
-dialog is the editor for these dynamically discovered channels; they are not
-currently listed in the Function Editor.
+dialog and Function Editor share the same curves. After a material is edited or
+keyed in the FX dialog, it appears in the Function Editor's FX listing under
+**Materials > material name > Red, Green, Blue**. The listing updates as overrides
+are created; untouched materials do not create scene parameters merely by being
+viewed. Enable **Show All Channels** to include unkeyed RGB curves.
+
+The channel groups use parameter identity rather than material names or row
+positions, preserving selection and active curves when another material is
+added. Retained overrides from a replaced or unavailable GLB are labeled
+`Inactive material N`; restoring the original file restores their active names.
+Reset removes their listing and clears stale curve selections. Dynamic material
+paths are not yet registered as expression-reference names; no unsupported
+reference is advertised by these channels.
 
 The list is read-only discovery; just opening it does not add parameters to the
 scene. The first edit stores a scene-owned override. Scene/preset persistence
@@ -137,6 +148,9 @@ preservation, file replacement, grayscale/RGB precision and Over compositing, bo
 before and after packaging.
 It also exercises the real material selector and native color/keyframe editor,
 undo/redo, interpolation, clone/preset persistence and safe model replacement.
+Channel-tree tests verify that RGB entries reference the very same curves,
+edits reach the renderer and color swatch, additions preserve selection, and
+model replacement/restoration and reset refresh the existing listing safely.
 
 ## Application acceptance
 
