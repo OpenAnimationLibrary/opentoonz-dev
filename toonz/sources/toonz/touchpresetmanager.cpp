@@ -53,6 +53,27 @@ QMap<TouchSlot, QString> factoryMap() {
 
 const int kTouchPresetsFormat = 2;
 
+QString familyRecognitionKey(TouchSlotFamily family) {
+  switch (family) {
+  case TouchSlotFamily_Tap:
+    return QStringLiteral("Tap");
+  case TouchSlotFamily_DoubleTap:
+    return QStringLiteral("DoubleTap");
+  case TouchSlotFamily_Hold:
+    return QStringLiteral("Hold");
+  case TouchSlotFamily_Swipe:
+    return QStringLiteral("Swipe");
+  case TouchSlotFamily_Pinch:
+    return QStringLiteral("Pinch");
+  case TouchSlotFamily_Edge:
+    return QStringLiteral("Edge");
+  case TouchSlotFamily_Stylus:
+    return QStringLiteral("Stylus");
+  default:
+    return QString();
+  }
+}
+
 bool migrateSwipeUndoRedo(QMap<QString, QMap<TouchSlot, QString>> &presets) {
   bool changed = false;
   for (auto it = presets.begin(); it != presets.end(); ++it) {
@@ -86,6 +107,11 @@ void TouchPresetManager::seedFactory() {
   m_active = QLatin1String(kDefault);
 }
 
+void TouchPresetManager::seedFamilyRecognition() {
+  for (TouchSlotFamily family : assignableTouchFamilies())
+    m_familyRecognition[family] = true;
+}
+
 QString TouchPresetManager::settingsPath() const {
   return toQString(ToonzFolder::getMyModuleDir() +
                    TFilePath("touchpresets.ini"));
@@ -93,7 +119,9 @@ QString TouchPresetManager::settingsPath() const {
 
 void TouchPresetManager::load() {
   m_presets.clear();
+  m_familyRecognition.clear();
   seedFactory();
+  seedFamilyRecognition();
   QSettings s(settingsPath(), QSettings::IniFormat);
   const QString active =
       s.value(QStringLiteral("General/activePreset")).toString();
@@ -114,6 +142,19 @@ void TouchPresetManager::load() {
   }
   s.endGroup();
   if (!active.isEmpty() && m_presets.contains(active)) m_active = active;
+
+  s.beginGroup(QStringLiteral("Recognition"));
+  for (TouchSlotFamily family : assignableTouchFamilies()) {
+    const QString key = familyRecognitionKey(family);
+    if (key.isEmpty()) continue;
+    if (s.contains(key))
+      m_familyRecognition[family] = s.value(key, true).toBool();
+  }
+  s.endGroup();
+
+  m_showFamilyRecognitionToggles =
+      s.value(QStringLiteral("General/showFamilyRecognitionToggles"), false)
+          .toBool();
 
   const QStringList leftover = {QStringLiteral("Animation"),
                                 QStringLiteral("Paint"),
@@ -143,6 +184,8 @@ void TouchPresetManager::save() {
   s.clear();
   s.setValue(QStringLiteral("General/format"), kTouchPresetsFormat);
   s.setValue(QStringLiteral("General/activePreset"), m_active);
+  s.setValue(QStringLiteral("General/showFamilyRecognitionToggles"),
+             m_showFamilyRecognitionToggles);
   s.beginGroup(QStringLiteral("Presets"));
   for (auto it = m_presets.constBegin(); it != m_presets.constEnd(); ++it) {
     s.beginGroup(it.key());
@@ -155,6 +198,34 @@ void TouchPresetManager::save() {
     s.endGroup();
   }
   s.endGroup();
+  s.beginGroup(QStringLiteral("Recognition"));
+  for (TouchSlotFamily family : assignableTouchFamilies()) {
+    const QString key = familyRecognitionKey(family);
+    if (key.isEmpty()) continue;
+    s.setValue(key, m_familyRecognition.value(family, true));
+  }
+  s.endGroup();
+}
+
+bool TouchPresetManager::isFamilyRecognitionEnabled(
+    TouchSlotFamily family) const {
+  return m_familyRecognition.value(family, true);
+}
+
+void TouchPresetManager::setFamilyRecognitionEnabled(TouchSlotFamily family,
+                                                     bool enabled) {
+  if (family == TouchSlotFamily_Reserved) return;
+  m_familyRecognition[family] = enabled;
+  save();
+}
+
+bool TouchPresetManager::showFamilyRecognitionToggles() const {
+  return m_showFamilyRecognitionToggles;
+}
+
+void TouchPresetManager::setShowFamilyRecognitionToggles(bool show) {
+  m_showFamilyRecognitionToggles = show;
+  save();
 }
 
 QString TouchPresetManager::activePreset() const { return m_active; }

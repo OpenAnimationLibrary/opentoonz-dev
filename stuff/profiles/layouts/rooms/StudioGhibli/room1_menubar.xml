@@ -86,7 +86,6 @@
   <menu title="Customize">
     <command>MI_Preferences</command>
     <command>MI_ShortcutPopup</command>
-    <command>MI_TouchPresetManager</command>
     <command>MI_SceneSettings</command>
     <menu title="View">
       <command>MI_ViewCamera</command>

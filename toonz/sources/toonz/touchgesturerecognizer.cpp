@@ -160,6 +160,9 @@ TouchGestureRecognizer::TouchGestureRecognizer(QObject *parent)
 
 void TouchGestureRecognizer::emitSlot(TouchSlot slot, bool repeat) {
   if (slot == TouchSlot_None || touchSlotIsReserved(slot)) return;
+  const TouchSlotFamily family = touchSlotFamily(slot);
+  if (!TouchPresetManager::instance()->isFamilyRecognitionEnabled(family))
+    return;
   emit slotTriggered((int)slot, repeat);
 }
 

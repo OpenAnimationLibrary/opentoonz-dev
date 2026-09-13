@@ -11,8 +11,12 @@
 
 class TouchPresetManager {
   QMap<QString, QMap<TouchSlot, QString>> m_presets;
+  QMap<TouchSlotFamily, bool> m_familyRecognition;
+  bool m_showFamilyRecognitionToggles = false;
   QString m_active;
   bool m_loaded = false;
+
+  void seedFamilyRecognition();
 
   TouchPresetManager() {}
 
@@ -41,6 +45,12 @@ public:
   bool hasCommand(TouchSlot slot) const;
 
   void execute(TouchSlot slot);
+
+  bool isFamilyRecognitionEnabled(TouchSlotFamily family) const;
+  void setFamilyRecognitionEnabled(TouchSlotFamily family, bool enabled);
+
+  bool showFamilyRecognitionToggles() const;
+  void setShowFamilyRecognitionToggles(bool show);
 
   void save();
   void load();

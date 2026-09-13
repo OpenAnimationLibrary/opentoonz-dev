@@ -40,7 +40,6 @@
     <separator/>
     <command>MI_Preferences</command>
     <command>MI_ShortcutPopup</command>
-    <command>MI_TouchPresetManager</command>
     <separator/>
     <command>MI_RunScript</command>
     <command>MI_OpenScriptConsole</command>

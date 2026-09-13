@@ -13,6 +13,8 @@ class QPushButton;
 class QLabel;
 class QLineEdit;
 class QAction;
+class QToolButton;
+class QMenu;
 class ShortcutTree;
 
 class TouchPresetPopup final : public DVGui::Dialog {
@@ -22,7 +24,8 @@ class TouchPresetPopup final : public DVGui::Dialog {
   QTreeWidget *m_tree;
   ShortcutTree *m_commands;
   QAction *m_chosenAction;
-  QLineEdit *m_searchEdit;
+  QLineEdit *m_gestureSearchEdit;
+  QLineEdit *m_commandSearchEdit;
   QLabel *m_noSearchLabel;
   QPushButton *m_newBtn;
   QPushButton *m_dupBtn;
@@ -32,6 +35,9 @@ class TouchPresetPopup final : public DVGui::Dialog {
   QPushButton *m_assignBtn;
   QPushButton *m_clearBtn;
   QPushButton *m_useBtn;
+  QToolButton *m_optionsBtn;
+  QMenu *m_optionsMenu;
+  QAction *m_showFamilyTogglesAction;
   QLabel *m_selectedName;
   QLabel *m_selectedCommand;
   TouchSlot m_selectedSlot;
@@ -42,12 +48,17 @@ public:
 private:
   void rebuildPresetCombo();
   void rebuildTree();
+  void applyFamilyRecognitionRow(QTreeWidgetItem *group, TouchSlotFamily family);
+  void applyGestureTreeFilter(const QString &text);
   void setSelectedSlot(TouchSlot slot);
   void refreshSelectionBar();
   QString currentPreset() const;
   void assignCurrent(const QString &commandId);
+  void buildOptionsMenu();
 
 private slots:
+  void onShowFamilyTogglesToggled(bool checked);
+  void onTreeItemChanged(QTreeWidgetItem *item, int column);
   void onPresetChanged(int);
   void onUsePreset();
   void onNewPreset();
@@ -57,7 +68,8 @@ private slots:
   void onResetPreset();
   void onAssign();
   void onClear();
-  void onSearchTextChanged(const QString &text);
+  void onGestureSearchChanged(const QString &text);
+  void onCommandSearchChanged(const QString &text);
   void onCommandSelected(QAction *action);
 };
 

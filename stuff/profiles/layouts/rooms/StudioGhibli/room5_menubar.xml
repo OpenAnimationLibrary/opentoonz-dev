@@ -10,7 +10,6 @@
   <menu title="Customize">
     <command>MI_Preferences</command>
     <command>MI_ShortcutPopup</command>
-    <command>MI_TouchPresetManager</command>
     <separator/>
     <command>MI_DockingCheck</command>
     <separator/>

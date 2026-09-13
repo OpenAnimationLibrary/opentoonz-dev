@@ -5,6 +5,7 @@
 #include "tapp.h"
 #include "touchpresetmanager.h"
 
+#include "toonzqt/gutil.h"
 #include "toonzqt/menubarcommand.h"
 
 #include <QComboBox>
@@ -17,7 +18,9 @@
 #include <QMainWindow>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QMenu>
 #include <QSignalBlocker>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
@@ -40,6 +43,9 @@ QString commandLabel(const QString &id) {
   return id;
 }
 
+const int kSlotItemRole   = Qt::UserRole;
+const int kFamilyItemRole = Qt::UserRole + 1;
+
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -58,7 +64,16 @@ TouchPresetPopup::TouchPresetPopup()
   m_deleteBtn   = new QPushButton(tr("Delete"), this);
   m_resetBtn    = new QPushButton(tr("Reset"), this);
 
-  m_searchEdit = new QLineEdit(this);
+  m_gestureSearchEdit = new QLineEdit(this);
+  m_commandSearchEdit = new QLineEdit(this);
+  m_optionsBtn        = new QToolButton(this);
+  m_optionsMenu       = new QMenu(this);
+  m_optionsBtn->setIcon(createQIcon("menu"));
+  m_optionsBtn->setToolTip(tr("Options"));
+  m_optionsBtn->setPopupMode(QToolButton::InstantPopup);
+  m_optionsBtn->setAutoRaise(true);
+  buildOptionsMenu();
+  m_optionsBtn->setMenu(m_optionsMenu);
   m_noSearchLabel =
       new QLabel(tr("Couldn't find any matching command."), this);
   m_noSearchLabel->setHidden(true);
@@ -85,21 +100,32 @@ TouchPresetPopup::TouchPresetPopup()
   m_topLayout->setContentsMargins(5, 5, 5, 5);
   m_topLayout->setSpacing(8);
 
-  QHBoxLayout *searchLay = new QHBoxLayout();
-  searchLay->setContentsMargins(0, 0, 0, 0);
-  searchLay->setSpacing(5);
-  searchLay->addWidget(new QLabel(tr("Search:"), this), 0);
-  searchLay->addWidget(m_searchEdit, 1);
-  m_topLayout->addLayout(searchLay, 0);
-
   QHBoxLayout *bodyLay = new QHBoxLayout();
   bodyLay->setContentsMargins(0, 0, 0, 0);
   bodyLay->setSpacing(8);
-  bodyLay->addWidget(m_tree, 1);
+
+  QVBoxLayout *gestureLay = new QVBoxLayout();
+  gestureLay->setContentsMargins(0, 0, 0, 0);
+  gestureLay->setSpacing(4);
+  QHBoxLayout *gestureSearchLay = new QHBoxLayout();
+  gestureSearchLay->setContentsMargins(0, 0, 0, 0);
+  gestureSearchLay->setSpacing(5);
+  gestureSearchLay->addWidget(new QLabel(tr("Search gestures:"), this), 0);
+  gestureSearchLay->addWidget(m_gestureSearchEdit, 1);
+  gestureSearchLay->addWidget(m_optionsBtn, 0);
+  gestureLay->addLayout(gestureSearchLay);
+  gestureLay->addWidget(m_tree, 1);
+  bodyLay->addLayout(gestureLay, 1);
 
   QVBoxLayout *cmdLay = new QVBoxLayout();
   cmdLay->setContentsMargins(0, 0, 0, 0);
-  cmdLay->setSpacing(0);
+  cmdLay->setSpacing(4);
+  QHBoxLayout *commandSearchLay = new QHBoxLayout();
+  commandSearchLay->setContentsMargins(0, 0, 0, 0);
+  commandSearchLay->setSpacing(5);
+  commandSearchLay->addWidget(new QLabel(tr("Search commands:"), this), 0);
+  commandSearchLay->addWidget(m_commandSearchEdit, 1);
+  cmdLay->addLayout(commandSearchLay);
   cmdLay->addWidget(m_noSearchLabel, 0, Qt::AlignTop | Qt::AlignHCenter);
   cmdLay->addWidget(m_commands, 1);
   bodyLay->addLayout(cmdLay, 1);
@@ -139,8 +165,12 @@ TouchPresetPopup::TouchPresetPopup()
   connect(m_resetBtn, SIGNAL(clicked()), this, SLOT(onResetPreset()));
   connect(m_assignBtn, SIGNAL(clicked()), this, SLOT(onAssign()));
   connect(m_clearBtn, SIGNAL(clicked()), this, SLOT(onClear()));
-  connect(m_searchEdit, &QLineEdit::textChanged, this,
-          &TouchPresetPopup::onSearchTextChanged);
+  connect(m_gestureSearchEdit, &QLineEdit::textChanged, this,
+          &TouchPresetPopup::onGestureSearchChanged);
+  connect(m_commandSearchEdit, &QLineEdit::textChanged, this,
+          &TouchPresetPopup::onCommandSearchChanged);
+  connect(m_tree, &QTreeWidget::itemChanged, this,
+          &TouchPresetPopup::onTreeItemChanged);
   connect(m_commands, &ShortcutTree::actionSelected, this,
           &TouchPresetPopup::onCommandSelected);
   connect(m_commands, &ShortcutTree::searched, m_noSearchLabel,
@@ -159,7 +189,6 @@ TouchPresetPopup::TouchPresetPopup()
             if (!item || !item->parent() || item->isDisabled()) return;
             if (m_chosenAction) onAssign();
           });
-
   rebuildPresetCombo();
   rebuildTree();
   refreshSelectionBar();
@@ -189,6 +218,7 @@ QString TouchPresetPopup::currentPreset() const {
 }
 
 void TouchPresetPopup::rebuildTree() {
+  QSignalBlocker treeBlocker(m_tree);
   m_tree->clear();
   TouchPresetManager *mgr = TouchPresetManager::instance();
   const QString preset    = currentPreset();
@@ -213,12 +243,37 @@ void TouchPresetPopup::rebuildTree() {
   for (TouchSlotFamily family : assignableTouchFamilies()) {
     QTreeWidgetItem *group = new QTreeWidgetItem(m_tree);
     group->setText(0, touchSlotFamilyLabel(family));
+    group->setData(0, kFamilyItemRole, (int)family);
+    applyFamilyRecognitionRow(group, family);
     const QList<TouchSlot> familySlots = touchSlotsInFamily(family);
     for (TouchSlot slot : familySlots) addRow(group, slot, false);
     group->setExpanded(true);
   }
 
+  applyGestureTreeFilter(m_gestureSearchEdit->text());
   setSelectedSlot(m_selectedSlot);
+}
+
+void TouchPresetPopup::applyFamilyRecognitionRow(QTreeWidgetItem *group,
+                                                 TouchSlotFamily family) {
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  const bool show         = mgr->showFamilyRecognitionToggles();
+  const bool enabled      = mgr->isFamilyRecognitionEnabled(family);
+  Qt::ItemFlags flags     = Qt::ItemIsEnabled | Qt::ItemIsSelectable;
+  if (show) {
+    flags |= Qt::ItemIsUserCheckable;
+    group->setCheckState(0, enabled ? Qt::Checked : Qt::Unchecked);
+    group->setText(1, enabled ? tr("Recognized") : tr("Not recognized"));
+    group->setToolTip(
+        0, tr("When unchecked, OpenToonz ignores this gesture family while "
+              "touch control is on."));
+    group->setToolTip(1, group->toolTip(0));
+  } else {
+    group->setText(1, QString());
+    group->setToolTip(0, QString());
+    group->setToolTip(1, QString());
+  }
+  group->setFlags(flags);
 }
 
 void TouchPresetPopup::setSelectedSlot(TouchSlot slot) {
@@ -259,7 +314,32 @@ void TouchPresetPopup::refreshSelectionBar() {
   m_clearBtn->setEnabled(true);
 }
 
-void TouchPresetPopup::onSearchTextChanged(const QString &text) {
+void TouchPresetPopup::applyGestureTreeFilter(const QString &text) {
+  const QString t = text.trimmed();
+  for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+    QTreeWidgetItem *top = m_tree->topLevelItem(i);
+    const bool familyMatch =
+        t.isEmpty() || top->text(0).contains(t, Qt::CaseInsensitive);
+    bool anyChildVisible = false;
+    for (int j = 0; j < top->childCount(); ++j) {
+      QTreeWidgetItem *child = top->child(j);
+      const bool childMatch =
+          t.isEmpty() || child->text(0).contains(t, Qt::CaseInsensitive);
+      const bool visible = familyMatch || childMatch;
+      child->setHidden(!visible);
+      if (visible) anyChildVisible = true;
+    }
+    top->setHidden(!t.isEmpty() && !familyMatch && !anyChildVisible);
+    if (!top->isHidden() && (familyMatch || anyChildVisible))
+      top->setExpanded(true);
+  }
+}
+
+void TouchPresetPopup::onGestureSearchChanged(const QString &text) {
+  applyGestureTreeFilter(text);
+}
+
+void TouchPresetPopup::onCommandSearchChanged(const QString &text) {
   static bool busy = false;
   if (busy) return;
   busy = true;
@@ -354,6 +434,38 @@ void TouchPresetPopup::onAssign() {
 }
 
 void TouchPresetPopup::onClear() { assignCurrent(QString()); }
+
+void TouchPresetPopup::buildOptionsMenu() {
+  m_optionsMenu->clear();
+  m_showFamilyTogglesAction = m_optionsMenu->addAction(
+      tr("Show family recognition toggles"));
+  m_showFamilyTogglesAction->setCheckable(true);
+  m_showFamilyTogglesAction->setChecked(
+      TouchPresetManager::instance()->showFamilyRecognitionToggles());
+  m_showFamilyTogglesAction->setToolTip(
+      tr("Shows a checkbox on each gesture family to enable or disable "
+         "recognition on this device."));
+  connect(m_showFamilyTogglesAction, &QAction::toggled, this,
+          &TouchPresetPopup::onShowFamilyTogglesToggled);
+}
+
+void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {
+  TouchPresetManager::instance()->setShowFamilyRecognitionToggles(checked);
+  rebuildTree();
+}
+
+void TouchPresetPopup::onTreeItemChanged(QTreeWidgetItem *item, int column) {
+  if (!item || column != 0) return;
+  if (!item->data(0, kFamilyItemRole).isValid()) return;
+  const TouchSlotFamily family =
+      (TouchSlotFamily)item->data(0, kFamilyItemRole).toInt();
+  const bool enabled = item->checkState(0) == Qt::Checked;
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  if (mgr->isFamilyRecognitionEnabled(family) == enabled) return;
+  mgr->setFamilyRecognitionEnabled(family, enabled);
+  QSignalBlocker blocker(m_tree);
+  applyFamilyRecognitionRow(item, family);
+}
 
 OpenPopupCommandHandler<TouchPresetPopup> openTouchPresetPopup(
     MI_TouchPresetManager);
