@@ -14,6 +14,9 @@
 
 // TnzLib includes
 #include "tstageobjectid.h"
+#include "tchannelid.h"
+
+#include <array>
 
 // tcg includes
 #include "tcg/tcg_controlled_access.h"
@@ -416,6 +419,20 @@ of the \e frame
 
   //! Returns the \e channel's value of the object.
   TDoubleParam *getParam(Channel channel) const;
+
+  struct ChannelDescriptor {
+    TChannelId id;
+    Channel legacyChannel;
+  };
+
+  // Historical mappings only. Discovery order does not define identity.
+  static const std::array<ChannelDescriptor, T_ChannelCount> &
+  getChannelDescriptors();
+
+  // Unknown legacy values return Invalid; unknown IDs return nullptr.
+  // Lookup never creates a channel or substitutes a different parameter.
+  static TChannelId getChannelId(Channel channel);
+  TDoubleParam *findChannel(TChannelId id) const;
 
   //! Copies the data of the object in a new object with a new id and adds it to
   //! the tree.
