@@ -153,6 +153,7 @@
     STD_iwa_FractalNoiseFx 
   </Noise>
   <Render>
+    STD_glbModelFx
     STD_cloudsFx 
     STD_inopnCloudsFx
     STD_particlesFx 
