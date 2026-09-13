@@ -206,7 +206,7 @@ public:
       , m_lighting(new TIntEnumParam(0, "Unlit"))
       , m_renderStyle(new TIntEnumParam(0, "Solid"))
       , m_colorMode(new TIntEnumParam(0, "Grayscale"))
-      , m_materialColors(new TParamSet("materialColors")) {
+      , m_materialColors(new TFxMaterialParamSet) {
     bindParam(this, "modelFile", m_modelFile);
     bindParam(this, "positionX", m_positionX);
     bindParam(this, "positionY", m_positionY);

@@ -57,10 +57,7 @@ TParamSet::TParamSet(const TParamSet &src)
 
 //---------------------------------------------------------
 
-TParamSet::~TParamSet() {
-  removeAllParam();  // Children retained by undo records must lose this observer.
-  delete m_imp;
-}
+TParamSet::~TParamSet() { delete m_imp; }
 
 //---------------------------------------------------------
 /*
@@ -452,16 +449,11 @@ void TParamSet::assignKeyframe(double frame, const TParamP &src,
 
 //---------------------------------------------------------
 
-TParam *TParamSet::clone() const {
-  auto *result = new TParamSet(getName());
-  result->copy(const_cast<TParamSet *>(this));
-  return result;
-}
+TParam *TParamSet::clone() const { return new TParamSet(*this); }
 
 //---------------------------------------------------------
 
 void TParamSet::copy(TParam *src) {
-  if (src == this) return;
   TParamSet *p = dynamic_cast<TParamSet *>(src);
   if (!p) throw TException("invalid source for copy");
   int srcParamCount = p->getParamCount();
@@ -476,7 +468,6 @@ void TParamSet::copy(TParam *src) {
 //---------------------------------------------------------
 
 void TParamSet::loadData(TIStream &is) {
-  removeAllParam();
   std::string tagName;
   is.openChild(tagName);
   while (!is.eos()) {
@@ -513,7 +504,6 @@ void TParamSet::saveData(TOStream &os) {
 //---------------------------------------------------------
 
 std::string TParamSet::getValueAlias(double frame, int precision) {
-  if (m_imp->m_params.empty()) return "()";
   std::string alias = "(";
 
   std::vector<std::pair<TParam *, std::string>>::iterator end =
