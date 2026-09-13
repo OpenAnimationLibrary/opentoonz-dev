@@ -16,6 +16,8 @@
   <item>"STD_glbModelFx.farClip" "Far Clip" </item>
   <item>"STD_glbModelFx.lighting" "Lighting" </item>
   <item>"STD_glbModelFx.renderStyle" "Display Style" </item>
+  <item>"STD_glbModelFx.colorMode" "Color Mode" </item>
+  <item>"STD_glbModelFx.materialColors" "Material" </item>
   <item>"STD_lut3DBakeFx" "3D LUT Bake" </item>
   <item>"STD_lut3DBakeFx.lutFile" "LUT File" </item>
 <!------------------------------ FX ------------------------------------------->
@@ -1758,4 +1760,3 @@
   <item>"STD_naru_LazyBrushFx.lambda"	 	"Scribble Softness"		</item>
 
 </stringtable> 
-

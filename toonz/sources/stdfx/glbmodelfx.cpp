@@ -2,8 +2,12 @@
 #include "tfxparam.h"
 #include "tnotanimatableparam.h"
 #include "glbrenderer.h"
+#include "tfxmaterial.h"
+#include "tparamset.h"
 
 #include <QDateTime>
+#include <QCryptographicHash>
+#include <QFile>
 #include <QDebug>
 #include <QFileInfo>
 #include <QMutex>
@@ -21,7 +25,7 @@
 namespace {
 template <class PIXEL>
 void copyGlbPixels(TRasterPT<PIXEL> raster,
-                   const std::vector<otglb::GrayPixel> &pixels, int yOffset) {
+                   const std::vector<otglb::ColorPixel> &pixels, int yOffset) {
   using Channel = typename PIXEL::Channel;
   const double maximum = PIXEL::maxChannelValue;
   const double round = std::is_floating_point<Channel>::value ? 0.0 : 0.5;
@@ -31,16 +35,16 @@ void copyGlbPixels(TRasterPT<PIXEL> raster,
     auto *row = raster->pixels(y + yOffset);
     for (int x = 0; x < raster->getLx(); ++x) {
       const auto &p = pixels[std::size_t(y) * raster->getLx() + x];
-      const Channel gray = Channel(p.gray * maximum + round);
-      row[x] = PIXEL(gray, gray, gray, Channel(p.alpha * maximum + round));
+      row[x] = PIXEL(Channel(p.r * maximum + round), Channel(p.g * maximum + round),
+                     Channel(p.b * maximum + round), Channel(p.alpha * maximum + round));
     }
   }
   raster->unlock();
 }
 }  // namespace
 
-// Read-only GLB source: CPU-rendered opaque grayscale base geometry.
-class GlbModelFx final : public TStandardZeraryFx {
+// Read-only GLB source with scene-owned, animated material color overrides.
+class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
   FX_PLUGIN_DECLARATION(GlbModelFx)
 
   TStringParamP m_modelFile;
@@ -51,10 +55,13 @@ class GlbModelFx final : public TStandardZeraryFx {
   TDoubleParamP m_cameraDistance, m_fieldOfView, m_orthoSize;
   TDoubleParamP m_nearClip, m_farClip;
   TIntEnumParamP m_lighting, m_renderStyle;
+  TIntEnumParamP m_colorMode;
+  TParamSetP m_materialColors;
 
   struct Cache {
     QMutex mutex;
     QString revision;
+    std::string digest;
     otglb::Result loaded;
     otglb::RenderOptions options;
     std::shared_ptr<const otglb::RenderScene> projected;
@@ -87,13 +94,9 @@ class GlbModelFx final : public TStandardZeraryFx {
     return o;
   }
 
-  std::shared_ptr<const otglb::RenderScene> projected(double frame,
-                                                    const int *canceled) const {
+  void loadLocked() const {
     const QString path = QString::fromStdWString(m_modelFile->getValue());
-    if (path.isEmpty()) return {};
     const QString revision = fileRevision();
-    const auto settings = options(frame);
-    QMutexLocker lock(&m_cache->mutex);
     if (revision != m_cache->revision) {
 #ifdef _WIN32
       const std::filesystem::path native(path.toStdWString());
@@ -101,9 +104,18 @@ class GlbModelFx final : public TStandardZeraryFx {
       const auto native = std::filesystem::u8path(path.toUtf8().toStdString());
 #endif
       auto loaded = otglb::load(native);
+      std::string digest;
+      if (loaded) {
+        QFile file(path);
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        if (!file.open(QIODevice::ReadOnly) || !hash.addData(&file))
+          throw std::runtime_error("Cannot identify GLB materials; retry loading the file.");
+        digest = hash.result().toHex().toStdString();
+      }
       if (fileRevision() != revision)
         throw std::runtime_error("GLB changed while loading; retry the render.");
       m_cache->loaded = std::move(loaded);
+      m_cache->digest = std::move(digest);
       m_cache->revision = revision;
       m_cache->projected.reset();
       m_cache->warned = false;
@@ -111,13 +123,42 @@ class GlbModelFx final : public TStandardZeraryFx {
         qWarning().noquote() << "GLB Model:" << path << QString::fromStdString(warning);
     }
     if (!m_cache->loaded) throw std::runtime_error(m_cache->loaded.error);
+  }
+
+  std::string materialKey(std::size_t index) const {
+    return "m" + m_cache->digest + "_" + std::to_string(index);
+  }
+
+  std::shared_ptr<const otglb::RenderScene> projected(double frame,
+                                                    const int *canceled) const {
+    if (m_modelFile->getValue().empty()) return {};
+    auto settings = options(frame);
+    QMutexLocker lock(&m_cache->mutex);
+    loadLocked();
+    settings.materialColors = m_colorMode->getValue() == 1;
+    if (settings.materialColors) {
+      const auto &asset = *m_cache->loaded.asset;
+      for (std::size_t i = 0; i <= asset.materials.size(); ++i) {
+        auto color = otglb::materialColor(asset, i);
+        const int index = m_materialColors->getParamIdx(materialKey(i));
+        if (index < m_materialColors->getParamCount()) {
+          TPixelParamP param = m_materialColors->getParam(index);
+          if (param) {
+            const auto c = param->getValueD(frame);
+            color = {{float(std::clamp(c.r, 0.0, 1.0)), float(std::clamp(c.g, 0.0, 1.0)),
+                      float(std::clamp(c.b, 0.0, 1.0))}};
+          }
+        }
+        settings.colors.push_back(color);
+      }
+    }
     if (!m_cache->projected || !(settings == m_cache->options)) {
       auto scene = std::make_shared<otglb::RenderScene>(
           otglb::prepareRender(*m_cache->loaded.asset, settings, canceled));
       if (canceled && *canceled) return {};
       if (!m_cache->warned) {
         for (const auto &warning : scene->warnings)
-          qWarning().noquote() << "GLB Model:" << path << QString::fromStdString(warning);
+          qWarning().noquote() << "GLB Model:" << QString::fromStdWString(m_modelFile->getValue()) << QString::fromStdString(warning);
         m_cache->warned = true;
       }
       m_cache->projected = std::move(scene);
@@ -127,6 +168,26 @@ class GlbModelFx final : public TStandardZeraryFx {
   }
 
 public:
+  std::vector<TFxMaterial> getMaterials() const override {
+    if (m_modelFile->getValue().empty()) return {};
+    QMutexLocker lock(&m_cache->mutex);
+    loadLocked();
+    const auto &asset = *m_cache->loaded.asset;
+    bool defaultUsed = false;
+    for (const auto &mesh : asset.meshes)
+      for (const auto &primitive : mesh.primitives)
+        defaultUsed |= primitive.material == otglb::NoIndex;
+    std::vector<TFxMaterial> materials;
+    for (std::size_t i = 0; i < asset.materials.size() + (defaultUsed ? 1 : 0); ++i) {
+      const auto c = otglb::materialColor(asset, i);
+      std::string name = i == asset.materials.size() ? "Default material" : asset.materials[i].name;
+      if (name.empty()) name = "Material " + std::to_string(i + 1);
+      materials.push_back({materialKey(i), name,
+          TPixel32(int(c[0] * 255 + .5f), int(c[1] * 255 + .5f), int(c[2] * 255 + .5f), 255)});
+    }
+    return materials;
+  }
+
   GlbModelFx()
       : m_modelFile(L"")
       , m_positionX(0.0)
@@ -143,7 +204,9 @@ public:
       , m_nearClip(0.1)
       , m_farClip(1000.0)
       , m_lighting(new TIntEnumParam(0, "Unlit"))
-      , m_renderStyle(new TIntEnumParam(0, "Solid")) {
+      , m_renderStyle(new TIntEnumParam(0, "Solid"))
+      , m_colorMode(new TIntEnumParam(0, "Grayscale"))
+      , m_materialColors(new TParamSet("materialColors")) {
     bindParam(this, "modelFile", m_modelFile);
     bindParam(this, "positionX", m_positionX);
     bindParam(this, "positionY", m_positionY);
@@ -160,6 +223,9 @@ public:
     bindParam(this, "farClip", m_farClip);
     bindParam(this, "lighting", m_lighting);
     bindParam(this, "renderStyle", m_renderStyle);
+    bindParam(this, "colorMode", m_colorMode);
+    bindParam(this, "materialColors", m_materialColors);
+    m_colorMode->addItem(1, "Material Colors");
 
     m_projection->addItem(1, "Perspective");
     m_lighting->addItem(1, "Headlight");
@@ -194,7 +260,12 @@ public:
     for (double v : o.rotation) key << v << ',';
     key << o.scale << ',' << o.cameraDistance << ',' << o.fieldOfView << ','
         << o.orthoHeight << ',' << o.nearClip << ',' << o.farClip;
-    return TRasterFx::getAlias(frame, info) + "[GLB-gray-v1:" +
+    // Child names are part of the identity: equal colors assigned to different
+    // materials must not reuse one another's cached images.
+    for (int i = 0; i < m_materialColors->getParamCount(); ++i)
+      key << ':' << m_materialColors->getParamName(i) << '='
+          << m_materialColors->getParam(i)->getValueAlias(frame, 17);
+    return TRasterFx::getAlias(frame, info) + "[GLB-color-v1:" +
            fileRevision().toUtf8().toStdString() + ":" + key.str() + "]";
   }
 
@@ -219,10 +290,10 @@ public:
   int getMemoryRequirement(const TRectD &rect, double,
                            const TRenderSettings &) override {
     if (rect.isEmpty()) return 0;
-    // Four depth/coverage samples plus the grayscale output. Tell the normal
+    // Four depth/coverage samples plus the RGBA output. Tell the normal
     // FX scheduler to subdivide large requests before allocating these buffers.
     const double megabytes = std::ceil(rect.getLx()) * std::ceil(rect.getLy()) *
-                             72.0 / (1024.0 * 1024.0);
+                             112.0 / (1024.0 * 1024.0);
     return int(std::min(double(std::numeric_limits<int>::max()), std::ceil(megabytes)));
   }
 

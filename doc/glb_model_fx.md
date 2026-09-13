@@ -2,7 +2,7 @@
 
 Add **Render > GLB Model** from the FX Schematic, choose a `.glb` file, and connect
 the output to the scene output or another raster FX. This is a zerary source
-with no input port. It renders opaque grayscale triangle surfaces over a
+with no input port. It renders opaque grayscale or material-colored surfaces over a
 transparent background, using the same CPU renderer for preview and final output.
 The source model is never edited or written.
 
@@ -24,7 +24,9 @@ automatic recentering or fitting: original model coordinates remain meaningful.
 | Camera | Vertical Field of View | Perspective view angle in degrees, on the same fixed image plane. |
 | Camera | Near Clip, Far Clip | Positive distances from the camera. Far Clip must exceed Near Clip. Crossing surfaces are clipped before projection. |
 | Appearance | Solid, Wireframe | Filled surfaces or visible triangle edges, with depth testing. Hidden edges are suppressed. |
-| Appearance | Unlit, Headlight | Uniform gray or faceted shading from a light at the camera. Wireframe uses uniform gray. |
+| Appearance | Color Mode | Grayscale (the existing default) or Material Colors. |
+| Appearance | Unlit, Headlight | Flat colors or faceted shading from a light at the camera. Wireframe is unlit. |
+| Materials | Material selector, color, keyframe diamond | Lists the chosen GLB's materials; edit or animate the selected material's RGB color. |
 
 The fixed image plane is centered at the FX origin, independent of output
 resolution, preview zoom, camera-box size, and tile boundaries. OpenToonz's
@@ -41,7 +43,7 @@ the original parameter names and values from the framework stage.
 - Indexed and non-indexed triangle lists, strips and fans, including shared
   mesh instances and node transforms. The declared default scene is used; if
   none is declared, the first scene is used with a diagnostic warning.
-- Opaque, two-sided grayscale base geometry. Material colors, textures, material
+- Opaque, two-sided base geometry, with optional material base colors. Textures, material
   alpha, emissive properties, vertex colors and imported normals are not shaded.
   Headlight uses geometric face normals; it is intentionally faceted.
 - No skeletal animation, morph deformation, embedded animation playback, or
@@ -50,8 +52,42 @@ the original parameter names and values from the framework stage.
 - Point and line primitives are skipped with a diagnostic warning. A scene
   without triangle surfaces, or entirely outside the clip range, is transparent.
 - Four coverage/depth samples per pixel produce premultiplied antialiased
-  grayscale output at 8-bit, 16-bit, and floating-point precision. Normal
+  RGB output at 8-bit, 16-bit, and floating-point precision. Normal
   downstream FX and Over compositing can use the resulting raster.
+
+## Material colors and animation
+
+Choose **Appearance > Color Mode > Material Colors**, then open **Materials**.
+The selector lists the GLB's material names, with numbered labels to distinguish
+duplicates. Unnamed entries use `Material N`. Geometry without an assigned
+material uses an additional white `Default material`. All parts sharing one
+material use the same color override.
+
+Select a material, adjust its color, and click the diamond to set a key. Move to
+another frame, change the color, and click the diamond again. These are native
+OpenToonz color parameters: the FX interpolates between keys, and color edits and
+key changes support undo/redo. As with other animated FX controls, changing a
+color between existing keys previews the change until you set a key. The FX
+dialog is the editor for these dynamically discovered channels; they are not
+currently listed in the Function Editor.
+
+The list is read-only discovery; just opening it does not add parameters to the
+scene. The first edit stores a scene-owned override. Scene/preset persistence
+and FX cloning retain its color curves. The source GLB remains untouched.
+
+Identity uses the SHA-256 of the GLB contents plus the material index, rather than
+the name or list position alone. Moving an unchanged GLB keeps its overrides.
+Changing its contents creates new material identities: prior overrides remain
+stored but inactive, with a notice in the editor. Restoring the original file
+contents restores those associations and animation. This conservative version
+does not automatically migrate colors between edited/re-exported models.
+
+Base-color factors are linear in glTF and are converted to sRGB for display.
+Overrides use OpenToonz's native RGB controls; interpolation is sampled at full
+parameter precision for 16-bit/float rendering. Headlight modulation occurs in
+linear light in material mode. No textures, metallic/specular response, emissive
+shading, vertex colors, or material transparency are evaluated. A textured model
+may therefore look quite different from its textured appearance in another app.
 
 ## Files, errors and memory
 
@@ -89,14 +125,18 @@ glb_render.exe "F:\Models\example.glb" "F:\Renders\example.tga" 10 10
 ```
 
 The last two arguments are optional Orthographic Height and Camera Distance.
+Append `1` after them to render material colors, for example:
+`glb_render.exe model.glb colors.tga 10 10 1`.
 This utility uses Headlight and zero instance rotation/translation. It refuses
 to overwrite an existing output. On Linux/macOS, run `chmod +x glb_render`
 after extracting and invoke it as `./glb_render ...`.
 
 The standalone CMake build documented for the loader also runs the renderer
 regressions. Windows application CI tests the actual FX, persistence, source
-preservation, file replacement, grayscale precision and Over compositing, both
+preservation, file replacement, grayscale/RGB precision and Over compositing, both
 before and after packaging.
+It also exercises the real material selector and native color/keyframe editor,
+undo/redo, interpolation, clone/preset persistence and safe model replacement.
 
 ## Application acceptance
 
@@ -115,6 +155,12 @@ before and after packaging.
 5. Try a missing/invalid file and invalid clip distances; verify useful render
    errors. Replace the model externally and request another preview; verify
    the new file revision appears. Cancel a large render and retry it.
+6. Enable Material Colors. Select several materials, change their colors and
+   animate one from green to blue. Check the swatch, preview and rendered frames.
+   Undo/redo edits and key changes; save/reopen the scene and its FX preset.
+7. Replace the GLB with a different model. Check that the list changes and old
+   overrides stay inactive. Restore the original GLB and verify its animation
+   returns. Test unnamed and duplicate material names and shared materials.
 
 These UI checks complement the automated tests; automated pixel tests do not
 claim an interactive UI acceptance pass on every platform.

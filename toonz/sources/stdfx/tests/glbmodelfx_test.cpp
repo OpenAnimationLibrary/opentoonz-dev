@@ -7,8 +7,10 @@
 #include "tstream.h"
 #include "trop.h"
 #include "../../glb/tests/glbfixture.h"
+#include "toonzqt/paramfield.h"
 
-#include <QCoreApplication>
+#include <QApplication>
+#include <QComboBox>
 #include <QFile>
 #include <QTemporaryDir>
 
@@ -75,8 +77,12 @@ void testDefaults() {
   require(fx.getFxType() == "STD_glbModelFx", "Unexpected FX type");
   require(fx.isZerary(), "GLB Model is not a zerary FX");
   require(fx.getInputPortCount() == 0, "GLB Model acquired an input port");
-  require(fx.getParams()->getParamCount() == 16,
+  require(fx.getParams()->getParamCount() == 18,
           "Unexpected framework parameter count");
+  require(parameter<TIntEnumParam>(fx, "colorMode")->getValue() == 0,
+          "Existing scenes must retain grayscale by default");
+  require(parameter<TParamSet>(fx, "materialColors")->getValueAlias(0, 3) == "()",
+          "Empty material overrides have no safe alias");
   require(parameter<TStringParam>(fx, "modelFile")->getValue().empty(),
           "Default model path is not empty");
   for (const DoubleCase &test : doubleCases) {
@@ -274,10 +280,111 @@ void testLoadError(const QString &path) {
   try { fx.doCompute(tile, 0, TRenderSettings()); } catch (const TException &) { failed = true; }
   require(failed, "Missing or invalid GLB did not report an error");
 }
+
+template <class PIXEL>
+void expectColor(GlbModelFx &fx, double frame, double r, double g, double b) {
+  TRasterPT<PIXEL> raster(80, 80);
+  TTile tile; tile.setRaster(raster); tile.m_pos = TPointD(-40, -40);
+  TRenderSettings settings; settings.m_affine = TScale(.2);
+  fx.doCompute(tile, frame, settings);
+  const auto p = raster->pixels(40)[40];
+  const double max = PIXEL::maxChannelValue;
+  const double tolerance = std::is_floating_point<typename PIXEL::Channel>::value ? 1e-6 : 1.0 / max + 1e-6;
+  require(std::abs(p.r / max - r) <= tolerance &&
+          std::abs(p.g / max - g) <= tolerance &&
+          std::abs(p.b / max - b) <= tolerance && p.m == max,
+          "Material color did not reach the output raster");
+}
+
+void testMaterialControls(const QString &path, const QString &saved) {
+  const auto bytes = triangleGlb(0, true);
+  { QFile f(path); require(f.open(QIODevice::WriteOnly), "Cannot create material GLB");
+    require(f.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()) == qint64(bytes.size()), "Cannot write material GLB"); }
+  TFxP actualFx = new GlbModelFx;
+  auto &fx = *static_cast<GlbModelFx *>(actualFx.getPointer());
+  parameter<TStringParam>(fx, "modelFile")->setValue(path.toStdWString());
+  parameter<TIntEnumParam>(fx, "colorMode")->setValue(1);
+  const auto materials = fx.getMaterials();
+  require(materials.size() == 2 && materials[0].name == "Body" && materials[1].name == "Material 2",
+          "Material names or unnamed fallback are wrong");
+  expectColor<TPixel32>(fx, 0, 1, 0, 0);
+  expectColor<TPixel64>(fx, 0, 1, 0, 0);
+  expectColor<TPixelF>(fx, 0, 1, 0, 0);
+  auto *actual = parameter<TParamSet>(fx, "materialColors");
+  TFxP preview = fx.clone(false);
+  TParamP current = preview->getParams()->getParam("materialColors");
+  std::unique_ptr<ParamField> field(ParamField::create(nullptr, "Material", TParamP(actual)));
+  require(bool(field), "Material editor was not created");
+  field->setFx(preview, actualFx);
+  field->setParam(current, TParamP(actual), 0);
+  QApplication::processEvents();
+  require(actual->getParamCount() == 0, "Viewing materials mutated the scene");
+  auto *selector = field->findChild<QComboBox *>();
+  require(selector && selector->count() == 2, "Material list was not populated");
+  auto *color = field->findChild<PixelParamField *>();
+  require(color && color->getColor() == TPixel32(255, 0, 0, 255), "Material swatch is wrong");
+  const auto redAlias = fx.getAlias(0, TRenderSettings());
+  color->setColor(TPixel32(0, 255, 0, 255));
+  require(actual->getParamCount() == 1, "First edit did not attach a scene override");
+  expectColor<TPixel32>(fx, 0, 0, 1, 0);
+  require(redAlias != fx.getAlias(0, TRenderSettings()), "Color edit reused a stale cache alias");
+  TUndoManager::manager()->undo();
+  field->update(0);
+  expectColor<TPixel32>(fx, 0, 1, 0, 0);
+  TUndoManager::manager()->redo();
+  field->update(0);
+  require(QMetaObject::invokeMethod(color, "onKeyToggled", Qt::DirectConnection), "Cannot set a native color key");
+  field->update(12);
+  color->setColor(TPixel32(0, 0, 255, 255));
+  require(QMetaObject::invokeMethod(color, "onKeyToggled", Qt::DirectConnection), "Cannot set the second color key");
+  TPixelParamP animated = actual->getParam(0);
+  require(animated && animated->isKeyframe(0) && animated->isKeyframe(12), "Native controls did not create color keyframes");
+  expectColor<TPixel32>(fx, 0, 0, 1, 0);
+  expectColor<TPixel64>(fx, 12, 0, 0, 1);
+  const auto middle = animated->getValueD(6);
+  require(middle.g > 0 && middle.b > 0 && middle.g < 1 && middle.b < 1, "Color did not interpolate");
+  expectColor<TPixelF>(fx, 6, middle.r, middle.g, middle.b);
+  TFxP clone = fx.clone(false);
+  auto &copy = *static_cast<GlbModelFx *>(clone.getPointer());
+  expectColor<TPixelF>(copy, 6, middle.r, middle.g, middle.b);
+  copy.getParams()->unlink();
+  expectColor<TPixelF>(copy, 6, middle.r, middle.g, middle.b);
+  TPixelParamP clonedColor = parameter<TParamSet>(copy, "materialColors")->getParam(0);
+  clonedColor->setValue(12, TPixel32::White);
+  expectColor<TPixel32>(fx, 12, 0, 0, 1);
+  { TOStream os(TFilePath(saved.toStdWString())); os << &fx; }
+  { TIStream is(TFilePath(saved.toStdWString())); TPersist *p = nullptr; is >> p;
+    std::unique_ptr<TPersist> owner(p);
+    auto *restored = dynamic_cast<GlbModelFx *>(p);
+    require(restored, "Cannot reload color FX preset");
+    expectColor<TPixelF>(*restored, 6, middle.r, middle.g, middle.b);
+    TPixelParamP restoredColor = parameter<TParamSet>(*restored, "materialColors")->getParam(0);
+    require(restoredColor->isKeyframe(0) && restoredColor->isKeyframe(12), "Saved color animation lost its keys"); }
+  selector->setCurrentIndex(1);
+  color = field->findChild<PixelParamField *>();
+  color->setColor(TPixel32::White);
+  expectColor<TPixel32>(fx, 12, 0, 0, 1);  // Another material must not recolor Body.
+  require(actual->getParamCount() == 2, "Second material override missing");
+  { QFile f(path); require(f.open(QIODevice::ReadOnly), "Cannot verify source preservation");
+    require(f.readAll() == QByteArray(reinterpret_cast<const char *>(bytes.data()), int(bytes.size())), "Color editing wrote to the GLB"); }
+  writeModel(path);  // Different contents, same path, implicit default material.
+  field->update(0); QApplication::processEvents();
+  require(selector->count() == 1, "List did not follow the replacement model");
+  require(fx.getMaterials()[0].key != materials[0].key, "Replacement reused material identity");
+  expectColor<TPixel32>(fx, 0, 1, 1, 1);
+  require(actual->getParamCount() == 2 && animated->isKeyframe(12), "Replacement discarded old animation");
+  { QFile f(path); require(f.open(QIODevice::WriteOnly), "Cannot restore model fixture");
+    f.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()); }
+  field->update(12); QApplication::processEvents();
+  expectColor<TPixel32>(fx, 12, 0, 0, 1);
+  require(selector->count() == 2, "Restored GLB did not restore material listing");
+  TUndoManager::manager()->reset();
+}
 }  // namespace
 
 int main(int argc, char **argv) {
-  QCoreApplication app(argc, argv);
+  qputenv("QT_QPA_PLATFORM", "offscreen");
+  QApplication app(argc, argv);
   QTemporaryDir dir;
   try {
     require(dir.isValid(), "Temporary directory unavailable");
@@ -301,6 +408,7 @@ int main(int argc, char **argv) {
     require(file.readAll() == sentinel, "Framework modified the model file");
     file.close();
     testRenderingAndReload(modelPath);
+    testMaterialControls(dir.filePath("materials.glb"), dir.filePath("materials.fx"));
     std::cout << "PASS: GLB FX registration, zero inputs, parameter defaults, "
                  "keyframes, clone, Unicode persistence, read-only loading, "
                  "8/16/float rendering, reload and explicit errors\n";

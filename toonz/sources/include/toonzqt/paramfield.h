@@ -20,6 +20,7 @@
 
 #include "tgeometry.h"
 #include "tparam.h"
+#include "tfx.h"
 #include "tnotanimatableparam.h"
 #include "tspectrumparam.h"
 #include "ttonecurveparam.h"
@@ -85,6 +86,10 @@ public:
                         int frame) = 0;
 
   virtual void update(int frame) = 0;
+
+  // Optional source context for controls whose choices are discovered from an
+  // asset. Ordinary parameter fields need no FX-specific knowledge.
+  virtual void setFx(const TFxP &current, const TFxP &actual) {}
 
   static ParamField *create(QWidget *parent, QString name,
                             const TParamP &param);
