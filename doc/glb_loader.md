@@ -1,13 +1,13 @@
 # Read-only GLB loader
 
 This stage adds the `otglb` loading library and the `glb_inspect` command-line
-utility. It follows the GLB Model FX framework. FX file selection does not call
-the loader yet, and the FX still produces an empty image. Rendering and FX
-connection integration are a later stage.
+utility. The [GLB Model FX](glb_model_fx.md) now calls this loader and renders
+opaque grayscale base geometry. The loader itself remains independent of
+OpenToonz, image decoding and rendering.
 
 ## Try a model
 
-Download the `glb-inspect-<platform>` artifact from the **GLB Loader** workflow.
+Download the `glb-inspect-<platform>` artifact from the **GLB Loader and Renderer** workflow.
 Extract it and run the utility from a terminal:
 
 ```text
@@ -82,7 +82,7 @@ ctest --test-dir glb-build -C Release --output-on-failure
 
 `BUILD_GLB_LOADER_TOOLS` defaults to ON for standalone builds and OFF inside
 the full OpenToonz build. The static `otglb` target is built with OpenToonz;
-no FX calls are connected to it at this stage. The dedicated workflow runs
+the GLB Model FX links to it for read-only loading and CPU rendering. The dedicated workflow runs
 on pull requests targeting any branch, so stacked PRs retain CI coverage.
 
 The regression suite generates deterministic GLBs locally. It checks actual

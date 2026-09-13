@@ -1,10 +1,12 @@
-// Exercise the framework directly without loading GLB data or starting a GPU
-// renderer. As with lut3dbake_test, compile the production source here without
+// Exercise the production FX and CPU renderer. As with lut3dbake_test, compile
+// the production source here without
 // linking tnzstdfx so the same FX factory registration is tested in isolation.
 #include "../glbmodelfx.cpp"
 #include "tfilepath.h"
 #include "tparamcontainer.h"
 #include "tstream.h"
+#include "trop.h"
+#include "../../glb/tests/glbfixture.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -177,15 +179,99 @@ void testTransparent(GlbModelFx &fx, int bpp) {
   }
 }
 
-void testNoRendering(const QString &modelPath) {
+void testEmptyRendering() {
   GlbModelFx fx;
   testTransparent<TPixel32>(fx, 32);
   testTransparent<TPixel64>(fx, 64);
   testTransparent<TPixelF>(fx, 128);
-  populate(fx, modelPath);
-  testTransparent<TPixel32>(fx, 32);
-  testTransparent<TPixel64>(fx, 64);
-  testTransparent<TPixelF>(fx, 128);
+}
+
+void writeModel(const QString &path, float offset = 0) {
+  const auto bytes = triangleGlb(offset);
+  QFile file(path);
+  require(file.open(QIODevice::WriteOnly), "Cannot write GLB fixture");
+  require(file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()) ==
+              qint64(bytes.size()), "Incomplete GLB fixture");
+}
+
+template <class PIXEL>
+void testVisible(GlbModelFx &fx, int bpp) {
+  TRasterPT<PIXEL> output(80, 80);
+  TTile tile; tile.setRaster(output); tile.m_pos = TPointD(-40, -40);
+  TRenderSettings settings; settings.m_bpp = bpp; settings.m_affine = TScale(.2);
+  TRectD bbox;
+  require(fx.doGetBBox(0, bbox, settings) && !bbox.isEmpty(), "Model has no bounding box");
+  expectValue(bbox.x0, -100); expectValue(bbox.x1, 100);
+  fx.doCompute(tile, 0, settings);
+  const auto center = output->pixels(40)[40];
+  require(center.m == PIXEL::maxChannelValue && center.r == center.g && center.g == center.b,
+          "Model did not produce opaque grayscale pixels");
+  require(std::abs(double(center.r) / PIXEL::maxChannelValue - .75) < .005,
+          "Incorrect grayscale conversion for output precision");
+  require(output->pixels(0)[0].m == 0, "Background is not transparent");
+
+  // Exercise OpenToonz's actual downstream Over operation at every precision.
+  TRasterPT<PIXEL> background(80, 80), composite(80, 80);
+  const auto maximum = PIXEL::maxChannelValue;
+  background->fill(PIXEL(0, 0, maximum, maximum));
+  TRop::over(composite, background, output);
+  require(composite->pixels(0)[0].b == maximum && composite->pixels(0)[0].r == 0,
+          "Composite lost its background outside the model");
+  require(composite->pixels(40)[40].r == center.r && composite->pixels(40)[40].b == center.b,
+          "Opaque model did not cover the background");
+}
+
+void testRenderingAndReload(const QString &path) {
+  writeModel(path);
+  QFile file(path); require(file.open(QIODevice::ReadOnly), "Cannot read fixture");
+  const auto originalBytes = file.readAll(); file.close();
+  GlbModelFx fx;
+  parameter<TStringParam>(fx, "modelFile")->setValue(path.toStdWString());
+  testVisible<TPixel32>(fx, 32); testVisible<TPixel64>(fx, 64); testVisible<TPixelF>(fx, 128);
+  // A direct request larger than one internal band must retain the same
+  // coordinates and write rows after the first band correctly.
+  {
+    TRaster32P tall(80, 260); TTile tile; tile.setRaster(tall);
+    tile.m_pos = TPointD(-40, -130);
+    TRenderSettings settings; settings.m_affine = TScale(.2);
+    fx.doCompute(tile, 0, settings);
+    require(tall->pixels(130)[40].m == 255 && tall->pixels(150)[40].m == 0,
+            "Banded rendering shifted or omitted the model");
+    require(fx.getMemoryRequirement(TRectD(0, 0, 4096, 2160), 0, settings) > 0,
+            "Renderer did not report temporary memory to the scheduler");
+    parameter<TDoubleParam>(fx, "positionX")->setValue(12, 2.0);
+    TRectD animated; require(fx.doGetBBox(12, animated, settings), "Animated model disappeared");
+    expectValue(animated.x0, 100);
+    parameter<TDoubleParam>(fx, "positionX")->setValue(0, 0.0);
+  }
+  std::unique_ptr<TFx> owner(fx.clone(false));
+  auto *clone = dynamic_cast<GlbModelFx *>(owner.get());
+  require(clone != nullptr, "Render clone has wrong type");
+  testVisible<TPixel32>(*clone, 32);
+  require(file.open(QIODevice::ReadOnly), "Source removed during rendering");
+  require(file.readAll() == originalBytes, "Rendering modified source GLB"); file.close();
+  const TRenderSettings settings;
+  const auto alias = fx.getAlias(0, settings);
+  writeModel(path, 100); // Changes the file size, even on coarse timestamp filesystems.
+  require(alias != fx.getAlias(0, settings), "File replacement did not invalidate FX alias");
+  TRectD bbox; require(clone->doGetBBox(0, bbox, settings), "Reload lost model");
+  expectValue(bbox.x0, 9900);
+  parameter<TDoubleParam>(fx, "positionX")->setValue(0, .00001);
+  require(fx.getAlias(0, settings) != clone->getAlias(0, settings), "Small animated change lost from cache key");
+  parameter<TDoubleParam>(fx, "farClip")->setValue(0, .05);
+  TRaster32P output(4, 4); TTile tile; tile.setRaster(output);
+  bool failed = false;
+  try { fx.doCompute(tile, 0, settings); } catch (const TException &) { failed = true; }
+  require(failed, "Invalid camera did not produce an explicit error");
+}
+
+void testLoadError(const QString &path) {
+  GlbModelFx fx;
+  parameter<TStringParam>(fx, "modelFile")->setValue(path.toStdWString());
+  TRaster32P output(4, 4); TTile tile; tile.setRaster(output);
+  bool failed = false;
+  try { fx.doCompute(tile, 0, TRenderSettings()); } catch (const TException &) { failed = true; }
+  require(failed, "Missing or invalid GLB did not report an error");
 }
 }  // namespace
 
@@ -199,21 +285,24 @@ int main(int argc, char **argv) {
     require(!QFile::exists(modelPath), "Missing-model fixture already exists");
     testDefaults();
     testCloneAndPersistence(dir.filePath("model.fx"), modelPath);
-    testNoRendering(modelPath);
+    testEmptyRendering();
+    testLoadError(modelPath);
     require(!QFile::exists(modelPath), "Framework created a model file");
 
-    // An intentionally invalid GLB must also remain untouched and unparsed.
+    // An intentionally invalid GLB must report failure and remain untouched.
     const QByteArray sentinel("not a GLB - framework-only fixture\n");
     QFile file(modelPath);
     require(file.open(QIODevice::WriteOnly), "Cannot create model fixture");
     require(file.write(sentinel) == sentinel.size(), "Cannot write fixture");
     file.close();
-    testNoRendering(modelPath);
+    testLoadError(modelPath);
     require(file.open(QIODevice::ReadOnly), "Model fixture was removed");
     require(file.readAll() == sentinel, "Framework modified the model file");
+    file.close();
+    testRenderingAndReload(modelPath);
     std::cout << "PASS: GLB FX registration, zero inputs, parameter defaults, "
-                 "keyframes, clone, Unicode persistence and transparent "
-                 "8/16/float output without GLB processing\n";
+                 "keyframes, clone, Unicode persistence, read-only loading, "
+                 "8/16/float rendering, reload and explicit errors\n";
     return 0;
   } catch (const TException &error) {
     std::cerr << "FAIL: "
