@@ -302,7 +302,7 @@ jobs:
           RelWithDebInfo\lut3dbake_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
 
-      - name: Build and test GLB Model FX framework
+      - name: Build and test GLB Model FX rendering
         shell: cmd
         run: |
           cd toonz\build
@@ -362,7 +362,7 @@ jobs:
           if %errorlevel% neq 0 exit /b %errorlevel%
           del lut3dbake_test.exe
 
-      - name: Test packaged GLB Model FX framework
+      - name: Test packaged GLB Model FX rendering
         shell: cmd
         run: |
           cd toonz\build\Opentoonz

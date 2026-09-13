@@ -1,6 +1,6 @@
 <fxlayout>
   <page name="Model">
-    <label>"Framework only: no GLB loading or rendering."</label>
+    <label>"Read-only GLB. Grayscale base geometry; no deformation."</label>
     <control>modelFile</control>
     <separator label="Instance Transform"/>
     <control>positionX</control>
@@ -12,7 +12,7 @@
     <control>scale</control>
   </page>
   <page name="Camera">
-    <label>"Settings are stored only; output is transparent."</label>
+    <label>"Camera looks from +Z toward the origin. Far Clip must exceed Near Clip."</label>
     <control>projection</control>
     <control>cameraDistance</control>
     <vbox modeSensitive="projection" mode="0">
@@ -25,7 +25,7 @@
     <control>farClip</control>
   </page>
   <page name="Appearance">
-    <label>"Settings are stored only; output is transparent."</label>
+    <label>"Opaque, two-sided surfaces. Materials and textures are not rendered."</label>
     <control>renderStyle</control>
     <vbox modeSensitive="renderStyle" mode="0">
       <control>lighting</control>
