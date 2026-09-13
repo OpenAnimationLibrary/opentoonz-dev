@@ -5,12 +5,14 @@ on:
     paths:
       - 'toonz/sources/glb/**'
       - 'thirdparty/cgltf/**'
+      - 'doc/glb_loader.md'
       - '.github/workflows/glb_loader.yml'
   push:
     branches: [main]
     paths:
       - 'toonz/sources/glb/**'
       - 'thirdparty/cgltf/**'
+      - 'doc/glb_loader.md'
       - '.github/workflows/glb_loader.yml'
   workflow_dispatch:
 

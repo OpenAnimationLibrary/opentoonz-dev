@@ -14,7 +14,8 @@ Extract it and run the utility from a terminal:
 glb_inspect.exe "F:\Models\example.glb"
 ```
 
-On Linux/macOS, use `./glb_inspect /path/to/example.glb`. The utility opens the
+On Linux/macOS, first run `chmod +x glb_inspect` after extracting the artifact,
+then use `./glb_inspect /path/to/example.glb`. The utility opens the
 source read-only and prints JSON to standard output. To save a report, use your
 shell's redirection. Unicode paths are supported, including native Windows
 wide-character command-line arguments. Windows requires the standard Microsoft
