@@ -394,7 +394,9 @@ void testMaterialControls(const QString &path, const QString &saved) {
 }  // namespace
 
 int main(int argc, char **argv) {
+#ifndef _WIN32
   qputenv("QT_QPA_PLATFORM", "offscreen");
+#endif
   QApplication app(argc, argv);
   QTemporaryDir dir;
   try {
