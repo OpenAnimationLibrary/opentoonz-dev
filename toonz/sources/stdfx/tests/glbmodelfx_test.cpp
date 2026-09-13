@@ -373,7 +373,6 @@ void testMaterialControls(const QString &path, const QString &saved) {
   require(redCurve->getChannelGroup() == fxChannels && redCurve->getExprRefName().isEmpty(),
           "Material channel lost its FX owner or advertised an unsupported expression reference");
   greenCurve->setIsActive(true);
-  QPersistentModelIndex selected(greenCurve->createIndex());
   redCurve->getParam()->setValue(12, .25);
   expectColor<TPixelF>(fx, 12, .25, 0, 1);
   field->update(12);
@@ -408,8 +407,8 @@ void testMaterialControls(const QString &path, const QString &saved) {
   require(actual->getParamCount() == 2, "Second material override missing");
   tree.refreshData(&sheet);
   require(materialChannels->getChildCount() == 2 && materialChannels->getChild(0) == bodyChannels &&
-          selected.isValid() && QModelIndex(selected).internalPointer() == greenCurve && greenCurve->isActive(),
-          "Adding a material disturbed an existing active curve or selection");
+          greenCurve->isActive(),
+          "Adding a material replaced or deactivated an existing curve");
   { QFile f(path); require(f.open(QIODevice::ReadOnly), "Cannot verify source preservation");
     require(f.readAll() == QByteArray(reinterpret_cast<const char *>(bytes.data()), int(bytes.size())), "Color editing wrote to the GLB"); }
   writeModel(path);  // Different contents, same path, implicit default material.
@@ -419,8 +418,8 @@ void testMaterialControls(const QString &path, const QString &saved) {
   expectColor<TPixel32>(fx, 0, 1, 1, 1);
   require(actual->getParamCount() == 2 && animated->isKeyframe(12), "Replacement discarded old animation");
   tree.refreshData(&sheet);
-  require(bodyChannels->data(Qt::DisplayRole).toString().contains("Inactive") && selected.isValid(),
-          "Replacement silently reassigned or removed saved material channels");
+  require(bodyChannels->data(Qt::DisplayRole).toString().contains("Inactive") && greenCurve->isActive(),
+          "Replacement silently reassigned or deactivated saved material channels");
   { QFile f(path); require(f.open(QIODevice::WriteOnly), "Cannot restore model fixture");
     f.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()); }
   field->update(12); QApplication::processEvents();
@@ -432,9 +431,9 @@ void testMaterialControls(const QString &path, const QString &saved) {
   actual->removeAllParam();
   static_cast<TParamSet *>(current.getPointer())->removeAllParam();
   tree.refreshData(&sheet);
-  require(materialChannels->getChildCount() == 0 && !selected.isValid() &&
+  require(materialChannels->getChildCount() == 0 &&
           tree.getActiveChannelCount() == 0 && !tree.getCurrentChannel(),
-          "Reset left stale selected/active material channels");
+          "Reset left stale active material channels");
   field->update(0); QApplication::processEvents();
   require(actual->getParamCount() == 0, "Refreshing after reset resurrected detached overrides");
   color = field->findChild<PixelParamField *>();

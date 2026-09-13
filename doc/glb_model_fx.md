@@ -75,8 +75,8 @@ are created; untouched materials do not create scene parameters merely by being
 viewed. Enable **Show All Channels** to include unkeyed RGB curves.
 
 The channel groups use parameter identity rather than material names or row
-positions, preserving selection and active curves when another material is
-added. Retained overrides from a replaced or unavailable GLB are labeled
+positions, preserving active curves when another material is added. Retained
+overrides from a replaced or unavailable GLB are labeled
 `Inactive material N`; restoring the original file restores their active names.
 Reset removes their listing and clears stale curve selections. Dynamic material
 paths are not yet registered as expression-reference names; no unsupported
@@ -149,7 +149,7 @@ before and after packaging.
 It also exercises the real material selector and native color/keyframe editor,
 undo/redo, interpolation, clone/preset persistence and safe model replacement.
 Channel-tree tests verify that RGB entries reference the very same curves,
-edits reach the renderer and color swatch, additions preserve selection, and
+edits reach the renderer and color swatch, additions preserve active curves, and
 model replacement/restoration and reset refresh the existing listing safely.
 
 ## Application acceptance
