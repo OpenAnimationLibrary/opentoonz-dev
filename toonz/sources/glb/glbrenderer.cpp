@@ -97,6 +97,7 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          farClip == b.farClip && perspective == b.perspective &&
          headlight == b.headlight && wireframe == b.wireframe &&
          materialColors == b.materialColors && colors == b.colors &&
+         useLightingRig == b.useLightingRig && lighting == b.lighting &&
          animation == b.animation && sourceSeconds == b.sourceSeconds;
 }
 
@@ -134,6 +135,24 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
   for (const auto &color : o.colors)
     for (float v : color) require(std::isfinite(v) && v >= 0 && v <= 1,
                                  "Invalid GLB material color.");
+  if (o.useLightingRig) {
+    require(std::isfinite(o.lighting.ambient) && o.lighting.ambient >= 0.0 &&
+                std::isfinite(o.lighting.master) && o.lighting.master >= 0.0,
+            "3D lighting requires finite nonnegative Ambient and Master values.");
+    for (const auto &light : o.lighting.lights) {
+      double length2 = 0.0;
+      for (double v : light.direction) {
+        require(std::isfinite(v), "3D light direction must be finite.");
+        length2 += v * v;
+      }
+      require(length2 > 1e-18 && std::isfinite(light.intensity) &&
+                  light.intensity >= 0.0,
+              "3D directional light requires a nonzero direction and nonnegative intensity.");
+      for (float v : light.color)
+        require(std::isfinite(v) && v >= 0.0f && v <= 1.0f,
+                "3D light color must be finite and in [0,1].");
+    }
+  }
   out.wireframe = o.wireframe;
   if (asset.scenes.empty()) return out;
 
@@ -239,12 +258,13 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
       for (std::size_t i = 2; i < count; i += p.mode == 4 ? 3 : 1) {
         if ((i & 1023) == 0 && canceled && *canceled) return {};
         const Vec a = vertex(p.mode == 6 ? 0 : i - 2), b = vertex(i - 1), c = vertex(i);
-        const Vec normal = cross(sub(b, a), sub(c, a));
+        Vec normal = cross(sub(b, a), sub(c, a));
         const double length = std::sqrt(dot(normal, normal));
         if (length < 1e-15) continue;
         const Vec view = o.perspective ? Vec{-(a.x + b.x + c.x), -(a.y + b.y + c.y), -(a.z + b.z + c.z)}
                                        : Vec{0, 0, 1};
-        const double denominator = length * std::sqrt(dot(view, view));
+        const double viewLength = std::sqrt(dot(view, view));
+        const double denominator = length * viewLength;
         const double light = denominator > 0 && std::isfinite(denominator)
             ? std::abs(dot(normal, view)) / denominator : 0;
         const float gray = o.headlight ? float(0.2 + 0.6 * std::clamp(light, 0.0, 1.0)) : 0.75f;
@@ -254,6 +274,38 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
           if (o.headlight)
             for (auto &v : color) v = linearToSrgb(srgbToLinear(v) * gray);
         }
+
+        if (o.useLightingRig) {
+          // The renderer is intentionally two-sided. Orient the face normal
+          // toward the camera before evaluating camera-relative diffuse lights.
+          if (viewLength > 0.0 && dot(normal, view) < 0.0)
+            normal = {-normal.x, -normal.y, -normal.z};
+          normal = {normal.x / length, normal.y / length, normal.z / length};
+          const std::array<float, 3> surface =
+              o.materialColors ? base : std::array<float, 3>{{0.75f, 0.75f, 0.75f}};
+          std::array<double, 3> illumination{{o.lighting.ambient,
+                                              o.lighting.ambient,
+                                              o.lighting.ambient}};
+          for (const auto &source : o.lighting.lights) {
+            const double l2 = source.direction[0] * source.direction[0] +
+                              source.direction[1] * source.direction[1] +
+                              source.direction[2] * source.direction[2];
+            const double invLength = 1.0 / std::sqrt(l2);
+            const Vec direction{source.direction[0] * invLength,
+                                source.direction[1] * invLength,
+                                source.direction[2] * invLength};
+            const double diffuse = std::max(0.0, dot(normal, direction)) *
+                                   source.intensity;
+            for (int channel = 0; channel < 3; ++channel)
+              illumination[channel] += diffuse * srgbToLinear(source.color[channel]);
+          }
+          for (int channel = 0; channel < 3; ++channel) {
+            const double linear = srgbToLinear(surface[channel]) *
+                                  illumination[channel] * o.lighting.master;
+            color[channel] = linearToSrgb(float(linear));
+          }
+        }
+
         const auto polygon = clip(clip({a, b, c}, o.nearClip, true), o.farClip, false);
         for (std::size_t j = 1; j + 1 < polygon.size(); ++j) {
           // Include both old and new allocations during vector growth.
