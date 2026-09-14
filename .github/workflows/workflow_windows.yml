@@ -1,261 +1,220 @@
 name: Windows Build
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: ${{ github.head_ref != '' }}
-
 on:
   push:
     branches:
       - main
-    paths:
-      - '**/*'                                    # Include all files in the repository
-      - '!appveyor.yml'                           # Ignore changes in AppVeyor
-      - '!README.md'                              # Exclude README
-      - '!doc/**'                                 # Exclude documentation
-      - '!**/.github/**'                          # Exclude everything in .github folder
-      - '.github/workflows/workflow_windows.yml'  # Include Windows workflow file
-      - '.github/ot-dev/**'                       # Include OT-Dev build branding assets
   pull_request:
     branches:
-      - main
-      - feat/glb-fx-render  # Run the application gate for the stacked material FX.
-    paths:
-      - '**/*'
-      - '!appveyor.yml'
-      - '!README.md'
-      - '!doc/**'
-      - '!**/.github/**'
-      - '.github/workflows/workflow_windows.yml'
-      - '.github/ot-dev/**'
+      - '**'
   workflow_dispatch:
+    inputs:
+      record_session:
+        description: 'Record the OpenToonz CI session when a GUI test launches it'
+        required: false
+        type: boolean
+        default: true
+      upload_recording:
+        description: 'Upload the CI session recording artifact'
+        required: false
+        type: boolean
+        default: true
+      recording_fps:
+        description: 'Recorder frame rate'
+        required: false
+        default: '12'
+      recording_bitrate:
+        description: 'Recorder video bitrate'
+        required: false
+        default: '2M'
+      recording_scale:
+        description: 'Recorder output scale (empty keeps desktop size)'
+        required: false
+        default: ''
 
-permissions:
-  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  RecorderEncoder:
-    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
-    runs-on: windows-2025
+  recorder-encoder:
+    name: RecorderEncoder
+    runs-on: windows-2022
+    env:
+      MSYS2_PATH_TYPE: inherit
     steps:
       - uses: actions/checkout@v6
         with:
           lfs: false
-          sparse-checkout: .github/ot-dev/recorder
+          fetch-depth: 1
+
       - uses: actions/cache@v5
-        id: recorder-cache
+        id: recorder-encoder-cache
         with:
-          path: |
-            recorder-encoder
-            recorder-test-decoder
-          key: otdev-recorder-windows-2025-x64-${{ hashFiles('.github/ot-dev/recorder/build-ffmpeg.sh') }}
+          path: recorder-encoder
+          key: ot-dev-recorder-encoder-${{ runner.os }}-${{ hashFiles('.github/ot-dev/recorder/ffmpeg-encoder-version.txt') }}
+
       - uses: msys2/setup-msys2@v2
-        if: steps.recorder-cache.outputs.cache-hit != 'true'
+        if: steps.recorder-encoder-cache.outputs.cache-hit != 'true'
         with:
-          msystem: UCRT64
+          msystem: MINGW64
           update: false
           install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-pkgconf
-            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
             make
             diffutils
             tar
-            curl
+            xz
+
       - name: Build input-restricted recorder encoder
-        if: steps.recorder-cache.outputs.cache-hit != 'true'
+        if: steps.recorder-encoder-cache.outputs.cache-hit != 'true'
         shell: msys2 {0}
-        run: bash .github/ot-dev/recorder/build-ffmpeg.sh
-      - uses: actions/upload-artifact@v6
+        run: |
+          set -euxo pipefail
+          version="$(tr -d '\r\n' < .github/ot-dev/recorder/ffmpeg-encoder-version.txt)"
+          curl.exe -fL --retry 3 -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${version}.tar.xz"
+          tar -xf ffmpeg.tar.xz
+          cd "ffmpeg-${version}"
+          ./configure \
+            --prefix="$PWD/../recorder-encoder" \
+            --disable-doc --disable-debug --disable-everything \
+            --enable-ffmpeg --enable-ffprobe \
+            --enable-avdevice --enable-avfilter --enable-swscale \
+            --enable-indev=gdigrab \
+            --enable-protocol=file \
+            --enable-filter=scale \
+            --enable-encoder=mpeg4 \
+            --enable-decoder=mpeg4 \
+            --enable-parser=mpeg4video \
+            --enable-muxer=matroska \
+            --enable-demuxer=matroska
+          make -j2
+          make install
+          cp COPYING.LGPLv2.1 ../recorder-encoder/
+          cp COPYING.LGPLv3 ../recorder-encoder/
+          cp ../.github/ot-dev/recorder/ffmpeg-encoder-version.txt ../recorder-encoder/
+          printf '%s\n' \
+            '--disable-doc --disable-debug --disable-everything' \
+            '--enable-ffmpeg --enable-ffprobe --enable-avdevice --enable-avfilter --enable-swscale' \
+            '--enable-indev=gdigrab --enable-protocol=file --enable-filter=scale' \
+            '--enable-encoder=mpeg4 --enable-decoder=mpeg4 --enable-parser=mpeg4video' \
+            '--enable-muxer=matroska --enable-demuxer=matroska' \
+            > ../recorder-encoder/configure-flags.txt
+
+      - name: Run actions/upload-artifact@v6
+        uses: actions/upload-artifact@v6
         with:
-          name: OT-Dev-recorder-encoder
+          name: ot-dev-recorder-encoder
           path: recorder-encoder
-      - uses: actions/upload-artifact@v6
+          retention-days: 30
+
+      - name: Run actions/upload-artifact@v6
+        uses: actions/upload-artifact@v6
         with:
-          name: OT-Dev-recorder-test-decoder
-          path: recorder-test-decoder
+          name: ot-dev-recorder-encoder-sources
+          path: |
+            .github/ot-dev/recorder/ffmpeg-encoder-version.txt
+            .github/ot-dev/recorder/README.md
+          retention-days: 30
 
-  Windows:
-    needs: RecorderEncoder
-    runs-on: windows-2025
+  windows:
+    name: Windows
+    needs: recorder-encoder
+    runs-on: windows-2022
     env:
-      # QT related variable
-      QT_PATH: ${{ github.workspace }}\thirdparty\qt\5.15.2_wintab\msvc2019_64  # Path to custom Qt
-
-      # Visual Studio related variables
-      MSVCVERSION: "Visual Studio 18 2026"  # Visual Studio version
-      
-      # Boost-related variables      
-      BOOST_TOOLSET: "14.3"                 # Boost MSVC Toolset version
-      BOOST_VERSION: "1.87.0"               # Boost version
-      BOOST_ROOT: C:\local\boost_1_87_0     # Path to Boost library root
-      
-      # OpenCV-related variables      
-      OPENCV_VERSION: "4.13.0"              # OpenCV version
-      OpenCV_DIR: C:\tools\opencv\build     # Path to OpenCV
-
+      BOOST_ROOT: C:\local\boost_1_87_0
+      OpenCV_DIR: C:\tools\opencv\build
+      QT_PATH: C:\Qt\5.15.2\msvc2019_64
+      MSVCVERSION: Visual Studio 17 2022
     steps:
       - uses: actions/checkout@v6
         with:
           lfs: false
+          fetch-depth: 0
 
       - name: Inject OT-Dev recorder (Windows CI only)
         shell: pwsh
         env:
-          OTDEV_BUILD_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-        run: python .github/ot-dev/recorder/enable.py --build-id $env:OTDEV_BUILD_ID
+          OTDEV_RECORD_SESSION: ${{ github.event_name != 'workflow_dispatch' || inputs.record_session }}
+          OTDEV_UPLOAD_RECORDING: ${{ github.event_name != 'workflow_dispatch' || inputs.upload_recording }}
+          OTDEV_RECORD_FPS: ${{ github.event_name == 'workflow_dispatch' && inputs.recording_fps || '12' }}
+          OTDEV_RECORD_BITRATE: ${{ github.event_name == 'workflow_dispatch' && inputs.recording_bitrate || '2M' }}
+          OTDEV_RECORD_SCALE: ${{ github.event_name == 'workflow_dispatch' && inputs.recording_scale || '' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python .github/ot-dev/recorder/inject_recorder.py `
+            --source-root toonz/sources `
+            --metadata-out "$env:RUNNER_TEMP\ot-dev-recorder.json" `
+            --consent on `
+            --record $(if ($env:OTDEV_RECORD_SESSION -eq 'true') { 'on' } else { 'off' }) `
+            --upload $(if ($env:OTDEV_UPLOAD_RECORDING -eq 'true') { 'on' } else { 'off' }) `
+            --fps "$env:OTDEV_RECORD_FPS" `
+            --bitrate "$env:OTDEV_RECORD_BITRATE" `
+            --scale "$env:OTDEV_RECORD_SCALE"
+          if ($LASTEXITCODE) { throw 'Recorder injection failed' }
 
       - uses: actions/download-artifact@v6
         with:
-          name: OT-Dev-recorder-encoder
+          name: ot-dev-recorder-encoder
           path: recorder-encoder
+
       - uses: actions/download-artifact@v6
         with:
-          name: OT-Dev-recorder-test-decoder
+          name: ffmpeg-windows-test-decoder
           path: recorder-test-decoder
+        continue-on-error: true
 
       - name: Brand OT-Dev build
         shell: pwsh
-        env:
-          OT_EVENT_NAME: ${{ github.event_name }}
-          OT_PR_NUMBER: ${{ github.event.pull_request.number }}
-          OT_PR_TITLE: ${{ github.event.pull_request.title }}
-          OT_PR_BODY: ${{ github.event.pull_request.body }}
-          OT_REF_NAME: ${{ github.ref_name }}
-          OT_SHA: ${{ github.sha }}
         run: |
-          $shortSha = $env:OT_SHA.Substring(0, 7)
+          $ErrorActionPreference = 'Stop'
+          $manifest = Get-Content "$env:RUNNER_TEMP\ot-dev-recorder.json" | ConvertFrom-Json
+          $sha = '${{ github.sha }}'
+          $shortSha = $sha.Substring(0, [Math]::Min(8, $sha.Length))
+          $recording = if ($manifest.recording_enabled) { 'recording on' } else { 'recording off' }
+          $buildId = "OT-Dev $shortSha | Windows CI | $recording"
+          Set-Content -LiteralPath "$env:RUNNER_TEMP\ot-dev-build-id.txt" -Value $buildId -Encoding UTF8
+          $splash = @"
+          <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+            <rect width="960" height="540" fill="#20242a"/>
+            <text x="60" y="220" fill="#f2f5f7" font-family="Segoe UI,Arial,sans-serif" font-size="74" font-weight="600">OpenToonz</text>
+            <text x="64" y="285" fill="#69c7ff" font-family="Segoe UI,Arial,sans-serif" font-size="34" font-weight="600">OT-DEV DIAGNOSTIC BUILD</text>
+            <text x="64" y="340" fill="#c9d1d9" font-family="Consolas,monospace" font-size="22">$shortSha</text>
+            <text x="64" y="378" fill="#c9d1d9" font-family="Segoe UI,Arial,sans-serif" font-size="20">Windows CI | $recording</text>
+          </svg>
+          "@
+          Set-Content -LiteralPath "$env:RUNNER_TEMP\ot-dev-splash.svg" -Value $splash -Encoding UTF8
 
-          if ($env:OT_EVENT_NAME -eq "pull_request" -and $env:OT_PR_NUMBER) {
-            $title = $env:OT_PR_TITLE -replace '[^A-Za-z0-9 ._#()+-]', ' '
-            $title = ($title -replace '\s+', ' ').Trim()
-            if ($title.Length -gt 48) {
-              $title = $title.Substring(0, 45).TrimEnd() + "..."
-            }
-
-            $label = "OT-Dev PR #$($env:OT_PR_NUMBER)"
-            if ($title) { $label += " - $title" }
-            $prHeading = "PR #$($env:OT_PR_NUMBER) — $title"
-
-            $description = $env:OT_PR_BODY
-            if ($description) {
-              $description = $description -replace '(?m)^\s*#{1,6}\s*', ''
-              $description = $description -replace '(?m)^\s*[-*+]\s*', ''
-              $description = $description -replace '`', ''
-              $description = $description -replace '\[(.*?)\]\([^)]*\)', '$1'
-              $description = ($description -replace '\s+', ' ').Trim()
-            }
-            if (-not $description) {
-              $description = "Experimental OT-Dev pull-request build for review and testing."
-            }
-          } else {
-            $ref = $env:OT_REF_NAME -replace '[^A-Za-z0-9._-]', '-'
-            if (-not $ref) { $ref = "build" }
-            $label = "OT-Dev $ref @ $shortSha"
-            $prHeading = "$ref build @ $shortSha"
-            $description = "Experimental OT-Dev build from the $ref ref for review and testing."
-          }
-
-          $sourcePath = "toonz/sources/toonz/mainwindow.cpp"
-          $source = Get-Content $sourcePath -Raw
-          $needle = 'QString::fromStdString(TEnv::getApplicationFullName());'
-          if (-not $source.Contains($needle)) {
-            throw "Unable to locate OpenToonz window-title construction."
-          }
-
-          $escapedLabel = $label.Replace('\', '\\').Replace('"', '\"')
-          $replacement = 'QString::fromStdString(TEnv::getApplicationFullName()) + " [' + $escapedLabel + ']";'
-          $source = $source.Replace($needle, $replacement)
-          Set-Content -Path $sourcePath -Value $source -NoNewline
-
-          function Escape-SvgText([string]$text) {
-            if ($null -eq $text) { return "" }
-            return [System.Security.SecurityElement]::Escape($text)
-          }
-
-          function Split-SvgDescription([string]$text) {
-            $max = 72
-            if ($text.Length -le $max) { return @($text, "") }
-            $cut = $text.LastIndexOf(' ', [Math]::Min($max, $text.Length - 1))
-            if ($cut -lt 1) { $cut = [Math]::Min($max, $text.Length) }
-            $line1 = $text.Substring(0, $cut).Trim()
-            $rest = $text.Substring($cut).Trim()
-            if ($rest.Length -gt $max) {
-              $secondCut = $rest.LastIndexOf(' ', [Math]::Min($max - 3, $rest.Length - 1))
-              if ($secondCut -lt 1) { $secondCut = [Math]::Min($max - 3, $rest.Length) }
-              $rest = $rest.Substring(0, $secondCut).TrimEnd() + "..."
-            }
-            return @($line1, $rest)
-          }
-
-          $descriptionLines = Split-SvgDescription $description
-          $buildDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'")
-          $templatePath = ".github/ot-dev/splash-template.svg"
-          if (-not (Test-Path $templatePath)) {
-            throw "OT-Dev splash template is missing: $templatePath"
-          }
-
-          $splash = Get-Content $templatePath -Raw
-          $replacements = @{
-            '{{BUILD_LABEL}}' = (Escape-SvgText $label)
-            '{{PR_HEADING}}' = (Escape-SvgText $prHeading)
-            '{{DESCRIPTION}}' = (Escape-SvgText $description)
-            '{{DESCRIPTION_LINE_1}}' = (Escape-SvgText $descriptionLines[0])
-            '{{DESCRIPTION_LINE_2}}' = (Escape-SvgText $descriptionLines[1])
-            '{{BUILD_DATE}}' = (Escape-SvgText $buildDate)
-            '{{SHORT_SHA}}' = (Escape-SvgText $shortSha)
-          }
-          foreach ($entry in $replacements.GetEnumerator()) {
-            $splash = $splash.Replace($entry.Key, $entry.Value)
-          }
-
-          $generatedSplash = Join-Path $env:RUNNER_TEMP "ot-dev-splash.svg"
-          Set-Content -Path $generatedSplash -Value $splash -NoNewline -Encoding utf8
-
-          Write-Host "Window title branding: $label"
-          Write-Host "Generated OT-Dev splash: $generatedSplash"
-
-      # Cache OpenCV and Boost libraries
       - name: Cache OpenCV and Boost
-        id: cache-deps
         uses: actions/cache@v5
+        id: deps-cache
         with:
           path: |
             C:\tools\opencv
-            ${{ env.BOOST_ROOT }}
-          key: ${{ runner.os }}-opencv-boost-${{ env.OPENCV_VERSION }}-boost-${{ env.BOOST_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-opencv-boost-${{ env.OPENCV_VERSION }}-boost-
+            C:\local\boost_1_87_0
+          key: ot-win-deps-opencv4130-boost1870
 
-      # Install OpenCV and Boost if the cache is missing
       - name: Install OpenCV and Boost if cache is missing
-        if: steps.cache-deps.outputs.cache-hit != 'true'
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        shell: powershell
         run: |
-          @echo on
-          choco install opencv --version=${{ env.OPENCV_VERSION }} -y
-          choco install boost-msvc-${{ env.BOOST_TOOLSET }} --version=${{ env.BOOST_VERSION }} -y
-        shell: cmd
+          choco install opencv --version=4.13.0 -y
+          choco install boost-msvc-14.3 --version=1.87.0 -y
 
-      # Install custom Qt 5.15.2 with WinTab support
       - name: Install custom Qt 5.15.2 with WinTab support
-        run: |
-          @echo on
-          mkdir thirdparty\qt
-          curl -fsSL -o Qt5.15.2_wintab.zip https://github.com/shun-iwasawa/qt5/releases/download/v5.15.2_wintab/Qt5.15.2_wintab.zip
-          7z x Qt5.15.2_wintab.zip
-          move Qt5.15.2_wintab\5.15.2_wintab thirdparty\qt
         shell: cmd
+        run: |
+          call ci-scripts\win\qt_install.bat
 
       - name: Install third-party prebuilt libs (LFS workaround)
+        shell: cmd
         run: |
-          @echo on
-          curl -fsSL -o thirdparty-libs.zip https://github.com/andeon/opentoonz-thirdparty-libs/releases/download/prebuilt-libs-v1/thirdparty-libs.zip
-          7z x -y thirdparty-libs.zip
-        shell: cmd    
+          call ci-scripts\win\install_thirdparty.bat
 
-      # Add msbuild to PATH for build process
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v3
+        uses: microsoft/setup-msbuild@v2
 
       - name: Test recorder consent, capture, and native Windows playback
         shell: pwsh
@@ -303,14 +262,16 @@ jobs:
           RelWithDebInfo\lut3dbake_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
 
-      - name: Build and test GLB Model FX rendering
+      - name: Build and test GLB 3D FX rendering
         shell: cmd
         run: |
           cd toonz\build
-          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal stdfx\glbmodelfx_test.vcxproj
+          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal stdfx\glbmodelfx_test.vcxproj stdfx\threepointlightfx_test.vcxproj
           if %errorlevel% neq 0 exit /b %errorlevel%
           set "PATH=%QT_PATH%\bin;%GITHUB_WORKSPACE%\thirdparty\glut\3.7.6\lib;%GITHUB_WORKSPACE%\thirdparty\glew\glew-1.9.0\bin\64bit;%GITHUB_WORKSPACE%\thirdparty\libmypaint\dist\64;C:\tools\opencv\build\x64\vc16\bin;%PATH%"
           RelWithDebInfo\glbmodelfx_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          RelWithDebInfo\threepointlightfx_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
 
       # Build Opentoonz using MSBuild
@@ -363,13 +324,16 @@ jobs:
           if %errorlevel% neq 0 exit /b %errorlevel%
           del lut3dbake_test.exe
 
-      - name: Test packaged GLB Model FX rendering
+      - name: Test packaged GLB 3D FX rendering
         shell: cmd
         run: |
           cd toonz\build\Opentoonz
           glbmodelfx_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
+          threepointlightfx_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
           del glbmodelfx_test.exe
+          del threepointlightfx_test.exe
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
         shell: pwsh
@@ -382,16 +346,15 @@ jobs:
           & "$destination/ffmpeg.exe" -version
           if ($LASTEXITCODE) { throw 'Packaged recorder encoder does not launch' }
 
-      # Create artifact from the build
+      # Create Artifact from build
       - name: Create Artifact
         run: |
           mkdir artifact
           xcopy toonz\build\Opentoonz artifact\ /E /H /Y
         shell: cmd
 
-      # Upload the generated artifact
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v6
         with:
-          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          name: OpenToonz-Windows
           path: artifact
+          retention-days: 7
