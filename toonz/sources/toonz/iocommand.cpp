@@ -976,7 +976,12 @@ TXshLevel *loadLevel(ToonzScene *scene,
       if (convertingPopup->isVisible()) convertingPopup->hide();
 
       QString msg = QString::fromStdWString(e.getMessage());
-      if (msg == QString("Old 4.1 Palette"))
+      if (type == TFileType::AUDIO_LEVEL)
+        error(QObject::tr("Could not load audio:\n%1\n\n"
+                          "Check that the file is readable, or re-export it as "
+                          "a PCM WAV file and load it again.")
+                  .arg(msg));
+      else if (msg == QString("Old 4.1 Palette"))
         error("It is not possible to load the level " + toQString(actualPath) +
               " because its version is not supported.");
       else
