@@ -34,6 +34,55 @@ void bounds(const otglb::Bounds &value) {
             << ',' << value.maximum[1] << ',' << value.maximum[2] << "]}";
 }
 
+void deformationData(const otglb::Asset &asset) {
+  std::cout << ",\n  \"deformationEvaluated\": false,\n  \"skinData\": [";
+  for (std::size_t i = 0; i < asset.skins.size(); ++i) {
+    if (i) std::cout << ',';
+    const auto &skin = asset.skins[i];
+    std::cout << "{\"name\":";
+    quoted(skin.name);
+    std::cout << ",\"skeleton\":" << skin.skeleton << ",\"jointNodes\":[";
+    for (std::size_t j = 0; j < skin.joints.size(); ++j) {
+      if (j) std::cout << ',';
+      std::cout << skin.joints[j];
+    }
+    std::cout << "],\"inverseBindMatrixCount\":" << skin.inverseBindMatrices.size()
+              << ",\"inverseBindMatricesSupplied\":"
+              << (skin.hasInverseBindMatrices ? "true" : "false") << '}';
+  }
+  std::cout << "],\n  \"animationData\": [";
+  for (std::size_t i = 0; i < asset.animations.size(); ++i) {
+    if (i) std::cout << ',';
+    const auto &animation = asset.animations[i];
+    std::cout << "{\"name\":";
+    quoted(animation.name);
+    std::cout << ",\"firstKeyTime\":" << animation.firstKeyTime
+              << ",\"lastKeyTime\":" << animation.lastKeyTime << ",\"samplers\":[";
+    for (std::size_t j = 0; j < animation.samplers.size(); ++j) {
+      if (j) std::cout << ',';
+      const auto &sampler = animation.samplers[j];
+      std::cout << "{\"interpolation\":";
+      quoted(otglb::interpolationName(sampler.interpolation));
+      std::cout << ",\"keyCount\":" << sampler.times.size()
+                << ",\"firstKeyTime\":" << sampler.times.front()
+                << ",\"lastKeyTime\":" << sampler.times.back()
+                << ",\"outputComponents\":" << sampler.outputComponents
+                << ",\"outputValueCount\":" << sampler.values.size() << '}';
+    }
+    std::cout << "],\"channels\":[";
+    for (std::size_t j = 0; j < animation.channels.size(); ++j) {
+      if (j) std::cout << ',';
+      const auto &channel = animation.channels[j];
+      std::cout << "{\"node\":" << channel.node << ",\"sampler\":" << channel.sampler
+                << ",\"path\":";
+      quoted(otglb::animationPathName(channel.path));
+      std::cout << ",\"components\":" << channel.components << '}';
+    }
+    std::cout << "]}";
+  }
+  std::cout << ']';
+}
+
 int inspect(const std::filesystem::path &path) {
   const auto result = otglb::load(path);
   std::cout << std::setprecision(9) << "{\n  \"status\": ";
@@ -79,6 +128,7 @@ int inspect(const std::filesystem::path &path) {
       std::cout << '}';
     }
     std::cout << ']';
+    deformationData(asset);
   }
   std::cout << "\n}\n";
   // Loaded-with-warnings is a usable inspection result, not a parse failure.
