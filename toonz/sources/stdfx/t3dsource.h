@@ -2,6 +2,7 @@
 
 #include "glbrenderer.h"
 #include "trasterfx.h"
+#include "toonz/tcolumnfx.h"
 
 #include <memory>
 
@@ -17,18 +18,22 @@ public:
       const otglb::LightingRig *lighting = nullptr) const = 0;
 };
 
-// Normal OpenToonz input port with an additional runtime type check. At present
-// GLB Model is the only production FX implementing T3DRenderSource, so this
-// prevents accidentally connecting an ordinary raster source.
+// The schematic connects a zerary column, whereas the render tree connects the
+// underlying FX. Keep the original column connection for ownership, exposure
+// and scene persistence; unwrap it only when checking/accessing the 3D source.
 class T3DSourcePort final : public TRasterFxPort {
+  static T3DRenderSource *resolve(TFx *fx) {
+    if (auto *column = dynamic_cast<TZeraryColumnFx *>(fx))
+      fx = column->getZeraryFx();
+    return dynamic_cast<T3DRenderSource *>(fx);
+  }
+
 public:
   void setFx(TFx *fx) override {
-    if (fx && !dynamic_cast<T3DRenderSource *>(fx))
+    if (fx && !resolve(fx))
       throw TException("Fx: 3D source port requires a compatible 3D model FX");
     TRasterFxPort::setFx(fx);
   }
 
-  T3DRenderSource *source() const {
-    return dynamic_cast<T3DRenderSource *>(getFx());
-  }
+  T3DRenderSource *source() const { return resolve(getFx()); }
 };

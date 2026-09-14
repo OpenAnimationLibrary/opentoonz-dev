@@ -4,6 +4,7 @@
 #include "../threepointlightfx.cpp"
 #include "../../glb/tests/glbfixture.h"
 #include "tparamcontainer.h"
+#include "toonz/txshzeraryfxcolumn.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -84,6 +85,12 @@ int main(int argc, char **argv) {
     param<TStringParam>(model, "modelFile")->setValue(path.toStdWString());
     param<TIntEnumParam>(model, "colorMode")->setValue(1);
 
+    // The application inserts a zerary column, not the bare model used by the
+    // original tests. Keep it alive until after all connected FX are destroyed.
+    TXshZeraryFxColumnP modelColumn = new TXshZeraryFxColumn(1);
+    auto *columnFx = modelColumn->getZeraryColumnFx();
+    columnFx->setZeraryFx(&model);
+
     TFxP lightOwner = new ThreePointLightFx;
     auto &light = *static_cast<ThreePointLightFx *>(lightOwner.getPointer());
     check(light.getFxType() == "STD_threePointLightFx",
@@ -91,19 +98,22 @@ int main(int argc, char **argv) {
     check(light.getInputPortCount() == 1 &&
               light.getInputPortName(0) == "GLB Model",
           "unexpected Three-Point Light input contract");
+    auto *port = dynamic_cast<T3DSourcePort *>(light.getInputPort(0));
+    check(port && !port->source() && center(light).m == 0,
+          "unconnected lighting node did not render empty");
 
     bool rejected = false;
     TFxP ordinary = new OrdinaryRasterFx;
     try {
-      light.getInputPort("GLB Model")->setFx(ordinary.getPointer());
+      port->setFx(ordinary.getPointer());
     } catch (const TException &) {
       rejected = true;
     }
-    check(rejected && !light.getInputPort("GLB Model")->isConnected(),
+    check(rejected && !port->isConnected(),
           "ordinary raster FX was accepted as a 3D source");
 
-    light.getInputPort("GLB Model")->setFx(&model);
-    check(light.getInputPort("GLB Model")->isConnected(),
+    port->setFx(&model);
+    check(port->source() == static_cast<T3DRenderSource *>(&model),
           "GLB Model was rejected as a 3D source");
 
     zeroSecondaryLights(light);
@@ -120,6 +130,38 @@ int main(int argc, char **argv) {
     const auto white = center(light);
     check(white.m == 255 && white.r > 245 && white.g > 245 && white.b > 245,
           "front white key did not illuminate the model");
+
+    // Reproduce the actual schematic connection. The former bare-object type
+    // check threw here during FX insertion, before any raster rendering.
+    port->setFx(columnFx);
+    check(port->getFx() == columnFx &&
+              port->source() == static_cast<T3DRenderSource *>(&model),
+          "GLB column was rejected or replaced by an untracked raw FX link");
+    check(columnFx->getOutputConnectionCount() == 1 &&
+              columnFx->getOutputConnection(0) == port && center(light) == white,
+          "column ownership or wrapped-source lighting is incorrect");
+
+    // FX Settings and rendering clone the graph. The cloned source must also
+    // resolve to 3D without changing the original schematic column connection.
+    TFxP clonedOwner = light.clone(true);
+    auto *cloned = dynamic_cast<ThreePointLightFx *>(clonedOwner.getPointer());
+    check(cloned && center(*cloned) == white && port->getFx() == columnFx,
+          "recursive lighting clone lost its GLB source");
+
+    // Rejection must leave the existing valid connection intact.
+    TFxP emptyColumn = new TZeraryColumnFx;
+    for (TFx *invalid : {ordinary.getPointer(), emptyColumn.getPointer()}) {
+      rejected = false;
+      try {
+        port->setFx(invalid);
+      } catch (const TException &) {
+        rejected = true;
+      }
+      check(rejected && port->getFx() == columnFx &&
+                columnFx->getOutputConnectionCount() == 1 &&
+                columnFx->getOutputConnection(0) == port,
+            "invalid input damaged the existing GLB column connection");
+    }
 
     param<TPixelParam>(light, "keyColor")->setValue(
         0, TPixel32(255, 0, 0, 255));
@@ -138,8 +180,17 @@ int main(int argc, char **argv) {
               param<TIntEnumParam>(model, "colorMode")->getValue() == 1,
           "downstream light mutated GLB Model settings");
 
-    std::cout << "6 passed, 0 failed\n";
+    port->setFx(nullptr);
+    check(!port->source() && columnFx->getOutputConnectionCount() == 0 &&
+              center(light).m == 0,
+          "disconnect did not release the column or clear the output");
+
+    std::cout << "PASS: Three-Point Light, raw/column sources, recursive clone, "
+                 "connection preservation, colored lighting and disconnect\n";
     return 0;
+  } catch (const TException &) {
+    std::cerr << "FAIL threepointlightfx: unexpected FX exception\n";
+    return 1;
   } catch (const std::exception &error) {
     std::cerr << "FAIL threepointlightfx: " << error.what() << '\n';
     return 1;
