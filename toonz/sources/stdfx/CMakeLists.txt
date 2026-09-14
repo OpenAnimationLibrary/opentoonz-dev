@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    t3dsource.h
     texturefxP.h
     warp.h
     motionawarebasefx.h
@@ -166,6 +167,7 @@ set(SOURCES
     stdfx.cpp
     targetspotfx.cpp
     texturefx.cpp
+    threepointlightfx.cpp
     tilefx.cpp
     tonecurvefx.cpp
     unmultiplyfx.cpp
