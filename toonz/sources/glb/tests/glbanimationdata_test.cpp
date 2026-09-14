@@ -249,7 +249,7 @@ int main() {
     check(r.asset->animations[0].channels[0].node == otglb::NoIndex, "invented target");
     fields = replace(fields, R"("path":"translation")",
         R"("path":"pointer","extensions":{"KHR_animation_pointer":{"pointer":"/materials/0/emissiveFactor"}})");
-    fields += graph + R"(,"materials":[{}],"extensionsUsed":["KHR_animation_pointer"])");
+    fields += graph + R"(,"materials":[{}],"extensionsUsed":["KHR_animation_pointer"])";
     r = load(translation(), fields); success(r);
     check(r.asset->animations[0].channels[0].path == otglb::AnimationPath::Unknown, "extension interpreted as TRS");
     failure(load(translation(), fields + R"(,"extensionsRequired":["KHR_animation_pointer"])"), otglb::Status::Unsupported);
