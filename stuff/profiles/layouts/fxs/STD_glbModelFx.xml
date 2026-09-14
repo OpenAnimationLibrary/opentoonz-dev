@@ -12,7 +12,7 @@
     <control>scale</control>
   </page>
   <page name="Animation">
-    <label>"Play embedded node/bone animation. Blank Clip uses the first clip; use #N for duplicate or unnamed clips."</label>
+    <label>"Play embedded node/bone animation. Playback FPS maps OT frames to GLB seconds; blank Clip uses the first clip."</label>
     <control>animationMode</control>
     <vbox modeSensitive="animationMode" mode="1">
       <control>animationClip</control>
