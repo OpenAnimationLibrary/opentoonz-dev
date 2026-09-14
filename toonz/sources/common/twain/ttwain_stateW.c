@@ -3,7 +3,9 @@
 #pragma warning(disable : 4996)
 
 #include <windows.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ttwain_state.h"
 #include "ttwainP.h"
@@ -17,43 +19,49 @@ extern "C" {
 static void *hDSMLib; /* handle of DSM */
 extern void TTWAIN_SetState(TWAINSTATE status);
 
+static void TTWAIN_DebugDSMPath(const char *path) {
+  char message[_MAX_PATH + 64];
+  snprintf(message, sizeof(message), "OpenToonz TWAIN: loading DSM %s\n", path);
+  OutputDebugStringA(message);
+}
+
 int TTWAIN_LoadSourceManagerPD(void) {
-  char winDir[_MAX_PATH];
+  char systemDir[_MAX_PATH];
+  char dsmPath[_MAX_PATH];
+  UINT systemDirLength;
 
   if (TTWAIN_GetState() >= TWAIN_SM_LOADED)
     return TRUE; /* DSM already loaded */
 
-  GetWindowsDirectory(winDir, _MAX_PATH);
-  if (!winDir[0]) return FALSE;
+  systemDirLength = GetSystemDirectoryA(systemDir, _MAX_PATH);
+  if (!systemDirLength || systemDirLength >= _MAX_PATH) return FALSE;
 
-  strcat(winDir, "\\system32\\");
-  // strcat(winDir, "\\");
-  strcat(winDir, DSM_FILENAME);
+  if (snprintf(dsmPath, sizeof(dsmPath), "%s\\%s", systemDir, DSM_FILENAME) >=
+      (int)sizeof(dsmPath))
+    return FALSE;
 
-  hDSMLib = LoadLibrary(winDir);
-
-  /*
-if (tnz_access(winDir, 0x00) != -1)
-hDSMLib = LoadLibrary(winDir);
-else
-{
-hDSMLib = 0;
-return FALSE;
-}
-*/
+  TTWAIN_DebugDSMPath(dsmPath);
+  hDSMLib = LoadLibraryA(dsmPath);
 
   if (hDSMLib) {
     TTwainData.DSM_Entry =
-        (DSMENTRYPROC)GetProcAddress(hDSMLib, DSM_ENTRYPOINT);
+        (DSMENTRYPROC)GetProcAddress((HMODULE)hDSMLib, DSM_ENTRYPOINT);
     if (TTwainData.DSM_Entry) {
       TTWAIN_SetAvailable(AVAIABLE_YES);
       TTWAIN_SetState(TWAIN_SM_LOADED);
     } else {
-      FreeLibrary(hDSMLib);
+      OutputDebugStringA(
+          "OpenToonz TWAIN: DSM loaded but DSM_Entry was not found\n");
+      FreeLibrary((HMODULE)hDSMLib);
       hDSMLib = NULL;
     }
   } else {
-    DWORD err            = GetLastError();
+    char message[128];
+    DWORD err = GetLastError();
+    snprintf(message, sizeof(message),
+             "OpenToonz TWAIN: LoadLibrary failed with Windows error %lu\n",
+             (unsigned long)err);
+    OutputDebugStringA(message);
     TTwainData.DSM_Entry = 0;
   }
   return (TTWAIN_GetState() >= TWAIN_SM_LOADED);
@@ -62,7 +70,7 @@ return FALSE;
 int TTWAIN_UnloadSourceManagerPD(void) {
   if (TTWAIN_GetState() == TWAIN_SM_LOADED) {
     if (hDSMLib) {
-      FreeLibrary(hDSMLib);
+      FreeLibrary((HMODULE)hDSMLib);
       hDSMLib = NULL;
     }
     TTwainData.DSM_Entry = NULL;
