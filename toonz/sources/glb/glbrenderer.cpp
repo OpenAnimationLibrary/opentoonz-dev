@@ -1,4 +1,5 @@
 #include "glbrenderer.h"
+#include "glbpose.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +43,29 @@ struct Instance {
   }
 };
 
+struct InfluenceSet {
+  const Attribute *joints = nullptr;
+  const Attribute *weights = nullptr;
+};
+
+std::vector<InfluenceSet> influenceSets(const Primitive &primitive) {
+  std::vector<InfluenceSet> sets;
+  for (const auto &attribute : primitive.attributes) {
+    if (attribute.semantic.rfind("JOINTS_", 0) != 0) continue;
+    const std::string weightsName = "WEIGHTS_" + attribute.semantic.substr(7);
+    const auto weights = std::find_if(primitive.attributes.begin(), primitive.attributes.end(),
+        [&](const Attribute &candidate) { return candidate.semantic == weightsName; });
+    require(weights != primitive.attributes.end(),
+            "GLB skinned primitive has JOINTS without matching WEIGHTS.");
+    require(attribute.components == 4 && weights->components == 4 &&
+                attribute.values.size() >= primitive.vertexCount * 4 &&
+                weights->values.size() >= primitive.vertexCount * 4,
+            "GLB skin influence attribute shape is invalid.");
+    sets.push_back({&attribute, &*weights});
+  }
+  return sets;
+}
+
 // Sutherland-Hodgman clipping in camera space, before perspective division.
 std::vector<Vec> clip(const std::vector<Vec> &polygon, double distance, bool near) {
   std::vector<Vec> out;
@@ -72,7 +96,8 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          orthoHeight == b.orthoHeight && nearClip == b.nearClip &&
          farClip == b.farClip && perspective == b.perspective &&
          headlight == b.headlight && wireframe == b.wireframe &&
-         materialColors == b.materialColors && colors == b.colors;
+         materialColors == b.materialColors && colors == b.colors &&
+         animation == b.animation && sourceSeconds == b.sourceSeconds;
 }
 
 float linearToSrgb(float v) {
@@ -100,6 +125,9 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
   require(o.perspective ? (std::isfinite(o.fieldOfView) && o.fieldOfView > 0 && o.fieldOfView < 180)
                         : (std::isfinite(o.orthoHeight) && o.orthoHeight > 0),
           "Invalid GLB projection height or field of view.");
+  require(o.animation == NoIndex || std::isfinite(o.sourceSeconds),
+          "GLB animation time must be finite.");
+
   RenderScene out;
   require(o.colors.empty() || o.colors.size() == asset.materials.size() + 1,
           "GLB material color count does not match the asset.");
@@ -108,6 +136,17 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
                                  "Invalid GLB material color.");
   out.wireframe = o.wireframe;
   if (asset.scenes.empty()) return out;
+
+  PoseResult evaluated;
+  const Pose *pose = nullptr;
+  if (o.animation != NoIndex) {
+    evaluated = evaluatePose(asset, o.animation, o.sourceSeconds);
+    if (!evaluated) throw std::runtime_error(evaluated.error);
+    pose = &evaluated.pose;
+    out.warnings.insert(out.warnings.end(), evaluated.warnings.begin(),
+                        evaluated.warnings.end());
+  }
+
   const int scene = asset.defaultScene == NoIndex ? 0 : asset.defaultScene;
   require(scene >= 0 && std::size_t(scene) < asset.scenes.size(), "Invalid GLB scene index.");
   if (asset.defaultScene == NoIndex)
@@ -132,9 +171,20 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
     require(index >= 0 && std::size_t(index) < asset.nodes.size() &&
                 ++visited <= asset.nodes.size(), "Invalid GLB scene hierarchy.");
     const Node &node = asset.nodes[index];
+    const Matrix &nodeWorld = pose ? pose->nodes[index].world : node.world;
     pending.insert(pending.end(), node.children.begin(), node.children.end());
     if (node.mesh == NoIndex) continue;
     require(node.mesh >= 0 && std::size_t(node.mesh) < asset.meshes.size(), "Invalid GLB mesh index.");
+
+    const SkinPose *skinPose = nullptr;
+    if (pose && node.hasSkin) {
+      const auto found = std::find_if(pose->skins.begin(), pose->skins.end(),
+          [&](const SkinPose &candidate) { return candidate.node == index; });
+      require(found != pose->skins.end(),
+              "GLB animated skinned node has no evaluated skin binding.");
+      skinPose = &*found;
+    }
+
     for (const Primitive &p : asset.meshes[node.mesh].primitives) {
       require(p.material == NoIndex || (p.material >= 0 &&
                   std::size_t(p.material) < asset.materials.size()),
@@ -146,11 +196,44 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
           [](const Attribute &a) { return a.semantic == "POSITION"; });
       require(pos != p.attributes.end() && pos->components == 3,
               "GLB triangle geometry has no positions.");
+
+      const auto influences = skinPose ? influenceSets(p) : std::vector<InfluenceSet>();
+      if (skinPose)
+        require(!influences.empty(),
+                "GLB animated skinned primitive has no joint/weight influences.");
+
       auto vertex = [&](std::size_t i) {
         if (!p.indices.empty()) i = p.indices.at(i);
         require(i < pos->values.size() / 3, "GLB triangle index is out of range.");
-        return instance(transform(node.world, {pos->values[i * 3],
-            pos->values[i * 3 + 1], pos->values[i * 3 + 2]}));
+        const Vec basePosition{pos->values[i * 3], pos->values[i * 3 + 1],
+                               pos->values[i * 3 + 2]};
+        Vec local = basePosition;
+        if (skinPose) {
+          Vec weighted{0, 0, 0};
+          double total = 0.0;
+          for (const auto &set : influences) {
+            for (int component = 0; component < 4; ++component) {
+              const std::size_t at = i * 4 + component;
+              const double weight = set.weights->values[at];
+              if (!(weight > 0.0)) continue;
+              const double jointValue = set.joints->values[at];
+              const auto joint = std::size_t(std::llround(jointValue));
+              require(std::isfinite(jointValue) && jointValue >= 0.0 &&
+                          std::abs(jointValue - double(joint)) < 1e-6 &&
+                          joint < skinPose->jointMatrices.size(),
+                      "GLB skin influence references an invalid joint.");
+              const Vec moved = transform(skinPose->jointMatrices[joint], basePosition);
+              weighted.x += weight * moved.x;
+              weighted.y += weight * moved.y;
+              weighted.z += weight * moved.z;
+              total += weight;
+            }
+          }
+          require(total > 1e-12 && std::isfinite(total),
+                  "GLB skinned vertex has no positive joint weight.");
+          local = {weighted.x / total, weighted.y / total, weighted.z / total};
+        }
+        return instance(transform(nodeWorld, local));
       };
       const std::size_t count = p.indices.empty() ? p.vertexCount : p.indices.size();
       for (std::size_t i = 2; i < count; i += p.mode == 4 ? 3 : 1) {
@@ -198,7 +281,7 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
 }
 
 std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
-                                 const int *canceled) {
+                                   const int *canceled) {
   require(tile.width >= 0 && tile.height >= 0, "Invalid GLB tile dimensions.");
   const std::size_t count = std::size_t(tile.width) * std::size_t(tile.height);
   struct Sample { double depth = -std::numeric_limits<double>::infinity(); ColorPixel color; };
