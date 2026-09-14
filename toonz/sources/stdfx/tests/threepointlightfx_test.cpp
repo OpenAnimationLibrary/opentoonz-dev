@@ -13,6 +13,22 @@
 #include <iostream>
 #include <stdexcept>
 
+// A concrete, registered raster-only FX is needed to test port rejection.
+class OrdinaryRasterFx final : public TStandardRasterFx {
+  FX_PLUGIN_DECLARATION(OrdinaryRasterFx)
+
+public:
+  bool doGetBBox(double, TRectD &box, const TRenderSettings &) override {
+    box = TRectD();
+    return false;
+  }
+  bool canHandle(const TRenderSettings &, double) override { return true; }
+  void doCompute(TTile &tile, double, const TRenderSettings &) override {
+    tile.getRaster()->clear();
+  }
+};
+FX_PLUGIN_IDENTIFIER(OrdinaryRasterFx, "ordinaryRasterTestFx")
+
 namespace {
 void check(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
@@ -25,21 +41,10 @@ PARAM *param(FX &fx, const char *name) {
   return value;
 }
 
-class OrdinaryRasterFx final : public TStandardRasterFx {
-public:
-  std::string getPluginId() const override { return "ordinaryRasterTestFx"; }
-  bool doGetBBox(double, TRectD &box, const TRenderSettings &) override {
-    box = TRectD();
-    return false;
-  }
-  bool canHandle(const TRenderSettings &, double) override { return true; }
-  void doCompute(TTile &tile, double, const TRenderSettings &) override {
-    tile.getRaster()->clear();
-  }
-};
-
 void writeModel(const QString &path) {
-  const auto bytes = triangleGlb(0, true);
+  // Use the default white material so output color comes from the light.
+  // The explicit-material fixture is red and cannot satisfy the white test.
+  const auto bytes = triangleGlb();
   QFile file(path);
   check(file.open(QIODevice::WriteOnly), "cannot create GLB fixture");
   check(file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()) ==
@@ -73,11 +78,14 @@ int main(int argc, char **argv) {
     const QString path = directory.filePath("three-point.glb");
     writeModel(path);
 
-    GlbModelFx model;
+    // FX ports add/release references. Never connect stack-allocated FX.
+    TFxP modelOwner = new GlbModelFx;
+    auto &model = *static_cast<GlbModelFx *>(modelOwner.getPointer());
     param<TStringParam>(model, "modelFile")->setValue(path.toStdWString());
     param<TIntEnumParam>(model, "colorMode")->setValue(1);
 
-    ThreePointLightFx light;
+    TFxP lightOwner = new ThreePointLightFx;
+    auto &light = *static_cast<ThreePointLightFx *>(lightOwner.getPointer());
     check(light.getFxType() == "STD_threePointLightFx",
           "unexpected Three-Point Light FX type");
     check(light.getInputPortCount() == 1 &&
@@ -85,9 +93,9 @@ int main(int argc, char **argv) {
           "unexpected Three-Point Light input contract");
 
     bool rejected = false;
-    OrdinaryRasterFx ordinary;
+    TFxP ordinary = new OrdinaryRasterFx;
     try {
-      light.getInputPort("GLB Model")->setFx(&ordinary);
+      light.getInputPort("GLB Model")->setFx(ordinary.getPointer());
     } catch (const TException &) {
       rejected = true;
     }

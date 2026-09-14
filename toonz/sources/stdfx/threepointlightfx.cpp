@@ -1,6 +1,7 @@
 #include "stdfx.h"
 #include "t3dsource.h"
 #include "tfxparam.h"
+#include "tparamset.h"
 
 #include <algorithm>
 #include <cmath>
