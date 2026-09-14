@@ -8,6 +8,32 @@ namespace otglb {
 // resolution and tile size. The FX applies the normal OpenToonz 2D affine.
 constexpr double ProjectionHeight = 1000.0;
 
+struct DirectionalLight {
+  // Camera-space direction from the shaded surface toward the light.
+  std::array<double, 3> direction{{0.0, 0.0, 1.0}};
+  // Display-referred sRGB light color in [0,1].
+  std::array<float, 3> color{{1.0f, 1.0f, 1.0f}};
+  double intensity = 1.0;
+
+  bool operator==(const DirectionalLight &other) const {
+    return direction == other.direction && color == other.color &&
+           intensity == other.intensity;
+  }
+};
+
+struct LightingRig {
+  // Ambient and master are linear-light multipliers. Directional colors are
+  // converted from sRGB before contributing to diffuse illumination.
+  double ambient = 0.0;
+  double master = 1.0;
+  std::vector<DirectionalLight> lights;
+
+  bool operator==(const LightingRig &other) const {
+    return ambient == other.ambient && master == other.master &&
+           lights == other.lights;
+  }
+};
+
 struct RenderOptions {
   std::array<double, 3> position{}, rotation{};  // Degrees, applied X then Y then Z.
   double scale = 1.0;
@@ -18,6 +44,12 @@ struct RenderOptions {
   // Display-referred RGB, one per asset material plus the default material.
   // Empty uses the asset's linear baseColor factors, converted to sRGB.
   std::vector<std::array<float, 3>> colors;
+
+  // Optional camera-relative directional lighting supplied by a downstream 3D
+  // FX. When enabled it supersedes the legacy headlight but preserves the
+  // source node's geometry, camera, material and animation settings.
+  bool useLightingRig = false;
+  LightingRig lighting;
 
   // NoIndex preserves the historical static/base-geometry path exactly.
   // A valid index evaluates that embedded glTF clip at sourceSeconds and applies
