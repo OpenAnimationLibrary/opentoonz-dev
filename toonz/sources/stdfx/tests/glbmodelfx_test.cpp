@@ -57,6 +57,9 @@ const DoubleCase doubleCases[] = {
     {"orthoSize", 10.0, 5.0, 15.0},
     {"nearClip", 0.1, 0.2, 0.5},
     {"farClip", 1000.0, 100.0, 500.0},
+    {"playbackFps", 24.0, 24.0, 30.0},
+    {"timeOffset", 0.0, 0.0, 0.25},
+    {"animationSpeed", 1.0, 0.5, 2.0},
 };
 
 struct EnumCase {
@@ -69,6 +72,8 @@ const EnumCase enumCases[] = {
     {"projection", "Orthographic", "Perspective"},
     {"lighting", "Unlit", "Headlight"},
     {"renderStyle", "Solid", "Wireframe"},
+    {"animationMode", "Static Pose", "Embedded Animation"},
+    {"loopMode", "Clamp", "Loop"},
 };
 
 void expectValue(double actual, double expected) {
@@ -81,14 +86,18 @@ void testDefaults() {
   require(fx.getFxType() == "STD_glbModelFx", "Unexpected FX type");
   require(fx.isZerary(), "GLB Model is not a zerary FX");
   require(fx.getInputPortCount() == 0, "GLB Model acquired an input port");
-  require(fx.getParams()->getParamCount() == 18,
+  require(fx.getParams()->getParamCount() == 24,
           "Unexpected framework parameter count");
   require(parameter<TIntEnumParam>(fx, "colorMode")->getValue() == 0,
           "Existing scenes must retain grayscale by default");
+  require(parameter<TIntEnumParam>(fx, "animationMode")->getValue() == 0,
+          "Existing scenes must retain static GLB behavior by default");
   require(parameter<TParamSet>(fx, "materialColors")->getValueAlias(0, 3) == "()",
           "Empty material overrides have no safe alias");
   require(parameter<TStringParam>(fx, "modelFile")->getValue().empty(),
           "Default model path is not empty");
+  require(parameter<TStringParam>(fx, "animationClip")->getValue().empty(),
+          "Default animation clip should select the first embedded clip");
   for (const DoubleCase &test : doubleCases) {
     auto *param = parameter<TDoubleParam>(fx, test.name);
     expectValue(param->getValue(0), test.defaultValue);
@@ -111,6 +120,7 @@ void testDefaults() {
 
 void populate(GlbModelFx &fx, const QString &path) {
   parameter<TStringParam>(fx, "modelFile")->setValue(path.toStdWString());
+  parameter<TStringParam>(fx, "animationClip")->setValue(L"Move");
   for (const DoubleCase &test : doubleCases) {
     auto *param = parameter<TDoubleParam>(fx, test.name);
     param->setValue(0, test.firstValue);
@@ -126,6 +136,8 @@ void verifyPopulated(GlbModelFx &fx, const QString &path) {
   require(parameter<TStringParam>(fx, "modelFile")->getValue() ==
               path.toStdWString(),
           "Model path did not survive cloning or persistence");
+  require(parameter<TStringParam>(fx, "animationClip")->getValue() == L"Move",
+          "Animation clip did not survive cloning or persistence");
   for (const DoubleCase &test : doubleCases) {
     auto *param = parameter<TDoubleParam>(fx, test.name);
     require(param->getKeyframeCount() == 2 && param->isKeyframe(0) &&
@@ -283,6 +295,63 @@ void testLoadError(const QString &path) {
   bool failed = false;
   try { fx.doCompute(tile, 0, TRenderSettings()); } catch (const TException &) { failed = true; }
   require(failed, "Missing or invalid GLB did not report an error");
+}
+
+void testEmbeddedAnimation(const QString &path) {
+  const auto bytes = animatedSkinTriangleGlb();
+  { QFile file(path); require(file.open(QIODevice::WriteOnly), "Cannot create animated GLB");
+    require(file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()) == qint64(bytes.size()),
+            "Cannot write animated GLB"); }
+  GlbModelFx fx;
+  parameter<TStringParam>(fx, "modelFile")->setValue(path.toStdWString());
+  TRenderSettings settings;
+  TRectD bbox;
+
+  // Compatibility default: an animated/skinned file still renders its static base geometry.
+  require(fx.doGetBBox(12, bbox, settings), "Static animated GLB disappeared");
+  expectValue(bbox.x0, -100); expectValue(bbox.x1, 100);
+
+  parameter<TIntEnumParam>(fx, "animationMode")->setValue(1);
+  parameter<TStringParam>(fx, "animationClip")->setValue(L"Move");
+  parameter<TDoubleParam>(fx, "playbackFps")->setValue(0, 24.0);
+  parameter<TDoubleParam>(fx, "timeOffset")->setValue(0, 0.0);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, 1.0);
+  parameter<TIntEnumParam>(fx, "loopMode")->setValue(0);
+
+  require(fx.doGetBBox(0, bbox, settings), "Animation start disappeared");
+  expectValue(bbox.x0, -100); expectValue(bbox.x1, 100);
+  require(fx.doGetBBox(12, bbox, settings), "Animation midpoint disappeared");
+  expectValue(bbox.x0, -50); expectValue(bbox.x1, 150);
+  require(fx.doGetBBox(24, bbox, settings), "Animation end disappeared");
+  expectValue(bbox.x0, 0); expectValue(bbox.x1, 200);
+
+  parameter<TIntEnumParam>(fx, "loopMode")->setValue(1);
+  require(fx.doGetBBox(24, bbox, settings), "Looped animation disappeared");
+  expectValue(bbox.x0, -100); expectValue(bbox.x1, 100);
+
+  parameter<TStringParam>(fx, "animationClip")->setValue(L"#1");
+  require(fx.doGetBBox(12, bbox, settings), "Ordinal clip selection failed");
+  expectValue(bbox.x0, -50); expectValue(bbox.x1, 150);
+
+  parameter<TIntEnumParam>(fx, "loopMode")->setValue(0);
+  parameter<TDoubleParam>(fx, "timeOffset")->setValue(0, 1.0);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, -1.0);
+  require(fx.doGetBBox(12, bbox, settings), "Reverse animation disappeared");
+  expectValue(bbox.x0, -50); expectValue(bbox.x1, 150);
+
+  const auto alias = fx.getAlias(12, settings);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, -2.0);
+  require(alias != fx.getAlias(12, settings), "Playback controls missing from cache alias");
+
+  parameter<TStringParam>(fx, "animationClip")->setValue(L"missing");
+  TRaster32P raster(8, 8); TTile tile; tile.setRaster(raster);
+  bool failed = false;
+  try { fx.doCompute(tile, 0, settings); } catch (const TException &) { failed = true; }
+  require(failed, "Missing embedded clip did not produce an explicit error");
+
+  QFile file(path); require(file.open(QIODevice::ReadOnly), "Animated source was removed");
+  require(file.readAll() == QByteArray(reinterpret_cast<const char *>(bytes.data()), int(bytes.size())),
+          "Animation playback modified the source GLB");
 }
 
 template <class PIXEL>
@@ -475,10 +544,11 @@ int main(int argc, char **argv) {
     require(file.readAll() == sentinel, "Framework modified the model file");
     file.close();
     testRenderingAndReload(modelPath);
+    testEmbeddedAnimation(dir.filePath("animated.glb"));
     testMaterialControls(dir.filePath("materials.glb"), dir.filePath("materials.fx"));
     std::cout << "PASS: GLB FX registration, zero inputs, parameter defaults, "
                  "keyframes, clone, Unicode persistence, read-only loading, "
-                 "8/16/float rendering, reload and explicit errors\n";
+                 "embedded skeletal animation, 8/16/float rendering, reload and explicit errors\n";
     return 0;
   } catch (const TException &error) {
     std::cerr << "FAIL: "

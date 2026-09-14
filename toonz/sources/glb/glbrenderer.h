@@ -18,6 +18,13 @@ struct RenderOptions {
   // Display-referred RGB, one per asset material plus the default material.
   // Empty uses the asset's linear baseColor factors, converted to sRGB.
   std::vector<std::array<float, 3>> colors;
+
+  // NoIndex preserves the historical static/base-geometry path exactly.
+  // A valid index evaluates that embedded glTF clip at sourceSeconds and applies
+  // node animation plus skinning before projection. Time is always glTF seconds.
+  int animation = NoIndex;
+  double sourceSeconds = 0.0;
+
   bool operator==(const RenderOptions &other) const;
 };
 
@@ -45,16 +52,18 @@ struct RenderTile {
   std::array<double, 6> affine{{1, 0, 0, 0, 1, 0}};
 };
 
-// Opaque, two-sided base geometry. Textures/deformation are not
-// evaluated. Uses the declared default scene, otherwise the first scene.
-// Throws std::runtime_error on invalid settings or resource limits.
+// Opaque, two-sided geometry. With options.animation == NoIndex this preserves
+// the original static base-geometry path. Otherwise embedded node animation and
+// skeletal skinning are evaluated. Morph deformation remains deferred.
+// Uses the declared default scene, otherwise the first scene.
+// Throws std::runtime_error on invalid settings, animation data or resource limits.
 RenderScene prepareRender(const Asset &asset, const RenderOptions &options,
                           const int *canceled = nullptr);
 
 // Four coverage/depth samples per pixel; coordinates and coverage do not
 // depend on tile boundaries. No graphics context or global mutable state.
 std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
-                                 const int *canceled = nullptr);
+                                   const int *canceled = nullptr);
 
 float linearToSrgb(float value);
 float srgbToLinear(float value);

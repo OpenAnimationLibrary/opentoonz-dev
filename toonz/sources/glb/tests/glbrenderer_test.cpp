@@ -16,6 +16,11 @@ void check(bool value, const char *message) {
   if (!value) throw std::runtime_error(message);
 }
 void near(double a, double b) { check(std::abs(a - b) < 1e-5, "Numeric mismatch"); }
+Matrix identity() {
+  Matrix m{};
+  m[0] = m[5] = m[10] = m[15] = 1;
+  return m;
+}
 Asset triangle() {
   Asset a;
   Primitive p;
@@ -23,10 +28,24 @@ Asset triangle() {
   p.attributes.push_back({"POSITION", 3, {-1, -1, 0, 1, -1, 0, 0, 1, 0}});
   a.meshes.push_back({"triangle", {p}, {}});
   Node n; n.mesh = 0;
-  n.world = n.local = {{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+  n.world = n.local = identity();
   a.nodes.push_back(n);
   a.scenes.push_back({"scene", {0}, {}}); a.defaultScene = 0;
   return a;
+}
+Animation movement(int node, float distance = 2.0f) {
+  Animation animation;
+  AnimationSampler sampler;
+  sampler.times = {0, 1};
+  sampler.values = {0, 0, 0, distance, 0, 0};
+  sampler.outputComponents = 3;
+  animation.samplers.push_back(sampler);
+  AnimationChannel channel;
+  channel.sampler = 0; channel.node = node;
+  channel.path = AnimationPath::Translation; channel.components = 3;
+  animation.channels.push_back(channel);
+  animation.lastKeyTime = 1;
+  return animation;
 }
 RenderTile tile(int size = 80) {
   RenderTile t; t.width = t.height = size;
@@ -185,6 +204,48 @@ int main() {
       image = renderTile(prepareRender(a, o), tile());
       near(image[center].r, 1); near(image[center].g, 1); near(image[center].b, 1);
       o.colors.resize(1); rejects([&] { prepareRender(a, o); });
+    });
+    run("rigid embedded node animation changes projected geometry", [] {
+      auto a = triangle();
+      a.animations.push_back(movement(0)); a.animationCount = 1;
+      RenderOptions staticOptions;
+      near(prepareRender(a, staticOptions).bounds[0], -100);
+      RenderOptions animated; animated.animation = 0; animated.sourceSeconds = .5;
+      auto s = prepareRender(a, animated);
+      near(s.bounds[0], 0); near(s.bounds[2], 200);
+      auto later = animated; later.sourceSeconds = .75;
+      check(!(animated == later), "Animation time missing from render cache identity");
+    });
+    run("skeletal animation deforms all retained influence sets", [] {
+      auto a = triangle();
+      auto &primitive = a.meshes[0].primitives[0];
+      primitive.attributes.push_back({"JOINTS_0", 4,
+          {0,0,0,0, 0,0,0,0, 0,0,0,0}});
+      primitive.attributes.push_back({"WEIGHTS_0", 4,
+          {.75f,0,0,0, .75f,0,0,0, .75f,0,0,0}});
+      primitive.attributes.push_back({"JOINTS_1", 4,
+          {0,0,0,0, 0,0,0,0, 0,0,0,0}});
+      primitive.attributes.push_back({"WEIGHTS_1", 4,
+          {.25f,0,0,0, .25f,0,0,0, .25f,0,0,0}});
+      a.nodes[0].hasSkin = true; a.nodes[0].skin = 0;
+      Node joint; joint.local = joint.world = identity();
+      a.nodes.push_back(joint); a.scenes[0].roots.push_back(1);
+      Skin skin; skin.joints = {1}; skin.inverseBindMatrices = {identity()};
+      a.skins.push_back(skin); a.skinCount = 1;
+      a.animations.push_back(movement(1, 1)); a.animationCount = 1;
+      RenderOptions animated; animated.animation = 0; animated.sourceSeconds = .5;
+      auto s = prepareRender(a, animated);
+      near(s.bounds[0], -50); near(s.bounds[2], 150);
+      RenderOptions rest;
+      near(prepareRender(a, rest).bounds[0], -100);
+    });
+    run("animation errors are explicit and static compatibility is unchanged", [] {
+      auto a = triangle(); RenderOptions o;
+      o.animation = 4; rejects([&] { prepareRender(a, o); });
+      o.animation = 0; o.sourceSeconds = std::numeric_limits<double>::quiet_NaN();
+      rejects([&] { prepareRender(a, o); });
+      o = {}; auto staticScene = prepareRender(a, o);
+      near(staticScene.bounds[0], -100); near(staticScene.bounds[2], 100);
     });
     run("invalid controls, tile budget, empty geometry and cancellation", [] {
       auto a = triangle(); RenderOptions o; o.farClip = o.nearClip;

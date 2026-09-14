@@ -18,6 +18,12 @@ automatic recentering or fitting: original model coordinates remain meaningful.
 | Model | Position X/Y/Z | Translation in model units, after scaling and rotation. |
 | Model | Rotation X/Y/Z | Degrees, applied around the model origin in X, then Y, then Z order. |
 | Model | Scale | Uniform instance scale in percent; 100 preserves model size. |
+| Animation | Animation | **Static Pose** preserves the historical base-geometry behavior. **Embedded Animation** evaluates one GLB clip. |
+| Animation | Clip | Blank selects the first embedded clip. Enter an exact clip name, or `#N` (1-based) for unnamed/duplicate clips. |
+| Animation | Playback FPS | Maps OpenToonz's zero-based render frame to GLB seconds. The initial default is 24 fps. |
+| Animation | Time Offset | Source-time offset in seconds. It may be animated. |
+| Animation | Speed | Playback multiplier; 0 freezes, negative values play backward. It may be animated. |
+| Animation | End Behavior | **Clamp** holds sampler endpoint values outside their ranges. **Loop** wraps by the selected clip's last key time. |
 | Camera | Projection | Orthographic or perspective. The camera is on +Z, looking toward the origin, with +Y up. |
 | Camera | Camera Distance | Distance from the origin in model units. Move the camera beyond the model's front surface. |
 | Camera | Orthographic Height | Model-space height represented by the fixed 1,000-unit FX image plane. Larger values make the model smaller. |
@@ -36,26 +42,69 @@ automatic fit to the current scene camera frame.
 
 Numeric controls retain ordinary FX keyframing. File and mode selectors are
 non-animated. Scene save/reopen, FX presets, cloning, reset, and undo/redo retain
-the original parameter names and values from the framework stage.
+the parameter values through the standard FX framework.
+
+## Embedded animation playback
+
+Embedded playback is deliberately opt-in so scenes made before this feature keep
+their static GLB appearance. Select **Animation > Embedded Animation** to evaluate
+node translation, quaternion rotation and scale channels and to deform skinned
+meshes using the GLB joint hierarchy, inverse bind matrices and every retained
+`JOINTS_n` / `WEIGHTS_n` influence set. Rigid animated nodes work without a skin.
+The renderer evaluates the requested frame directly; it never advances a hidden
+animation clock, so out-of-order tiles, subframes and render clones produce the
+same pose for the same inputs.
+
+The time mapping in this first playback stage is explicit:
+
+```text
+sourceSeconds = Time Offset + (OpenToonz frame / Playback FPS) * Speed
+```
+
+The GLB's sampler timestamps remain seconds. **Playback FPS** only maps OpenToonz
+frames to those seconds; it does not retime or rewrite source keys. This first UI
+does not automatically read the scene FPS, which keeps rendering deterministic
+across preview/final contexts and makes the mapping visible to the user. Set
+Playback FPS to the scene rate when that is the desired relationship. A later UI
+can add an explicit scene-FPS/manual-time mode without changing the evaluator.
+
+**Clamp** passes the resulting source time to the evaluator, whose individual
+samplers hold their first/last values outside their key ranges. **Loop** wraps by
+the selected clip's `lastKeyTime`, with exact end time returning to zero. Negative
+speed and negative pre-wrap time are supported. A zero-duration clip cannot loop
+and produces an explicit render error.
+
+`STEP`, `LINEAR`, and `CUBICSPLINE` node animation are supported. Linear rotations
+use shortest-path quaternion interpolation; cubic quaternion results are
+normalized. Partial channels retain the node's authored values for components the
+clip does not animate.
+
+Morph-weight keys are retained by the loader but morph target deltas/deformation
+are still deferred; a selected clip containing such channels reports that
+limitation without pretending they were applied. `KHR_animation_pointer` material,
+camera or light property animation is also not evaluated in this stage. Embedded
+GLB channels are read-only runtime data: they are **not** copied into the Function
+Editor. Native channel promotion/override semantics are a separate follow-up.
 
 ## Rendering scope
 
-- Indexed and non-indexed triangle lists, strips and fans, including shared
-  mesh instances and node transforms. The declared default scene is used; if
-  none is declared, the first scene is used with a diagnostic warning.
-- Opaque, two-sided base geometry, with optional material base colors. Textures, material
-  alpha, emissive properties, vertex colors and imported normals are not shaded.
-  Headlight uses geometric face normals; it is intentionally faceted.
-- No skeletal animation, morph deformation, embedded animation playback, or
-  imported cameras/lights. Existing loader warnings remain in the application
-  log. The FX Settings labels also state the rendering limitations.
+- Indexed and non-indexed triangle lists, strips and fans, including shared mesh
+  instances and node transforms. The declared default scene is used; if none is
+  declared, the first scene is used with a diagnostic warning.
+- Static/base geometry remains the default. When Embedded Animation is enabled,
+  node TRS animation and skeletal skinning are evaluated before projection.
+- Opaque, two-sided geometry, with optional material base colors. Textures,
+  material alpha, emissive properties, vertex colors and imported normals are not
+  shaded. Headlight uses geometric face normals after deformation and is
+  intentionally faceted.
+- Morph deformation and imported cameras/lights remain deferred.
 - Point and line primitives are skipped with a diagnostic warning. A scene
   without triangle surfaces, or entirely outside the clip range, is transparent.
-- Four coverage/depth samples per pixel produce premultiplied antialiased
-  RGB output at 8-bit, 16-bit, and floating-point precision. Normal
-  downstream FX and Over compositing can use the resulting raster.
+- Four coverage/depth samples per pixel produce premultiplied antialiased RGB
+  output at 8-bit, 16-bit, and floating-point precision. Normal downstream FX
+  and Over compositing can use the resulting raster.
 
-## Material colors and animation
+## Material colors and native OpenToonz animation
 
 Choose **Appearance > Color Mode > Material Colors**, then open **Materials**.
 The selector lists the GLB's material names, with numbered labels to distinguish
@@ -103,20 +152,22 @@ may therefore look quite different from its textured appearance in another app.
 ## Files, errors and memory
 
 The loader remains [read-only](glb_loader.md). Missing, malformed or unsupported
-files and invalid camera settings produce a render error with the FX identifier,
-reason and source path. An empty file field is intentionally transparent.
+files, invalid camera settings, unknown clips, invalid animation data or invalid
+skin bindings produce a render error with the FX identifier, reason and source
+path. An empty file field is intentionally transparent.
 
 Only absolute or ordinary filesystem-relative paths are supported. Relative
 paths use the application's working directory; project aliases and dependency
 collection are not implemented. Use Browse for an unambiguous saved reference.
 
-Immutable loaded data and the most recently projected frame are shared by
+Immutable loaded data and the most recently projected pose/frame are shared by
 render clones. A mutex protects preparation; rasterization runs without holding
-that mutex. Changing file path, modification time, size or availability
+that mutex. Clip index and evaluated source time are part of the projected-scene
+cache identity. Changing file path, modification time, size or availability
 invalidates the loader and raster cache keys on the next render request.
 Replacing a file while preserving both its timestamp and size is not detected;
-use a different filename in that case. There is no background
-file watcher, so request a new preview after externally changing the source.
+use a different filename in that case. There is no background file watcher, so
+request a new preview after externally changing the source.
 
 Projected geometry has a separate 256 MiB budget, including vector growth.
 Temporary tile data is also bounded; the FX reports its memory needs to the
@@ -127,54 +178,45 @@ checked during geometry preparation and rasterization.
 ## Test without OpenToonz
 
 The **GLB Loader and Renderer** workflow builds and tests the standalone tools
-on Windows, Linux and macOS. Its `glb-inspect-<platform>` artifacts contain both
-`glb_inspect` and `glb_render`. The latter uses the production renderer to write
-a 512×512 grayscale TGA with alpha:
+on Windows, Linux and macOS. Its regression suite covers loading, animation data,
+random-access pose evaluation, skin matrices and renderer behavior without Qt.
+The `glb-inspect-<platform>` artifacts contain `glb_inspect` and `glb_render`.
+`glb_render` remains a static command-line rendering utility in this stage; GLB
+FX playback is tested through the production FX/application test.
 
-```text
-glb_render.exe "F:\Models\example.glb" "F:\Renders\example.tga" 10 10
-```
-
-The last two arguments are optional Orthographic Height and Camera Distance.
-Append `1` after them to render material colors, for example:
-`glb_render.exe model.glb colors.tga 10 10 1`.
-This utility uses Headlight and zero instance rotation/translation. It refuses
-to overwrite an existing output. On Linux/macOS, run `chmod +x glb_render`
-after extracting and invoke it as `./glb_render ...`.
-
-The standalone CMake build documented for the loader also runs the renderer
-regressions. Windows application CI tests the actual FX, persistence, source
-preservation, file replacement, grayscale/RGB precision and Over compositing, both
-before and after packaging.
-It also exercises the real material selector and native color/keyframe editor,
+The standalone CMake build documented for the loader runs loader, pose and
+renderer regressions. Windows application CI tests the actual FX, persistence,
+source preservation, file replacement, grayscale/RGB precision, Over compositing,
+and embedded skeletal playback using a deterministic generated GLB fixture. It
+also exercises the real material selector and native color/keyframe editor,
 undo/redo, interpolation, clone/preset persistence and safe model replacement.
-Channel-tree tests verify that RGB entries reference the very same curves,
-edits reach the renderer and color swatch, additions preserve active curves, and
-model replacement/restoration and reset refresh the existing listing safely.
 
 ## Application acceptance
 
 1. Add GLB Model and verify zero inputs. Browse to a model using a path with
    spaces/non-ASCII characters. Connect the source through Over and a color FX
    to the output; verify a visible model and transparent background.
-2. Test Solid/Headlight, Unlit and Wireframe. Switch projection; edit and animate
-   each transform and camera control. Check near/far crossings and render an
-   animation of the FX transforms. Model-file animation is not evaluated.
-3. Compare FX swatch, scene preview and saved output at 8/16/float precision.
+2. With an animated A:M export such as KnightRunner, verify **Static Pose** keeps
+   the compatibility view. Switch to **Embedded Animation**, select the clip by
+   name, set Playback FPS to the intended OT scene rate, and scrub out of order.
+   Compare start/middle/end poses with an independent GLB viewer or A:M export.
+3. Test Clamp and Loop, positive/zero/negative Speed, Time Offset, a blank Clip,
+   exact clip name, and `#1`. Invalid clip names and zero-duration looping should
+   report useful errors rather than silently selecting something else.
+4. Test Solid/Headlight, Unlit and Wireframe while the model moves. Switch
+   projection; edit and animate each transform and camera control. Check near/far
+   crossings and confirm animation-driven bounds follow the pose.
+5. Compare FX swatch, scene preview and saved output at 8/16/float precision.
    Change output resolution, preview shrink/zoom, and the FX column transform.
    Verify geometry does not shift or develop tile seams.
-4. Save/reopen the scene, duplicate the FX, and save/load its preset. Verify all
-   settings survive. Clear, undo and redo the path; cancel Browse without
-   changing the selection. Check that the source GLB remains unchanged.
-5. Try a missing/invalid file and invalid clip distances; verify useful render
-   errors. Replace the model externally and request another preview; verify
-   the new file revision appears. Cancel a large render and retry it.
-6. Enable Material Colors. Select several materials, change their colors and
-   animate one from green to blue. Check the swatch, preview and rendered frames.
-   Undo/redo edits and key changes; save/reopen the scene and its FX preset.
-7. Replace the GLB with a different model. Check that the list changes and old
-   overrides stay inactive. Restore the original GLB and verify its animation
-   returns. Test unnamed and duplicate material names and shared materials.
+6. Save/reopen the scene, duplicate the FX, and save/load its preset. Verify all
+   playback settings survive. Clear, undo and redo the path; check that the source
+   GLB remains byte-for-byte unchanged.
+7. Enable Material Colors. Select several materials, change their colors and
+   animate one from green to blue while embedded skeletal playback is active.
+   Check swatch, preview and rendered frames and save/reopen the scene.
+8. Replace the GLB with a different model. Check that material identities and
+   animation selection fail conservatively rather than being silently reassigned.
 
 These UI checks complement the automated tests; automated pixel tests do not
 claim an interactive UI acceptance pass on every platform.

@@ -43,7 +43,8 @@ void copyGlbPixels(TRasterPT<PIXEL> raster,
 }
 }  // namespace
 
-// Read-only GLB source with scene-owned, animated material color overrides.
+// Read-only GLB source with embedded animation playback and scene-owned,
+// animated material color overrides.
 class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
   FX_PLUGIN_DECLARATION(GlbModelFx)
 
@@ -57,6 +58,12 @@ class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
   TIntEnumParamP m_lighting, m_renderStyle;
   TIntEnumParamP m_colorMode;
   TParamSetP m_materialColors;
+
+  // Animation defaults preserve the pre-playback behavior for existing scenes.
+  TIntEnumParamP m_animationMode;
+  TStringParamP m_animationClip;
+  TDoubleParamP m_playbackFps, m_timeOffset, m_animationSpeed;
+  TIntEnumParamP m_loopMode;
 
   struct Cache {
     QMutex mutex;
@@ -129,12 +136,62 @@ class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
     return "m" + m_cache->digest + "_" + std::to_string(index);
   }
 
+  int animationIndexLocked() const {
+    const auto &animations = m_cache->loaded.asset->animations;
+    if (animations.empty())
+      throw std::runtime_error("Embedded Animation is enabled, but this GLB contains no animation clips.");
+
+    const QString requested = QString::fromStdWString(m_animationClip->getValue()).trimmed();
+    if (requested.isEmpty()) return 0;
+    if (requested.startsWith('#')) {
+      bool ok = false;
+      const int ordinal = requested.mid(1).toInt(&ok);
+      if (!ok || ordinal < 1 || ordinal > int(animations.size()))
+        throw std::runtime_error("GLB animation clip index is invalid. Use #1, #2, ... or an exact clip name.");
+      return ordinal - 1;
+    }
+
+    const std::string name = requested.toUtf8().toStdString();
+    int found = otglb::NoIndex;
+    for (std::size_t i = 0; i < animations.size(); ++i) {
+      if (animations[i].name != name) continue;
+      if (found != otglb::NoIndex)
+        throw std::runtime_error("GLB has duplicate animation clip names. Select this clip by #N instead.");
+      found = int(i);
+    }
+    if (found == otglb::NoIndex)
+      throw std::runtime_error("GLB animation clip was not found. Leave Clip blank for the first clip, use its exact name, or #N.");
+    return found;
+  }
+
+  void applyAnimationLocked(double frame, otglb::RenderOptions &settings) const {
+    if (m_animationMode->getValue() != 1) return;
+    const double fps = m_playbackFps->getValue(frame);
+    const double offset = m_timeOffset->getValue(frame);
+    const double speed = m_animationSpeed->getValue(frame);
+    if (!std::isfinite(fps) || fps <= 0.0 || !std::isfinite(offset) || !std::isfinite(speed))
+      throw std::runtime_error("GLB playback requires positive finite Playback FPS and finite Time Offset/Speed.");
+
+    const int clip = animationIndexLocked();
+    double seconds = offset + frame / fps * speed;
+    if (m_loopMode->getValue() == 1) {
+      const double duration = m_cache->loaded.asset->animations[clip].lastKeyTime;
+      if (!(duration > 0.0) || !std::isfinite(duration))
+        throw std::runtime_error("GLB animation cannot loop because its clip duration is zero or invalid.");
+      seconds = std::fmod(seconds, duration);
+      if (seconds < 0.0) seconds += duration;
+    }
+    settings.animation = clip;
+    settings.sourceSeconds = seconds;
+  }
+
   std::shared_ptr<const otglb::RenderScene> projected(double frame,
                                                     const int *canceled) const {
     if (m_modelFile->getValue().empty()) return {};
     auto settings = options(frame);
     QMutexLocker lock(&m_cache->mutex);
     loadLocked();
+    applyAnimationLocked(frame, settings);
     settings.materialColors = m_colorMode->getValue() == 1;
     if (settings.materialColors) {
       const auto &asset = *m_cache->loaded.asset;
@@ -206,7 +263,13 @@ public:
       , m_lighting(new TIntEnumParam(0, "Unlit"))
       , m_renderStyle(new TIntEnumParam(0, "Solid"))
       , m_colorMode(new TIntEnumParam(0, "Grayscale"))
-      , m_materialColors(new TFxMaterialParamSet) {
+      , m_materialColors(new TFxMaterialParamSet)
+      , m_animationMode(new TIntEnumParam(0, "Static Pose"))
+      , m_animationClip(L"")
+      , m_playbackFps(24.0)
+      , m_timeOffset(0.0)
+      , m_animationSpeed(1.0)
+      , m_loopMode(new TIntEnumParam(0, "Clamp")) {
     bindParam(this, "modelFile", m_modelFile);
     bindParam(this, "positionX", m_positionX);
     bindParam(this, "positionY", m_positionY);
@@ -225,8 +288,16 @@ public:
     bindParam(this, "renderStyle", m_renderStyle);
     bindParam(this, "colorMode", m_colorMode);
     bindParam(this, "materialColors", m_materialColors);
-    m_colorMode->addItem(1, "Material Colors");
+    bindParam(this, "animationMode", m_animationMode);
+    bindParam(this, "animationClip", m_animationClip);
+    bindParam(this, "playbackFps", m_playbackFps);
+    bindParam(this, "timeOffset", m_timeOffset);
+    bindParam(this, "animationSpeed", m_animationSpeed);
+    bindParam(this, "loopMode", m_loopMode);
 
+    m_colorMode->addItem(1, "Material Colors");
+    m_animationMode->addItem(1, "Embedded Animation");
+    m_loopMode->addItem(1, "Loop");
     m_projection->addItem(1, "Perspective");
     m_lighting->addItem(1, "Headlight");
     m_renderStyle->addItem(1, "Wireframe");
@@ -240,6 +311,9 @@ public:
     m_orthoSize->setValueRange(0.001, 1000000.0);
     m_nearClip->setValueRange(0.001, 1000000.0);
     m_farClip->setValueRange(0.001, 1000000.0);
+    m_playbackFps->setValueRange(0.001, 1000.0);
+    m_timeOffset->setValueRange(-1000000.0, 1000000.0);
+    m_animationSpeed->setValueRange(-1000.0, 1000.0);
     enableComputeInFloat(true);
   }
 
@@ -260,12 +334,16 @@ public:
     for (double v : o.rotation) key << v << ',';
     key << o.scale << ',' << o.cameraDistance << ',' << o.fieldOfView << ','
         << o.orthoHeight << ',' << o.nearClip << ',' << o.farClip;
+    key << ":anim=" << m_animationMode->getValue() << ':'
+        << QString::fromStdWString(m_animationClip->getValue()).toUtf8().toStdString()
+        << ':' << m_playbackFps->getValue(frame) << ':' << m_timeOffset->getValue(frame)
+        << ':' << m_animationSpeed->getValue(frame) << ':' << m_loopMode->getValue();
     // Child names are part of the identity: equal colors assigned to different
     // materials must not reuse one another's cached images.
     for (int i = 0; i < m_materialColors->getParamCount(); ++i)
       key << ':' << m_materialColors->getParamName(i) << '='
           << m_materialColors->getParam(i)->getValueAlias(frame, 17);
-    return TRasterFx::getAlias(frame, info) + "[GLB-color-v1:" +
+    return TRasterFx::getAlias(frame, info) + "[GLB-animation-v1:" +
            fileRevision().toUtf8().toStdString() + ":" + key.str() + "]";
   }
 
