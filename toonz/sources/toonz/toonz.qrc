@@ -345,6 +345,15 @@
 		<file>icons/dark/actions/16x16/sub_edit_in_place.svg</file>
 		<file>icons/dark/actions/16x16/sub_clone.svg</file>
 		<file>icons/dark/actions/16x16/duplicate.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_use.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_new.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_duplicate.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_rename.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_delete.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_reset.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_load.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_saveas.svg</file>
+		<file>icons/dark/actions/16x16/touch_preset_export.svg</file>
 		<file>icons/dark/actions/20x20/onionskin_toggle.svg</file>
 		<file>icons/dark/actions/16x16/insert_frame.svg</file>
 		<file>icons/dark/actions/16x16/remove_frame.svg</file>

@@ -5,7 +5,6 @@
 #include "tapp.h"
 #include "touchpresetmanager.h"
 
-#include "filebrowserpopup.h"
 #include "toonz/preferences.h"
 #include "toonz/toonzfolders.h"
 #include "toonzqt/dvdialog.h"
@@ -13,7 +12,10 @@
 #include "toonzqt/menubarcommand.h"
 #include "tsystem.h"
 
+#include <QBrush>
+#include <QColor>
 #include <QComboBox>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -52,6 +54,10 @@ QString commandLabel(const QString &id) {
 const int kSlotItemRole   = Qt::UserRole;
 const int kFamilyItemRole = Qt::UserRole + 1;
 
+QColor familyRecognitionStatusColor(bool recognized) {
+  return recognized ? QColor(0x3d, 0xa5, 0x4a) : QColor(0xd4, 0x4a, 0x4a);
+}
+
 }  // namespace
 
 //-----------------------------------------------------------------------------
@@ -64,17 +70,32 @@ TouchPresetPopup::TouchPresetPopup()
 
   m_presetCombo = new QComboBox(this);
   m_useBtn      = new QPushButton(tr("Use"), this);
-  m_newBtn      = new QPushButton(tr("New"), this);
-  m_dupBtn      = new QPushButton(tr("Duplicate"), this);
-  m_renameBtn   = new QPushButton(tr("Rename"), this);
-  m_deleteBtn   = new QPushButton(tr("Delete"), this);
-  m_resetBtn       = new QPushButton(tr("Reset"), this);
-  m_loadPresetBtn  = new QPushButton(tr("Load"), this);
-  m_savePresetBtn  = new QPushButton(tr("Save As"), this);
-  m_loadPresetBtn->setIcon(createQIcon("load"));
-  m_savePresetBtn->setIcon(createQIcon("saveas"));
+  m_useBtn->setToolTip(tr("Use selected preset for touch gestures"));
+  m_useBtn->setIcon(createQIcon("touch_preset_use"));
+  m_newBtn = new QPushButton(tr("New"), this);
+  m_newBtn->setToolTip(tr("Create a new touch preset"));
+  m_newBtn->setIcon(createQIcon("touch_preset_new"));
+  m_dupBtn = new QPushButton(tr("Duplicate"), this);
+  m_dupBtn->setToolTip(tr("Duplicate the current touch preset"));
+  m_dupBtn->setIcon(createQIcon("touch_preset_duplicate"));
+  m_renameBtn = new QPushButton(tr("Rename"), this);
+  m_renameBtn->setToolTip(tr("Rename the current touch preset"));
+  m_renameBtn->setIcon(createQIcon("touch_preset_rename"));
+  m_deleteBtn = new QPushButton(tr("Delete"), this);
+  m_deleteBtn->setToolTip(tr("Delete Current Preset"));
+  m_deleteBtn->setIcon(createQIcon("touch_preset_delete"));
+  m_resetBtn = new QPushButton(tr("Reset"), this);
+  m_resetBtn->setToolTip(tr("Reset the current touch preset to defaults"));
+  m_resetBtn->setIcon(createQIcon("touch_preset_reset"));
+  m_loadPresetBtn = new QPushButton(tr("Load"), this);
   m_loadPresetBtn->setToolTip(tr("Load a touch preset from file"));
-  m_savePresetBtn->setToolTip(tr("Save the current preset to file"));
+  m_loadPresetBtn->setIcon(createQIcon("touch_preset_load"));
+  m_savePresetBtn = new QPushButton(tr("Save As"), this);
+  m_savePresetBtn->setToolTip(tr("Save current touch preset as a new preset"));
+  m_savePresetBtn->setIcon(createQIcon("touch_preset_saveas"));
+  m_exportPresetBtn = new QPushButton(tr("Export Current Touch Preset"), this);
+  m_exportPresetBtn->setToolTip(tr("Export Current Touch Preset"));
+  m_exportPresetBtn->setIcon(createQIcon("touch_preset_export"));
 
   m_gestureSearchEdit = new QLineEdit(this);
   m_commandSearchEdit = new QLineEdit(this);
@@ -106,8 +127,10 @@ TouchPresetPopup::TouchPresetPopup()
 
   m_selectedName    = new QLabel(tr("No gesture selected"), this);
   m_selectedCommand = new QLabel(tr("(none)"), this);
-  m_assignBtn       = new QPushButton(tr("Assign"), this);
-  m_clearBtn        = new QPushButton(tr("Clear"), this);
+  m_assignBtn = new QPushButton(tr("Assign"), this);
+  m_assignBtn->setToolTip(tr("Assign the selected command to the gesture"));
+  m_clearBtn = new QPushButton(tr("Clear"), this);
+  m_clearBtn->setToolTip(tr("Clear the command assigned to the gesture"));
 
   m_topLayout->setContentsMargins(5, 5, 5, 5);
   m_topLayout->setSpacing(8);
@@ -168,6 +191,12 @@ TouchPresetPopup::TouchPresetPopup()
   presetLay->addWidget(m_savePresetBtn);
   presetBox->setLayout(presetLay);
   m_topLayout->addWidget(presetBox);
+  m_topLayout->addSpacing(10);
+  QHBoxLayout *exportLay = new QHBoxLayout();
+  exportLay->setContentsMargins(5, 0, 5, 0);
+  exportLay->setSpacing(5);
+  exportLay->addWidget(m_exportPresetBtn, 0);
+  m_topLayout->addLayout(exportLay, 0);
 
   connect(m_presetCombo, SIGNAL(currentIndexChanged(int)), this,
           SLOT(onPresetChanged(int)));
@@ -179,6 +208,7 @@ TouchPresetPopup::TouchPresetPopup()
   connect(m_resetBtn, SIGNAL(clicked()), this, SLOT(onResetPreset()));
   connect(m_loadPresetBtn, SIGNAL(clicked()), this, SLOT(onLoadPreset()));
   connect(m_savePresetBtn, SIGNAL(clicked()), this, SLOT(onSavePreset()));
+  connect(m_exportPresetBtn, SIGNAL(clicked()), this, SLOT(onExportPreset()));
   connect(m_assignBtn, SIGNAL(clicked()), this, SLOT(onAssign()));
   connect(m_clearBtn, SIGNAL(clicked()), this, SLOT(onClear()));
   connect(m_gestureSearchEdit, &QLineEdit::textChanged, this,
@@ -232,7 +262,11 @@ void TouchPresetPopup::rebuildPresetCombo() {
 }
 
 QString TouchPresetPopup::currentPreset() const {
-  return m_presetCombo->currentData().toString();
+  const QString name = m_presetCombo->currentData().toString();
+  if (!name.isEmpty() &&
+      TouchPresetManager::instance()->hasPreset(name))
+    return name;
+  return TouchPresetManager::instance()->activePreset();
 }
 
 void TouchPresetPopup::rebuildTree() {
@@ -287,10 +321,17 @@ void TouchPresetPopup::applyFamilyRecognitionRow(QTreeWidgetItem *group,
                 : tr("Ignore this gesture family in OpenToonz.");
     group->setToolTip(0, tip);
     group->setToolTip(1, tip);
+    if (mgr->showFamilyRecognitionColors()) {
+      const QBrush brush(familyRecognitionStatusColor(enabled));
+      group->setForeground(1, brush);
+    } else {
+      group->setForeground(1, QBrush());
+    }
   } else {
     group->setText(1, QString());
     group->setToolTip(0, QString());
     group->setToolTip(1, QString());
+    group->setForeground(1, QBrush());
   }
   group->setFlags(flags);
 }
@@ -418,6 +459,7 @@ void TouchPresetPopup::onRenamePreset() {
 
 void TouchPresetPopup::onDeletePreset() {
   TouchPresetManager::instance()->removePreset(currentPreset());
+  m_selectedSlot = TouchSlot_None;
   rebuildPresetCombo();
   rebuildTree();
 }
@@ -428,10 +470,12 @@ void TouchPresetPopup::onResetPreset() {
 }
 
 void TouchPresetPopup::onLoadPreset() {
-  GenericLoadFilePopup popup(tr("Load Touch Preset File"));
-  popup.addFilterType("ini");
-  const TFilePath path = popup.getPath();
-  if (path == TFilePath()) return;
+  const QString qs = QFileDialog::getOpenFileName(
+      this, tr("Load Touch Preset File"), QString(),
+      tr("Touch preset files (*.ini);;All files (*.*)"));
+  if (qs.isEmpty()) return;
+  const TFilePath path(qs.toStdWString());
+  if (!TFileStatus(path).doesExist()) return;
 
   TouchPresetManager *mgr = TouchPresetManager::instance();
   QSettings probe(toQString(path), QSettings::IniFormat);
@@ -458,7 +502,13 @@ void TouchPresetPopup::onLoadPreset() {
     return;
   }
   mgr->setActivePreset(imported);
+  m_selectedSlot = TouchSlot_None;
   rebuildPresetCombo();
+  const int importIdx = mgr->presetNames().indexOf(imported);
+  if (importIdx >= 0) {
+    QSignalBlocker comboBlock(m_presetCombo);
+    m_presetCombo->setCurrentIndex(importIdx);
+  }
   rebuildTree();
 }
 
@@ -492,6 +542,20 @@ void TouchPresetPopup::onSavePreset() {
   rebuildPresetCombo();
   const int idx = mgr->presetNames().indexOf(name);
   if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
+}
+
+void TouchPresetPopup::onExportPreset() {
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  const QString preset  = currentPreset();
+  QString qs = QFileDialog::getSaveFileName(
+      this, tr("Export Current Touch Preset"), preset + QStringLiteral(".ini"),
+      tr("Touch preset files (*.ini);;All files (*.*)"));
+  if (qs.isEmpty()) return;
+  if (!qs.endsWith(QStringLiteral(".ini"), Qt::CaseInsensitive))
+    qs += QStringLiteral(".ini");
+  if (!mgr->exportPresetToFile(preset, qs)) {
+    DVGui::MsgBox(DVGui::CRITICAL, tr("Could not export touch preset file."));
+  }
 }
 
 void TouchPresetPopup::assignCurrent(const QString &commandId) {
@@ -535,6 +599,11 @@ void TouchPresetPopup::buildOptionsMenu() {
   m_showFamilyTogglesAction->setCheckable(true);
   connect(m_showFamilyTogglesAction, &QAction::toggled, this,
           &TouchPresetPopup::onShowFamilyTogglesToggled);
+  m_showFamilyColorsAction = m_optionsMenu->addAction(
+      tr("Show recognized status in color"));
+  m_showFamilyColorsAction->setCheckable(true);
+  connect(m_showFamilyColorsAction, &QAction::toggled, this,
+          &TouchPresetPopup::onShowFamilyColorsToggled);
 }
 
 void TouchPresetPopup::syncOptionsMenu() {
@@ -544,6 +613,9 @@ void TouchPresetPopup::syncOptionsMenu() {
   QSignalBlocker togglesBlock(m_showFamilyTogglesAction);
   m_showFamilyTogglesAction->setChecked(
       TouchPresetManager::instance()->showFamilyRecognitionToggles());
+  QSignalBlocker colorsBlock(m_showFamilyColorsAction);
+  m_showFamilyColorsAction->setChecked(
+      TouchPresetManager::instance()->showFamilyRecognitionColors());
 }
 
 void TouchPresetPopup::onDeferTapToggled(bool checked) {
@@ -552,6 +624,11 @@ void TouchPresetPopup::onDeferTapToggled(bool checked) {
 
 void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {
   TouchPresetManager::instance()->setShowFamilyRecognitionToggles(checked);
+  rebuildTree();
+}
+
+void TouchPresetPopup::onShowFamilyColorsToggled(bool checked) {
+  TouchPresetManager::instance()->setShowFamilyRecognitionColors(checked);
   rebuildTree();
 }
 

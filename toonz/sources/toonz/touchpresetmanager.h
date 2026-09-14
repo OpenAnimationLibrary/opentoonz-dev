@@ -13,6 +13,7 @@ class TouchPresetManager {
   QMap<QString, QMap<TouchSlot, QString>> m_presets;
   QMap<TouchSlotFamily, bool> m_familyRecognition;
   bool m_showFamilyRecognitionToggles = false;
+  bool m_showFamilyRecognitionColors  = false;
   QString m_active;
   bool m_loaded = false;
 
@@ -51,6 +52,9 @@ public:
 
   bool showFamilyRecognitionToggles() const;
   void setShowFamilyRecognitionToggles(bool show);
+
+  bool showFamilyRecognitionColors() const;
+  void setShowFamilyRecognitionColors(bool show);
 
   bool exportPresetToFile(const QString &presetName,
                           const QString &filePath) const;

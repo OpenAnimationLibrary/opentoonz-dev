@@ -449,7 +449,8 @@ bool GenericLoadFilePopup::execute() {
 //-----------------------------------------------------------------------------
 
 TFilePath GenericLoadFilePopup::getPath() {
-  return (exec() == QDialog::Rejected) ? TFilePath() : *m_selectedPaths.begin();
+  if (exec() == QDialog::Rejected || m_selectedPaths.empty()) return TFilePath();
+  return *m_selectedPaths.begin();
 }
 
 //***********************************************************************************
@@ -502,7 +503,8 @@ bool GenericSaveFilePopup::execute() {
 //-----------------------------------------------------------------------------
 
 TFilePath GenericSaveFilePopup::getPath() {
-  return (exec() == QDialog::Rejected) ? TFilePath() : *m_selectedPaths.begin();
+  if (exec() == QDialog::Rejected || m_selectedPaths.empty()) return TFilePath();
+  return *m_selectedPaths.begin();
 }
 
 //=============================================================================

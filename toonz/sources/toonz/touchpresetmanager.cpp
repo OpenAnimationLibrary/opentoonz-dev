@@ -156,6 +156,9 @@ void TouchPresetManager::load() {
   m_showFamilyRecognitionToggles =
       s.value(QStringLiteral("General/showFamilyRecognitionToggles"), false)
           .toBool();
+  m_showFamilyRecognitionColors =
+      s.value(QStringLiteral("General/showFamilyRecognitionColors"), false)
+          .toBool();
 
   if (!m_presets.contains(QLatin1String(kDefault)))
     m_presets[QLatin1String(kDefault)] = factoryMap();
@@ -180,6 +183,8 @@ void TouchPresetManager::save() {
   s.setValue(QStringLiteral("General/activePreset"), m_active);
   s.setValue(QStringLiteral("General/showFamilyRecognitionToggles"),
              m_showFamilyRecognitionToggles);
+  s.setValue(QStringLiteral("General/showFamilyRecognitionColors"),
+             m_showFamilyRecognitionColors);
   s.beginGroup(QStringLiteral("Presets"));
   for (auto it = m_presets.constBegin(); it != m_presets.constEnd(); ++it) {
     s.beginGroup(it.key());
@@ -219,6 +224,15 @@ bool TouchPresetManager::showFamilyRecognitionToggles() const {
 
 void TouchPresetManager::setShowFamilyRecognitionToggles(bool show) {
   m_showFamilyRecognitionToggles = show;
+  save();
+}
+
+bool TouchPresetManager::showFamilyRecognitionColors() const {
+  return m_showFamilyRecognitionColors;
+}
+
+void TouchPresetManager::setShowFamilyRecognitionColors(bool show) {
+  m_showFamilyRecognitionColors = show;
   save();
 }
 

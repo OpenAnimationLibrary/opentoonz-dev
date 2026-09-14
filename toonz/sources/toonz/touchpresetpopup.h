@@ -34,12 +34,14 @@ class TouchPresetPopup final : public DVGui::Dialog {
   QPushButton *m_resetBtn;
   QPushButton *m_loadPresetBtn;
   QPushButton *m_savePresetBtn;
+  QPushButton *m_exportPresetBtn;
   QPushButton *m_assignBtn;
   QPushButton *m_clearBtn;
   QPushButton *m_useBtn;
   QToolButton *m_optionsBtn;
   QMenu *m_optionsMenu;
   QAction *m_showFamilyTogglesAction;
+  QAction *m_showFamilyColorsAction;
   QAction *m_deferTapAction;
   QLabel *m_selectedName;
   QLabel *m_selectedCommand;
@@ -61,6 +63,7 @@ private:
 
 private slots:
   void onShowFamilyTogglesToggled(bool checked);
+  void onShowFamilyColorsToggled(bool checked);
   void onDeferTapToggled(bool checked);
   void syncOptionsMenu();
   void onTreeItemChanged(QTreeWidgetItem *item, int column);
@@ -73,6 +76,7 @@ private slots:
   void onResetPreset();
   void onLoadPreset();
   void onSavePreset();
+  void onExportPreset();
   void onAssign();
   void onClear();
   void onGestureSearchChanged(const QString &text);

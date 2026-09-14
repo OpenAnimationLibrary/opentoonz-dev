@@ -36,7 +36,7 @@ void TSelectionHandle::setSelection(TSelection *selection) {
     // revert alternative command names to original ones kept in the icon texts
     for (auto commandId : oldSelection->alternativeCommandNames().keys()) {
       QAction *action = commandManager->getAction(commandId);
-      action->setText(action->iconText());
+      if (action) action->setText(action->iconText());
     }
   }
   m_selectionStack.back() = selection;
@@ -48,7 +48,7 @@ void TSelectionHandle::setSelection(TSelection *selection) {
         selection->alternativeCommandNames().constBegin();
     while (i != selection->alternativeCommandNames().constEnd()) {
       QAction *action = commandManager->getAction(i.key());
-      action->setText(i.value());
+      if (action) action->setText(i.value());
       ++i;
     }
   }
