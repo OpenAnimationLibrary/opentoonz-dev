@@ -396,17 +396,17 @@ void copyMaterials(const cgltf_data &d, Asset &asset, Budget &budget,
   }
 }
 
-Attribute copyAttribute(const cgltf_attribute &attribute, Budget &budget) {
-  const auto &a = *attribute.data;
-  Attribute out;
-  out.semantic = budget.string(attribute.name);
-  out.components = static_cast<int>(cgltf_num_components(a.type));
-  const auto count = product(a.count, std::size_t(out.components));
-  budget.resize(out.values, count);
+// One checked decoder for geometry, inverse binds and animation accessors.
+// The caller validates semantic shape/type; validateBuffers bounds every read.
+std::vector<float> copyValues(const cgltf_accessor &a, Budget &budget) {
+  const auto components = cgltf_num_components(a.type);
+  const auto count = product(a.count, components);
+  std::vector<float> out;
+  budget.resize(out, count);
   auto base = a;
   base.is_sparse = false;
-  require(cgltf_accessor_unpack_floats(&base, out.values.data(), count) == count,
-          "Could not decode mesh attribute.");
+  require(cgltf_accessor_unpack_floats(&base, out.data(), count) == count,
+          "Could not decode accessor values.");
   // Sparse values are tightly packed even when the base accessor is interleaved.
   if (a.is_sparse) {
     const auto indices = sparseIndices(a);
@@ -414,12 +414,38 @@ Attribute copyAttribute(const cgltf_attribute &attribute, Budget &budget) {
     for (std::size_t i = 0; i < a.sparse.count; ++i) {
       const auto index = cgltf_accessor_read_index(&indices, i);
       require(cgltf_accessor_read_float(&values, i,
-                  out.values.data() + index * out.components, out.components),
-              "Could not decode sparse mesh attribute.");
+                  out.data() + index * components, components),
+              "Could not decode sparse accessor values.");
     }
   }
-  for (const auto value : out.values) finite(value);
+  for (const auto value : out) finite(value);
   return out;
+}
+
+Attribute copyAttribute(const cgltf_attribute &attribute, Budget &budget) {
+  Attribute out;
+  out.semantic = budget.string(attribute.name);
+  out.components = static_cast<int>(cgltf_num_components(attribute.data->type));
+  out.values = copyValues(*attribute.data, budget);
+  return out;
+}
+
+void validateInfluenceAttribute(const cgltf_primitive &p,
+                                const cgltf_attribute &attribute) {
+  const bool joints = attribute.type == cgltf_attribute_type_joints;
+  if (!joints && attribute.type != cgltf_attribute_type_weights) return;
+  const auto &a = *attribute.data;
+  const bool smallUnsigned = a.component_type == cgltf_component_type_r_8u ||
+                             a.component_type == cgltf_component_type_r_16u;
+  require(a.type == cgltf_type_vec4 && attribute.index >= 0,
+          "Skin influences must be VEC4 attributes with nonnegative set indices.");
+  require(joints ? (smallUnsigned && !a.normalized) :
+              ((smallUnsigned && a.normalized) ||
+               (a.component_type == cgltf_component_type_r_32f && !a.normalized)),
+          "Skin joint/weight attribute component type is invalid.");
+  require(cgltf_find_accessor(&p, joints ? cgltf_attribute_type_weights :
+              cgltf_attribute_type_joints, attribute.index) != nullptr,
+          "Skin JOINTS_n and WEIGHTS_n must be paired.");
 }
 
 void copyMeshes(const cgltf_data &d, Asset &asset, Budget &budget, Result &result) {
@@ -454,7 +480,11 @@ void copyMeshes(const cgltf_data &d, Asset &asset, Budget &budget, Result &resul
         for (std::size_t n = 0; n < k; ++n)
           require(std::strcmp(p.attributes[k].name, p.attributes[n].name) != 0,
                   "Mesh contains duplicate attribute semantics.");
+        validateInfluenceAttribute(p, p.attributes[k]);
         out.attributes[k] = copyAttribute(p.attributes[k], budget);
+        if (p.attributes[k].type == cgltf_attribute_type_weights)
+          for (const auto value : out.attributes[k].values)
+            require(value >= 0.0f, "Skin weights must not be negative.");
         if (p.attributes[k].data == positions) {
           const auto &v = out.attributes[k].values;
           for (std::size_t n = 0; n < v.size(); n += 3)
@@ -516,7 +546,15 @@ void copyNodes(const cgltf_data &d, Asset &asset, Budget &budget,
     out.name = budget.string(n.name);
     out.mesh = indexOf(n.mesh, d.meshes);
     out.parent = indexOf(n.parent, d.nodes);
-    out.hasSkin = n.skin != nullptr;
+    out.skin = indexOf(n.skin, d.skins);
+    out.hasSkin = out.skin != NoIndex;
+    out.hasMatrix = n.has_matrix;
+    if (n.has_translation) std::copy_n(n.translation, 3, out.translation.begin());
+    if (n.has_rotation) std::copy_n(n.rotation, 4, out.rotation.begin());
+    if (n.has_scale) std::copy_n(n.scale, 3, out.scale.begin());
+    finite(out.translation);
+    finite(out.rotation);
+    finite(out.scale);
     require(!n.has_matrix || !(n.has_translation || n.has_rotation || n.has_scale),
             "Node cannot specify both matrix and TRS transforms.");
     cgltf_node_transform_local(&n, out.local.data());
@@ -550,6 +588,214 @@ void copyNodes(const cgltf_data &d, Asset &asset, Budget &budget,
     }
   }
   require(order.size() == asset.nodes.size(), "Node hierarchy contains a cycle.");
+}
+
+void copySkins(const cgltf_data &d, Asset &asset, Budget &budget) {
+  budget.resize(asset.skins, d.skins_count);
+  std::vector<int> seen;
+  if (d.skins_count) budget.resize(seen, d.nodes_count);
+  std::fill(seen.begin(), seen.end(), NoIndex);
+  for (std::size_t i = 0; i < d.skins_count; ++i) {
+    const auto &s = d.skins[i];
+    auto &out = asset.skins[i];
+    out.name = budget.string(s.name);
+    out.skeleton = indexOf(s.skeleton, d.nodes);
+    require(s.joints_count != 0, "Skin must contain at least one joint.");
+    budget.resize(out.joints, s.joints_count);
+    int commonTree = NoIndex;
+    for (std::size_t j = 0; j < s.joints_count; ++j) {
+      const int joint = indexOf(s.joints[j], d.nodes);
+      require(joint != NoIndex, "Skin joint is missing.");
+      require(seen[joint] != static_cast<int>(i), "Skin contains duplicate joints.");
+      seen[joint] = static_cast<int>(i);
+      out.joints[j] = joint;
+      int root = joint;
+      bool containsSkeleton = out.skeleton == NoIndex;
+      for (int n = joint; n != NoIndex; n = asset.nodes[n].parent) {
+        containsSkeleton = containsSkeleton || n == out.skeleton;
+        root = n;
+      }
+      require(containsSkeleton, "Skin skeleton is not an ancestor of every joint.");
+      require(!j || root == commonTree, "Skin joints do not share a common root.");
+      commonTree = root;
+    }
+    out.hasInverseBindMatrices = s.inverse_bind_matrices != nullptr;
+    if (s.inverse_bind_matrices) {
+      const auto &a = *s.inverse_bind_matrices;
+      require(a.type == cgltf_type_mat4 &&
+                  a.component_type == cgltf_component_type_r_32f && !a.normalized &&
+                  a.count >= s.joints_count,
+              "Inverse bind matrices must be FLOAT MAT4s covering every joint.");
+      const auto values = copyValues(a, budget);
+      budget.resize(out.inverseBindMatrices, a.count);
+      for (std::size_t j = 0; j < a.count; ++j) {
+        auto &m = out.inverseBindMatrices[j];
+        std::copy_n(values.data() + j * 16, 16, m.begin());
+        require(m[3] == 0.0f && m[7] == 0.0f && m[11] == 0.0f && m[15] == 1.0f,
+                "Inverse bind matrix must be affine.");
+      }
+    } else {
+      budget.resize(out.inverseBindMatrices, s.joints_count);
+      for (auto &m : out.inverseBindMatrices)
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+    }
+  }
+  // A shared mesh can use different skins. Check each (mesh, skin) pair once,
+  // without an instances * vertices scan for many identical instances.
+  std::vector<std::pair<int, int>> bindings;
+  std::size_t count = 0;
+  for (const auto &node : asset.nodes) count += node.hasSkin;
+  budget.add(count, sizeof(std::pair<int, int>));
+  bindings.reserve(count);
+  for (const auto &node : asset.nodes) {
+    if (!node.hasSkin) continue;
+    require(node.mesh != NoIndex, "A node with a skin must reference a mesh.");
+    bindings.emplace_back(node.mesh, node.skin);
+  }
+  std::sort(bindings.begin(), bindings.end());
+  bindings.erase(std::unique(bindings.begin(), bindings.end()), bindings.end());
+  for (const auto &binding : bindings) {
+    const auto &mesh = d.meshes[binding.first];
+    const auto jointCount = asset.skins[binding.second].joints.size();
+    for (std::size_t p = 0; p < mesh.primitives_count; ++p) {
+      const auto &primitive = mesh.primitives[p];
+      require(cgltf_find_accessor(&primitive, cgltf_attribute_type_joints, 0) &&
+                  cgltf_find_accessor(&primitive, cgltf_attribute_type_weights, 0),
+              "Skinned mesh requires JOINTS_0 and WEIGHTS_0.");
+      for (std::size_t a = 0; a < primitive.attributes_count; ++a) {
+        if (primitive.attributes[a].type != cgltf_attribute_type_joints) continue;
+        const auto &values = asset.meshes[binding.first].primitives[p].attributes[a].values;
+        for (const auto value : values)
+          require(value >= 0.0f && static_cast<double>(value) < jointCount,
+                  "Skin joint attribute indexes outside the skin joint table.");
+      }
+    }
+  }
+  asset.skinCount = asset.skins.size();
+}
+
+bool animationComponent(const cgltf_accessor &a) {
+  if (a.component_type == cgltf_component_type_r_32f) return !a.normalized;
+  return a.normalized && (a.component_type == cgltf_component_type_r_8 ||
+      a.component_type == cgltf_component_type_r_8u ||
+      a.component_type == cgltf_component_type_r_16 ||
+      a.component_type == cgltf_component_type_r_16u);
+}
+
+AnimationPath animationPath(cgltf_animation_path_type path) {
+  switch (path) {
+  case cgltf_animation_path_type_translation: return AnimationPath::Translation;
+  case cgltf_animation_path_type_rotation: return AnimationPath::Rotation;
+  case cgltf_animation_path_type_scale: return AnimationPath::Scale;
+  case cgltf_animation_path_type_weights: return AnimationPath::Weights;
+  default: return AnimationPath::Unknown;
+  }
+}
+
+void copyAnimations(const cgltf_data &d, Asset &asset, Budget &budget,
+                    Result &result) {
+  budget.resize(asset.animations, d.animations_count);
+  for (std::size_t i = 0; i < d.animations_count; ++i) {
+    const auto &source = d.animations[i];
+    auto &out = asset.animations[i];
+    out.name = budget.string(source.name);
+    require(source.samplers_count && source.channels_count,
+            "Animation must contain samplers and channels.");
+    if (source.samplers_count > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+      fail(Status::ResourceLimit, "GLB animation sampler index limit exceeded.");
+    budget.resize(out.samplers, source.samplers_count);
+    for (std::size_t j = 0; j < source.samplers_count; ++j) {
+      const auto &s = source.samplers[j];
+      auto &sampler = out.samplers[j];
+      require(s.input && s.output, "Animation sampler is missing an accessor.");
+      require(s.input->type == cgltf_type_scalar &&
+                  s.input->component_type == cgltf_component_type_r_32f &&
+                  !s.input->normalized && s.input->has_min && s.input->has_max,
+              "Animation times must be FLOAT SCALAR with min/max bounds.");
+      sampler.times = copyValues(*s.input, budget);
+      for (std::size_t k = 0; k < sampler.times.size(); ++k)
+        require(sampler.times[k] >= 0.0f &&
+                    (!k || sampler.times[k] > sampler.times[k - 1]),
+                "Animation times must be nonnegative and strictly increasing.");
+      switch (s.interpolation) {
+      case cgltf_interpolation_type_linear:
+        sampler.interpolation = AnimationInterpolation::Linear; break;
+      case cgltf_interpolation_type_step:
+        sampler.interpolation = AnimationInterpolation::Step; break;
+      case cgltf_interpolation_type_cubic_spline:
+        sampler.interpolation = AnimationInterpolation::CubicSpline;
+        require(sampler.times.size() >= 2, "CUBICSPLINE needs at least two keys.");
+        break;
+      default: fail(Status::Invalid, "Unknown animation interpolation.");
+      }
+      sampler.outputComponents = static_cast<int>(cgltf_num_components(s.output->type));
+      sampler.values = copyValues(*s.output, budget);
+      out.firstKeyTime = j ? std::min(out.firstKeyTime, sampler.times.front()) : sampler.times.front();
+      out.lastKeyTime = std::max(out.lastKeyTime, sampler.times.back());
+    }
+    budget.resize(out.channels, source.channels_count);
+    std::vector<std::uint64_t> targets;
+    budget.add(source.channels_count, sizeof(std::uint64_t));
+    targets.reserve(source.channels_count);
+    for (std::size_t j = 0; j < source.channels_count; ++j) {
+      const auto &channel = source.channels[j];
+      auto &target = out.channels[j];
+      require(channel.sampler != nullptr, "Animation channel has no sampler.");
+      target.sampler = indexOf(channel.sampler, source.samplers);
+      target.node = indexOf(channel.target_node, d.nodes);
+      target.path = animationPath(channel.target_path);
+      // glTF permits channels without a node; optional extension targets can
+      // also be unknown to cgltf. Preserve their ordinal/sampler, never route
+      // them into an unrelated node or claim extension evaluation.
+      if (target.node == NoIndex || target.path == AnimationPath::Unknown) {
+        warn(result, "Animation channel without a supported node target is retained but ignored.");
+        continue;
+      }
+      targets.push_back((std::uint64_t(target.node) << 3) |
+                        static_cast<std::uint64_t>(target.path));
+      const auto &a = *channel.sampler->output;
+      const auto &sampler = out.samplers[target.sampler];
+      const bool weights = target.path == AnimationPath::Weights;
+      const bool rotation = target.path == AnimationPath::Rotation;
+      if (weights) {
+        const auto *mesh = channel.target_node->mesh;
+        require(mesh && mesh->primitives_count && mesh->primitives[0].targets_count,
+                "Weight animation requires a mesh with morph targets.");
+        target.components = mesh->primitives[0].targets_count;
+        for (std::size_t p = 0; p < mesh->primitives_count; ++p)
+          require(mesh->primitives[p].targets_count == target.components,
+                  "Morph target counts disagree within an animated mesh.");
+        require(a.type == cgltf_type_scalar && animationComponent(a),
+                "Morph weight animation output type is invalid.");
+        warn(result, "Morph weight keys are retained; target deltas and morph evaluation remain unsupported.");
+      } else {
+        target.components = rotation ? 4 : 3;
+        require(!asset.nodes[target.node].hasMatrix,
+                "TRS animation cannot target a matrix-authored node.");
+        require(a.type == (rotation ? cgltf_type_vec4 : cgltf_type_vec3) &&
+                    (rotation ? animationComponent(a) :
+                     (a.component_type == cgltf_component_type_r_32f && !a.normalized)),
+                "Node animation output type does not match the target property.");
+      }
+      const bool cubic = sampler.interpolation == AnimationInterpolation::CubicSpline;
+      const auto samples = product(sampler.times.size(), cubic ? 3 : 1);
+      require(sampler.values.size() == product(samples, target.components),
+              "Animation output count does not match keys, tangents and target components.");
+      if (rotation) {
+        for (std::size_t k = 0; k < sampler.times.size(); ++k) {
+          const auto offset = (k * (cubic ? 3 : 1) + (cubic ? 1 : 0)) * 4;
+          double norm = 0.0;
+          for (int c = 0; c < 4; ++c)
+            norm += double(sampler.values[offset + c]) * sampler.values[offset + c];
+          require(norm > 0.0, "Animation contains a zero rotation quaternion.");
+        }
+      }
+    }
+    std::sort(targets.begin(), targets.end());
+    require(std::adjacent_find(targets.begin(), targets.end()) == targets.end(),
+            "Animation contains duplicate node/property targets.");
+  }
+  asset.animationCount = asset.animations.size();
 }
 
 void copyScenes(const cgltf_data &d, Asset &asset, Budget &budget, Result &result) {
@@ -667,7 +913,8 @@ Result load(const std::filesystem::path &path, const Limits &limits) {
              std::string(data->extensions_used[i]));
     for (const auto count : {data->nodes_count, data->meshes_count,
               data->materials_count, data->scenes_count,
-              data->images_count, data->textures_count})
+              data->images_count, data->textures_count,
+              data->skins_count, data->animations_count})
       if (count > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         fail(Status::ResourceLimit, "GLB object index limit exceeded.");
     validateBuffers(*data);
@@ -678,16 +925,16 @@ Result load(const std::filesystem::path &path, const Limits &limits) {
             "cgltf validation failed: invalid GLB references, geometry, or hierarchy.");
     copyMaterials(*data, *asset, decoded, result);
     copyMeshes(*data, *asset, decoded, result);
+    copySkins(*data, *asset, decoded);
+    copyAnimations(*data, *asset, decoded, result);
     copyScenes(*data, *asset, decoded, result);
     if (std::none_of(asset->meshes.begin(), asset->meshes.end(),
                     [](const Mesh &mesh) { return !mesh.primitives.empty(); }))
       warn(result, "No mesh geometry is present in this GLB.");
-    asset->animationCount = data->animations_count;
-    asset->skinCount = data->skins_count;
     if (asset->animationCount)
-      warn(result, "Animations are not evaluated; default node transforms retained.");
+      warn(result, "Animation keys retained but not evaluated; default node transforms retained.");
     if (asset->skinCount)
-      warn(result, "Skinning is not evaluated; undeformed mesh geometry retained.");
+      warn(result, "Skin data retained but not evaluated; undeformed mesh geometry retained.");
     if (data->cameras_count || data->lights_count)
       warn(result, "Embedded cameras/lights are not retained in this loader stage.");
     result.asset = std::move(asset);
@@ -720,6 +967,26 @@ const char *statusName(Status status) {
   case Status::Unsupported: return "unsupported";
   case Status::IoError: return "io-error";
   case Status::ResourceLimit: return "resource-limit";
+  }
+  return "unknown";
+}
+
+const char *interpolationName(AnimationInterpolation interpolation) {
+  switch (interpolation) {
+  case AnimationInterpolation::Linear: return "LINEAR";
+  case AnimationInterpolation::Step: return "STEP";
+  case AnimationInterpolation::CubicSpline: return "CUBICSPLINE";
+  }
+  return "unknown";
+}
+
+const char *animationPathName(AnimationPath path) {
+  switch (path) {
+  case AnimationPath::Translation: return "translation";
+  case AnimationPath::Rotation: return "rotation";
+  case AnimationPath::Scale: return "scale";
+  case AnimationPath::Weights: return "weights";
+  case AnimationPath::Unknown: return "unknown";
   }
   return "unknown";
 }
