@@ -4,6 +4,9 @@
 #include "../threepointlightfx.cpp"
 #include "../../glb/tests/glbfixture.h"
 #include "tparamcontainer.h"
+#include "toonz/scenefx.h"
+#include "toonz/toonzscene.h"
+#include "toonz/txsheet.h"
 #include "toonz/txshzeraryfxcolumn.h"
 
 #include <QCoreApplication>
@@ -78,6 +81,7 @@ int main(int argc, char **argv) {
     check(directory.isValid(), "temporary directory unavailable");
     const QString path = directory.filePath("three-point.glb");
     writeModel(path);
+    ToonzScene scene;
 
     // FX ports add/release references. Never connect stack-allocated FX.
     TFxP modelOwner = new GlbModelFx;
@@ -90,6 +94,7 @@ int main(int argc, char **argv) {
     TXshZeraryFxColumnP modelColumn = new TXshZeraryFxColumn(1);
     auto *columnFx = modelColumn->getZeraryColumnFx();
     columnFx->setZeraryFx(&model);
+    scene.getXsheet()->insertColumn(0, modelColumn.getPointer());
 
     TFxP lightOwner = new ThreePointLightFx;
     auto &light = *static_cast<ThreePointLightFx *>(lightOwner.getPointer());
@@ -141,12 +146,17 @@ int main(int argc, char **argv) {
               columnFx->getOutputConnection(0) == port && center(light) == white,
           "column ownership or wrapped-source lighting is incorrect");
 
-    // FX Settings and rendering clone the graph. The cloned source must also
-    // resolve to 3D without changing the original schematic column connection.
-    TFxP clonedOwner = light.clone(true);
+    // Follow FX Settings: expand columns through the production scene builder
+    // before recursively cloning the render tree. A raw column's generic FX
+    // clone does not copy its contained zerary FX and is not this UI path.
+    TFxP built = buildSceneFx(&scene, 0.0, lightOwner, false);
+    check(bool(built), "FX Settings scene expansion lost the lighting node");
+    TFxP clonedOwner = built->clone(true);
     auto *cloned = dynamic_cast<ThreePointLightFx *>(clonedOwner.getPointer());
     check(cloned && center(*cloned) == white && port->getFx() == columnFx,
-          "recursive lighting clone lost its GLB source");
+          "scene expansion or recursive lighting clone lost its GLB source");
+    check(!buildSceneFx(&scene, 1.0, lightOwner, false),
+          "lighting ignored the GLB column's exposure range");
 
     // Rejection must leave the existing valid connection intact.
     TFxP emptyColumn = new TZeraryColumnFx;
@@ -185,8 +195,8 @@ int main(int argc, char **argv) {
               center(light).m == 0,
           "disconnect did not release the column or clear the output");
 
-    std::cout << "PASS: Three-Point Light, raw/column sources, recursive clone, "
-                 "connection preservation, colored lighting and disconnect\n";
+    std::cout << "PASS: Three-Point Light, raw/column sources, FX Settings scene "
+                 "expansion, render clone, exposure, rejection and disconnect\n";
     return 0;
   } catch (const TException &) {
     std::cerr << "FAIL threepointlightfx: unexpected FX exception\n";
