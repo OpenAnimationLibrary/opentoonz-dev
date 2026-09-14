@@ -313,9 +313,9 @@ void testEmbeddedAnimation(const QString &path) {
 
   parameter<TIntEnumParam>(fx, "animationMode")->setValue(1);
   parameter<TStringParam>(fx, "animationClip")->setValue(L"Move");
-  parameter<TDoubleParam>(fx, "playbackFps")->setValue(24.0);
-  parameter<TDoubleParam>(fx, "timeOffset")->setValue(0.0);
-  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(1.0);
+  parameter<TDoubleParam>(fx, "playbackFps")->setValue(0, 24.0);
+  parameter<TDoubleParam>(fx, "timeOffset")->setValue(0, 0.0);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, 1.0);
   parameter<TIntEnumParam>(fx, "loopMode")->setValue(0);
 
   require(fx.doGetBBox(0, bbox, settings), "Animation start disappeared");
@@ -334,13 +334,13 @@ void testEmbeddedAnimation(const QString &path) {
   expectValue(bbox.x0, -50); expectValue(bbox.x1, 150);
 
   parameter<TIntEnumParam>(fx, "loopMode")->setValue(0);
-  parameter<TDoubleParam>(fx, "timeOffset")->setValue(1.0);
-  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(-1.0);
+  parameter<TDoubleParam>(fx, "timeOffset")->setValue(0, 1.0);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, -1.0);
   require(fx.doGetBBox(12, bbox, settings), "Reverse animation disappeared");
   expectValue(bbox.x0, -50); expectValue(bbox.x1, 150);
 
   const auto alias = fx.getAlias(12, settings);
-  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(-2.0);
+  parameter<TDoubleParam>(fx, "animationSpeed")->setValue(0, -2.0);
   require(alias != fx.getAlias(12, settings), "Playback controls missing from cache alias");
 
   parameter<TStringParam>(fx, "animationClip")->setValue(L"missing");
