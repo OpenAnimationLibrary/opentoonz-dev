@@ -1,6 +1,6 @@
 <fxlayout>
   <page name="Model">
-    <label>"Read-only GLB base geometry; no deformation."</label>
+    <label>"Read-only GLB source. Static pose is the compatibility default."</label>
     <control>modelFile</control>
     <separator label="Instance Transform"/>
     <control>positionX</control>
@@ -10,6 +10,17 @@
     <control>rotationY</control>
     <control>rotationZ</control>
     <control>scale</control>
+  </page>
+  <page name="Animation">
+    <label>"Play embedded node/bone animation. Blank Clip uses the first clip; use #N for duplicate or unnamed clips."</label>
+    <control>animationMode</control>
+    <vbox modeSensitive="animationMode" mode="1">
+      <control>animationClip</control>
+      <control>playbackFps</control>
+      <control>timeOffset</control>
+      <control>animationSpeed</control>
+      <control>loopMode</control>
+    </vbox>
   </page>
   <page name="Camera">
     <label>"Camera looks from +Z toward the origin. Far Clip must exceed Near Clip."</label>
