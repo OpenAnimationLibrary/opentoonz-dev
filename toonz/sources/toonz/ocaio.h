@@ -66,6 +66,12 @@ public:
   void build(ToonzScene *scene, TXsheet *xsheet, QString name, QString path,
              bool useEXR, bool vectorAsSVG, bool exportReferences);
   bool isEmpty() { return m_layers.isEmpty(); }
+  const QJsonArray &layers() const { return m_layers; }
+  const QMap<QString, OCAAsset> &assets() const { return m_assets; }
+  double frameRate() const { return m_framerate; }
+  int frameCount() const { return m_endTime - m_startTime; }
+  int width() const { return m_width; }
+  int height() const { return m_height; }
 };
 
 class OCAInputData : public OCAData {
