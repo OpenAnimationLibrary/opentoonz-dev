@@ -2,6 +2,7 @@
 #include <cwctype>
 
 #include "iocommand.h"
+#include "importpdf.h"
 
 // Toonz includes
 #include "menubarcommandids.h"
@@ -2527,6 +2528,12 @@ int IoCmd::loadResources(LoadResourceArguments &args, bool updateRecentFile,
     LoadResourceArguments::ResourceData rd(args.resourceDatas[r]);
     TFilePath path   = rd.m_path;
     QString origName = path.withoutParentDir().getQString();
+
+    if (path.getType() == "pdf") {
+      TFilePath convertedPath;
+      if (!convertPdfToPngLevel(path, convertedPath)) continue;
+      path = convertedPath;
+    }
 
     if (!path.isLevelName())
       path = TFilePath(path.getLevelNameW()).withParentDir(path.getParentDir());
