@@ -17,6 +17,12 @@ Vec cross(Vec a, Vec b) {
           a.x * b.y - a.y * b.x};
 }
 double dot(Vec a, Vec b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+Vec normalized(Vec v) {
+  const double length = std::sqrt(dot(v, v));
+  return length > 0 ? Vec{v.x / length, v.y / length, v.z / length}
+                    : Vec{0, 0, 1};
+}
+double saturate(double value) { return std::clamp(value, 0.0, 1.0); }
 void require(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
 }
@@ -66,7 +72,6 @@ std::vector<InfluenceSet> influenceSets(const Primitive &primitive) {
   return sets;
 }
 
-// Sutherland-Hodgman clipping in camera space, before perspective division.
 std::vector<Vec> clip(const std::vector<Vec> &polygon, double distance, bool near) {
   std::vector<Vec> out;
   if (polygon.empty()) return out;
@@ -97,6 +102,7 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          farClip == b.farClip && perspective == b.perspective &&
          headlight == b.headlight && wireframe == b.wireframe &&
          materialColors == b.materialColors && colors == b.colors &&
+         useMaterialRig == b.useMaterialRig && material == b.material &&
          useLightingRig == b.useLightingRig && lighting == b.lighting &&
          animation == b.animation && sourceSeconds == b.sourceSeconds;
 }
@@ -128,6 +134,11 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
           "Invalid GLB projection height or field of view.");
   require(o.animation == NoIndex || std::isfinite(o.sourceSeconds),
           "GLB animation time must be finite.");
+  if (o.useMaterialRig)
+    require(std::isfinite(o.material.metallicScale) && o.material.metallicScale >= 0.0 &&
+                std::isfinite(o.material.roughnessScale) && o.material.roughnessScale >= 0.0 &&
+                std::isfinite(o.material.exposure) && o.material.exposure >= 0.0,
+            "3D material settings must be finite and nonnegative.");
 
   RenderScene out;
   require(o.colors.empty() || o.colors.size() == asset.materials.size() + 1,
@@ -210,6 +221,8 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
               "Invalid GLB material index.");
       const std::size_t material = p.material == NoIndex ? asset.materials.size() : p.material;
       const auto base = o.colors.empty() ? materialColor(asset, material) : o.colors[material];
+      const Material *sourceMaterial = material < asset.materials.size()
+                                           ? &asset.materials[material] : nullptr;
       if (p.mode < 4 || p.mode > 6) { skipped = true; continue; }
       const auto pos = std::find_if(p.attributes.begin(), p.attributes.end(),
           [](const Attribute &a) { return a.semantic == "POSITION"; });
@@ -275,30 +288,86 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
             for (auto &v : color) v = linearToSrgb(srgbToLinear(v) * gray);
         }
 
-        if (o.useLightingRig) {
-          // The renderer is intentionally two-sided. Orient the face normal
-          // toward the camera before evaluating camera-relative diffuse lights.
-          if (viewLength > 0.0 && dot(normal, view) < 0.0)
-            normal = {-normal.x, -normal.y, -normal.z};
-          normal = {normal.x / length, normal.y / length, normal.z / length};
-          const std::array<float, 3> surface =
-              o.materialColors ? base : std::array<float, 3>{{0.75f, 0.75f, 0.75f}};
+        Vec n = normalized(normal);
+        const Vec v = normalized(view);
+        if (dot(n, v) < 0.0) n = {-n.x, -n.y, -n.z};
+        const auto shader = o.useMaterialRig ? o.material.shader : MaterialShader::Source;
+        if (shader == MaterialShader::Normal) {
+          color = {{float(n.x * .5 + .5), float(n.y * .5 + .5),
+                    float(n.z * .5 + .5)}};
+        } else if (shader == MaterialShader::Matcap) {
+          const double rim = std::pow(1.0 - saturate(dot(n, v)), 2.0);
+          color = {{float(saturate(.18 + .72 * (n.x * .5 + .5) + .2 * rim)),
+                    float(saturate(.20 + .68 * (n.y * .5 + .5) + .12 * rim)),
+                    float(saturate(.24 + .62 * (n.z * .5 + .5) + .08 * rim))}};
+        } else if (shader == MaterialShader::MetallicRoughness) {
+          const double metallic = saturate((sourceMaterial ? sourceMaterial->metallic : 1.0) *
+                                           o.material.metallicScale);
+          const double roughness = std::clamp(
+              (sourceMaterial ? sourceMaterial->roughness : 1.0) *
+                  o.material.roughnessScale,
+              0.045, 1.0);
+          std::array<double, 3> sum{{0, 0, 0}};
+          const double ambient = o.useLightingRig ? o.lighting.ambient : 0.08;
+          for (int channel = 0; channel < 3; ++channel)
+            sum[channel] = ambient * srgbToLinear(base[channel]);
+
+          auto applyLight = [&](Vec l, const std::array<float, 3> &lightColor,
+                                double intensity) {
+            l = normalized(l);
+            const double ndl = saturate(dot(n, l));
+            if (ndl <= 0.0) return;
+            const Vec h = normalized({v.x + l.x, v.y + l.y, v.z + l.z});
+            const double ndv = std::max(1e-4, saturate(dot(n, v)));
+            const double ndh = saturate(dot(n, h));
+            const double vdh = saturate(dot(v, h));
+            const double alpha = roughness * roughness;
+            const double alpha2 = alpha * alpha;
+            const double dterm = alpha2 /
+                (Pi * std::pow(ndh * ndh * (alpha2 - 1.0) + 1.0, 2.0));
+            const double k = std::pow(roughness + 1.0, 2.0) / 8.0;
+            const double g = ndv / (ndv * (1.0 - k) + k) *
+                             ndl / (ndl * (1.0 - k) + k);
+            for (int channel = 0; channel < 3; ++channel) {
+              const double albedo = srgbToLinear(base[channel]);
+              const double f0 = .04 * (1.0 - metallic) + albedo * metallic;
+              const double fresnel = f0 + (1.0 - f0) * std::pow(1.0 - vdh, 5.0);
+              const double specular = dterm * g * fresnel /
+                                      (4.0 * ndv * std::max(ndl, 1e-4));
+              const double diffuse = (1.0 - fresnel) * (1.0 - metallic) *
+                                     albedo / Pi;
+              sum[channel] += intensity * srgbToLinear(lightColor[channel]) *
+                              (diffuse + specular) * ndl;
+            }
+          };
+
+          if (o.useLightingRig) {
+            for (const auto &source : o.lighting.lights)
+              applyLight({source.direction[0], source.direction[1], source.direction[2]},
+                         source.color, source.intensity);
+            for (double &value : sum) value *= o.lighting.master;
+          } else {
+            applyLight(v, {{1, 1, 1}}, 1.0);
+          }
+          for (int channel = 0; channel < 3; ++channel) {
+            const double mapped = 1.0 - std::exp(-sum[channel] * o.material.exposure);
+            color[channel] = linearToSrgb(float(mapped));
+          }
+        } else if (o.useLightingRig) {
           std::array<double, 3> illumination{{o.lighting.ambient,
                                               o.lighting.ambient,
                                               o.lighting.ambient}};
           for (const auto &source : o.lighting.lights) {
-            const double l2 = source.direction[0] * source.direction[0] +
-                              source.direction[1] * source.direction[1] +
-                              source.direction[2] * source.direction[2];
-            const double invLength = 1.0 / std::sqrt(l2);
-            const Vec direction{source.direction[0] * invLength,
-                                source.direction[1] * invLength,
-                                source.direction[2] * invLength};
-            const double diffuse = std::max(0.0, dot(normal, direction)) *
+            const Vec direction = normalized({source.direction[0],
+                                              source.direction[1],
+                                              source.direction[2]});
+            const double diffuse = std::max(0.0, dot(n, direction)) *
                                    source.intensity;
             for (int channel = 0; channel < 3; ++channel)
               illumination[channel] += diffuse * srgbToLinear(source.color[channel]);
           }
+          const std::array<float, 3> surface =
+              o.materialColors ? base : std::array<float, 3>{{0.75f, 0.75f, 0.75f}};
           for (int channel = 0; channel < 3; ++channel) {
             const double linear = srgbToLinear(surface[channel]) *
                                   illumination[channel] * o.lighting.master;
@@ -308,7 +377,6 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
 
         const auto polygon = clip(clip({a, b, c}, o.nearClip, true), o.farClip, false);
         for (std::size_t j = 1; j + 1 < polygon.size(); ++j) {
-          // Include both old and new allocations during vector growth.
           require(out.triangles.size() < MemoryLimit / (3 * sizeof(RenderTriangle)),
                   "GLB projected geometry exceeds the 256 MiB render budget.");
           RenderTriangle triangle{{{project(polygon[0]), project(polygon[j]), project(polygon[j + 1])}},
@@ -316,12 +384,12 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
           if (std::abs(edge(triangle.vertices[0], triangle.vertices[1],
                             triangle.vertices[2].x, triangle.vertices[2].y)) < 1e-12) continue;
           if (out.triangles.empty()) {
-            const auto &v = triangle.vertices[0];
-            out.bounds = {{v.x, v.y, v.x, v.y}};
+            const auto &pv = triangle.vertices[0];
+            out.bounds = {{pv.x, pv.y, pv.x, pv.y}};
           }
-          for (const auto &v : triangle.vertices) {
-            out.bounds[0] = std::min(out.bounds[0], v.x); out.bounds[1] = std::min(out.bounds[1], v.y);
-            out.bounds[2] = std::max(out.bounds[2], v.x); out.bounds[3] = std::max(out.bounds[3], v.y);
+          for (const auto &pv : triangle.vertices) {
+            out.bounds[0] = std::min(out.bounds[0], pv.x); out.bounds[1] = std::min(out.bounds[1], pv.y);
+            out.bounds[2] = std::max(out.bounds[2], pv.x); out.bounds[3] = std::max(out.bounds[3], pv.y);
           }
           out.triangles.push_back(triangle);
         }
@@ -369,9 +437,9 @@ std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &t
       for (int x = left; x <= right; ++x) for (int s = 0; s < 4; ++s) {
         const double px = x + 0.25 + 0.5 * (s & 1), py = y + 0.25 + 0.5 * (s >> 1);
         const double e0 = edge(v[0], v[1], px, py), e1 = edge(v[1], v[2], px, py), e2 = edge(v[2], v[0], px, py);
-        const double a = e1 / area, b = e2 / area, c = e0 / area;
-        if (a < -1e-12 || b < -1e-12 || c < -1e-12) continue;
-        const double depth = a * v[0].depth + b * v[1].depth + c * v[2].depth;
+        const double aa = e1 / area, bb = e2 / area, cc = e0 / area;
+        if (aa < -1e-12 || bb < -1e-12 || cc < -1e-12) continue;
+        const double depth = aa * v[0].depth + bb * v[1].depth + cc * v[2].depth;
         Sample &sample = samples[(std::size_t(y) * tile.width + x) * 4 + s];
         const bool line = !scene.wireframe ||
             (triangle.edges[0] && std::abs(e0) <= 0.65 * lengths[0]) ||
