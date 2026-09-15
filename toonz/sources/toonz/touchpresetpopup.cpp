@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
+#include <QAbstractButton>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QMenu>
@@ -44,6 +45,11 @@ QString stripAccel(QString text) {
   text.replace(QRegularExpression("&([^& ])"), "\\1");
   text.replace("&&", "&");
   return text;
+}
+
+void avoidIconFocusStuck(QAbstractButton *btn) {
+  if (!btn) return;
+  btn->setFocusPolicy(Qt::NoFocus);
 }
 
 QString commandLabel(const QString &id) {
@@ -77,6 +83,7 @@ TouchPresetPopup::TouchPresetPopup()
   m_presetCombo = new QComboBox(this);
   m_useBtn = new QPushButton(tr("Use"), this);
   m_useBtn->setIcon(createQIcon("touch_preset_use"));
+  avoidIconFocusStuck(m_useBtn);
   m_useBtn->setContextMenuPolicy(Qt::CustomContextMenu);
   m_autoUsePresetAction =
       new QAction(tr("Auto Use on selection"), this);
@@ -89,27 +96,35 @@ TouchPresetPopup::TouchPresetPopup()
   m_newBtn = new QPushButton(tr("New"), this);
   m_newBtn->setToolTip(tr("Create a new touch preset"));
   m_newBtn->setIcon(createQIcon("touch_preset_new"));
+  avoidIconFocusStuck(m_newBtn);
   m_dupBtn = new QPushButton(tr("Duplicate"), this);
   m_dupBtn->setToolTip(tr("Duplicate the current touch preset"));
   m_dupBtn->setIcon(createQIcon("touch_preset_duplicate"));
+  avoidIconFocusStuck(m_dupBtn);
   m_renameBtn = new QPushButton(tr("Rename"), this);
   m_renameBtn->setToolTip(tr("Rename the current touch preset"));
   m_renameBtn->setIcon(createQIcon("touch_preset_rename"));
+  avoidIconFocusStuck(m_renameBtn);
   m_deleteBtn = new QPushButton(tr("Delete"), this);
   m_deleteBtn->setToolTip(tr("Delete Current Preset"));
   m_deleteBtn->setIcon(createQIcon("touch_preset_delete"));
+  avoidIconFocusStuck(m_deleteBtn);
   m_resetBtn = new QPushButton(tr("Reset"), this);
   m_resetBtn->setToolTip(tr("Reset the current touch preset to defaults"));
   m_resetBtn->setIcon(createQIcon("touch_preset_reset"));
+  avoidIconFocusStuck(m_resetBtn);
   m_loadPresetBtn = new QPushButton(tr("Load"), this);
   m_loadPresetBtn->setToolTip(tr("Load a touch preset from file"));
   m_loadPresetBtn->setIcon(createQIcon("touch_preset_load"));
+  avoidIconFocusStuck(m_loadPresetBtn);
   m_savePresetBtn = new QPushButton(tr("Save As"), this);
   m_savePresetBtn->setToolTip(tr("Save current touch preset as a new preset"));
   m_savePresetBtn->setIcon(createQIcon("touch_preset_saveas"));
+  avoidIconFocusStuck(m_savePresetBtn);
   m_exportPresetBtn = new QPushButton(tr("Export Current Touch Preset"), this);
   m_exportPresetBtn->setToolTip(tr("Export Current Touch Preset"));
   m_exportPresetBtn->setIcon(createQIcon("touch_preset_export"));
+  avoidIconFocusStuck(m_exportPresetBtn);
 
   m_gestureSearchEdit = new QLineEdit(this);
   m_commandSearchEdit = new QLineEdit(this);
@@ -119,6 +134,7 @@ TouchPresetPopup::TouchPresetPopup()
   m_optionsBtn->setToolTip(tr("Options"));
   m_optionsBtn->setPopupMode(QToolButton::InstantPopup);
   m_optionsBtn->setAutoRaise(true);
+  m_optionsBtn->setFocusPolicy(Qt::NoFocus);
   buildOptionsMenu();
   m_optionsBtn->setMenu(m_optionsMenu);
   m_noSearchLabel =

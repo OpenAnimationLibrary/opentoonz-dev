@@ -430,6 +430,34 @@ QString pickerStyleSheet(int wheelDiam, int edgeCircle, int opacityPercent,
       .arg(tok.textChecked);
 }
 
+void paintOpenToonzClassicControls(QPainter &p, const QWidget *panel,
+                                   const PickerThemeTokens &tok, int op) {
+  const qreal rad = 10.0;
+  for (QPushButton *btn : panel->findChildren<QPushButton *>()) {
+    if (!btn->isVisible()) continue;
+    const QString role = btn->objectName();
+    const bool edge = role == QLatin1String("TouchPresetPickerEdge");
+    const bool strip = role == QLatin1String("TouchPresetPickerStrip");
+    if (!edge && !strip) continue;
+    const bool sel = btn->isChecked();
+    const bool en  = btn->isEnabled();
+    QColor fill =
+        sel ? QColor(tok.sr, tok.sg, tok.sb, alphaFromOpacity(255, op))
+            : QColor(tok.g1r, tok.g1g, tok.g1b, alphaFromOpacity(255, op));
+    if (!en) fill.setAlpha(alphaFromOpacity(90, op));
+    const QColor line =
+        (sel || (edge && en))
+            ? QColor(tok.bhr, tok.bhg, tok.bhb, alphaFromOpacity(220, op))
+            : QColor(tok.br, tok.bg, tok.bb, alphaFromOpacity(110, op));
+    p.setPen(QPen(line, sel && strip ? 2 : 1));
+    p.setBrush(fill);
+    if (edge)
+      p.drawEllipse(QRectF(btn->geometry()));
+    else
+      p.drawPath(roundRectPath(QRectF(btn->geometry()), rad));
+  }
+}
+
 QString elidedName(const QFont &font, const QString &name, int maxWidth) {
   return QFontMetrics(font).elidedText(name, Qt::ElideRight, maxWidth);
 }
@@ -679,6 +707,13 @@ void TouchPresetPickerPanel::applyWheelGeometry(const QStringList &pageNames,
   next->setText(QStringLiteral(">"));
   prev->setEnabled(canPrev);
   next->setEnabled(canNext);
+  const bool flatOt =
+      !isGhostLook() && TouchPresetManager::instance()->pickerTheme() ==
+                           TouchPresetPickerTheme::OpenToonz;
+  prev->setFlat(flatOt);
+  next->setFlat(flatOt);
+  prev->setAttribute(Qt::WA_TranslucentBackground, flatOt);
+  next->setAttribute(Qt::WA_TranslucentBackground, flatOt);
   prev->move(kOuterPad, cy);
   next->move(width() - m_edgeCircle - kOuterPad, cy);
   prev->show();
@@ -836,32 +871,7 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
       return;
     }
     if (mgr->pickerTheme() != TouchPresetPickerTheme::OpenToonz) return;
-    const qreal rad = 10.0;
-    for (QPushButton *btn : findChildren<QPushButton *>()) {
-      if (!btn->isVisible()) continue;
-      const QString role = btn->objectName();
-      const bool edge =
-          role == QLatin1String("TouchPresetPickerEdge");
-      const bool strip =
-          role == QLatin1String("TouchPresetPickerStrip");
-      if (!edge && !strip) continue;
-      const bool sel = btn->isChecked();
-      const bool en  = btn->isEnabled();
-      QColor fill =
-          sel ? QColor(tok.sr, tok.sg, tok.sb, alphaFromOpacity(255, op))
-              : QColor(tok.g1r, tok.g1g, tok.g1b, alphaFromOpacity(255, op));
-      if (!en) fill.setAlpha(alphaFromOpacity(90, op));
-      const QColor line =
-          (sel || (edge && en))
-              ? QColor(tok.bhr, tok.bhg, tok.bhb, alphaFromOpacity(220, op))
-              : QColor(tok.br, tok.bg, tok.bb, alphaFromOpacity(110, op));
-      p.setPen(QPen(line, sel && strip ? 2 : 1));
-      p.setBrush(fill);
-      if (edge)
-        p.drawEllipse(QRectF(btn->geometry()));
-      else
-        p.drawPath(roundRectPath(QRectF(btn->geometry()), rad));
-    }
+    paintOpenToonzClassicControls(p, this, tok, op);
     return;
   }
 
@@ -1009,6 +1019,10 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
   } else if (selIndex >= 0) {
     paintSliceRings(selIndex, true);
   }
+
+  if (!isGhostLook() &&
+      mgr->pickerTheme() == TouchPresetPickerTheme::OpenToonz)
+    paintOpenToonzClassicControls(p, this, tok, op);
 
   // Close control for now; the center may later host a logo or command.
   const int arm    = qMax(4, inner / 16);
