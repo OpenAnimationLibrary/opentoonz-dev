@@ -114,7 +114,12 @@ public:
       , m_rimElevation(35.0)
       , m_rimIntensity(65.0)
       , m_rimColor(TPixel32::White) {
-    addInputPort("GLB Model", m_source);
+    // FX scene serialization tokenizes port names at whitespace. The original
+    // display-style name "GLB Model" was saved as "GLB", then failed to reload
+    // because no port with that serialized name existed. Keep the stable port
+    // identifier whitespace-free; the schematic can describe the source type
+    // separately from this persistence key.
+    addInputPort("GLB", m_source);
 
     bindParam(this, "masterIntensity", m_masterIntensity);
     bindParam(this, "ambient", m_ambient);
@@ -157,8 +162,6 @@ public:
       bbox = TRectD(b[0], b[1], b[2], b[3]);
       return true;
     } catch (const std::exception &) {
-      // Preserve an actionable compute error instead of allowing the scheduler
-      // to suppress the node after a failed bounding-box probe.
       bbox = TRectD(-500, -500, 500, 500);
       return true;
     }
