@@ -1,0 +1,20 @@
+<fxlayout>
+  <page name="Duplicate">
+    <label>"A:M Duplicator-inspired 3D array. Each copy cumulatively applies the step transform around the pivot."</label>
+    <control>count</control>
+    <separator label="Translate per Copy"/>
+    <control>translateX</control>
+    <control>translateY</control>
+    <control>translateZ</control>
+    <separator label="Rotate per Copy"/>
+    <control>rotateX</control>
+    <control>rotateY</control>
+    <control>rotateZ</control>
+    <separator label="Scale per Copy"/>
+    <control>scale</control>
+    <separator label="Pivot / Sweep Center"/>
+    <control>pivotX</control>
+    <control>pivotY</control>
+    <control>pivotZ</control>
+  </page>
+</fxlayout>

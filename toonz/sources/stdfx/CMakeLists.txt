@@ -116,6 +116,7 @@ set(SOURCES
     despecklefx.cpp
     diamondgradientfx.cpp
     dissolvefx.cpp
+    duplicate3dfx.cpp
     embossfx.cpp
     erodilatefx.cpp
     externalpalettefx.cpp
@@ -192,7 +193,6 @@ set(SOURCES
     igs_hsv_noise_in_camera.cpp
     igs_level_auto.cpp
     igs_level_auto_in_camera.cpp
-    igs_levels.cpp
     igs_line_blur.cpp
     igs_math_random.cpp
     igs_maxmin.cpp
