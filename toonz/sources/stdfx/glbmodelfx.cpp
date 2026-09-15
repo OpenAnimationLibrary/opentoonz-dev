@@ -62,7 +62,6 @@ class GlbModelFx final : public TStandardZeraryFx,
   TIntEnumParamP m_colorMode;
   TParamSetP m_materialColors;
 
-  // Animation defaults preserve the pre-playback behavior for existing scenes.
   TIntEnumParamP m_animationMode;
   TStringParamP m_animationClip;
   TDoubleParamP m_playbackFps, m_timeOffset, m_animationSpeed;
@@ -77,7 +76,6 @@ class GlbModelFx final : public TStandardZeraryFx,
     std::shared_ptr<const otglb::RenderScene> projected;
     bool warned = false;
   };
-  // Render clones share owned data, but hold the lock only while preparing it.
   std::shared_ptr<Cache> m_cache = std::make_shared<Cache>();
 
   QString fileRevision() const {
@@ -190,7 +188,7 @@ class GlbModelFx final : public TStandardZeraryFx,
 
   std::shared_ptr<const otglb::RenderScene> projected(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const {
+      const T3DRenderContext &context = T3DRenderContext()) const {
     if (m_modelFile->getValue().empty()) return {};
     auto settings = options(frame);
     QMutexLocker lock(&m_cache->mutex);
@@ -213,9 +211,13 @@ class GlbModelFx final : public TStandardZeraryFx,
         settings.colors.push_back(color);
       }
     }
-    if (lighting) {
+    if (context.hasMaterial) {
+      settings.useMaterialRig = true;
+      settings.material = context.material;
+    }
+    if (context.hasLighting) {
       settings.useLightingRig = true;
-      settings.lighting = *lighting;
+      settings.lighting = context.lighting;
       settings.headlight = false;
     }
     if (!m_cache->projected || !(settings == m_cache->options)) {
@@ -256,8 +258,8 @@ public:
 
   std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const override {
-    return projected(frame, canceled, lighting);
+      const T3DRenderContext &context = T3DRenderContext()) const override {
+    return projected(frame, canceled, context);
   }
 
   GlbModelFx()
@@ -353,8 +355,6 @@ public:
         << QString::fromStdWString(m_animationClip->getValue()).toUtf8().toStdString()
         << ':' << m_playbackFps->getValue(frame) << ':' << m_timeOffset->getValue(frame)
         << ':' << m_animationSpeed->getValue(frame) << ':' << m_loopMode->getValue();
-    // Child names are part of the identity: equal colors assigned to different
-    // materials must not reuse one another's cached images.
     for (int i = 0; i < m_materialColors->getParamCount(); ++i)
       key << ':' << m_materialColors->getParamName(i) << '='
           << m_materialColors->getParam(i)->getValueAlias(frame, 17);
@@ -371,8 +371,6 @@ public:
       bbox = TRectD(b[0], b[1], b[2], b[3]);
       return true;
     } catch (const std::exception &) {
-      // Let compute report an actionable error instead of silently suppressing
-      // this source because of an empty bounding box.
       bbox = TRectD(-500, -500, 500, 500);
       return true;
     }
@@ -383,8 +381,6 @@ public:
   int getMemoryRequirement(const TRectD &rect, double,
                            const TRenderSettings &) override {
     if (rect.isEmpty()) return 0;
-    // Four depth/coverage samples plus the RGBA output. Tell the normal
-    // FX scheduler to subdivide large requests before allocating these buffers.
     const double megabytes = std::ceil(rect.getLx()) * std::ceil(rect.getLy()) *
                              112.0 / (1024.0 * 1024.0);
     return int(std::min(double(std::numeric_limits<int>::max()), std::ceil(megabytes)));
@@ -403,8 +399,6 @@ public:
       const auto &a = info.m_affine;
       request.affine = {{a.a11, a.a12, a.a13, a.a21, a.a22, a.a23}};
       if (!request.width || !request.height) return;
-      // Swatches and direct computations can bypass scheduler subdivision.
-      // Bound temporary storage there too, including full-resolution renders.
       const int band = std::max(1, std::min(128, 2 * 1024 * 1024 / request.width));
       const int height = request.height;
       for (int y = 0; y < height; y += band) {

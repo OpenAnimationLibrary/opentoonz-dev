@@ -47,11 +47,10 @@ std::array<float, 3> lightColor(const TPixelD &color) {
 }
 }  // namespace
 
-// Simple camera-relative diffuse lighting for a 3D source. GLB Model is the
-// first production implementation of T3DRenderSource; ordinary raster FX cannot
-// be connected to this port. Shadows/specular/PBR response are intentionally
-// outside this first node.
-class ThreePointLightFx final : public TStandardRasterFx {
+// Camera-relative diffuse lighting for a 3D source. This is also a 3D source so
+// material and future 3D modifiers can be connected before or after it.
+class ThreePointLightFx final : public TStandardRasterFx,
+                                public T3DRenderSource {
   FX_PLUGIN_DECLARATION(ThreePointLightFx)
 
   T3DSourcePort m_source;
@@ -89,13 +88,18 @@ class ThreePointLightFx final : public TStandardRasterFx {
   }
 
   std::shared_ptr<const otglb::RenderScene> scene(
-      double frame, const int *canceled) const {
+      double frame, const int *canceled,
+      const T3DRenderContext &incoming = T3DRenderContext()) const {
     if (!m_source.isConnected()) return {};
     auto *source = m_source.source();
     if (!source)
       throw std::runtime_error("Three-Point Light input is not a compatible 3D source.");
-    const auto rig = lighting(frame);
-    return source->get3DRenderScene(frame, canceled, &rig);
+    T3DRenderContext context = incoming;
+    if (!context.hasLighting) {
+      context.hasLighting = true;
+      context.lighting = lighting(frame);
+    }
+    return source->get3DRenderScene(frame, canceled, context);
   }
 
 public:
@@ -114,12 +118,8 @@ public:
       , m_rimElevation(35.0)
       , m_rimIntensity(65.0)
       , m_rimColor(TPixel32::White) {
-    // FX scene serialization tokenizes port names at whitespace. The original
-    // display-style name "GLB Model" was saved as "GLB", then failed to reload
-    // because no port with that serialized name existed. Keep the stable port
-    // identifier whitespace-free; the schematic can describe the source type
-    // separately from this persistence key.
-    addInputPort("GLB", m_source);
+    // Generic 3D modifiers use one persistence-safe source token.
+    addInputPort("Source", m_source);
 
     bindParam(this, "masterIntensity", m_masterIntensity);
     bindParam(this, "ambient", m_ambient);
@@ -149,6 +149,21 @@ public:
       param->setValueRange(-90.0, 90.0);
 
     enableComputeInFloat(true);
+  }
+
+  // #184 originally exposed "GLB Model", whose saved token became "GLB".
+  // #186 accepts that token. When Material makes this port generic, translate
+  // existing scenes forward rather than breaking their Three-Point Light link.
+  void compatibilityTranslatePort(int, int, std::string &portName) override {
+    if (portName == "GLB" || portName == "GLB Model" ||
+        portName == "3D Source")
+      portName = "Source";
+  }
+
+  std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
+      double frame, const int *canceled,
+      const T3DRenderContext &context = T3DRenderContext()) const override {
+    return scene(frame, canceled, context);
   }
 
   bool doGetBBox(double frame, TRectD &bbox,
