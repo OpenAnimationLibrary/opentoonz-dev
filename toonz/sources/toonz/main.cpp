@@ -445,6 +445,18 @@ int main(int argc, char *argv[]) {
   // Set show icons in menus flag (use iconVisibleInMenu to disable selectively)
   QApplication::instance()->setAttribute(Qt::AA_DontShowIconsInMenus, false);
 
+  // Exported production archives must also work when launched from another cwd.
+  QString portableDirectory = QCoreApplication::applicationDirPath();
+#ifdef MACOSX
+  portableDirectory = QDir::currentPath();
+#elif defined(LINUX)
+  const QString appImage = QString::fromLocal8Bit(qgetenv("APPIMAGE"));
+  if (!appImage.isEmpty())
+    portableDirectory = QFileInfo(appImage).absolutePath();
+#endif
+  if (QFileInfo(QDir(portableDirectory).filePath("portablestuff")).isDir())
+    QDir::setCurrent(portableDirectory);
+
   TEnv::setApplicationFileName(argv[0]);
 
   // splash screen (override with local file if present)

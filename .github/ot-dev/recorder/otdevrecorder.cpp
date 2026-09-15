@@ -1,5 +1,7 @@
 #include "otdevrecorder.h"
 
+#include <QDynamicPropertyChangeEvent>
+
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -344,7 +346,7 @@ OtDevRecorder::OtDevRecorder(QMainWindow *window,
   });
   m_encoder.setStandardOutputFile(QProcess::nullDevice());
   connect(&m_encoder, &QProcess::started, this, [this] {
-    if (!m_enabled) {
+    if (!m_enabled || qApp->property("productionArchiveBusy").toBool()) {
       finishClip();
       return;
     }
@@ -359,6 +361,7 @@ OtDevRecorder::OtDevRecorder(QMainWindow *window,
   connect(
       &m_encoder, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
       this, [this](int code, QProcess::ExitStatus status) {
+        qApp->setProperty("productionArchiveRecorderPending", false);
         m_finishTimer.stop();
         const bool expected = m_finishing;
         m_finishing         = false;
@@ -376,6 +379,20 @@ OtDevRecorder::OtDevRecorder(QMainWindow *window,
         updateStatus(m_enabled ? tr("Recording armed") : tr("Recording off"));
       });
   connect(qApp, &QCoreApplication::aboutToQuit, this, &OtDevRecorder::stop);
+  qApp->installEventFilter(this);
+}
+
+bool OtDevRecorder::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == qApp && event->type() == QEvent::DynamicPropertyChange &&
+      static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName() ==
+          "productionArchiveBusy" &&
+      qApp->property("productionArchiveBusy").toBool()) {
+    const bool running = m_encoder.state() != QProcess::NotRunning;
+    qApp->setProperty("productionArchiveRecorderPending", running);
+    if (running)
+      finishClip();
+  }
+  return QObject::eventFilter(watched, event);
 }
 
 OtDevRecorder::~OtDevRecorder() {
@@ -561,6 +578,8 @@ bool OtDevRecorder::captureAllowed() const {
 }
 
 void OtDevRecorder::tick() {
+  if (qApp->property("productionArchiveBusy").toBool())
+    return;
   if (!m_enabled || m_finishing) return;
   if (!captureAllowed()) {
     updateStatus(tr("Recording paused (inactive or native dialog)"));
