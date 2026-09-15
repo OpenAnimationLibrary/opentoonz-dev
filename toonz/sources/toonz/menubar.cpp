@@ -1238,6 +1238,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   }
   QMenu *exportMenu = fileMenu->addMenu(tr("Export"));
   {
+    addMenuItem(exportMenu, MI_ExportPDF);
     addMenuItem(exportMenu, MI_ExportCurrentScene);
     addMenuItem(exportMenu, MI_SoundTrack);
     addMenuItem(exportMenu, MI_ExportXDTS);

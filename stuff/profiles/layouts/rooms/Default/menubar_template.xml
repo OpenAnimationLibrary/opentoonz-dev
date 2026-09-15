@@ -27,6 +27,7 @@
             <command>MI_ImportOCA</command>
         </menu>
         <menu title="Export">
+            <command>MI_ExportPDF</command>
             <command>MI_ExportCurrentScene</command>		
             <command>MI_SoundTrack</command>
             <command>MI_ExportXDTS</command>
