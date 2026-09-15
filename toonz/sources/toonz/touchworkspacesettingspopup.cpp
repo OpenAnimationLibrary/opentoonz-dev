@@ -199,6 +199,15 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   connect(m_pinnedList, &QListWidget::itemChanged, this,
           &TouchWorkspaceSettingsPopup::onPinnedItemChanged);
 
+  m_showOnlyPinnedCheck =
+      new QCheckBox(tr("Show only pinned presets in the picker"), this);
+  m_showOnlyPinnedCheck->setToolTip(
+      tr("When off, the picker keeps empty slots (4 in a list, 6 on the "
+         "wheel) for a stable layout."));
+  pickerLay->addWidget(m_showOnlyPinnedCheck);
+  connect(m_showOnlyPinnedCheck, &QCheckBox::toggled, this,
+          &TouchWorkspaceSettingsPopup::onShowOnlyPinnedChanged);
+
   auto *gestureGroup = new QGroupBox(tr("Gesture recognition"), this);
   auto *gestureLay   = new QVBoxLayout(gestureGroup);
   m_deferTapCheck =
@@ -295,6 +304,9 @@ void TouchWorkspaceSettingsPopup::loadFromSettings() {
   m_deferTapCheck->setChecked(
       Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
 
+  QSignalBlocker blockOnlyPinned(m_showOnlyPinnedCheck);
+  m_showOnlyPinnedCheck->setChecked(mgr->pickerShowOnlyPinned());
+
   rebuildPinnedList();
 }
 
@@ -361,6 +373,11 @@ void TouchWorkspaceSettingsPopup::onDeferTapChanged(bool checked) {
 
 void TouchWorkspaceSettingsPopup::onOpenPresetManager() {
   CommandManager::instance()->execute(MI_TouchPresetManager);
+}
+
+void TouchWorkspaceSettingsPopup::onShowOnlyPinnedChanged(bool checked) {
+  TouchPresetManager::instance()->setPickerShowOnlyPinned(checked);
+  syncOpenTouchPresetPicker(true);
 }
 
 void TouchWorkspaceSettingsPopup::onPinnedItemChanged(QListWidgetItem *item) {

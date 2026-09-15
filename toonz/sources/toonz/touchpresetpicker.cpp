@@ -473,15 +473,27 @@ QPushButton *makeEdgeButton(QWidget *parent, const QString &glyph, int edgeCircl
   return btn;
 }
 
+QString emptySlotLabel() { return QObject::tr("Empty"); }
+
+void applyPresetSlotButton(QPushButton *btn, const QString &name,
+                           const QString &active, int maxLabelWidth,
+                           const QFont &font) {
+  const bool empty = name.isEmpty();
+  btn->setText(empty ? emptySlotLabel()
+                     : elidedName(font, name, maxLabelWidth));
+  btn->setProperty("presetName", name);
+  btn->setToolTip(empty ? QString() : name);
+  btn->setCheckable(!empty);
+  btn->setChecked(!empty && name == active);
+  btn->setEnabled(!empty);
+  btn->setCursor(empty ? Qt::ArrowCursor : Qt::PointingHandCursor);
+}
+
 QPushButton *makeWheelButton(QWidget *parent, const QString &name,
                              const QString &active, int wheelDiam) {
-  const QString label = elidedName(parent->font(), name, wheelDiam - 16);
-  auto *btn           = new QPushButton(label, parent);
+  auto *btn = new QPushButton(parent);
   btn->setObjectName(QStringLiteral("TouchPresetPickerWheel"));
-  btn->setCheckable(true);
-  btn->setChecked(name == active);
-  btn->setProperty("presetName", name);
-  btn->setToolTip(name);
+  applyPresetSlotButton(btn, name, active, wheelDiam - 16, parent->font());
   btn->setFixedSize(wheelDiam, wheelDiam);
   btn->setAttribute(Qt::WA_TranslucentBackground, false);
   return btn;
@@ -489,13 +501,9 @@ QPushButton *makeWheelButton(QWidget *parent, const QString &name,
 
 QPushButton *makeStripButton(QWidget *parent, const QString &name,
                              const QString &active, int stripW, int stripH) {
-  const QString label = elidedName(parent->font(), name, stripW - 16);
-  auto *btn           = new QPushButton(label, parent);
+  auto *btn = new QPushButton(parent);
   btn->setObjectName(QStringLiteral("TouchPresetPickerStrip"));
-  btn->setCheckable(true);
-  btn->setChecked(name == active);
-  btn->setProperty("presetName", name);
-  btn->setToolTip(name);
+  applyPresetSlotButton(btn, name, active, stripW - 16, parent->font());
   btn->setFixedSize(stripW, stripH);
   btn->setAttribute(Qt::WA_TranslucentBackground, false);
   return btn;
@@ -556,13 +564,13 @@ int TouchPresetPickerPanel::pageSizeForCurrentLayout() const {
              : visibleSlotCount();
 }
 
-QPushButton *TouchPresetPickerPanel::presetButton(
-    const QString &objectName, const QString &presetName) const {
-  for (QPushButton *btn : findChildren<QPushButton *>()) {
-    if (btn->objectName() != objectName) continue;
-    if (btn->property("presetName").toString() == presetName) return btn;
-  }
-  return nullptr;
+QStringList TouchPresetPickerPanel::pageDisplaySlots(
+    const QStringList &pinned, int pageStart) const {
+  const int cap = pageSizeForCurrentLayout();
+  QStringList slice = pageSlice(pinned, pageStart, cap);
+  if (TouchPresetManager::instance()->pickerShowOnlyPinned()) return slice;
+  while (slice.size() < cap) slice.append(QString());
+  return slice;
 }
 
 QPushButton *TouchPresetPickerPanel::slotAt(int index) const {
@@ -578,15 +586,14 @@ QPushButton *TouchPresetPickerPanel::slotAt(int index) const {
 
 bool TouchPresetPickerPanel::relabelSlots(const QStringList &pageNames) {
   const QString active = TouchPresetManager::instance()->activePreset();
+  const bool pieWheel =
+      TouchPresetManager::instance()->pickerLayout() ==
+      TouchPresetPickerLayout::Wheel;
+  const int labelW = pieWheel ? m_wheelDiam - 16 : m_stripW - 16;
   for (int i = 0; i < pageNames.size(); ++i) {
     QPushButton *btn = slotAt(i);
     if (!btn) return false;
-    btn->setProperty("presetName", pageNames[i]);
-    btn->setToolTip(pageNames[i]);
-    btn->setChecked(pageNames[i] == active);
-    const bool pieWheel =
-        TouchPresetManager::instance()->pickerLayout() ==
-        TouchPresetPickerLayout::Wheel;
+    applyPresetSlotButton(btn, pageNames[i], active, labelW, font());
     btn->setVisible(!pieWheel);
   }
   for (int i = pageNames.size();; ++i) {
@@ -605,7 +612,7 @@ bool TouchPresetPickerPanel::showCurrentPage() {
   const int pageSize = pageSizeForCurrentLayout();
   const int maxStart = qMax(0, names.size() - pageSize);
   m_pageStart        = qBound(0, m_pageStart, maxStart);
-  const QStringList pageNames = pageSlice(names, m_pageStart, pageSize);
+  const QStringList pageNames = pageDisplaySlots(names, m_pageStart);
   if (pageNames.isEmpty() || !relabelSlots(pageNames)) return false;
 
   const bool paging  = names.size() > pageSize;
@@ -771,12 +778,13 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
       prev->move((width() - m_edgeCircle) / 2, kOuterPad);
       y = kOuterPad + m_edgeCircle + arrowGap;
     }
-    for (const QString &name : pageNames) {
-      QPushButton *btn =
-          presetButton(QStringLiteral("TouchPresetPickerStrip"), name);
+    for (int i = 0; i < pageNames.size(); ++i) {
+      QPushButton *btn = slotAt(i);
       if (!btn) continue;
+      applyPresetSlotButton(btn, pageNames[i],
+                            TouchPresetManager::instance()->activePreset(),
+                            m_stripW - 16, font());
       btn->setFixedSize(m_stripW, m_stripH);
-      btn->setText(elidedName(font(), name, m_stripW - 16));
       btn->setFlat(flatOt);
       btn->setAttribute(Qt::WA_TranslucentBackground, flatOt);
       btn->move((width() - m_stripW) / 2, y);
@@ -790,12 +798,13 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
       prev->move(kOuterPad, (height() - m_edgeCircle) / 2);
       x = kOuterPad + m_edgeCircle + arrowGap;
     }
-    for (const QString &name : pageNames) {
-      QPushButton *btn =
-          presetButton(QStringLiteral("TouchPresetPickerStrip"), name);
+    for (int i = 0; i < pageNames.size(); ++i) {
+      QPushButton *btn = slotAt(i);
       if (!btn) continue;
+      applyPresetSlotButton(btn, pageNames[i],
+                            TouchPresetManager::instance()->activePreset(),
+                            m_stripW - 16, font());
       btn->setFixedSize(m_stripW, m_stripH);
-      btn->setText(elidedName(font(), name, m_stripW - 16));
       btn->setFlat(flatOt);
       btn->setAttribute(Qt::WA_TranslucentBackground, flatOt);
       btn->move(x, (height() - m_stripH) / 2);
@@ -809,9 +818,8 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
   if (next) next->raise();
 
   QRect body;
-  for (const QString &name : pageNames) {
-    QPushButton *btn =
-        presetButton(QStringLiteral("TouchPresetPickerStrip"), name);
+  for (int i = 0; i < pageNames.size(); ++i) {
+    QPushButton *btn = slotAt(i);
     if (btn) body = body.isNull() ? btn->geometry() : body.united(btn->geometry());
   }
   if (!body.isNull())
@@ -834,10 +842,9 @@ int TouchPresetPickerPanel::ghostPieSlotIndex(const QPoint &local) const {
   if (dist < m_wheelDead) return -1;
 
   TouchPresetManager *mgr = TouchPresetManager::instance();
-  const int n =
-      pageSlice(mgr->pinnedPresetsForPicker(), m_pageStart,
-                pageSizeForCurrentLayout())
-          .size();
+  const QStringList pageSlots =
+      pageDisplaySlots(mgr->pinnedPresetsForPicker(), m_pageStart);
+  const int n = pageSlots.size();
   if (n <= 0) return -2;
   double a = std::atan2(local.y() - c.y(), local.x() - c.x()) + M_PI / 2.0;
   if (a < 0) a += 2.0 * M_PI;
@@ -852,6 +859,7 @@ int TouchPresetPickerPanel::ghostPieSlotIndex(const QPoint &local) const {
     inSlice = std::fmod(inSlice, span);
     if (inSlice < halfGapDeg || inSlice > span - halfGapDeg) return -2;
   }
+  if (idx >= 0 && idx < pageSlots.size() && pageSlots[idx].isEmpty()) return -2;
   return idx;
 }
 
@@ -882,10 +890,9 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
       mgr->pickerTheme() == TouchPresetPickerTheme::HologramCyan;
   const QRectF disk = m_bodyRect;
   const QPointF c   = disk.center();
-  const int n =
-      pageSlice(mgr->pinnedPresetsForPicker(), m_pageStart,
-                pageSizeForCurrentLayout())
-          .size();
+  const QStringList pageSlots =
+      pageDisplaySlots(mgr->pinnedPresetsForPicker(), m_pageStart);
+  const int n = pageSlots.size();
   if (n <= 0) return;
 
   const QString active = mgr->activePreset();
@@ -903,10 +910,12 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
   QVector<QPainterPath> slices;
   slices.reserve(n);
   for (int i = 0; i < n; ++i) {
-    QPushButton *btn = slotAt(i);
     const QString name =
-        btn ? btn->property("presetName").toString() : QString();
-    const bool sel = (name == active);
+        i < pageSlots.size() ? pageSlots[i]
+                             : (slotAt(i) ? slotAt(i)->property("presetName").toString()
+                                          : QString());
+    const bool empty = name.isEmpty();
+    const bool sel   = !empty && (name == active);
     if (sel) selIndex = i;
     const double startDeg = 90.0 - i * spanDeg;
     QPainterPath slice;
@@ -921,7 +930,9 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
     slices.append(slice);
     if (slice.isEmpty()) continue;
     QColor fill;
-    if (hologram) {
+    if (empty) {
+      fill = QColor(tok.g1r, tok.g1g, tok.g1b, alphaFromOpacity(100, op));
+    } else if (hologram) {
       const QColor lit = hologramLitFill(tok);
       fill = sel ? QColor(lit.red(), lit.green(), lit.blue(),
                           alphaFromOpacity(255, op))
@@ -933,19 +944,22 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
     p.fillPath(slice, fill);
     const QColor edge =
         hologram ? QColor(tok.bhr, tok.bhg, tok.bhb,
-                          alphaFromOpacity(sel ? 90 : 70, op))
-                 : QColor(tok.br, tok.bg, tok.bb, alphaFromOpacity(80, op));
+                          alphaFromOpacity(sel ? 90 : (empty ? 50 : 70), op))
+                 : QColor(tok.br, tok.bg, tok.bb,
+                          alphaFromOpacity(empty ? 55 : 80, op));
     p.strokePath(slice, QPen(edge, 1));
 
     const double mid = (90.0 - (i + 0.5) * spanDeg) * M_PI / 180.0;
     const double lr  = disk.width() * 0.34;
     const QPointF lp(c.x() + std::cos(mid) * lr, c.y() - std::sin(mid) * lr);
-    p.setPen(QColor(sel ? tok.textChecked : tok.text));
+    p.setPen(QColor(empty ? tok.text : (sel ? tok.textChecked : tok.text)));
     QFont f = font();
     f.setPixelSize(qMax(9, m_bodyRect.width() / 18));
     f.setBold(sel);
     p.setFont(f);
-    const QString label = elidedName(f, name, int(disk.width() * 0.28));
+    const QString label =
+        empty ? emptySlotLabel()
+              : elidedName(f, name, int(disk.width() * 0.28));
     const QRect tr(lp.toPoint() - QPoint(60, 12), QSize(120, 24));
     p.drawText(tr, Qt::AlignCenter, label);
   }
@@ -1115,7 +1129,7 @@ void TouchPresetPickerPanel::rebuild() {
   const int pageSize = pageSizeForCurrentLayout();
   const int maxStart = qMax(0, names.size() - pageSize);
   m_pageStart        = qBound(0, m_pageStart, maxStart);
-  const QStringList pageNames = pageSlice(names, m_pageStart, pageSize);
+  const QStringList pageNames = pageDisplaySlots(names, m_pageStart);
   const bool paging           = names.size() > pageSize;
   const bool canPrev          = paging && m_pageStart > 0;
   const bool canNext          = paging && m_pageStart < maxStart;

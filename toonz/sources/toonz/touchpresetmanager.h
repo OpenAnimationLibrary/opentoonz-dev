@@ -37,6 +37,7 @@ class TouchPresetManager {
   int m_pickerSizePercent    = 100;
   int m_pickerOpacityPercent = 70;
   TouchPresetPickerTheme m_pickerTheme = TouchPresetPickerTheme::HologramCyan;
+  bool m_pickerShowOnlyPinned = false;
   bool m_loaded = false;
 
   struct ActivePresetListener {
@@ -113,6 +114,9 @@ public:
 
   TouchPresetPickerTheme pickerTheme() const;
   void setPickerTheme(TouchPresetPickerTheme theme);
+
+  bool pickerShowOnlyPinned() const;
+  void setPickerShowOnlyPinned(bool onlyPinned);
 
   void save();
   void load();

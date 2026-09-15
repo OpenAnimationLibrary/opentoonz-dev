@@ -213,6 +213,9 @@ void TouchPresetManager::load() {
   else
     m_pickerTheme = TouchPresetPickerTheme::HologramCyan;
 
+  m_pickerShowOnlyPinned =
+      s.value(QStringLiteral("Picker/showOnlyPinned"), false).toBool();
+
   if (!m_presets.contains(QLatin1String(kDefault)))
     m_presets[QLatin1String(kDefault)] = factoryMap();
   if (m_active.isEmpty() || !m_presets.contains(m_active))
@@ -273,6 +276,7 @@ void TouchPresetManager::save() {
                  : QStringLiteral("classic"));
   s.setValue(QStringLiteral("sizePercent"), m_pickerSizePercent);
   s.setValue(QStringLiteral("opacityPercent"), m_pickerOpacityPercent);
+  s.setValue(QStringLiteral("showOnlyPinned"), m_pickerShowOnlyPinned);
   QString themeKey = QStringLiteral("hologram");
   switch (m_pickerTheme) {
   case TouchPresetPickerTheme::OpenToonz:
@@ -555,5 +559,15 @@ TouchPresetPickerTheme TouchPresetManager::pickerTheme() const {
 void TouchPresetManager::setPickerTheme(TouchPresetPickerTheme theme) {
   if (m_pickerTheme == theme) return;
   m_pickerTheme = theme;
+  save();
+}
+
+bool TouchPresetManager::pickerShowOnlyPinned() const {
+  return m_pickerShowOnlyPinned;
+}
+
+void TouchPresetManager::setPickerShowOnlyPinned(bool onlyPinned) {
+  if (m_pickerShowOnlyPinned == onlyPinned) return;
+  m_pickerShowOnlyPinned = onlyPinned;
   save();
 }

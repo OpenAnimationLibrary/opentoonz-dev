@@ -65,8 +65,6 @@ private:
                           bool canPrev, bool canNext);
   void applyLinearGeometry(bool vertical, const QStringList &pageNames,
                            bool paging, bool canPrev, bool canNext);
-  QPushButton *presetButton(const QString &objectName,
-                            const QString &presetName) const;
   QPushButton *slotAt(int index) const;
   QPushButton *edgeButton(bool prev) const;
   QPushButton *buttonAt(const QPoint &local) const;
@@ -76,6 +74,7 @@ private:
   int visibleSlotCount() const;
   int wheelPageSize() const;
   int pageSizeForCurrentLayout() const;
+  QStringList pageDisplaySlots(const QStringList &pinned, int pageStart) const;
   void alignPageToActive(const QStringList &names, const QString &active);
   bool isGhostLook() const;
   int ghostPieSlotIndex(const QPoint &local) const;
