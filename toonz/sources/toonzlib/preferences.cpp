@@ -581,6 +581,7 @@ void Preferences::definePreferenceItems() {
   // Xsheet
   define(xsheetLayoutPreference, "xsheetLayoutPreference", QMetaType::QString,
          "Classic-revised");
+  define(xsheetColumnWidth, "xsheetColumnWidth", QMetaType::Int, 74, 50, 200);
   define(xsheetStep, "xsheetStep", QMetaType::Int, 10, 0,
          std::numeric_limits<int>::max());
   define(xsheetAutopanEnabled, "xsheetAutopanEnabled", QMetaType::Bool, true);

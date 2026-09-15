@@ -383,6 +383,11 @@ public:
   QString getLoadedXsheetLayout() const {
     return getStringValue(xsheetLayoutPreference);
   }
+  int getXsheetColumnWidth() const {
+    bool ok;
+    int width = m_items.value(xsheetColumnWidth).value.toInt(&ok);
+    return ok ? qBound(50, width, 200) : 74;
+  }
   int getXsheetStep() const {
     return getIntValue(xsheetStep);
   }  //!< Returns the step used for the <I>next/prev step</I> commands.
