@@ -4,6 +4,7 @@
 #include "glbrenderer.h"
 #include "tfxmaterial.h"
 #include "tparamset.h"
+#include "t3dsource.h"
 
 #include <QDateTime>
 #include <QCryptographicHash>
@@ -45,7 +46,9 @@ void copyGlbPixels(TRasterPT<PIXEL> raster,
 
 // Read-only GLB source with embedded animation playback and scene-owned,
 // animated material color overrides.
-class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
+class GlbModelFx final : public TStandardZeraryFx,
+                         public TFxMaterialSource,
+                         public T3DRenderSource {
   FX_PLUGIN_DECLARATION(GlbModelFx)
 
   TStringParamP m_modelFile;
@@ -185,8 +188,9 @@ class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
     settings.sourceSeconds = seconds;
   }
 
-  std::shared_ptr<const otglb::RenderScene> projected(double frame,
-                                                    const int *canceled) const {
+  std::shared_ptr<const otglb::RenderScene> projected(
+      double frame, const int *canceled,
+      const otglb::LightingRig *lighting = nullptr) const {
     if (m_modelFile->getValue().empty()) return {};
     auto settings = options(frame);
     QMutexLocker lock(&m_cache->mutex);
@@ -208,6 +212,11 @@ class GlbModelFx final : public TStandardZeraryFx, public TFxMaterialSource {
         }
         settings.colors.push_back(color);
       }
+    }
+    if (lighting) {
+      settings.useLightingRig = true;
+      settings.lighting = *lighting;
+      settings.headlight = false;
     }
     if (!m_cache->projected || !(settings == m_cache->options)) {
       auto scene = std::make_shared<otglb::RenderScene>(
@@ -243,6 +252,12 @@ public:
           TPixel32(int(c[0] * 255 + .5f), int(c[1] * 255 + .5f), int(c[2] * 255 + .5f), 255)});
     }
     return materials;
+  }
+
+  std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
+      double frame, const int *canceled,
+      const otglb::LightingRig *lighting = nullptr) const override {
+    return projected(frame, canceled, lighting);
   }
 
   GlbModelFx()

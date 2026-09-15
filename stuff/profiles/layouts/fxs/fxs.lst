@@ -196,6 +196,7 @@
 </Shaders>
   <3D>
     STD_glbModelFx
+    STD_threePointLightFx
   </3D>
   <Utility>
     STD_nothingFx

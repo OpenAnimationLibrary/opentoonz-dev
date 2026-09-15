@@ -20,6 +20,7 @@ on:
     branches:
       - main
       - feat/glb-fx-render  # Run the application gate for the stacked material FX.
+      - feat/three-point-light-fx  # Run the application gate for stacked 3D Material changes.
     paths:
       - '**/*'
       - '!appveyor.yml'
@@ -309,8 +310,12 @@ jobs:
           cd toonz\build
           msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal stdfx\glbmodelfx_test.vcxproj
           if %errorlevel% neq 0 exit /b %errorlevel%
+          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal stdfx\threepointlightfx_test.vcxproj
+          if %errorlevel% neq 0 exit /b %errorlevel%
           set "PATH=%QT_PATH%\bin;%GITHUB_WORKSPACE%\thirdparty\glut\3.7.6\lib;%GITHUB_WORKSPACE%\thirdparty\glew\glew-1.9.0\bin\64bit;%GITHUB_WORKSPACE%\thirdparty\libmypaint\dist\64;C:\tools\opencv\build\x64\vc16\bin;%PATH%"
           RelWithDebInfo\glbmodelfx_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          RelWithDebInfo\threepointlightfx_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
 
       # Build Opentoonz using MSBuild
@@ -369,7 +374,10 @@ jobs:
           cd toonz\build\Opentoonz
           glbmodelfx_test.exe
           if %errorlevel% neq 0 exit /b %errorlevel%
+          threepointlightfx_test.exe
+          if %errorlevel% neq 0 exit /b %errorlevel%
           del glbmodelfx_test.exe
+          del threepointlightfx_test.exe
 
       - name: Package OT-Dev recorder and matching FFmpeg sources
         shell: pwsh
