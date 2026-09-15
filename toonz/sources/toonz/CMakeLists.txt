@@ -220,6 +220,7 @@ set(HEADERS
     tvpjson_io.h
     touchslots.h
     touchpresetmanager.h
+    touchpresetcommandmanager.h
 )
 
 set(SOURCES
@@ -404,6 +405,7 @@ set(SOURCES
     touchslots.cpp
     touchgesturerecognizer.cpp
     touchpresetmanager.cpp
+    touchpresetcommandmanager.cpp
     touchpresetpopup.cpp
     touchpresetpicker.cpp
     touchworkspacesettingspopup.cpp

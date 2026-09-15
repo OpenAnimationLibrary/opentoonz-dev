@@ -192,7 +192,7 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   connect(m_opacitySlider, &QSlider::valueChanged, this,
           &TouchWorkspaceSettingsPopup::onOpacityChanged);
 
-  pickerLay->addWidget(new QLabel(tr("Pinned presets (shown in the picker):"), this));
+  pickerLay->addWidget(new QLabel(tr("Pinned presets:"), this));
   m_pinnedList = new QListWidget(this);
   m_pinnedList->setMaximumHeight(140);
   pickerLay->addWidget(m_pinnedList);
@@ -200,10 +200,7 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
           &TouchWorkspaceSettingsPopup::onPinnedItemChanged);
 
   m_showOnlyPinnedCheck =
-      new QCheckBox(tr("Show only pinned presets in the picker"), this);
-  m_showOnlyPinnedCheck->setToolTip(
-      tr("When off, the picker keeps empty slots (4 in a list, 6 on the "
-         "wheel) for a stable layout."));
+      new QCheckBox(tr("Show only pinned presets"), this);
   pickerLay->addWidget(m_showOnlyPinnedCheck);
   connect(m_showOnlyPinnedCheck, &QCheckBox::toggled, this,
           &TouchWorkspaceSettingsPopup::onShowOnlyPinnedChanged);

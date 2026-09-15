@@ -1,5 +1,10 @@
 #include "touchpresetmanager.h"
 
+#include "touchpresetcommandmanager.h"
+
+#include "sceneviewer.h"
+#include "tapp.h"
+
 #include "tfilepath.h"
 #include "toonz/toonzfolders.h"
 #include "toonzqt/gutil.h"
@@ -382,6 +387,7 @@ QString TouchPresetManager::importPresetFromFile(const QString &filePath,
 
   m_presets[target] = map;
   save();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
   return target;
 }
 
@@ -393,6 +399,9 @@ void TouchPresetManager::setActivePreset(const QString &name) {
   m_active = name;
   save();
   notifyActivePresetChanged();
+  TouchPresetCommandManager::instance()->updateCheckedStates();
+  if (SceneViewer *viewer = TApp::instance()->getActiveViewer())
+    viewer->syncActiveTouchPresetOnPicker();
 }
 
 void TouchPresetManager::setActivePresetListener(
@@ -418,6 +427,7 @@ void TouchPresetManager::createPreset(const QString &name) {
   if (name.isEmpty() || m_presets.contains(name)) return;
   m_presets[name] = factoryMap();
   save();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 }
 
 void TouchPresetManager::duplicatePreset(const QString &from, const QString &to) {
@@ -425,6 +435,7 @@ void TouchPresetManager::duplicatePreset(const QString &from, const QString &to)
     return;
   m_presets[to] = m_presets.value(from);
   save();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 }
 
 bool TouchPresetManager::renamePreset(const QString &from, const QString &to) {
@@ -436,6 +447,7 @@ bool TouchPresetManager::renamePreset(const QString &from, const QString &to) {
     if (m_pinnedForPicker[i] == from) m_pinnedForPicker[i] = to;
   }
   save();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
   return true;
 }
 
@@ -445,6 +457,7 @@ bool TouchPresetManager::removePreset(const QString &name) {
   m_pinnedForPicker.removeAll(name);
   if (m_active == name) m_active = m_presets.keys().first();
   save();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
   return true;
 }
 

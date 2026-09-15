@@ -16,6 +16,7 @@
 #include "startuppopup.h"
 #include "tooloptionsshortcutinvoker.h"
 #include "custompanelmanager.h"
+#include "touchpresetcommandmanager.h"
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
@@ -687,6 +688,7 @@ void MainWindow::readSettings(const QString &argumentLayoutFileName) {
   // Custom Panels in rooms will try to link to these commands during load.
   // If commands don't exist yet, buttons become "empty shells".
   CustomPanelManager::instance()->loadCustomPanelEntries();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 
   for (int i = 0; i < (int)roomPaths.size(); i++) {
     TFilePath roomPath = roomPaths[i];

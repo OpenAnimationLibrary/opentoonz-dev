@@ -1185,6 +1185,14 @@ void TouchPresetPickerPanel::refreshAppearanceLive() {
   refreshFromSettings(false);
 }
 
+void TouchPresetPickerPanel::syncToActivePreset() {
+  if (!isOpen()) return;
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  alignPageToActive(mgr->pinnedPresetsForPicker(), mgr->activePreset());
+  if (!showCurrentPage()) rebuild();
+  finishPickerLayout();
+}
+
 void TouchPresetPickerPanel::refreshFromSettings(bool rebuildLayout) {
   if (!isOpen()) return;
   if (rebuildLayout) {

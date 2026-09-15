@@ -65,6 +65,7 @@ enum CommandType {
   ToolModifierCommandType,
   BrushPresetCommandType,
   BrushSizeCommandType,
+  TouchPresetCommandType,
   ZoomCommandType,
   MiscCommandType,
   StopMotionCommandType,

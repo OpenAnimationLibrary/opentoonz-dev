@@ -45,6 +45,7 @@ public:
   void closePicker();
   void refreshFromSettings(bool rebuildLayout = false);
   void refreshAppearanceLive();
+  void syncToActivePreset();
   void toggleAt(const QPointF &anchorWidgetPos);
   bool handleViewerTouch(const QPoint &viewerPos, QEvent::Type type);
 

@@ -318,6 +318,7 @@ public:
   void toggleTouchPresetPicker(const QPointF *preferredAnchor = nullptr);
   bool isTouchPresetPickerOpen() const;
   void syncTouchPresetPickerFromSettings(bool rebuildLayout = false);
+  void syncActiveTouchPresetOnPicker();
   int getVGuideCount() override;
   int getHGuideCount() override;
   double getVGuide(int index) override;

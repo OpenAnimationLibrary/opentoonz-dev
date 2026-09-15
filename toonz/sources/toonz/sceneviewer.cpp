@@ -1978,6 +1978,11 @@ void SceneViewer::syncTouchPresetPickerFromSettings(bool rebuildLayout) {
     m_touchPresetPicker->refreshAppearanceLive();
 }
 
+void SceneViewer::syncActiveTouchPresetOnPicker() {
+  if (!m_touchPresetPicker || !m_touchPresetPicker->isOpen()) return;
+  m_touchPresetPicker->syncToActivePreset();
+}
+
 //-----------------------------------------------------------------------------
 
 void SceneViewer::drawViewerIndicators() {

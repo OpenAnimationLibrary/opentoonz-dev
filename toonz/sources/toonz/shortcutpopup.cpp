@@ -8,6 +8,7 @@
 #include "tenv.h"
 #include "tsystem.h"
 #include "toolpresetcommandmanager.h"
+#include "touchpresetcommandmanager.h"
 
 #include "toonz/toonzfolders.h"
 // TnzQt includes
@@ -307,6 +308,8 @@ ShortcutTree::ShortcutTree(QWidget *parent) : QTreeWidget(parent) {
   addFolder(tr("Stop Motion"), StopMotionCommandType);
   addFolder(tr("Visualization"), ZoomCommandType);
   addFolder(tr("Misc"), MiscCommandType);
+  QTreeWidgetItem *miscFolder = m_folders.back();
+  addFolder(tr("Touch Presets"), TouchPresetCommandType, miscFolder);
   addFolder(tr("RGBA Channels"), RGBACommandType);
   addFolder(tr("Special Modifier Keys"), SpecialModifierKeyType);
 
@@ -465,6 +468,8 @@ void ShortcutTree::refreshTree() {
   addFolder(tr("Stop Motion"), StopMotionCommandType);
   addFolder(tr("Visualization"), ZoomCommandType);
   addFolder(tr("Misc"), MiscCommandType);
+  QTreeWidgetItem *miscFolder = m_folders.back();
+  addFolder(tr("Touch Presets"), TouchPresetCommandType, miscFolder);
   addFolder(tr("RGBA Channels"), RGBACommandType);
   addFolder(tr("Special Modifier Keys"), SpecialModifierKeyType);
 
@@ -1163,6 +1168,7 @@ void ShortcutPopup::showEvent(QShowEvent *se) {
   // Refresh brush preset and size commands to ensure they're up-to-date
   ToolPresetCommandManager::instance()->refreshPresetCommands();
   ToolPresetCommandManager::instance()->refreshSizeCommands();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 
   // Restore search term from TEnv
   const QString lastSearchTerm =
