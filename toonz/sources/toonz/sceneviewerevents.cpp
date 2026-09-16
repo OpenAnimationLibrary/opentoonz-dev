@@ -1302,10 +1302,13 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
     if (live == 0) {
       m_touchActive = false;
       m_panning     = false;
-      m_touchPeakLiveCount         = 0;
-      m_touchSuppressedPointerDown = false;
-      m_touchToolInputLockedUntilEnd = false;
-      m_touchSuppressToolInput     = false;
+      m_touchPeakLiveCount           = 0;
+      m_touchSuppressedPointerDown     = false;
+      m_touchToolInputLockedUntilEnd   = false;
+      m_touchSuppressToolInput         = false;
+      m_touchAwaitFreshContact         = false;
+      m_gestureActive                  = false;
+      releaseTouchToolSuppressionIfIdle();
     } else {
       m_touchActive = true;
     }
@@ -1317,10 +1320,13 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
     if (live == 0) {
       m_touchActive = false;
       m_panning     = false;
-      m_touchPeakLiveCount         = 0;
-      m_touchSuppressedPointerDown = false;
-      m_touchToolInputLockedUntilEnd = false;
-      m_touchSuppressToolInput     = false;
+      m_touchPeakLiveCount           = 0;
+      m_touchSuppressedPointerDown     = false;
+      m_touchToolInputLockedUntilEnd   = false;
+      m_touchSuppressToolInput         = false;
+      m_touchAwaitFreshContact         = false;
+      m_gestureActive                  = false;
+      releaseTouchToolSuppressionIfIdle();
     } else {
       m_touchActive = true;
     }
@@ -1478,7 +1484,8 @@ bool SceneViewer::event(QEvent *e) {
       return QWidget::event(e);
     }
     touchEvent(static_cast<QTouchEvent *>(e), e->type());
-    m_gestureActive = true;
+    if (e->type() == QEvent::TouchBegin || e->type() == QEvent::TouchUpdate)
+      m_gestureActive = true;
     return true;
   }
   if (e->type() == QEvent::ShortcutOverride || e->type() == QEvent::KeyPress) {
