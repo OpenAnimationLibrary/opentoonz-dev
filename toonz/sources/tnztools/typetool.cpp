@@ -767,8 +767,8 @@ void TypeTool::showTextHistoryPopup() {
     m_textHistoryPopup = new TypeToolTextHistoryPopup(
         QApplication::activeWindow(), m_textHistory,
         [this](const QString &text) { setTextFromHistory(text); });
-    connect(m_textHistoryPopup, &QObject::destroyed,
-            [this]() { m_textHistoryPopup = nullptr; });
+    QObject::connect(m_textHistoryPopup, &QObject::destroyed,
+                     [this]() { m_textHistoryPopup = nullptr; });
   }
   m_textHistoryPopup->showAndRaise();
 }
