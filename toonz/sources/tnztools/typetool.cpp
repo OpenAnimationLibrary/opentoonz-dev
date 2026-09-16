@@ -23,9 +23,11 @@
 #include "tregion.h"
 #include "tvectorrenderdata.h"
 #include "toonz/tpalettehandle.h"
+#include "toonz/toonzfolders.h"
 
 #include "toonzqt/selection.h"
 #include "toonzqt/imageutils.h"
+#include "toonzqt/dvdialog.h"
 #include "trop.h"
 #include "toonz/ttileset.h"
 #include "toonz/glrasterpainter.h"
@@ -38,6 +40,19 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QMimeData>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QListWidget>
+#include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSettings>
+#include <QSignalBlocker>
+#include <QTimer>
+#include <QVBoxLayout>
+
+#include <functional>
+#include <utility>
 
 //#include "tw/message.h"
 
@@ -84,6 +99,117 @@ void paintChar(const TVectorImageP &image, int styleId) {
 //---------------------------------------------------------
 
 TEnv::StringVar EnvCurrentFont("CurrentFont", "MS UI Gothic");
+
+constexpr int cTextHistoryLimit = 10;
+
+QString typeToolSettingsPath() {
+  return toQString(ToonzFolder::getMyModuleDir() + TFilePath("typetool.ini"));
+}
+
+QString normalizedText(QString text) {
+  text.replace("\r\n", "\n");
+  text.replace('\r', '\n');
+  return text;
+}
+
+class TypeToolTextHistory final {
+  bool m_loaded;
+  bool m_enabled;
+  QString m_draft;
+  QStringList m_entries;
+
+  void configureSettings(QSettings &settings) const {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    settings.setIniCodec("UTF-8");
+#endif
+  }
+
+  void saveHistory() const {
+    QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
+    configureSettings(values);
+    values.beginWriteArray("History", m_entries.size());
+    for (int i = 0; i < m_entries.size(); ++i) {
+      values.setArrayIndex(i);
+      values.setValue("Text", m_entries.at(i));
+    }
+    values.endArray();
+    values.sync();
+  }
+
+public:
+  TypeToolTextHistory() : m_loaded(false), m_enabled(false) {}
+
+  void load() {
+    if (m_loaded) return;
+    m_loaded = true;
+    QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
+    configureSettings(values);
+    values.beginGroup("General");
+    m_enabled = values.value("EditorEnabled", false).toBool();
+    values.endGroup();
+
+    values.beginGroup("Draft");
+    m_draft = normalizedText(values.value("Text").toString());
+    values.endGroup();
+
+    int count = values.beginReadArray("History");
+    for (int i = 0; i < count && m_entries.size() < cTextHistoryLimit; ++i) {
+      values.setArrayIndex(i);
+      QString text = normalizedText(values.value("Text").toString());
+      if (!text.isEmpty() && !m_entries.contains(text)) m_entries.append(text);
+    }
+    values.endArray();
+  }
+
+  bool isEnabled() const { return m_enabled; }
+  const QString &draft() const { return m_draft; }
+  const QStringList &entries() const { return m_entries; }
+
+  void setEnabled(bool enabled) {
+    load();
+    if (m_enabled == enabled) return;
+    m_enabled = enabled;
+    QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
+    configureSettings(values);
+    values.beginGroup("General");
+    values.setValue("Version", 1);
+    values.setValue("HistoryLimit", cTextHistoryLimit);
+    values.setValue("EditorEnabled", m_enabled);
+    values.endGroup();
+    values.sync();
+  }
+
+  void setDraft(const QString &text) { m_draft = normalizedText(text); }
+
+  void saveDraft() const {
+    QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
+    configureSettings(values);
+    values.beginGroup("Draft");
+    values.setValue("Text", m_draft);
+    values.endGroup();
+    values.sync();
+  }
+
+  void addEntry(const QString &sourceText) {
+    QString text = normalizedText(sourceText);
+    if (text.isEmpty()) return;
+    m_entries.removeAll(text);
+    m_entries.prepend(text);
+    while (m_entries.size() > cTextHistoryLimit) m_entries.removeLast();
+    saveHistory();
+  }
+
+  void removeEntry(int index) {
+    if (index < 0 || index >= m_entries.size()) return;
+    m_entries.removeAt(index);
+    saveHistory();
+  }
+
+  void clear() {
+    m_entries.clear();
+    saveHistory();
+  }
+};
 
 //! numero di pixel attorno al testo
 const double cBorderSize = 15;
@@ -290,6 +416,8 @@ public:
 //
 //---------------------------------------------------------
 
+class TypeToolTextHistoryPopup;
+
 class TypeTool final : public TTool {
   Q_DECLARE_TR_FUNCTIONS(TypeTool)
 
@@ -297,6 +425,7 @@ class TypeTool final : public TTool {
   TEnumProperty m_fontFamilyMenu;
   TEnumProperty m_typeFaceMenu;
   TBoolProperty m_vertical;
+  TBoolProperty m_textHistoryEnabled;
   TEnumProperty m_size;
   TPropertyGroup m_prop[2];
 
@@ -330,6 +459,8 @@ class TypeTool final : public TTool {
   bool m_isVertical;      // text orientation
 
   TUndo *m_undo;
+  TypeToolTextHistory m_textHistory;
+  TypeToolTextHistoryPopup *m_textHistoryPopup;
 
 public:
   TypeTool();
@@ -382,6 +513,11 @@ public:
                             std::vector<const TVectorImage *> &images);
   void addTextToToonzImage(const TToonzImageP &currentImage);
   void stopEditing();
+  QString currentText() const;
+  void setTextFromHistory(const QString &text);
+  void syncTextHistoryDraft();
+  void showTextHistoryPopup();
+  void hideTextHistoryPopup();
 
   void reset() override;
 
@@ -402,8 +538,133 @@ public:
   }
 
   int getColorClass() const { return 1; }
+};
 
-} typeTool;
+//---------------------------------------------------------
+
+class TypeToolTextHistoryPopup final : public DVGui::Dialog {
+  Q_DECLARE_TR_FUNCTIONS(TypeToolTextHistoryPopup)
+
+  TypeToolTextHistory &m_history;
+  QListWidget *m_historyList;
+  QPlainTextEdit *m_editor;
+  QTimer *m_saveTimer;
+  std::function<void(const QString &)> m_textChanged;
+
+  void rebuildHistoryList() {
+    int oldRow = m_historyList->currentRow();
+    QSignalBlocker blocker(m_historyList);
+    m_historyList->clear();
+    for (const QString &text : m_history.entries()) {
+      QString label = text;
+      label.replace('\n', QChar(0x21B5));
+      if (label.size() > 80) label = label.left(77) + QStringLiteral("...");
+      QListWidgetItem *item = new QListWidgetItem(label, m_historyList);
+      item->setToolTip(text);
+    }
+    if (oldRow >= 0 && oldRow < m_historyList->count())
+      m_historyList->setCurrentRow(oldRow);
+  }
+
+  void scheduleDraftSave() {
+    m_history.setDraft(m_editor->toPlainText());
+    m_saveTimer->start();
+  }
+
+public:
+  TypeToolTextHistoryPopup(QWidget *parent, TypeToolTextHistory &history,
+                           std::function<void(const QString &)> textChanged)
+      : DVGui::Dialog(parent, false, false, QStringLiteral("TypeToolHistory"))
+      , m_history(history)
+      , m_historyList(new QListWidget(this))
+      , m_editor(new QPlainTextEdit(this))
+      , m_saveTimer(new QTimer(this))
+      , m_textChanged(std::move(textChanged)) {
+    setWindowTitle(tr("Type Tool Text History"));
+    setMinimumSize(420, 360);
+
+    m_historyList->setAlternatingRowColors(true);
+    m_historyList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_editor->setPlaceholderText(tr("Enter text to place with the Type Tool."));
+    m_editor->setPlainText(m_history.draft());
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->addWidget(new QLabel(tr("Recent Text (last 10)"), this));
+    layout->addWidget(m_historyList, 1);
+    layout->addWidget(new QLabel(tr("Editable Text"), this));
+    layout->addWidget(m_editor, 2);
+
+    QPushButton *deleteButton = new QPushButton(tr("Delete Entry"), this);
+    QPushButton *clearButton  = new QPushButton(tr("Clear History"), this);
+    QPushButton *closeButton  = new QPushButton(tr("Close"), this);
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->addWidget(deleteButton);
+    buttonLayout->addWidget(clearButton);
+    buttonLayout->addStretch(1);
+    buttonLayout->addWidget(closeButton);
+    layout->addLayout(buttonLayout);
+    addLayout(layout);
+
+    m_saveTimer->setSingleShot(true);
+    m_saveTimer->setInterval(300);
+
+    connect(m_saveTimer, &QTimer::timeout, this,
+            [this]() { m_history.saveDraft(); });
+    connect(m_editor, &QPlainTextEdit::textChanged, this, [this]() {
+      scheduleDraftSave();
+      if (m_textChanged) m_textChanged(m_editor->toPlainText());
+    });
+    connect(m_historyList, &QListWidget::currentRowChanged, this,
+            [this](int row) {
+              if (row < 0 || row >= m_history.entries().size()) return;
+              m_editor->setPlainText(m_history.entries().at(row));
+              m_editor->setFocus();
+            });
+    connect(deleteButton, &QPushButton::clicked, this, [this]() {
+      int row = m_historyList->currentRow();
+      if (row < 0) return;
+      m_history.removeEntry(row);
+      rebuildHistoryList();
+    });
+    connect(clearButton, &QPushButton::clicked, this, [this]() {
+      if (QMessageBox::question(
+              this, tr("Clear Text History"),
+              tr("Remove all saved Type Tool text entries?")) !=
+          QMessageBox::Yes)
+        return;
+      m_history.clear();
+      rebuildHistoryList();
+    });
+    connect(closeButton, &QPushButton::clicked, this, &QWidget::hide);
+    connect(this, &DVGui::Dialog::dialogClosed, this, [this]() {
+      m_saveTimer->stop();
+      m_history.setDraft(m_editor->toPlainText());
+      m_history.saveDraft();
+    });
+
+    rebuildHistoryList();
+  }
+
+  void setEditorText(const QString &text) {
+    QString normalized = normalizedText(text);
+    if (m_editor->toPlainText() == normalized) return;
+    QSignalBlocker blocker(m_editor);
+    m_editor->setPlainText(normalized);
+    m_history.setDraft(normalized);
+    m_saveTimer->start();
+  }
+
+  void refreshHistory() { rebuildHistoryList(); }
+
+  void showAndRaise() {
+    refreshHistory();
+    show();
+    raise();
+    activateWindow();
+  }
+};
+
+TypeTool typeTool;
 
 //---------------------------------------------------------
 //
@@ -428,8 +689,10 @@ TypeTool::TypeTool()
     , m_fontFamilyMenu("Font:")                  // W_ToolOptions_FontName
     , m_typeFaceMenu("Style:")                   // W_ToolOptions_TypeFace
     , m_vertical("Vertical Orientation", false)  // W_ToolOptions_Vertical
-    , m_size("Size:")                            // W_ToolOptions_Size
-    , m_undo(0) {
+    , m_textHistoryEnabled("Text History", false)
+    , m_size("Size:")  // W_ToolOptions_Size
+    , m_undo(0)
+    , m_textHistoryPopup(nullptr) {
   bind(TTool::VectorImage | TTool::ToonzImage | TTool::EmptyTarget);
   m_prop[0].bind(m_fontFamilyMenu);
   // Su mac non e' visibile il menu dello style perche' e' stato inserito nel
@@ -440,7 +703,9 @@ TypeTool::TypeTool()
   //#endif
   m_prop[1].bind(m_size);
   m_prop[1].bind(m_vertical);
+  m_prop[1].bind(m_textHistoryEnabled);
   m_vertical.setId("Orientation");
+  m_textHistoryEnabled.setId("TextHistory");
   m_fontFamilyMenu.setId("TypeFont");
   m_typeFaceMenu.setId("TypeStyle");
   m_size.setId("TypeSize");
@@ -452,16 +717,92 @@ TypeTool::~TypeTool() {}
 
 //---------------------------------------------------------
 
+QString TypeTool::currentText() const {
+  QString text;
+  for (const StrokeChar &character : m_string) {
+    if (character.isReturn())
+      text.append('\n');
+    else
+      text.append(QString::fromStdWString(
+          std::wstring(1, static_cast<wchar_t>(character.m_key))));
+  }
+  return text;
+}
+
+//---------------------------------------------------------
+
+void TypeTool::setTextFromHistory(const QString &sourceText) {
+  if (!m_active || !m_validFonts || !getImage(false)) return;
+
+  QString text = normalizedText(sourceText);
+  if (currentText() == text) return;
+
+  QString typeToolText = text;
+  typeToolText.replace('\n', '\r');
+  replaceText(typeToolText.toStdWString(), 0,
+              static_cast<int>(m_string.size()));
+  m_cursorIndex  = static_cast<int>(m_string.size());
+  m_preeditRange = std::make_pair(m_cursorIndex, m_cursorIndex);
+  updateCharPositions();
+  invalidate();
+}
+
+//---------------------------------------------------------
+
+void TypeTool::syncTextHistoryDraft() {
+  if (!m_textHistoryEnabled.getValue()) return;
+  QString text = currentText();
+  m_textHistory.setDraft(text);
+  if (m_textHistoryPopup)
+    m_textHistoryPopup->setEditorText(text);
+  else
+    m_textHistory.saveDraft();
+}
+
+//---------------------------------------------------------
+
+void TypeTool::showTextHistoryPopup() {
+  if (!m_textHistoryEnabled.getValue()) return;
+  if (!m_textHistoryPopup) {
+    m_textHistoryPopup = new TypeToolTextHistoryPopup(
+        QApplication::activeWindow(), m_textHistory,
+        [this](const QString &text) { setTextFromHistory(text); });
+    connect(m_textHistoryPopup, &QObject::destroyed,
+            [this]() { m_textHistoryPopup = nullptr; });
+  }
+  m_textHistoryPopup->showAndRaise();
+}
+
+//---------------------------------------------------------
+
+void TypeTool::hideTextHistoryPopup() {
+  if (m_textHistoryPopup) m_textHistoryPopup->hide();
+}
+
+//---------------------------------------------------------
+
 void TypeTool::updateTranslation() {
   m_fontFamilyMenu.setQStringName(tr("Font:"));
   m_typeFaceMenu.setQStringName(tr("Style:"));
   m_vertical.setQStringName(tr("Vertical Orientation"));
+  m_textHistoryEnabled.setQStringName(tr("Text History"));
   m_size.setQStringName(tr("Size:"));
 }
 
 //---------------------------------------------------------
 
 bool TypeTool::onPropertyChanged(std::string propertyName) {
+  if (propertyName == m_textHistoryEnabled.getName()) {
+    m_textHistory.load();
+    bool enabled = m_textHistoryEnabled.getValue();
+    m_textHistory.setEnabled(enabled);
+    if (enabled)
+      showTextHistoryPopup();
+    else
+      hideTextHistoryPopup();
+    return true;
+  }
+
   if (!m_validFonts) return false;
 
   if (propertyName == m_fontFamilyMenu.getName()) {
@@ -485,6 +826,9 @@ bool TypeTool::onPropertyChanged(std::string propertyName) {
 void TypeTool::init() {
   if (m_initialized) return;
   m_initialized = true;
+
+  m_textHistory.load();
+  m_textHistoryEnabled.setValue(m_textHistory.isEnabled());
 
   loadFonts();
   if (!m_validFonts) return;
@@ -1078,6 +1422,7 @@ void TypeTool::addTextToImage() {
 
   UINT size = m_string.size();
   if (size == 0) return;
+  QString committedText = currentText();
 
   TImageP img      = getImage(true);
   TVectorImageP vi = img;
@@ -1108,6 +1453,16 @@ void TypeTool::addTextToImage() {
 
   notifyImageChanged();
   //  getApplication()->notifyImageChanges();
+
+  if (m_textHistoryEnabled.getValue()) {
+    m_textHistory.addEntry(committedText);
+    m_textHistory.setDraft(committedText);
+    m_textHistory.saveDraft();
+    if (m_textHistoryPopup) {
+      m_textHistoryPopup->setEditorText(committedText);
+      m_textHistoryPopup->refreshHistory();
+    }
+  }
 
   m_string.clear();
   m_cursorIndex = 0;
@@ -1263,6 +1618,10 @@ void TypeTool::leftButtonDown(const TPointD &pos, const TMouseEvent &) {
   m_startPoint = pos;
   updateTextBox();
   updateCursorPoint();
+  if (m_textHistoryEnabled.getValue()) {
+    showTextHistoryPopup();
+    setTextFromHistory(m_textHistory.draft());
+  }
   updateMouseCursor(pos);
   //  enableShortcuts(false);
   invalidate();
@@ -1557,6 +1916,8 @@ bool TypeTool::keyDown(QKeyEvent *event) {
 
   if (!m_validFonts || !m_active) return true;
 
+  bool textChanged = false;
+
   switch (event->key()) {
   case Qt::Key_Insert:
   case Qt::Key_CapsLock:
@@ -1635,6 +1996,7 @@ bool TypeTool::keyDown(QKeyEvent *event) {
 
   case Qt::Key_Delete:
     deleteKey();
+    textChanged = true;
     break;
 
   case Qt::Key_Backspace:
@@ -1642,12 +2004,14 @@ bool TypeTool::keyDown(QKeyEvent *event) {
       m_cursorIndex--;
       m_preeditRange = std::make_pair(m_cursorIndex, m_cursorIndex);
       deleteKey();
+      textChanged = true;
     }
     break;
 
   case Qt::Key_Return:
   case Qt::Key_Enter:
     addReturn();
+    textChanged = true;
     break;
 
   default:
@@ -1657,16 +2021,19 @@ bool TypeTool::keyDown(QKeyEvent *event) {
     m_cursorIndex += unicodeChar.size();
     m_preeditRange = std::make_pair(startIndex, m_cursorIndex);
     updateCharPositions(startIndex - 1);
+    textChanged = true;
   }
 
+  if (textChanged) syncTextHistoryDraft();
   invalidate();
   return true;
 }
 
 //-----------------------------------------------------------------------------
 
-void TypeTool::onInputText(const std::wstring &preedit, const std::wstring &commit,
-                           int replacementStart, int replacementLen) {
+void TypeTool::onInputText(const std::wstring &preedit,
+                           const std::wstring &commit, int replacementStart,
+                           int replacementLen) {
   // butto la vecchia preedit string
   m_preeditRange.first  = std::max(0, m_preeditRange.first);
   m_preeditRange.second = std::min((int)m_string.size(), m_preeditRange.second);
@@ -1690,6 +2057,7 @@ void TypeTool::onInputText(const std::wstring &preedit, const std::wstring &comm
   // aggiorno la posizione del cursore
   m_cursorIndex = m_preeditRange.second;
   updateCharPositions(a);
+  syncTextHistoryDraft();
   invalidate();
 }
 
@@ -1701,6 +2069,7 @@ void TypeTool::onActivate() {
   m_string.clear();
   m_textBox     = TRectD(0, 0, 0, 0);
   m_cursorIndex = 0;
+  if (m_textHistoryEnabled.getValue()) showTextHistoryPopup();
 }
 
 //---------------------------------------------------------
@@ -1711,6 +2080,7 @@ void TypeTool::onDeactivate() {
     addTextToImage();  // call internally stopEditing()
   else
     stopEditing();
+  hideTextHistoryPopup();
 }
 
 //---------------------------------------------------------
