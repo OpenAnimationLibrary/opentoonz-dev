@@ -394,6 +394,8 @@ set(SOURCES
     xdtsio.cpp
     sxfio.cpp
     ocaio.cpp
+    importpdf.cpp
+    importpdf.h
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
     tooloptionsshortcutinvoker.cpp
