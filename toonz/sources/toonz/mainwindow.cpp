@@ -444,7 +444,7 @@ void Room::showEvent(QShowEvent *event) {
     DockLayout::State savedState = m_pendingLayoutState;
     DockLayout *layout           = dockLayout();
     QTimer::singleShot(0, this, [layout, savedState]() {
-      layout->restoreState(savedState);
+      if (layout->restoreState(savedState)) layout->redistribute();
     });
   }
 }
