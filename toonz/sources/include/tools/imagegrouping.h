@@ -23,13 +23,14 @@ class DVAPI TGroupCommand final : public QObject {
   Q_OBJECT
 public:
   enum {
-    NONE     = 0,
-    FRONT    = 1,
-    FORWARD  = 2,
-    BACKWARD = 4,
-    BACK     = 8,
-    GROUP    = 16,
-    UNGROUP  = 32
+    NONE        = 0,
+    FRONT       = 1,
+    FORWARD     = 2,
+    BACKWARD    = 4,
+    BACK        = 8,
+    GROUP       = 16,
+    UNGROUP     = 32,
+    UNGROUP_ALL = 64
   };
 
   StrokeSelection *m_sel;
@@ -59,6 +60,10 @@ public:
   }
   void group();
   void ungroup();
+  //! Recursively ungroup the selected group(s), preserving any entered outer group.
+  void ungroupSelectedAll();
+  //! Remove every explicit group and subgroup from the current vector drawing.
+  void ungroupAll();
   void enterGroup();
   void exitGroup();
 
