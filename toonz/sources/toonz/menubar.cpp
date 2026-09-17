@@ -433,6 +433,13 @@ bool StackedMenuBar::readMenuRecursive(QXmlStreamReader &reader, QMenu *menu) {
     }
   }
 
+  QAction *sceneExport =
+      CommandManager::instance()->getAction(MI_ExportCurrentScene);
+  QAction *archiveExport =
+      CommandManager::instance()->getAction(MI_ExportProductionArchive);
+  if (sceneExport && archiveExport && menu->actions().contains(sceneExport) &&
+      !menu->actions().contains(archiveExport))
+    menu->addAction(archiveExport);
   return !reader.hasError();
 }
 
@@ -1239,6 +1246,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   QMenu *exportMenu = fileMenu->addMenu(tr("Export"));
   {
     addMenuItem(exportMenu, MI_ExportCurrentScene);
+    addMenuItem(exportMenu, MI_ExportProductionArchive);
     addMenuItem(exportMenu, MI_SoundTrack);
     addMenuItem(exportMenu, MI_ExportXDTS);
     addMenuItem(exportMenu, MI_ExportSXF);
