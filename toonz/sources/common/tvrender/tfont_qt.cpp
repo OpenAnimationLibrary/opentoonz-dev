@@ -49,13 +49,19 @@ QPainterPath shapedTextPath(const QString &text, const QFont &font) {
   layout.endLayout();
   if (!line.isValid()) return path;
 
+  // QTextLayout positions glyph runs in line-box coordinates, where the
+  // baseline is offset by the line ascent. TFont's vector drawing API expects
+  // glyph outlines relative to a zero baseline, as QRawFont::pathForGlyph()
+  // returned before shaped text support was added.
+  const qreal baselineOffset = line.ascent();
+
   for (const QGlyphRun &run : line.glyphRuns()) {
     const QVector<quint32> glyphs = run.glyphIndexes();
     const QVector<QPointF> positions = run.positions();
     QRawFont rawFont = run.rawFont();
     for (int i = 0; i < glyphs.size() && i < positions.size(); ++i) {
       QPainterPath glyphPath = rawFont.pathForGlyph(glyphs.at(i));
-      glyphPath.translate(positions.at(i));
+      glyphPath.translate(positions.at(i) - QPointF(0, baselineOffset));
       path.addPath(glyphPath);
     }
   }
