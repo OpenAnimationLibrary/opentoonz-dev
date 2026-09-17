@@ -44,9 +44,11 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QIntValidator>
 #include <QMimeData>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPlainTextEdit>
@@ -112,6 +114,12 @@ constexpr qint64 cTextImportWarningSize = 1024 * 1024;
 
 enum class TypeToolTextFormat { PlainText, Markdown };
 
+struct TypeToolFontSettings final {
+  QString family;
+  QString style;
+  QString size;
+};
+
 QString textFormatName(TypeToolTextFormat format) {
   return format == TypeToolTextFormat::Markdown ? QStringLiteral("Markdown")
                                                 : QStringLiteral("PlainText");
@@ -127,12 +135,16 @@ struct TypeToolTextEntry final {
   QString source;
   TypeToolTextFormat format     = TypeToolTextFormat::PlainText;
   bool preserveSourceLineBreaks = true;
+  TypeToolFontSettings font;
 };
 
 bool sameTextEntry(const TypeToolTextEntry &first,
                    const TypeToolTextEntry &second) {
   return first.source == second.source && first.format == second.format &&
-         first.preserveSourceLineBreaks == second.preserveSourceLineBreaks;
+         first.preserveSourceLineBreaks == second.preserveSourceLineBreaks &&
+         first.font.family == second.font.family &&
+         first.font.style == second.font.style &&
+         first.font.size == second.font.size;
 }
 
 QString typeToolSettingsPath() {
@@ -174,7 +186,7 @@ class TypeToolTextHistory final {
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
     values.beginGroup("General");
-    values.setValue("Version", 2);
+    values.setValue("Version", 3);
     values.setValue("HistoryLimit", cTextHistoryLimit);
     values.endGroup();
     values.beginWriteArray("History", m_entries.size());
@@ -185,6 +197,9 @@ class TypeToolTextHistory final {
       values.setValue("Source", entry.source);
       values.setValue("Format", textFormatName(entry.format));
       values.setValue("PreserveLineBreaks", entry.preserveSourceLineBreaks);
+      values.setValue("FontFamily", entry.font.family);
+      values.setValue("FontStyle", entry.font.style);
+      values.setValue("FontSize", entry.font.size);
     }
     values.endArray();
     values.sync();
@@ -209,6 +224,9 @@ public:
         values.value("Format", QStringLiteral("PlainText")).toString());
     m_draft.preserveSourceLineBreaks =
         values.value("PreserveLineBreaks", true).toBool();
+    m_draft.font.family = values.value("FontFamily").toString();
+    m_draft.font.style  = values.value("FontStyle").toString();
+    m_draft.font.size   = values.value("FontSize").toString();
     values.endGroup();
 
     int count = values.beginReadArray("History");
@@ -221,6 +239,9 @@ public:
           values.value("Format", QStringLiteral("PlainText")).toString());
       entry.preserveSourceLineBreaks =
           values.value("PreserveLineBreaks", true).toBool();
+      entry.font.family = values.value("FontFamily").toString();
+      entry.font.style  = values.value("FontStyle").toString();
+      entry.font.size   = values.value("FontSize").toString();
       bool duplicate = false;
       for (const TypeToolTextEntry &savedEntry : m_entries) {
         if (sameTextEntry(savedEntry, entry)) {
@@ -244,7 +265,7 @@ public:
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
     values.beginGroup("General");
-    values.setValue("Version", 2);
+    values.setValue("Version", 3);
     values.setValue("HistoryLimit", cTextHistoryLimit);
     values.setValue("EditorEnabled", m_enabled);
     values.endGroup();
@@ -255,6 +276,8 @@ public:
     m_draft.source = normalizedText(text);
   }
 
+  void setDraftFont(const TypeToolFontSettings &font) { m_draft.font = font; }
+
   void setDraft(const TypeToolTextEntry &entry) {
     m_draft        = entry;
     m_draft.source = normalizedText(m_draft.source);
@@ -264,7 +287,7 @@ public:
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
     values.beginGroup("General");
-    values.setValue("Version", 2);
+    values.setValue("Version", 3);
     values.setValue("HistoryLimit", cTextHistoryLimit);
     values.endGroup();
     values.beginGroup("Draft");
@@ -272,6 +295,9 @@ public:
     values.setValue("Source", m_draft.source);
     values.setValue("Format", textFormatName(m_draft.format));
     values.setValue("PreserveLineBreaks", m_draft.preserveSourceLineBreaks);
+    values.setValue("FontFamily", m_draft.font.family);
+    values.setValue("FontStyle", m_draft.font.style);
+    values.setValue("FontSize", m_draft.font.size);
     values.endGroup();
     values.sync();
   }
@@ -570,6 +596,11 @@ public:
   void setTypeface(std::wstring typeface);
   void setSize(std::wstring size);
   void setVertical(bool vertical);
+  TypeToolFontSettings currentFontSettings() const;
+  QStringList availableFontFamilies() const;
+  QStringList availableFontStyles() const;
+  QStringList availableFontSizes() const;
+  void applyFontSettings(const TypeToolFontSettings &font);
   void draw() override;
 
   void updateMouseCursor(const TPointD &pos);
@@ -607,6 +638,7 @@ public:
   QString currentText() const;
   void setTextFromHistory(const QString &text);
   void syncTextHistoryDraft();
+  void syncTextHistoryFontSettings();
   void showTextHistoryPopup();
   void hideTextHistoryPopup();
 
@@ -636,9 +668,13 @@ public:
 class TypeToolTextHistoryPopup final : public DVGui::Dialog {
   Q_DECLARE_TR_FUNCTIONS(TypeToolTextHistoryPopup)
 
+  TypeTool *m_tool;
   TypeToolTextHistory &m_history;
   QListWidget *m_historyList;
   QPlainTextEdit *m_editor;
+  QComboBox *m_fontFamilyCombo;
+  QComboBox *m_fontStyleCombo;
+  QComboBox *m_fontSizeCombo;
   QComboBox *m_formatCombo;
   QCheckBox *m_preserveLineBreaks;
   QTimer *m_saveTimer;
@@ -651,23 +687,67 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
                                          ? TypeToolTextFormat::Markdown
                                          : TypeToolTextFormat::PlainText;
     entry.preserveSourceLineBreaks = m_preserveLineBreaks->isChecked();
+    entry.font.family              = m_fontFamilyCombo->currentText();
+    entry.font.style               = m_fontStyleCombo->currentText();
+    entry.font.size                = m_fontSizeCombo->currentText();
     return entry;
   }
 
+  void refreshFontControls() {
+    TypeToolFontSettings font = m_tool->currentFontSettings();
+    QSignalBlocker familyBlocker(m_fontFamilyCombo);
+    QSignalBlocker styleBlocker(m_fontStyleCombo);
+    QSignalBlocker sizeBlocker(m_fontSizeCombo);
+
+    m_fontFamilyCombo->clear();
+    m_fontFamilyCombo->addItems(m_tool->availableFontFamilies());
+    m_fontFamilyCombo->setCurrentText(font.family);
+
+    m_fontStyleCombo->clear();
+    m_fontStyleCombo->addItems(m_tool->availableFontStyles());
+    m_fontStyleCombo->setCurrentText(font.style);
+
+    m_fontSizeCombo->clear();
+    m_fontSizeCombo->addItems(m_tool->availableFontSizes());
+    m_fontSizeCombo->setCurrentText(font.size);
+  }
+
+  void applyFontControls(bool familyChanged = false) {
+    TypeToolFontSettings font;
+    font.family = m_fontFamilyCombo->currentText();
+    if (!familyChanged) font.style = m_fontStyleCombo->currentText();
+    font.size = m_fontSizeCombo->currentText();
+    m_tool->applyFontSettings(font);
+    refreshFontControls();
+    scheduleDraftSave();
+  }
+
   void setEditorEntry(const TypeToolTextEntry &entry, bool notify = true) {
+    TypeToolTextEntry resolvedEntry  = entry;
+    TypeToolFontSettings currentFont = m_tool->currentFontSettings();
+    if (resolvedEntry.font.family.isEmpty())
+      resolvedEntry.font.family = currentFont.family;
+    if (resolvedEntry.font.style.isEmpty())
+      resolvedEntry.font.style = currentFont.style;
+    if (resolvedEntry.font.size.isEmpty())
+      resolvedEntry.font.size = currentFont.size;
+    m_tool->applyFontSettings(resolvedEntry.font);
+
     QSignalBlocker editorBlocker(m_editor);
     QSignalBlocker formatBlocker(m_formatCombo);
     QSignalBlocker lineBreakBlocker(m_preserveLineBreaks);
-    m_editor->setPlainText(entry.source);
+    m_editor->setPlainText(resolvedEntry.source);
     m_formatCombo->setCurrentIndex(
-        entry.format == TypeToolTextFormat::Markdown ? 1 : 0);
-    m_preserveLineBreaks->setChecked(entry.preserveSourceLineBreaks);
-    m_preserveLineBreaks->setEnabled(entry.format ==
+        resolvedEntry.format == TypeToolTextFormat::Markdown ? 1 : 0);
+    m_preserveLineBreaks->setChecked(resolvedEntry.preserveSourceLineBreaks);
+    m_preserveLineBreaks->setEnabled(resolvedEntry.format ==
                                      TypeToolTextFormat::Markdown);
-    m_history.setDraft(entry);
+    refreshFontControls();
+    resolvedEntry.font = m_tool->currentFontSettings();
+    m_history.setDraft(resolvedEntry);
     if (notify) {
       m_saveTimer->start();
-      if (m_textChanged) m_textChanged(entry.source);
+      if (m_textChanged) m_textChanged(resolvedEntry.source);
     }
   }
 
@@ -729,8 +809,18 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
       if (label.size() > 80) label = label.left(77) + QStringLiteral("...");
       if (entry.format == TypeToolTextFormat::Markdown)
         label.prepend(QStringLiteral("[MD] "));
+      QString fontLabel =
+          QStringLiteral("%1, %2, %3")
+              .arg(entry.font.family, entry.font.style, entry.font.size);
+      if (!entry.font.family.isEmpty())
+        label.prepend(QStringLiteral("[%1] ").arg(fontLabel));
       QListWidgetItem *item = new QListWidgetItem(label, m_historyList);
-      item->setToolTip(entry.source);
+      QString toolTip       = entry.source;
+      if (!entry.font.family.isEmpty())
+        toolTip += QStringLiteral("\n\n%1: %2\n%3: %4\n%5: %6")
+                       .arg(tr("Font"), entry.font.family, tr("Style"),
+                            entry.font.style, tr("Size"), entry.font.size);
+      item->setToolTip(toolTip);
     }
     if (oldRow >= 0 && oldRow < m_historyList->count())
       m_historyList->setCurrentRow(oldRow);
@@ -742,32 +832,47 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
   }
 
 public:
-  TypeToolTextHistoryPopup(QWidget *parent, TypeToolTextHistory &history,
+  TypeToolTextHistoryPopup(QWidget *parent, TypeTool *tool,
+                           TypeToolTextHistory &history,
                            std::function<void(const QString &)> textChanged)
       : DVGui::Dialog(parent, false, false, QStringLiteral("TypeToolHistory"))
+      , m_tool(tool)
       , m_history(history)
       , m_historyList(new QListWidget(this))
       , m_editor(new QPlainTextEdit(this))
+      , m_fontFamilyCombo(new QComboBox(this))
+      , m_fontStyleCombo(new QComboBox(this))
+      , m_fontSizeCombo(new QComboBox(this))
       , m_formatCombo(new QComboBox(this))
       , m_preserveLineBreaks(
             new QCheckBox(tr("Preserve source line breaks for Markdown"), this))
       , m_saveTimer(new QTimer(this))
       , m_textChanged(std::move(textChanged)) {
     setWindowTitle(tr("Type Tool Text History"));
-    setMinimumSize(420, 360);
+    setMinimumSize(520, 460);
 
     m_historyList->setAlternatingRowColors(true);
     m_historyList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_editor->setPlaceholderText(tr("Enter text to place with the Type Tool."));
+    m_fontSizeCombo->setEditable(true);
+    m_fontSizeCombo->lineEdit()->setValidator(
+        new QIntValidator(1, 1000, m_fontSizeCombo));
     m_formatCombo->addItem(tr("Plain Text"));
     m_formatCombo->addItem(tr("Markdown"));
     setEditorEntry(m_history.draft(), false);
 
     QVBoxLayout *layout = new QVBoxLayout;
-    layout->addWidget(new QLabel(tr("Recent Text (last 10)"), this));
-    layout->addWidget(m_historyList, 1);
     layout->addWidget(new QLabel(tr("Editable Text"), this));
     layout->addWidget(m_editor, 2);
+
+    QHBoxLayout *fontLayout = new QHBoxLayout;
+    fontLayout->addWidget(new QLabel(tr("Font:"), this));
+    fontLayout->addWidget(m_fontFamilyCombo, 2);
+    fontLayout->addWidget(new QLabel(tr("Style:"), this));
+    fontLayout->addWidget(m_fontStyleCombo, 1);
+    fontLayout->addWidget(new QLabel(tr("Size:"), this));
+    fontLayout->addWidget(m_fontSizeCombo);
+    layout->addLayout(fontLayout);
 
     QHBoxLayout *formatLayout = new QHBoxLayout;
     formatLayout->addWidget(new QLabel(tr("Document Format:"), this));
@@ -781,6 +886,8 @@ public:
         this);
     markdownNote->setWordWrap(true);
     layout->addWidget(markdownNote);
+    layout->addWidget(new QLabel(tr("Recent Text (last 10)"), this));
+    layout->addWidget(m_historyList, 1);
 
     QPushButton *importButton = new QPushButton(tr("Import Text..."), this);
     QPushButton *deleteButton = new QPushButton(tr("Delete Entry"), this);
@@ -813,6 +920,17 @@ public:
         });
     connect(m_preserveLineBreaks, &QCheckBox::toggled, this,
             [this]() { scheduleDraftSave(); });
+    connect(m_fontFamilyCombo,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), this,
+            [this](int) { applyFontControls(true); });
+    connect(m_fontStyleCombo,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), this,
+            [this](int) { applyFontControls(); });
+    connect(m_fontSizeCombo,
+            static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), this,
+            [this](int) { applyFontControls(); });
+    connect(m_fontSizeCombo->lineEdit(), &QLineEdit::editingFinished, this,
+            [this]() { applyFontControls(); });
     connect(m_historyList, &QListWidget::currentRowChanged, this,
             [this](int row) {
               if (row < 0 || row >= m_history.entries().size()) return;
@@ -852,6 +970,12 @@ public:
     QSignalBlocker blocker(m_editor);
     m_editor->setPlainText(normalized);
     m_history.setDraftSource(normalized);
+    m_saveTimer->start();
+  }
+
+  void syncFontControls() {
+    refreshFontControls();
+    m_history.setDraftFont(m_tool->currentFontSettings());
     m_saveTimer->start();
   }
 
@@ -960,11 +1084,22 @@ void TypeTool::syncTextHistoryDraft() {
 
 //---------------------------------------------------------
 
+void TypeTool::syncTextHistoryFontSettings() {
+  if (!m_textHistoryEnabled.getValue()) return;
+  m_textHistory.setDraftFont(currentFontSettings());
+  if (m_textHistoryPopup)
+    m_textHistoryPopup->syncFontControls();
+  else
+    m_textHistory.saveDraft();
+}
+
+//---------------------------------------------------------
+
 void TypeTool::showTextHistoryPopup() {
   if (!m_textHistoryEnabled.getValue()) return;
   if (!m_textHistoryPopup) {
     m_textHistoryPopup = new TypeToolTextHistoryPopup(
-        QApplication::activeWindow(), m_textHistory,
+        QApplication::activeWindow(), this, m_textHistory,
         [this](const QString &text) { setTextFromHistory(text); });
     QObject::connect(m_textHistoryPopup, &QObject::destroyed,
                      [this]() { m_textHistoryPopup = nullptr; });
@@ -1006,12 +1141,15 @@ bool TypeTool::onPropertyChanged(std::string propertyName) {
 
   if (propertyName == m_fontFamilyMenu.getName()) {
     setFont(m_fontFamilyMenu.getValue());
+    syncTextHistoryFontSettings();
     return true;
   } else if (propertyName == m_typeFaceMenu.getName()) {
     setTypeface(m_typeFaceMenu.getValue());
+    syncTextHistoryFontSettings();
     return true;
   } else if (propertyName == m_size.getName()) {
     setSize(m_size.getValue());
+    syncTextHistoryFontSettings();
     return true;
   } else if (propertyName == m_vertical.getName()) {
     setVertical(m_vertical.getValue());
@@ -1188,6 +1326,85 @@ void TypeTool::setSize(std::wstring strSize) {
     updateCharPositions();
 
   invalidate();
+}
+
+//---------------------------------------------------------
+
+TypeToolFontSettings TypeTool::currentFontSettings() const {
+  TypeToolFontSettings font;
+  font.family = QString::fromStdWString(m_fontFamilyMenu.getValue());
+  font.style  = QString::fromStdWString(m_typeFaceMenu.getValue());
+  font.size   = QString::fromStdWString(m_size.getValue());
+  return font;
+}
+
+//---------------------------------------------------------
+
+QStringList TypeTool::availableFontFamilies() const {
+  QStringList families;
+  for (const std::wstring &family : m_fontFamilyMenu.getRange())
+    families.append(QString::fromStdWString(family));
+  return families;
+}
+
+//---------------------------------------------------------
+
+QStringList TypeTool::availableFontStyles() const {
+  QStringList styles;
+  for (const std::wstring &style : m_typeFaceMenu.getRange())
+    styles.append(QString::fromStdWString(style));
+  return styles;
+}
+
+//---------------------------------------------------------
+
+QStringList TypeTool::availableFontSizes() const {
+  QStringList sizes;
+  for (const std::wstring &size : m_size.getRange())
+    sizes.append(QString::fromStdWString(size));
+  return sizes;
+}
+
+//---------------------------------------------------------
+
+void TypeTool::applyFontSettings(const TypeToolFontSettings &font) {
+  bool changed = false;
+
+  std::wstring family  = font.family.toStdWString();
+  bool familyAvailable = family.empty() || m_fontFamilyMenu.isValue(family);
+  if (!family.empty() && familyAvailable) {
+    if (m_fontFamilyMenu.getValue() != family) {
+      m_fontFamilyMenu.setValue(family);
+      setFont(family);
+      changed = true;
+    }
+  }
+
+  std::wstring style = font.style.toStdWString();
+  if (familyAvailable && !style.empty() && m_typeFaceMenu.isValue(style) &&
+      m_typeFaceMenu.getValue() != style) {
+    m_typeFaceMenu.setValue(style);
+    setTypeface(style);
+    changed = true;
+  }
+
+  bool validSize = false;
+  int size       = font.size.toInt(&validSize);
+  if (validSize && size > 0 && size <= 1000) {
+    std::wstring sizeValue = QString::number(size).toStdWString();
+    if (!m_size.isValue(sizeValue)) {
+      m_size.addValue(sizeValue);
+      TTool::getApplication()->getCurrentTool()->notifyToolComboBoxListChanged(
+          m_size.getName());
+    }
+    if (m_size.getValue() != sizeValue) {
+      m_size.setValue(sizeValue);
+      setSize(sizeValue);
+      changed = true;
+    }
+  }
+
+  if (changed) TTool::getApplication()->getCurrentTool()->notifyToolChanged();
 }
 
 //---------------------------------------------------------
@@ -1654,6 +1871,7 @@ void TypeTool::addTextToImage() {
   //  getApplication()->notifyImageChanges();
 
   if (m_textHistoryEnabled.getValue()) {
+    m_textHistory.setDraftFont(currentFontSettings());
     m_textHistory.addEntry(committedText);
     m_textHistory.setDraftSource(committedText);
     m_textHistory.saveDraft();
