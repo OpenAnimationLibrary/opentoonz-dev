@@ -55,6 +55,7 @@
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QTextCodec>
+#include <QTextBoundaryFinder>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -142,6 +143,19 @@ QString normalizedText(QString text) {
   text.replace("\r\n", "\n");
   text.replace('\r', '\n');
   return text;
+}
+
+QStringList graphemeClusters(const QString &text) {
+  QStringList clusters;
+  QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, text);
+  finder.toStart();
+  int start = 0;
+  int end;
+  while ((end = finder.toNextBoundary()) >= 0) {
+    if (end > start) clusters.append(text.mid(start, end - start));
+    start = end;
+  }
+  return clusters;
 }
 
 class TypeToolTextHistory final {
@@ -448,31 +462,35 @@ public:
 
   double m_offset;
   TPointD m_charPosition;
-  uint32_t m_key;
+  QString m_text;
   int m_styleId;
 
-  StrokeChar(TImageP _char, double offset, uint32_t key, int styleId)
+  StrokeChar(TImageP _char, double offset, const QString &text, int styleId)
       : m_char(_char)
       , m_offset(offset)
       , m_charPosition(TPointD(0, 0))
-      , m_key(key)
+      , m_text(text)
       , m_styleId(styleId) {}
 
-  bool isReturn() const { return m_key == QChar('\r').unicode(); }
+  bool isReturn() const { return m_text == QString(QChar('\r')); }
+  bool isSpace() const {
+    return !m_text.isEmpty() && m_text.at(0).isSpace();
+  }
 
-  void update(TAffine scale, uint32_t nextCode = 0) {
+  void update(TAffine scale, const QString &nextText = QString()) {
     if (!isReturn()) {
       if (TVectorImageP vi = m_char) {
         vi = m_char = new TVectorImage;
-        TPoint adv  = TFontManager::instance()->drawChar(vi, m_key, nextCode);
+        TPoint adv =
+            TFontManager::instance()->drawText(vi, m_text, nextText);
         vi->transform(scale);
         paintChar(vi, m_styleId);
         m_offset = (scale * TPointD((double)(adv.x), (double)(adv.y))).x;
       } else {
         TRasterCM32P newRasterCM;
         TPoint p;
-        TPoint adv = TFontManager::instance()->drawChar(
-            (TRasterCM32P &)newRasterCM, p, m_styleId, m_key, nextCode);
+        TPoint adv = TFontManager::instance()->drawText(
+            (TRasterCM32P &)newRasterCM, p, m_styleId, m_text, nextText);
         // m_char->transform(scale);
         m_offset = (scale * TPointD((double)(adv.x), (double)(adv.y))).x;
 
@@ -575,7 +593,6 @@ public:
   // corrispondenti a text a partire da from
   void replaceText(const QString &text, int from, int to);
 
-  void addBaseChar(uint32_t character);
   void addReturn();
   void cursorUp();
   void cursorDown();
@@ -906,10 +923,8 @@ QString TypeTool::currentText() const {
   for (const StrokeChar &character : m_string) {
     if (character.isReturn())
       text.append('\n');
-    else {
-      uint codePoint = character.m_key;
-      text.append(QString::fromUcs4(&codePoint, 1));
-    }
+    else
+      text.append(character.m_text);
   }
   return text;
 }
@@ -1221,7 +1236,7 @@ void TypeTool::updateStrokeChar() {
   bool hasKerning = instance->hasKerning();
   for (UINT i = 0; i < m_string.size(); i++) {
     if (hasKerning && i + 1 < m_string.size() && !m_string[i + 1].isReturn())
-      m_string[i].update(/*m_font,*/ m_scale, m_string[i + 1].m_key);
+      m_string[i].update(/*m_font,*/ m_scale, m_string[i + 1].m_text);
     else
       m_string[i].update(/*m_font,*/ m_scale);
   }
@@ -1274,7 +1289,7 @@ void TypeTool::updateCharPositions(int updateFrom) {
     m_string[j].m_charPosition = m_startPoint + currentOffset;
     // Vertical case
     if (m_isVertical && !instance->hasVertical()) {
-      if (m_string[j].isReturn() || m_string[j].m_key == ' ')
+      if (m_string[j].isReturn() || m_string[j].isSpace())
         currentOffset = TPointD(currentOffset.x - vLineSpacing, -height);
       else
         currentOffset = currentOffset + TPointD(0, -height);
@@ -1848,17 +1863,17 @@ void TypeTool::replaceText(const QString &text, int from, int to) {
   TPoint adv;
   TPointD d_adv;
 
-  QVector<uint> codePoints = text.toUcs4();
-  for (int i = 0; i < codePoints.size(); i++) {
-    uint32_t character = codePoints[i];
+  QStringList clusters = graphemeClusters(text);
+  for (int i = 0; i < clusters.size(); i++) {
+    const QString &character = clusters.at(i);
 
     // line break case. This can happen when pasting text including the line
     // break
-    if (character == '\r') {
+    if (character == QString(QChar('\r'))) {
       TVectorImageP vi(new TVectorImage);
       unsigned int index = from + i;
       m_string.insert(m_string.begin() + index,
-                      StrokeChar(vi, -1., QChar('\r').unicode(), 0));
+                      StrokeChar(vi, -1., QString(QChar('\r')), 0));
     }
 
     else if (vi) {
@@ -1869,10 +1884,10 @@ void TypeTool::replaceText(const QString &text, int from, int to) {
       TPoint adv;
       if (instance->hasKerning() && index < m_string.size() &&
           !m_string[index].isReturn())
-        adv = instance->drawChar(characterImage, character,
-                                 m_string[index].m_key);
+        adv = instance->drawText(characterImage, character,
+                                 m_string[index].m_text);
       else
-        adv = instance->drawChar(characterImage, character);
+        adv = instance->drawText(characterImage, character);
       TPointD advD = m_scale * TPointD(adv.x, adv.y);
 
       characterImage->transform(m_scale);
@@ -1888,11 +1903,11 @@ void TypeTool::replaceText(const QString &text, int from, int to) {
 
       if (instance->hasKerning() && (UINT)m_cursorIndex < m_string.size() &&
           index < m_string.size() - 1 && !m_string[index].isReturn())
-        adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                                 character, m_string[index].m_key);
+        adv = instance->drawText((TRasterCM32P &)newRasterCM, p, styleId,
+                                 character, m_string[index].m_text);
       else
-        adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                                 character, 0);
+        adv = instance->drawText((TRasterCM32P &)newRasterCM, p, styleId,
+                                 character);
 
       d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
 
@@ -1914,7 +1929,8 @@ void TypeTool::replaceText(const QString &text, int from, int to) {
       !m_string[from - 1].isReturn() && from < (int)m_string.size() &&
       !m_string[from].isReturn()) {
     TPoint adv =
-        instance->getDistance(m_string[from - 1].m_key, m_string[from].m_key);
+        instance->getDistance(m_string[from - 1].m_text,
+                              m_string[from].m_text);
     TPointD advD = m_scale * TPointD((double)(adv.x), (double)(adv.y));
     m_string[from - 1].m_offset = advD.x;
   }
@@ -1925,93 +1941,13 @@ void TypeTool::replaceText(const QString &text, int from, int to) {
 void TypeTool::addReturn() {
   TVectorImageP vi(new TVectorImage);
   if ((UINT)m_cursorIndex == m_string.size())
-    m_string.push_back(StrokeChar(vi, -1., QChar('\r').unicode(), 0));
+    m_string.push_back(StrokeChar(vi, -1., QString(QChar('\r')), 0));
   else
     m_string.insert(m_string.begin() + m_cursorIndex,
-                    StrokeChar(vi, -1., QChar('\r').unicode(), 0));
+                    StrokeChar(vi, -1., QString(QChar('\r')), 0));
 
   m_cursorIndex++;
   m_preeditRange = std::make_pair(m_cursorIndex, m_cursorIndex);
-  updateCharPositions(m_cursorIndex - 1);
-  invalidate();
-}
-
-//---------------------------------------------------------
-
-void TypeTool::addBaseChar(uint32_t character) {
-  TFontManager *instance = TFontManager::instance();
-
-  TImageP img      = getImage(true);
-  TToonzImageP ti  = img;
-  TVectorImageP vi = img;
-
-  int styleId = TTool::getApplication()->getCurrentLevelStyleIndex();
-  TPoint adv;
-  TPointD d_adv;
-
-  if (vi) {
-    TVectorImageP newVImage(new TVectorImage);
-
-    if (instance->hasKerning() && (UINT)m_cursorIndex < m_string.size() &&
-        !m_string[m_cursorIndex].isReturn())
-      adv = instance->drawChar(newVImage, character,
-                               m_string[m_cursorIndex].m_key);
-    else
-      adv = instance->drawChar(newVImage, character);
-
-    newVImage->transform(m_scale);
-    paintChar(newVImage, styleId);
-    // if(isSketchStyle(styleId))
-    //    enableSketchStyle();
-
-    d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
-
-    if ((UINT)m_cursorIndex == m_string.size())
-      m_string.push_back(StrokeChar(newVImage, d_adv.x, character, styleId));
-    else
-      m_string.insert(m_string.begin() + m_cursorIndex,
-                      StrokeChar(newVImage, d_adv.x, character, styleId));
-  } else if (ti) {
-    TRasterCM32P newRasterCM;
-    TPoint p;
-
-    if (instance->hasKerning() && (UINT)m_cursorIndex < m_string.size() &&
-        !m_string[m_cursorIndex].isReturn())
-      adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                               character, m_string[m_cursorIndex].m_key);
-    else
-      adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                               character, 0);
-
-    // textImage->transform(m_scale);
-
-    d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
-
-    TToonzImageP newTImage(
-        new TToonzImage(newRasterCM, newRasterCM->getBounds()));
-
-    TPalette *vPalette = img->getPalette();
-    assert(vPalette);
-    newTImage->setPalette(vPalette);
-
-    // newTImage->updateRGBM(newRasterCM->getBounds(),vPalette);
-    // assert(0);
-
-    if ((UINT)m_cursorIndex == m_string.size())
-      m_string.push_back(StrokeChar(newTImage, d_adv.x, character, styleId));
-    else
-      m_string.insert(m_string.begin() + m_cursorIndex,
-                      StrokeChar(newTImage, d_adv.x, character, styleId));
-  }
-
-  if (instance->hasKerning() && m_cursorIndex > 0 &&
-      !m_string[m_cursorIndex - 1].isReturn()) {
-    adv   = instance->getDistance(m_string[m_cursorIndex - 1].m_key, character);
-    d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
-    m_string[m_cursorIndex - 1].m_offset = d_adv.x;
-  }
-
-  m_cursorIndex++;
   updateCharPositions(m_cursorIndex - 1);
   invalidate();
 }
@@ -2060,10 +1996,10 @@ void TypeTool::deleteKey() {
     TPoint adv;
     if ((UINT)m_cursorIndex < m_string.size() &&
         !m_string[m_cursorIndex].isReturn()) {
-      adv = instance->getDistance(m_string[m_cursorIndex - 1].m_key,
-                                  m_string[m_cursorIndex].m_key);
+      adv = instance->getDistance(m_string[m_cursorIndex - 1].m_text,
+                                  m_string[m_cursorIndex].m_text);
     } else {
-      adv = instance->getDistance(m_string[m_cursorIndex - 1].m_key, 0);
+      adv = instance->getDistance(m_string[m_cursorIndex - 1].m_text);
     }
     TPointD d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
     m_string[m_cursorIndex - 1].m_offset = d_adv.x;
@@ -2197,7 +2133,7 @@ bool TypeTool::keyDown(QKeyEvent *event) {
     if (text.isEmpty()) return false;
     replaceText(text, m_cursorIndex, m_cursorIndex);
     int startIndex = m_cursorIndex + 1;
-    m_cursorIndex += text.toUcs4().size();
+    m_cursorIndex += graphemeClusters(text).size();
     m_preeditRange = std::make_pair(startIndex, m_cursorIndex);
     updateCharPositions(startIndex - 1);
     textChanged = true;
@@ -2228,12 +2164,12 @@ void TypeTool::onInputText(const std::wstring &preedit,
   int b = tcrop(m_preeditRange.first + replacementStart + replacementLen, a,
                 stringLength);
   replaceText(commitText, a, b);
-  int index = a + commitText.toUcs4().size();
+  int index = a + graphemeClusters(commitText).size();
 
   // inserisco la nuova preedit string
   if (!preeditText.isEmpty()) replaceText(preeditText, index, index);
   m_preeditRange.first  = index;
-  m_preeditRange.second = index + preeditText.toUcs4().size();
+  m_preeditRange.second = index + graphemeClusters(preeditText).size();
 
   // aggiorno la posizione del cursore
   m_cursorIndex = m_preeditRange.second;
