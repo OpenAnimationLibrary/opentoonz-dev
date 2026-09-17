@@ -448,19 +448,19 @@ public:
 
   double m_offset;
   TPointD m_charPosition;
-  int m_key;
+  uint32_t m_key;
   int m_styleId;
 
-  StrokeChar(TImageP _char, double offset, int key, int styleId)
+  StrokeChar(TImageP _char, double offset, uint32_t key, int styleId)
       : m_char(_char)
       , m_offset(offset)
       , m_charPosition(TPointD(0, 0))
       , m_key(key)
       , m_styleId(styleId) {}
 
-  bool isReturn() const { return m_key == (int)(QChar('\r').unicode()); }
+  bool isReturn() const { return m_key == QChar('\r').unicode(); }
 
-  void update(TAffine scale, int nextCode = 0) {
+  void update(TAffine scale, uint32_t nextCode = 0) {
     if (!isReturn()) {
       if (TVectorImageP vi = m_char) {
         vi = m_char = new TVectorImage;
@@ -472,8 +472,7 @@ public:
         TRasterCM32P newRasterCM;
         TPoint p;
         TPoint adv = TFontManager::instance()->drawChar(
-            (TRasterCM32P &)newRasterCM, p, m_styleId, (wchar_t)m_key,
-            (wchar_t)nextCode);
+            (TRasterCM32P &)newRasterCM, p, m_styleId, m_key, nextCode);
         // m_char->transform(scale);
         m_offset = (scale * TPointD((double)(adv.x), (double)(adv.y))).x;
 
@@ -574,9 +573,9 @@ public:
 
   // cancella gli StrokeChar fra from e to-1 e inserisce nuovi StrokeChar
   // corrispondenti a text a partire da from
-  void replaceText(std::wstring text, int from, int to);
+  void replaceText(const QString &text, int from, int to);
 
-  void addBaseChar(std::wstring text);
+  void addBaseChar(uint32_t character);
   void addReturn();
   void cursorUp();
   void cursorDown();
@@ -907,9 +906,10 @@ QString TypeTool::currentText() const {
   for (const StrokeChar &character : m_string) {
     if (character.isReturn())
       text.append('\n');
-    else
-      text.append(QString::fromStdWString(
-          std::wstring(1, static_cast<wchar_t>(character.m_key))));
+    else {
+      uint codePoint = character.m_key;
+      text.append(QString::fromUcs4(&codePoint, 1));
+    }
   }
   return text;
 }
@@ -924,8 +924,7 @@ void TypeTool::setTextFromHistory(const QString &sourceText) {
 
   QString typeToolText = text;
   typeToolText.replace('\n', '\r');
-  replaceText(typeToolText.toStdWString(), 0,
-              static_cast<int>(m_string.size()));
+  replaceText(typeToolText, 0, static_cast<int>(m_string.size()));
   m_cursorIndex  = static_cast<int>(m_string.size());
   m_preeditRange = std::make_pair(m_cursorIndex, m_cursorIndex);
   updateCharPositions();
@@ -1830,7 +1829,7 @@ void TypeTool::rightButtonDown(const TPointD &pos, const TMouseEvent &) {
 
 // cancella [from,to[ da m_string e lo rimpiazza con text
 // n.b. NON fa updateCharPositions()
-void TypeTool::replaceText(std::wstring text, int from, int to) {
+void TypeTool::replaceText(const QString &text, int from, int to) {
   int stringLength = m_string.size();
   from             = tcrop(from, 0, stringLength);
   to               = tcrop(to, from, stringLength);
@@ -1849,8 +1848,9 @@ void TypeTool::replaceText(std::wstring text, int from, int to) {
   TPoint adv;
   TPointD d_adv;
 
-  for (unsigned int i = 0; i < (unsigned int)text.size(); i++) {
-    wchar_t character = text[i];
+  QVector<uint> codePoints = text.toUcs4();
+  for (int i = 0; i < codePoints.size(); i++) {
+    uint32_t character = codePoints[i];
 
     // line break case. This can happen when pasting text including the line
     // break
@@ -1858,7 +1858,7 @@ void TypeTool::replaceText(std::wstring text, int from, int to) {
       TVectorImageP vi(new TVectorImage);
       unsigned int index = from + i;
       m_string.insert(m_string.begin() + index,
-                      StrokeChar(vi, -1., (int)(QChar('\r').unicode()), 0));
+                      StrokeChar(vi, -1., QChar('\r').unicode(), 0));
     }
 
     else if (vi) {
@@ -1889,11 +1889,10 @@ void TypeTool::replaceText(std::wstring text, int from, int to) {
       if (instance->hasKerning() && (UINT)m_cursorIndex < m_string.size() &&
           index < m_string.size() - 1 && !m_string[index].isReturn())
         adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                                 (wchar_t)character,
-                                 (wchar_t)m_string[index].m_key);
+                                 character, m_string[index].m_key);
       else
         adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                                 (wchar_t)character, (wchar_t)0);
+                                 character, 0);
 
       d_adv = m_scale * TPointD((double)(adv.x), (double)(adv.y));
 
@@ -1926,10 +1925,10 @@ void TypeTool::replaceText(std::wstring text, int from, int to) {
 void TypeTool::addReturn() {
   TVectorImageP vi(new TVectorImage);
   if ((UINT)m_cursorIndex == m_string.size())
-    m_string.push_back(StrokeChar(vi, -1., (int)(QChar('\r').unicode()), 0));
+    m_string.push_back(StrokeChar(vi, -1., QChar('\r').unicode(), 0));
   else
     m_string.insert(m_string.begin() + m_cursorIndex,
-                    StrokeChar(vi, -1., (int)(QChar('\r').unicode()), 0));
+                    StrokeChar(vi, -1., QChar('\r').unicode(), 0));
 
   m_cursorIndex++;
   m_preeditRange = std::make_pair(m_cursorIndex, m_cursorIndex);
@@ -1939,7 +1938,7 @@ void TypeTool::addReturn() {
 
 //---------------------------------------------------------
 
-void TypeTool::addBaseChar(std::wstring text) {
+void TypeTool::addBaseChar(uint32_t character) {
   TFontManager *instance = TFontManager::instance();
 
   TImageP img      = getImage(true);
@@ -1949,8 +1948,6 @@ void TypeTool::addBaseChar(std::wstring text) {
   int styleId = TTool::getApplication()->getCurrentLevelStyleIndex();
   TPoint adv;
   TPointD d_adv;
-
-  wchar_t character = text[0];
 
   if (vi) {
     TVectorImageP newVImage(new TVectorImage);
@@ -1981,11 +1978,10 @@ void TypeTool::addBaseChar(std::wstring text) {
     if (instance->hasKerning() && (UINT)m_cursorIndex < m_string.size() &&
         !m_string[m_cursorIndex].isReturn())
       adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                               (wchar_t)character,
-                               (wchar_t)m_string[m_cursorIndex].m_key);
+                               character, m_string[m_cursorIndex].m_key);
     else
       adv = instance->drawChar((TRasterCM32P &)newRasterCM, p, styleId,
-                               (wchar_t)character, (wchar_t)0);
+                               character, 0);
 
     // textImage->transform(m_scale);
 
@@ -2090,10 +2086,8 @@ bool TypeTool::keyDown(QKeyEvent *event) {
     text = mimeData->text().replace('\n', '\r');
   }
 
-  std::wstring unicodeChar = text.toStdWString();
-
   // return if only ALT, SHIFT or CTRL key is pressed
-  if (event->modifiers() != Qt::NoModifier && (unicodeChar.empty()))
+  if (event->modifiers() != Qt::NoModifier && text.isEmpty())
     return true;
 
   // per sicurezza
@@ -2200,10 +2194,10 @@ bool TypeTool::keyDown(QKeyEvent *event) {
     break;
 
   default:
-    if (unicodeChar.empty()) return false;
-    replaceText(unicodeChar, m_cursorIndex, m_cursorIndex);
+    if (text.isEmpty()) return false;
+    replaceText(text, m_cursorIndex, m_cursorIndex);
     int startIndex = m_cursorIndex + 1;
-    m_cursorIndex += unicodeChar.size();
+    m_cursorIndex += text.toUcs4().size();
     m_preeditRange = std::make_pair(startIndex, m_cursorIndex);
     updateCharPositions(startIndex - 1);
     textChanged = true;
@@ -2219,6 +2213,8 @@ bool TypeTool::keyDown(QKeyEvent *event) {
 void TypeTool::onInputText(const std::wstring &preedit,
                            const std::wstring &commit, int replacementStart,
                            int replacementLen) {
+  QString preeditText = QString::fromStdWString(preedit);
+  QString commitText  = QString::fromStdWString(commit);
   // butto la vecchia preedit string
   m_preeditRange.first  = std::max(0, m_preeditRange.first);
   m_preeditRange.second = std::min((int)m_string.size(), m_preeditRange.second);
@@ -2231,13 +2227,13 @@ void TypeTool::onInputText(const std::wstring &preedit,
   int a = tcrop(m_preeditRange.first + replacementStart, 0, stringLength);
   int b = tcrop(m_preeditRange.first + replacementStart + replacementLen, a,
                 stringLength);
-  replaceText(commit, a, b);
-  int index = a + commit.length();
+  replaceText(commitText, a, b);
+  int index = a + commitText.toUcs4().size();
 
   // inserisco la nuova preedit string
-  if (preedit.length() > 0) replaceText(preedit, index, index);
+  if (!preeditText.isEmpty()) replaceText(preeditText, index, index);
   m_preeditRange.first  = index;
-  m_preeditRange.second = index + preedit.length();
+  m_preeditRange.second = index + preeditText.toUcs4().size();
 
   // aggiorno la posizione del cursore
   m_cursorIndex = m_preeditRange.second;

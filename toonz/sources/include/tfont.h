@@ -8,6 +8,7 @@
 #include "texception.h"
 
 // STL includes
+#include <cstdint>
 #include <string>
 
 #undef DVAPI
@@ -43,15 +44,15 @@ private:
 public:
   ~TFont();
 
-  TPoint drawChar(TVectorImageP &outImage, wchar_t charcode,
-                  wchar_t nextCode = 0) const;
-  TPoint drawChar(QImage &outImage, TPoint &glyphOrigin, wchar_t charcode,
-                  wchar_t nextCode = 0) const;
+  TPoint drawChar(TVectorImageP &outImage, uint32_t charcode,
+                  uint32_t nextCode = 0) const;
+  TPoint drawChar(QImage &outImage, TPoint &glyphOrigin, uint32_t charcode,
+                  uint32_t nextCode = 0) const;
   TPoint drawChar(TRasterCM32P &outImage, TPoint &glyphOrigin, int inkId,
-                  wchar_t charcode, wchar_t nextCode = 0) const;
+                  uint32_t charcode, uint32_t nextCode = 0) const;
 
   // brief  get kerning distance between two characters
-  TPoint getDistance(wchar_t firstChar, wchar_t secondChar) const;
+  TPoint getDistance(uint32_t firstChar, uint32_t secondChar) const;
 
   int getMaxWidth() const;
   // void disableKerning();
@@ -125,24 +126,24 @@ public:
 
   // --------- TFont methods called on current font -----------
 
-  TPoint drawChar(TVectorImageP &outImage, wchar_t charcode,
-                  wchar_t nextCode = 0) {
+  TPoint drawChar(TVectorImageP &outImage, uint32_t charcode,
+                  uint32_t nextCode = 0) {
     return getCurrentFont()->drawChar(outImage, charcode, nextCode);
   }
 
-  TPoint drawChar(QImage &outImage, TPoint &glyphOrigin, wchar_t charcode,
-                  wchar_t nextCode = 0) {
+  TPoint drawChar(QImage &outImage, TPoint &glyphOrigin, uint32_t charcode,
+                  uint32_t nextCode = 0) {
     return getCurrentFont()->drawChar(outImage, glyphOrigin, charcode,
                                       nextCode);
   }
 
   TPoint drawChar(TRasterCM32P &outImage, TPoint &glyphOrigin, int inkId,
-                  wchar_t charcode, wchar_t nextCode = 0) {
+                  uint32_t charcode, uint32_t nextCode = 0) {
     return getCurrentFont()->drawChar(outImage, glyphOrigin, inkId, charcode,
                                       nextCode);
   }
 
-  TPoint getDistance(wchar_t firstChar, wchar_t secondChar) {
+  TPoint getDistance(uint32_t firstChar, uint32_t secondChar) {
     return getCurrentFont()->getDistance(firstChar, secondChar);
   }
 
