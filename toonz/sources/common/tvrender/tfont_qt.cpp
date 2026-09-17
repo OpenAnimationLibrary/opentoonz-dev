@@ -27,6 +27,19 @@
 #include "tvectorimage.h"
 using namespace std;
 
+namespace {
+
+QString fromUnicodeCodePoint(uint32_t codePoint) {
+  if (codePoint > 0x10ffff ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff))
+    return QString(QChar::ReplacementCharacter);
+
+  uint value = codePoint;
+  return QString::fromUcs4(&value, 1);
+}
+
+}  // namespace
+
 //=============================================================================
 
 struct TFont::Impl {
@@ -71,16 +84,15 @@ TFont::Impl::~Impl() {}
 
 //-----------------------------------------------------------------------------
 // returns the offset (advance of the cursor) for the current character
-TPoint TFont::drawChar(TVectorImageP &image, wchar_t charcode,
-                       wchar_t nextCharCode) const {
+TPoint TFont::drawChar(TVectorImageP &image, uint32_t charcode,
+                       uint32_t nextCharCode) const {
   QRawFont raw(QRawFont::fromFont(m_pimpl->m_font));
 
-  QChar chars[2] = {charcode, nextCharCode};
-  quint32 indices[2];
-  int count = 2;
+  QString chars = fromUnicodeCodePoint(charcode);
+  if (nextCharCode) chars.append(fromUnicodeCodePoint(nextCharCode));
+  QVector<quint32> indices = raw.glyphIndexesForString(chars);
 
-  if (!raw.glyphIndexesForChars(chars, 2, indices, &count) || count < 1)
-    return TPoint(0, 0);
+  if (indices.isEmpty()) return TPoint(0, 0);
   QPainterPath path = raw.pathForGlyph(indices[0]);
 
   // empty glyph, nothing to do
@@ -155,17 +167,16 @@ TPoint TFont::drawChar(TVectorImageP &image, wchar_t charcode,
 
 //-----------------------------------------------------------------------------
 
-TPoint TFont::drawChar(QImage &outImage, TPoint &unused, wchar_t charcode,
-                       wchar_t nextCharCode) const {
+TPoint TFont::drawChar(QImage &outImage, TPoint &unused, uint32_t charcode,
+                       uint32_t nextCharCode) const {
   QRawFont raw(QRawFont::fromFont(m_pimpl->m_font));
 
-  QChar chars[2] = {charcode, nextCharCode};
-  quint32 indices[2];
-  int count = 2;
+  QString character = fromUnicodeCodePoint(charcode);
+  QString chars     = character;
+  if (nextCharCode) chars.append(fromUnicodeCodePoint(nextCharCode));
+  QVector<quint32> indices = raw.glyphIndexesForString(chars);
 
-  if (!raw.glyphIndexesForChars(chars, 2, indices, &count) || count < 1) {
-    return TPoint(0, 0);
-  }
+  if (indices.isEmpty()) return TPoint(0, 0);
 
   // Workaround for unix when the user using the space character:
   // alphaMapForGlyph with a space character returns an invalid
@@ -173,8 +184,8 @@ TPoint TFont::drawChar(QImage &outImage, TPoint &unused, wchar_t charcode,
   // Bug 3604: https://github.com/opentoonz/opentoonz/issues/3604
   // (21/1/2022) Use this workaround for all platforms as the crash also
   // occurred in windows when the display is scaled up.
-  if (chars[0].isSpace()) {
-    int w = QFontMetrics(m_pimpl->m_font).horizontalAdvance(chars[0]);
+  if (character.at(0).isSpace()) {
+    int w = QFontMetrics(m_pimpl->m_font).horizontalAdvance(character);
     outImage =
         QImage(w, raw.ascent() + raw.descent(), QImage::Format_Grayscale8);
     outImage.fill(255);
@@ -199,7 +210,7 @@ TPoint TFont::drawChar(QImage &outImage, TPoint &unused, wchar_t charcode,
 //-----------------------------------------------------------------------------
 
 TPoint TFont::drawChar(TRasterCM32P &outImage, TPoint &unused, int inkId,
-                       wchar_t charcode, wchar_t nextCharCode) const {
+                       uint32_t charcode, uint32_t nextCharCode) const {
   QImage grayAppImage;
   this->drawChar(grayAppImage, unused, charcode, nextCharCode);
 
@@ -235,9 +246,10 @@ TPoint TFont::drawChar(TRasterCM32P &outImage, TPoint &unused, int inkId,
 
 //-----------------------------------------------------------------------------
 
-TPoint TFont::getDistance(wchar_t firstChar, wchar_t secondChar) const {
+TPoint TFont::getDistance(uint32_t firstChar, uint32_t secondChar) const {
   QFontMetrics metrics(m_pimpl->m_font);
-  return TPoint(metrics.horizontalAdvance(QChar(firstChar)), 0);
+  return TPoint(
+      metrics.horizontalAdvance(fromUnicodeCodePoint(firstChar)), 0);
 }
 
 //-----------------------------------------------------------------------------
