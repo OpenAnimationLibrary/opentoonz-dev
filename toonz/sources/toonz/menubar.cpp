@@ -114,6 +114,30 @@ void ensureHelpActions(QMenu *helpMenu) {
   enableQuicklinkEditing(helpMenu);
 }
 
+bool ensureAnimatedSvgAction(QMenu *menu) {
+  QAction *svgAction =
+      CommandManager::instance()->getAction(MI_ExportAnimatedSVG);
+  if (!svgAction || menu->actions().contains(svgAction)) return true;
+
+  QAction *ocaAction = CommandManager::instance()->getAction(MI_ExportOCA);
+  const QList<QAction *> actions = menu->actions();
+  int ocaIndex                   = actions.indexOf(ocaAction);
+  if (ocaIndex >= 0) {
+    QAction *before =
+        ocaIndex + 1 < actions.size() ? actions.at(ocaIndex + 1) : nullptr;
+    if (before)
+      menu->insertAction(before, svgAction);
+    else
+      menu->addAction(svgAction);
+    return true;
+  }
+
+  for (QAction *action : actions) {
+    if (action->menu() && ensureAnimatedSvgAction(action->menu())) return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 //======================================================================// RoomTabWidget
@@ -345,6 +369,7 @@ QMenuBar *StackedMenuBar::loadMenuBar(const TFilePath &fp) {
             // Older Windows profiles keep private menu XML files. Add the new
             // built-in command without replacing the user's customized menu.
             if (title == QStringLiteral("Help")) ensureHelpActions(menu);
+            if (title == QStringLiteral("File")) ensureAnimatedSvgAction(menu);
             menuBar->addMenu(menu);
           } else {
             reader.raiseError(tr("Failed to load menu %1").arg(title));
@@ -1243,6 +1268,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
     addMenuItem(exportMenu, MI_ExportXDTS);
     addMenuItem(exportMenu, MI_ExportSXF);
     addMenuItem(exportMenu, MI_ExportOCA);
+    addMenuItem(exportMenu, MI_ExportAnimatedSVG);
     addMenuItem(exportMenu, MI_ExportXsheetPDF);
 #if defined(x64)
     addMenuItem(exportMenu, MI_StopMotionExportImageSequence);
