@@ -1315,29 +1315,29 @@ void TypeTool::updateCharPositions(int updateFrom) {
 void TypeTool::updateCursorPoint() {
   assert(0 <= m_cursorIndex && m_cursorIndex <= (int)m_string.size());
   TFontManager *instance = TFontManager::instance();
+  double ascent          = (double)(instance->getLineAscender()) * m_scale.a11;
   double descent         = (double)(instance->getLineDescender()) * m_scale.a11;
   double height          = (double)(instance->getHeight()) * m_scale.a11;
   double vLineSpacing =
       (double)(instance->getAverageCharWidth()) * 2.0 * m_scale.a11;
   m_fontYOffset          = (double)(instance->getLineSpacing()) * m_scale.a11;
-  double scaledDimension = m_dimension * m_scale.a11;
 
   if (m_string.empty()) {
     if (!m_isVertical || instance->hasVertical())
-      m_cursorPoint = m_startPoint + TPointD(0, scaledDimension);
+      m_cursorPoint = m_startPoint + TPointD(0, ascent);
     else
       m_cursorPoint = m_startPoint;
   } else if (m_cursorIndex == (int)m_string.size()) {
     // Horizontal case
     if (!m_isVertical || instance->hasVertical()) {
       if (m_string.back().isReturn())
-        m_cursorPoint = TPointD(
-            m_startPoint.x, m_string.back().m_charPosition.y - m_fontYOffset +
-                                scaledDimension + descent);
+        m_cursorPoint =
+            TPointD(m_startPoint.x, m_string.back().m_charPosition.y -
+                                        m_fontYOffset + ascent + descent);
       else
         m_cursorPoint = m_string.back().m_charPosition +
                         TPointD(m_string.back().m_offset, 0) +
-                        TPointD(0, scaledDimension + descent);
+                        TPointD(0, ascent + descent);
     }
     // Vertical case
     else {
@@ -1349,8 +1349,8 @@ void TypeTool::updateCursorPoint() {
     }
   } else {
     if (!m_isVertical || instance->hasVertical())
-      m_cursorPoint = m_string[m_cursorIndex].m_charPosition +
-                      TPointD(0, scaledDimension + descent);
+      m_cursorPoint =
+          m_string[m_cursorIndex].m_charPosition + TPointD(0, ascent + descent);
     else
       m_cursorPoint =
           m_string[m_cursorIndex].m_charPosition + TPointD(0, height);
@@ -1366,6 +1366,7 @@ void TypeTool::updateTextBox() {
   double maxXLength        = 0;
 
   TFontManager *instance = TFontManager::instance();
+  double ascent          = (double)(instance->getLineAscender()) * m_scale.a11;
   double descent         = (double)(instance->getLineDescender()) * m_scale.a11;
   double height          = (double)(instance->getHeight()) * m_scale.a11;
   double vLineSpacing =
@@ -1398,7 +1399,7 @@ void TypeTool::updateTextBox() {
     m_textBox =
         TRectD(m_startPoint.x,
                m_startPoint.y - (m_fontYOffset * returnNumber + descent),
-               m_startPoint.x + maxXLength, m_startPoint.y + height)
+               m_startPoint.x + maxXLength, m_startPoint.y + ascent)
             .enlarge(cBorderSize * m_pixelSize);
 }
 
@@ -1497,8 +1498,9 @@ glPushMatrix();
     // draw cursor
     tglColor(TPixel32::Black);
     if (!m_isVertical || instance->hasVertical())
-      tglDrawSegment(m_cursorPoint,
-                     m_cursorPoint + m_scale * TPointD(0, -m_dimension));
+      tglDrawSegment(
+          m_cursorPoint,
+          m_cursorPoint + TPointD(0, -instance->getHeight() * m_scale.a11));
     else
       tglDrawSegment(m_cursorPoint,
                      m_cursorPoint + m_scale * TPointD(m_dimension, 0));
@@ -1675,10 +1677,13 @@ void TypeTool::setCursorIndexFromPoint(TPointD point) {
   int line  = 0;
   int retNum;
 
-  if (!m_isVertical)
-    retNum =
-        tround((m_startPoint.y + m_dimension - point.y) / m_dimension - 0.5);
-  else
+  if (!m_isVertical) {
+    TFontManager *instance = TFontManager::instance();
+    double ascent          = instance->getLineAscender() * m_scale.a11;
+    double lineSpacing     = instance->getLineSpacing() * m_scale.a11;
+    retNum = tfloor((m_startPoint.y + ascent - point.y) / lineSpacing);
+    if (retNum < 0) retNum = 0;
+  } else
     retNum = tround((m_startPoint.x - point.x) / m_dimension + 0.5);
 
   UINT j = 0;
@@ -1815,6 +1820,10 @@ void TypeTool::leftButtonDown(const TPointD &pos, const TMouseEvent &) {
   }
 
   m_startPoint = pos;
+  // The click marks the top of the first horizontal line. Internally the
+  // character positions remain baseline-based.
+  if (!m_isVertical)
+    m_startPoint.y -= TFontManager::instance()->getLineAscender() * m_scale.a11;
   updateTextBox();
   updateCursorPoint();
   if (m_textHistoryEnabled.getValue()) {
