@@ -39,6 +39,11 @@
 #include <QCoreApplication>
 #include <QClipboard>
 #include <QApplication>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QMimeData>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -49,6 +54,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QTextCodec>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -100,7 +106,33 @@ void paintChar(const TVectorImageP &image, int styleId) {
 
 TEnv::StringVar EnvCurrentFont("CurrentFont", "MS UI Gothic");
 
-constexpr int cTextHistoryLimit = 10;
+constexpr int cTextHistoryLimit         = 10;
+constexpr qint64 cTextImportWarningSize = 1024 * 1024;
+
+enum class TypeToolTextFormat { PlainText, Markdown };
+
+QString textFormatName(TypeToolTextFormat format) {
+  return format == TypeToolTextFormat::Markdown ? QStringLiteral("Markdown")
+                                                : QStringLiteral("PlainText");
+}
+
+TypeToolTextFormat textFormatFromName(const QString &name) {
+  return name.compare(QStringLiteral("Markdown"), Qt::CaseInsensitive) == 0
+             ? TypeToolTextFormat::Markdown
+             : TypeToolTextFormat::PlainText;
+}
+
+struct TypeToolTextEntry final {
+  QString source;
+  TypeToolTextFormat format     = TypeToolTextFormat::PlainText;
+  bool preserveSourceLineBreaks = true;
+};
+
+bool sameTextEntry(const TypeToolTextEntry &first,
+                   const TypeToolTextEntry &second) {
+  return first.source == second.source && first.format == second.format &&
+         first.preserveSourceLineBreaks == second.preserveSourceLineBreaks;
+}
 
 QString typeToolSettingsPath() {
   return toQString(ToonzFolder::getMyModuleDir() + TFilePath("typetool.ini"));
@@ -115,8 +147,8 @@ QString normalizedText(QString text) {
 class TypeToolTextHistory final {
   bool m_loaded;
   bool m_enabled;
-  QString m_draft;
-  QStringList m_entries;
+  TypeToolTextEntry m_draft;
+  QList<TypeToolTextEntry> m_entries;
 
   void configureSettings(QSettings &settings) const {
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
@@ -127,10 +159,18 @@ class TypeToolTextHistory final {
   void saveHistory() const {
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
+    values.beginGroup("General");
+    values.setValue("Version", 2);
+    values.setValue("HistoryLimit", cTextHistoryLimit);
+    values.endGroup();
     values.beginWriteArray("History", m_entries.size());
     for (int i = 0; i < m_entries.size(); ++i) {
       values.setArrayIndex(i);
-      values.setValue("Text", m_entries.at(i));
+      const TypeToolTextEntry &entry = m_entries.at(i);
+      values.remove("Text");
+      values.setValue("Source", entry.source);
+      values.setValue("Format", textFormatName(entry.format));
+      values.setValue("PreserveLineBreaks", entry.preserveSourceLineBreaks);
     }
     values.endArray();
     values.sync();
@@ -149,21 +189,39 @@ public:
     values.endGroup();
 
     values.beginGroup("Draft");
-    m_draft = normalizedText(values.value("Text").toString());
+    m_draft.source =
+        normalizedText(values.value("Source", values.value("Text")).toString());
+    m_draft.format = textFormatFromName(
+        values.value("Format", QStringLiteral("PlainText")).toString());
+    m_draft.preserveSourceLineBreaks =
+        values.value("PreserveLineBreaks", true).toBool();
     values.endGroup();
 
     int count = values.beginReadArray("History");
     for (int i = 0; i < count && m_entries.size() < cTextHistoryLimit; ++i) {
       values.setArrayIndex(i);
-      QString text = normalizedText(values.value("Text").toString());
-      if (!text.isEmpty() && !m_entries.contains(text)) m_entries.append(text);
+      TypeToolTextEntry entry;
+      entry.source = normalizedText(
+          values.value("Source", values.value("Text")).toString());
+      entry.format = textFormatFromName(
+          values.value("Format", QStringLiteral("PlainText")).toString());
+      entry.preserveSourceLineBreaks =
+          values.value("PreserveLineBreaks", true).toBool();
+      bool duplicate = false;
+      for (const TypeToolTextEntry &savedEntry : m_entries) {
+        if (sameTextEntry(savedEntry, entry)) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (!entry.source.isEmpty() && !duplicate) m_entries.append(entry);
     }
     values.endArray();
   }
 
   bool isEnabled() const { return m_enabled; }
-  const QString &draft() const { return m_draft; }
-  const QStringList &entries() const { return m_entries; }
+  const TypeToolTextEntry &draft() const { return m_draft; }
+  const QList<TypeToolTextEntry> &entries() const { return m_entries; }
 
   void setEnabled(bool enabled) {
     load();
@@ -172,29 +230,46 @@ public:
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
     values.beginGroup("General");
-    values.setValue("Version", 1);
+    values.setValue("Version", 2);
     values.setValue("HistoryLimit", cTextHistoryLimit);
     values.setValue("EditorEnabled", m_enabled);
     values.endGroup();
     values.sync();
   }
 
-  void setDraft(const QString &text) { m_draft = normalizedText(text); }
+  void setDraftSource(const QString &text) {
+    m_draft.source = normalizedText(text);
+  }
+
+  void setDraft(const TypeToolTextEntry &entry) {
+    m_draft        = entry;
+    m_draft.source = normalizedText(m_draft.source);
+  }
 
   void saveDraft() const {
     QSettings values(typeToolSettingsPath(), QSettings::IniFormat);
     configureSettings(values);
+    values.beginGroup("General");
+    values.setValue("Version", 2);
+    values.setValue("HistoryLimit", cTextHistoryLimit);
+    values.endGroup();
     values.beginGroup("Draft");
-    values.setValue("Text", m_draft);
+    values.remove("Text");
+    values.setValue("Source", m_draft.source);
+    values.setValue("Format", textFormatName(m_draft.format));
+    values.setValue("PreserveLineBreaks", m_draft.preserveSourceLineBreaks);
     values.endGroup();
     values.sync();
   }
 
   void addEntry(const QString &sourceText) {
-    QString text = normalizedText(sourceText);
-    if (text.isEmpty()) return;
-    m_entries.removeAll(text);
-    m_entries.prepend(text);
+    TypeToolTextEntry entry = m_draft;
+    entry.source            = normalizedText(sourceText);
+    if (entry.source.isEmpty()) return;
+    for (int i = m_entries.size() - 1; i >= 0; --i) {
+      if (sameTextEntry(m_entries.at(i), entry)) m_entries.removeAt(i);
+    }
+    m_entries.prepend(entry);
     while (m_entries.size() > cTextHistoryLimit) m_entries.removeLast();
     saveHistory();
   }
@@ -548,26 +623,105 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
   TypeToolTextHistory &m_history;
   QListWidget *m_historyList;
   QPlainTextEdit *m_editor;
+  QComboBox *m_formatCombo;
+  QCheckBox *m_preserveLineBreaks;
   QTimer *m_saveTimer;
   std::function<void(const QString &)> m_textChanged;
+
+  TypeToolTextEntry editorEntry() const {
+    TypeToolTextEntry entry;
+    entry.source                   = m_editor->toPlainText();
+    entry.format                   = m_formatCombo->currentIndex() == 1
+                                         ? TypeToolTextFormat::Markdown
+                                         : TypeToolTextFormat::PlainText;
+    entry.preserveSourceLineBreaks = m_preserveLineBreaks->isChecked();
+    return entry;
+  }
+
+  void setEditorEntry(const TypeToolTextEntry &entry, bool notify = true) {
+    QSignalBlocker editorBlocker(m_editor);
+    QSignalBlocker formatBlocker(m_formatCombo);
+    QSignalBlocker lineBreakBlocker(m_preserveLineBreaks);
+    m_editor->setPlainText(entry.source);
+    m_formatCombo->setCurrentIndex(
+        entry.format == TypeToolTextFormat::Markdown ? 1 : 0);
+    m_preserveLineBreaks->setChecked(entry.preserveSourceLineBreaks);
+    m_preserveLineBreaks->setEnabled(entry.format ==
+                                     TypeToolTextFormat::Markdown);
+    m_history.setDraft(entry);
+    if (notify) {
+      m_saveTimer->start();
+      if (m_textChanged) m_textChanged(entry.source);
+    }
+  }
+
+  void importTextDocument() {
+    QString fileName = QFileDialog::getOpenFileName(
+        this, tr("Import Text Document"), QString(),
+        tr("Text documents (*.txt *.md *.markdown);;Plain text (*.txt);;"
+           "Markdown (*.md *.markdown)"));
+    if (fileName.isEmpty()) return;
+
+    QFileInfo fileInfo(fileName);
+    if (fileInfo.size() > cTextImportWarningSize &&
+        QMessageBox::question(
+            this, tr("Import Large Text Document"),
+            tr("This file is larger than 1 MB and may be slow to convert to "
+               "Type Tool geometry. Import it anyway?")) != QMessageBox::Yes)
+      return;
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+      QMessageBox::warning(this, tr("Import Text Document"),
+                           tr("The selected file could not be opened."));
+      return;
+    }
+
+    QByteArray bytes = file.readAll();
+    QTextCodec::ConverterState state;
+    QString source = QTextCodec::codecForName("UTF-8")->toUnicode(
+        bytes.constData(), bytes.size(), &state);
+    if (state.invalidChars > 0 &&
+        QMessageBox::question(
+            this, tr("Invalid UTF-8 Text"),
+            tr("The file contains invalid UTF-8 data. Invalid characters "
+               "will be replaced. Continue?")) != QMessageBox::Yes)
+      return;
+
+    if (!source.isEmpty() && source.at(0) == QChar::ByteOrderMark)
+      source.remove(0, 1);
+
+    TypeToolTextEntry entry;
+    entry.source   = normalizedText(source);
+    QString suffix = fileInfo.suffix().toLower();
+    entry.format =
+        suffix == QStringLiteral("md") || suffix == QStringLiteral("markdown")
+            ? TypeToolTextFormat::Markdown
+            : TypeToolTextFormat::PlainText;
+    entry.preserveSourceLineBreaks = true;
+    setEditorEntry(entry);
+    m_editor->setFocus();
+  }
 
   void rebuildHistoryList() {
     int oldRow = m_historyList->currentRow();
     QSignalBlocker blocker(m_historyList);
     m_historyList->clear();
-    for (const QString &text : m_history.entries()) {
-      QString label = text;
+    for (const TypeToolTextEntry &entry : m_history.entries()) {
+      QString label = entry.source;
       label.replace('\n', QChar(0x21B5));
       if (label.size() > 80) label = label.left(77) + QStringLiteral("...");
+      if (entry.format == TypeToolTextFormat::Markdown)
+        label.prepend(QStringLiteral("[MD] "));
       QListWidgetItem *item = new QListWidgetItem(label, m_historyList);
-      item->setToolTip(text);
+      item->setToolTip(entry.source);
     }
     if (oldRow >= 0 && oldRow < m_historyList->count())
       m_historyList->setCurrentRow(oldRow);
   }
 
   void scheduleDraftSave() {
-    m_history.setDraft(m_editor->toPlainText());
+    m_history.setDraft(editorEntry());
     m_saveTimer->start();
   }
 
@@ -578,6 +732,9 @@ public:
       , m_history(history)
       , m_historyList(new QListWidget(this))
       , m_editor(new QPlainTextEdit(this))
+      , m_formatCombo(new QComboBox(this))
+      , m_preserveLineBreaks(
+            new QCheckBox(tr("Preserve source line breaks for Markdown"), this))
       , m_saveTimer(new QTimer(this))
       , m_textChanged(std::move(textChanged)) {
     setWindowTitle(tr("Type Tool Text History"));
@@ -586,7 +743,9 @@ public:
     m_historyList->setAlternatingRowColors(true);
     m_historyList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_editor->setPlaceholderText(tr("Enter text to place with the Type Tool."));
-    m_editor->setPlainText(m_history.draft());
+    m_formatCombo->addItem(tr("Plain Text"));
+    m_formatCombo->addItem(tr("Markdown"));
+    setEditorEntry(m_history.draft(), false);
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(new QLabel(tr("Recent Text (last 10)"), this));
@@ -594,10 +753,25 @@ public:
     layout->addWidget(new QLabel(tr("Editable Text"), this));
     layout->addWidget(m_editor, 2);
 
+    QHBoxLayout *formatLayout = new QHBoxLayout;
+    formatLayout->addWidget(new QLabel(tr("Document Format:"), this));
+    formatLayout->addWidget(m_formatCombo);
+    formatLayout->addWidget(m_preserveLineBreaks);
+    formatLayout->addStretch(1);
+    layout->addLayout(formatLayout);
+    QLabel *markdownNote = new QLabel(
+        tr("Markdown source is preserved for formatted generation; the "
+           "current Type Tool places the editable source text."),
+        this);
+    markdownNote->setWordWrap(true);
+    layout->addWidget(markdownNote);
+
+    QPushButton *importButton = new QPushButton(tr("Import Text..."), this);
     QPushButton *deleteButton = new QPushButton(tr("Delete Entry"), this);
     QPushButton *clearButton  = new QPushButton(tr("Clear History"), this);
     QPushButton *closeButton  = new QPushButton(tr("Close"), this);
     QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout->addWidget(importButton);
     buttonLayout->addWidget(deleteButton);
     buttonLayout->addWidget(clearButton);
     buttonLayout->addStretch(1);
@@ -614,12 +788,23 @@ public:
       scheduleDraftSave();
       if (m_textChanged) m_textChanged(m_editor->toPlainText());
     });
+    connect(
+        m_formatCombo,
+        static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
+        this, [this](int index) {
+          m_preserveLineBreaks->setEnabled(index == 1);
+          scheduleDraftSave();
+        });
+    connect(m_preserveLineBreaks, &QCheckBox::toggled, this,
+            [this]() { scheduleDraftSave(); });
     connect(m_historyList, &QListWidget::currentRowChanged, this,
             [this](int row) {
               if (row < 0 || row >= m_history.entries().size()) return;
-              m_editor->setPlainText(m_history.entries().at(row));
+              setEditorEntry(m_history.entries().at(row));
               m_editor->setFocus();
             });
+    connect(importButton, &QPushButton::clicked, this,
+            [this]() { importTextDocument(); });
     connect(deleteButton, &QPushButton::clicked, this, [this]() {
       int row = m_historyList->currentRow();
       if (row < 0) return;
@@ -638,7 +823,7 @@ public:
     connect(closeButton, &QPushButton::clicked, this, &QWidget::hide);
     connect(this, &DVGui::Dialog::dialogClosed, this, [this]() {
       m_saveTimer->stop();
-      m_history.setDraft(m_editor->toPlainText());
+      m_history.setDraft(editorEntry());
       m_history.saveDraft();
     });
 
@@ -650,7 +835,7 @@ public:
     if (m_editor->toPlainText() == normalized) return;
     QSignalBlocker blocker(m_editor);
     m_editor->setPlainText(normalized);
-    m_history.setDraft(normalized);
+    m_history.setDraftSource(normalized);
     m_saveTimer->start();
   }
 
@@ -752,7 +937,7 @@ void TypeTool::setTextFromHistory(const QString &sourceText) {
 void TypeTool::syncTextHistoryDraft() {
   if (!m_textHistoryEnabled.getValue()) return;
   QString text = currentText();
-  m_textHistory.setDraft(text);
+  m_textHistory.setDraftSource(text);
   if (m_textHistoryPopup)
     m_textHistoryPopup->setEditorText(text);
   else
@@ -1456,7 +1641,7 @@ void TypeTool::addTextToImage() {
 
   if (m_textHistoryEnabled.getValue()) {
     m_textHistory.addEntry(committedText);
-    m_textHistory.setDraft(committedText);
+    m_textHistory.setDraftSource(committedText);
     m_textHistory.saveDraft();
     if (m_textHistoryPopup) {
       m_textHistoryPopup->setEditorText(committedText);
@@ -1620,7 +1805,7 @@ void TypeTool::leftButtonDown(const TPointD &pos, const TMouseEvent &) {
   updateCursorPoint();
   if (m_textHistoryEnabled.getValue()) {
     showTextHistoryPopup();
-    setTextFromHistory(m_textHistory.draft());
+    setTextFromHistory(m_textHistory.draft().source);
   }
   updateMouseCursor(pos);
   //  enableShortcuts(false);
