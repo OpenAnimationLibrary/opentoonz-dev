@@ -179,6 +179,14 @@ int liveTouchPointCount(const QTouchEvent *e) {
   return live;
 }
 
+bool touchScreenSynthesizedMouse(bool touchGesturesOn,
+                                 QTouchDevice::DeviceType touchDevice,
+                                 Qt::MouseEventSource source) {
+  if (!touchGesturesOn) return false;
+  if (touchDevice != QTouchDevice::TouchScreen) return false;
+  return source != Qt::MouseEventNotSynthesized;
+}
+
 //-----------------------------------------------------------------------------
 }  // namespace
 //-----------------------------------------------------------------------------
@@ -523,6 +531,9 @@ void SceneViewer::mouseMoveEvent(QMouseEvent *event) {
   if (touchToolInputBlocked()) return;
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) return;
+  if (touchScreenSynthesizedMouse(touchGestureControlEnabled(), m_touchDevice,
+                                  event->source()))
+    return;
   // and touchscreens but not touchpads...
   if (m_gestureActive && m_touchDevice == QTouchDevice::TouchScreen) {
     return;
@@ -760,7 +771,6 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
   // source can be useful for detecting touch vs mouse,
   // but has reports of being unreliable on mac
   // so m_gestureActive is the marker for rejecting touch events
-  int source = event->source();
   if (event->source() == Qt::MouseEventNotSynthesized)
     m_touchAwaitFreshContact = false;
   if (touchToolInputBlocked()) {
@@ -769,6 +779,9 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
   }
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) return;
+  if (touchScreenSynthesizedMouse(touchGestureControlEnabled(), m_touchDevice,
+                                  event->source()))
+    return;
   // and touchscreens but not touchpads...
   if (m_gestureActive && m_touchDevice == QTouchDevice::TouchScreen) {
     return;
@@ -931,6 +944,9 @@ void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
     releaseTouchToolSuppressionIfIdle();
     return;
   }
+  if (touchScreenSynthesizedMouse(touchGestureControlEnabled(), m_touchDevice,
+                                  event->source()))
+    return;
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) {
     // mouseRelease should not clear flag if we are starting or in middle of
@@ -1306,7 +1322,6 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
       m_touchSuppressedPointerDown     = false;
       m_touchToolInputLockedUntilEnd   = false;
       m_touchSuppressToolInput         = false;
-      m_touchAwaitFreshContact         = false;
       m_gestureActive                  = false;
       releaseTouchToolSuppressionIfIdle();
     } else {
@@ -1324,7 +1339,6 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
       m_touchSuppressedPointerDown     = false;
       m_touchToolInputLockedUntilEnd   = false;
       m_touchSuppressToolInput         = false;
-      m_touchAwaitFreshContact         = false;
       m_gestureActive                  = false;
       releaseTouchToolSuppressionIfIdle();
     } else {
