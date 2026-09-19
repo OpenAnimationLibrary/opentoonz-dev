@@ -17,6 +17,7 @@ const SlotInfo kSlots[] = {
      true},
     {TouchSlot_ReservedRotate, "Reserved_Rotate", "2 finger rotate", true},
 
+    {TouchSlot_Tap1, "Tap_1", "1 finger tap", false},
     {TouchSlot_Tap2, "Tap_2", "2 finger tap", false},
     {TouchSlot_Tap3, "Tap_3", "3 finger tap", false},
     {TouchSlot_Tap4, "Tap_4", "4 finger tap", false},
@@ -27,6 +28,7 @@ const SlotInfo kSlots[] = {
     {TouchSlot_DoubleTap4, "DoubleTap_4", "4 finger double tap", false},
     {TouchSlot_DoubleTap5, "DoubleTap_5", "5 finger double tap", false},
 
+    {TouchSlot_Hold1, "Hold_1", "1 finger hold", false},
     {TouchSlot_Hold2, "Hold_2", "2 finger hold", false},
     {TouchSlot_Hold3, "Hold_3", "3 finger hold", false},
     {TouchSlot_Hold4, "Hold_4", "4 finger hold", false},
@@ -87,6 +89,9 @@ QString touchSlotShortLabel(TouchSlot slot) {
     return QObject::tr("Zoom");
   case TouchSlot_ReservedRotate:
     return QObject::tr("Rotate");
+  case TouchSlot_Tap1:
+  case TouchSlot_Hold1:
+    return QObject::tr("1 finger");
   case TouchSlot_Tap2:
   case TouchSlot_DoubleTap2:
   case TouchSlot_Hold2:
@@ -183,6 +188,7 @@ QList<TouchSlot> reservedTouchSlots() {
 TouchSlotFamily touchSlotFamily(TouchSlot slot) {
   if (touchSlotIsReserved(slot)) return TouchSlotFamily_Reserved;
   switch (slot) {
+  case TouchSlot_Tap1:
   case TouchSlot_Tap2:
   case TouchSlot_Tap3:
   case TouchSlot_Tap4:
@@ -193,6 +199,7 @@ TouchSlotFamily touchSlotFamily(TouchSlot slot) {
   case TouchSlot_DoubleTap4:
   case TouchSlot_DoubleTap5:
     return TouchSlotFamily_DoubleTap;
+  case TouchSlot_Hold1:
   case TouchSlot_Hold2:
   case TouchSlot_Hold3:
   case TouchSlot_Hold4:

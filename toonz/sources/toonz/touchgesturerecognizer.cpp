@@ -69,6 +69,8 @@ int nearestEdge(const QPointF &c, const QSize &sz) {
 
 TouchSlot tapSlot(int n) {
   switch (n) {
+  case 1:
+    return TouchSlot_Tap1;
   case 2:
     return TouchSlot_Tap2;
   case 3:
@@ -99,6 +101,8 @@ TouchSlot doubleTapSlot(int n) {
 
 TouchSlot holdSlot(int n) {
   switch (n) {
+  case 1:
+    return TouchSlot_Hold1;
   case 2:
     return TouchSlot_Hold2;
   case 3:
@@ -379,9 +383,7 @@ void TouchGestureRecognizer::onHoldTimeout() {
   }
 
   if (m_session.reservedBusy) return;
-  int n = m_session.maxCount;
-  // Touchscreen: one finger long-press uses the Hold2 preset row (no Hold1 slot).
-  if (!m_session.tablet && n < 2) n = 2;
+  const int n = m_session.maxCount;
   emitSlot(holdSlot(n), false);
   m_session.holdFired = true;
 }

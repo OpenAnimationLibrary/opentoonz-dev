@@ -13,6 +13,7 @@ enum TouchSlot {
   TouchSlot_ReservedPinchZoom,
   TouchSlot_ReservedRotate,
 
+  TouchSlot_Tap1,
   TouchSlot_Tap2,
   TouchSlot_Tap3,
   TouchSlot_Tap4,
@@ -23,6 +24,7 @@ enum TouchSlot {
   TouchSlot_DoubleTap4,
   TouchSlot_DoubleTap5,
 
+  TouchSlot_Hold1,
   TouchSlot_Hold2,
   TouchSlot_Hold3,
   TouchSlot_Hold4,
