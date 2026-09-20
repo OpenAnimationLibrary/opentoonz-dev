@@ -394,6 +394,7 @@ set(SOURCES
     xdtsio.cpp
     sxfio.cpp
     ocaio.cpp
+    animatedsvgexport.cpp
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
     tooloptionsshortcutinvoker.cpp
