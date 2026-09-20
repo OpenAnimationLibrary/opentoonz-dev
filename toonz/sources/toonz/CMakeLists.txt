@@ -394,6 +394,8 @@ set(SOURCES
     xdtsio.cpp
     sxfio.cpp
     ocaio.cpp
+    importpdf.cpp
+    importpdf.h
     animatedsvgexport.cpp
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
