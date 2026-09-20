@@ -1,4 +1,49 @@
 <stringtable>
+  <item>"STD_glbModelFx" "GLB Model" </item>
+  <item>"STD_glbModelFx.modelFile" "GLB File" </item>
+  <item>"STD_glbModelFx.positionX" "Position X" </item>
+  <item>"STD_glbModelFx.positionY" "Position Y" </item>
+  <item>"STD_glbModelFx.positionZ" "Position Z" </item>
+  <item>"STD_glbModelFx.rotationX" "Rotation X" </item>
+  <item>"STD_glbModelFx.rotationY" "Rotation Y" </item>
+  <item>"STD_glbModelFx.rotationZ" "Rotation Z" </item>
+  <item>"STD_glbModelFx.scale" "Scale (%)" </item>
+  <item>"STD_glbModelFx.projection" "Projection" </item>
+  <item>"STD_glbModelFx.cameraDistance" "Camera Distance" </item>
+  <item>"STD_glbModelFx.fieldOfView" "Vertical Field of View" </item>
+  <item>"STD_glbModelFx.orthoSize" "Orthographic Height" </item>
+  <item>"STD_glbModelFx.nearClip" "Near Clip" </item>
+  <item>"STD_glbModelFx.farClip" "Far Clip" </item>
+  <item>"STD_glbModelFx.lighting" "Lighting" </item>
+  <item>"STD_glbModelFx.renderStyle" "Display Style" </item>
+  <item>"STD_glbModelFx.colorMode" "Color Mode" </item>
+  <item>"STD_glbModelFx.materialColors" "Material" </item>
+  <item>"STD_glbModelFx.animationMode" "Animation" </item>
+  <item>"STD_glbModelFx.animationClip" "Clip" </item>
+  <item>"STD_glbModelFx.playbackFps" "Playback FPS" </item>
+  <item>"STD_glbModelFx.timeOffset" "Time Offset (seconds)" </item>
+  <item>"STD_glbModelFx.animationSpeed" "Speed" </item>
+  <item>"STD_glbModelFx.loopMode" "Loop Mode" </item>
+  <item>"STD_threePointLightFx" "Three-Point Light" </item>
+  <item>"STD_threePointLightFx.masterIntensity" "Master Intensity (%)" </item>
+  <item>"STD_threePointLightFx.ambient" "Ambient (%)" </item>
+  <item>"STD_threePointLightFx.keyColor" "Key Color" </item>
+  <item>"STD_threePointLightFx.keyIntensity" "Key Intensity (%)" </item>
+  <item>"STD_threePointLightFx.keyAzimuth" "Key Azimuth" </item>
+  <item>"STD_threePointLightFx.keyElevation" "Key Elevation" </item>
+  <item>"STD_threePointLightFx.fillColor" "Fill Color" </item>
+  <item>"STD_threePointLightFx.fillIntensity" "Fill Intensity (%)" </item>
+  <item>"STD_threePointLightFx.fillAzimuth" "Fill Azimuth" </item>
+  <item>"STD_threePointLightFx.fillElevation" "Fill Elevation" </item>
+  <item>"STD_threePointLightFx.rimColor" "Rim Color" </item>
+  <item>"STD_threePointLightFx.rimIntensity" "Rim Intensity (%)" </item>
+  <item>"STD_threePointLightFx.rimAzimuth" "Rim Azimuth" </item>
+  <item>"STD_threePointLightFx.rimElevation" "Rim Elevation" </item>
+  <item>"STD_material3dFx" "Material" </item>
+  <item>"STD_material3dFx.materialMode" "Material Mode" </item>
+  <item>"STD_material3dFx.metallicScale" "Metallic Scale (%)" </item>
+  <item>"STD_material3dFx.roughnessScale" "Roughness Scale (%)" </item>
+  <item>"STD_material3dFx.exposure" "Exposure" </item>
   <item>"STD_lut3DBakeFx" "3D LUT Bake" </item>
   <item>"STD_lut3DBakeFx.lutFile" "LUT File" </item>
 <!------------------------------ FX ------------------------------------------->
@@ -1741,4 +1786,3 @@
   <item>"STD_naru_LazyBrushFx.lambda"	 	"Scribble Softness"		</item>
 
 </stringtable> 
-

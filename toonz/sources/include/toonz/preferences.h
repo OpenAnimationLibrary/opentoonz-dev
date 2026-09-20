@@ -376,6 +376,12 @@ public:
   TPixel32 getAnimateToolColor() const {
     return getColorValue(animateToolColor);
   }
+  QString getDefaultStartupTool() const {
+    return getStringValue(defaultStartupTool);
+  }
+  QString getDefaultNewSceneTool() const {
+    return getStringValue(defaultNewSceneTool);
+  }
 
   // Xsheet  tab
   QString getXsheetLayoutPreference() const {

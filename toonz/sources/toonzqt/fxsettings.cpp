@@ -169,6 +169,10 @@ void ParamsPage::setPageField(TIStream &is, const TFxP &fx, bool isVertical) {
           if (auto stringField = dynamic_cast<StringParamField *>(field))
             stringField->enableLutFileControls();
         }
+        if (paramName == "STD_glbModelFx.modelFile") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableGlbFileControls();
+        }
         if (field) {
           if (decimals >= 0) field->setPrecision(decimals);
           m_fields.push_back(field);
@@ -557,6 +561,7 @@ void ParamsPage::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame) {
         actualFx->getParams()->getParam(fieldName.toStdString());
     assert(currentParam);
     assert(actualParam);
+    field->setFx(currentFx, actualFx);
     field->setParam(currentParam, actualParam, frame);
   }
   if (actualFx->getInputPortCount() > 0)

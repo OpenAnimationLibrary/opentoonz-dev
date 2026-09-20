@@ -396,6 +396,7 @@ set(SOURCES
     ocaio.cpp
     importpdf.cpp
     importpdf.h
+    animatedsvgexport.cpp
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
     tooloptionsshortcutinvoker.cpp
