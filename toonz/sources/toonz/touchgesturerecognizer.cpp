@@ -86,6 +86,8 @@ TouchSlot tapSlot(int n) {
 
 TouchSlot doubleTapSlot(int n) {
   switch (n) {
+  case 1:
+    return TouchSlot_DoubleTap1;
   case 2:
     return TouchSlot_DoubleTap2;
   case 3:

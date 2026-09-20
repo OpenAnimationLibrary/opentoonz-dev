@@ -19,6 +19,7 @@ enum TouchSlot {
   TouchSlot_Tap4,
   TouchSlot_Tap5,
 
+  TouchSlot_DoubleTap1,
   TouchSlot_DoubleTap2,
   TouchSlot_DoubleTap3,
   TouchSlot_DoubleTap4,

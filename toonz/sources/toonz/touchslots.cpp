@@ -23,6 +23,7 @@ const SlotInfo kSlots[] = {
     {TouchSlot_Tap4, "Tap_4", "4 finger tap", false},
     {TouchSlot_Tap5, "Tap_5", "5 finger tap", false},
 
+    {TouchSlot_DoubleTap1, "DoubleTap_1", "1 finger double tap", false},
     {TouchSlot_DoubleTap2, "DoubleTap_2", "2 finger double tap", false},
     {TouchSlot_DoubleTap3, "DoubleTap_3", "3 finger double tap", false},
     {TouchSlot_DoubleTap4, "DoubleTap_4", "4 finger double tap", false},
@@ -90,6 +91,7 @@ QString touchSlotShortLabel(TouchSlot slot) {
   case TouchSlot_ReservedRotate:
     return QObject::tr("Rotate");
   case TouchSlot_Tap1:
+  case TouchSlot_DoubleTap1:
   case TouchSlot_Hold1:
     return QObject::tr("1 finger");
   case TouchSlot_Tap2:
@@ -194,6 +196,7 @@ TouchSlotFamily touchSlotFamily(TouchSlot slot) {
   case TouchSlot_Tap4:
   case TouchSlot_Tap5:
     return TouchSlotFamily_Tap;
+  case TouchSlot_DoubleTap1:
   case TouchSlot_DoubleTap2:
   case TouchSlot_DoubleTap3:
   case TouchSlot_DoubleTap4:
