@@ -394,6 +394,7 @@ set(SOURCES
     xdtsio.cpp
     sxfio.cpp
     ocaio.cpp
+    exportpdf.cpp
     importpdf.cpp
     importpdf.h
     animatedsvgexport.cpp
