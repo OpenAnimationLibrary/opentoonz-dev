@@ -98,6 +98,7 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_touchSuppressedPointerDown      = false;
   bool m_touchToolInputLockedUntilEnd    = false;
   bool m_touchAwaitFreshContact          = false;
+  bool m_touchContextMenuArmed           = false;
   int m_touchPeakLiveCount               = 0;
   TouchGestureRecognizer *m_touchRecognizer = nullptr;
   TouchPresetPickerPanel *m_touchPresetPicker = nullptr;

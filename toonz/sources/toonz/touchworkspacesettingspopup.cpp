@@ -213,6 +213,12 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   connect(m_deferTapCheck, &QCheckBox::toggled, this,
           &TouchWorkspaceSettingsPopup::onDeferTapChanged);
 
+  m_suppressContextMenuCheck =
+      new QCheckBox(tr("Hide context menu on touch hold"), this);
+  gestureLay->addWidget(m_suppressContextMenuCheck);
+  connect(m_suppressContextMenuCheck, &QCheckBox::toggled, this,
+          &TouchWorkspaceSettingsPopup::onSuppressContextMenuChanged);
+
   m_topLayout->addWidget(pickerGroup);
   m_topLayout->addWidget(gestureGroup);
 
@@ -240,6 +246,15 @@ void TouchWorkspaceSettingsPopup::syncDeferTapUiFromPreferences() {
   QSignalBlocker block(s_workspaceSettingsPopup->m_deferTapCheck);
   s_workspaceSettingsPopup->m_deferTapCheck->setChecked(
       Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+}
+
+void TouchWorkspaceSettingsPopup::syncSuppressContextMenuUiFromPreferences() {
+  if (!s_workspaceSettingsPopup ||
+      !s_workspaceSettingsPopup->m_suppressContextMenuCheck)
+    return;
+  QSignalBlocker block(s_workspaceSettingsPopup->m_suppressContextMenuCheck);
+  s_workspaceSettingsPopup->m_suppressContextMenuCheck->setChecked(
+      Preferences::instance()->isTouchSuppressViewerContextMenuEnabled());
 }
 
 bool TouchWorkspaceSettingsPopup::isPanelOpen() {
@@ -300,6 +315,10 @@ void TouchWorkspaceSettingsPopup::loadFromSettings() {
   QSignalBlocker blockDefer(m_deferTapCheck);
   m_deferTapCheck->setChecked(
       Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+
+  QSignalBlocker blockContextMenu(m_suppressContextMenuCheck);
+  m_suppressContextMenuCheck->setChecked(
+      Preferences::instance()->isTouchSuppressViewerContextMenuEnabled());
 
   QSignalBlocker blockOnlyPinned(m_showOnlyPinnedCheck);
   m_showOnlyPinnedCheck->setChecked(mgr->pickerShowOnlyPinned());
@@ -366,6 +385,11 @@ void TouchWorkspaceSettingsPopup::onOpacityChanged(int value) {
 void TouchWorkspaceSettingsPopup::onDeferTapChanged(bool checked) {
   Preferences::instance()->setValue(touchDeferTapForDoubleTap, checked);
   TouchPresetPopup::syncDeferTapUiFromPreferences();
+}
+
+void TouchWorkspaceSettingsPopup::onSuppressContextMenuChanged(bool checked) {
+  Preferences::instance()->setValue(touchSuppressViewerContextMenu, checked);
+  TouchPresetPopup::syncSuppressContextMenuUiFromPreferences();
 }
 
 void TouchWorkspaceSettingsPopup::onOpenPresetManager() {

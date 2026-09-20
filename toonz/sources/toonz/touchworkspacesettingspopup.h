@@ -28,6 +28,7 @@ class TouchWorkspaceSettingsPopup final : public DVGui::Dialog {
   QListWidget *m_pinnedList;
   QCheckBox *m_showOnlyPinnedCheck;
   QCheckBox *m_deferTapCheck;
+  QCheckBox *m_suppressContextMenuCheck;
   bool m_livePickerPreview = false;
 
 public:
@@ -38,6 +39,7 @@ public:
   static bool isPanelOpen();
   static bool isLivePickerPreviewActive();
   static void syncDeferTapUiFromPreferences();
+  static void syncSuppressContextMenuUiFromPreferences();
 
 protected:
   void showEvent(QShowEvent *event) override;
@@ -53,6 +55,7 @@ private slots:
   void onSizeChanged(int value);
   void onOpacityChanged(int value);
   void onDeferTapChanged(bool checked);
+  void onSuppressContextMenuChanged(bool checked);
   void onOpenPresetManager();
   void onPinnedItemChanged(QListWidgetItem *item);
   void onShowOnlyPinnedChanged(bool checked);

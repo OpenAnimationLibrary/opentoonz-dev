@@ -716,6 +716,8 @@ void Preferences::definePreferenceItems() {
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
   define(touchDeferTapForDoubleTap, "touchDeferTapForDoubleTap",
          QMetaType::Bool, false);
+  define(touchSuppressViewerContextMenu, "touchSuppressViewerContextMenu",
+         QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
   // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.

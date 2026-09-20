@@ -221,6 +221,7 @@ enum PreferencesItemId {
   // This option will be shown & available only when WITH_WINTAB is defined
   useQtNativeWinInk,
   touchDeferTapForDoubleTap,
+  touchSuppressViewerContextMenu,
 
   //----------
   // Others (not appeared in the popup)

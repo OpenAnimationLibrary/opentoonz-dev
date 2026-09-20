@@ -290,6 +290,14 @@ void TouchPresetPopup::syncDeferTapUiFromPreferences() {
       Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
 }
 
+void TouchPresetPopup::syncSuppressContextMenuUiFromPreferences() {
+  if (!s_touchPresetPopup || !s_touchPresetPopup->m_suppressContextMenuAction)
+    return;
+  QSignalBlocker block(s_touchPresetPopup->m_suppressContextMenuAction);
+  s_touchPresetPopup->m_suppressContextMenuAction->setChecked(
+      Preferences::instance()->isTouchSuppressViewerContextMenuEnabled());
+}
+
 void TouchPresetPopup::showEvent(QShowEvent *event) {
   Dialog::showEvent(event);
   refreshUseButton();
@@ -716,6 +724,12 @@ void TouchPresetPopup::buildOptionsMenu() {
   connect(m_deferTapAction, &QAction::toggled, this,
           &TouchPresetPopup::onDeferTapToggled);
 
+  m_suppressContextMenuAction =
+      m_optionsMenu->addAction(tr("Hide context menu on touch hold"));
+  m_suppressContextMenuAction->setCheckable(true);
+  connect(m_suppressContextMenuAction, &QAction::toggled, this,
+          &TouchPresetPopup::onSuppressContextMenuToggled);
+
   m_optionsMenu->addSeparator();
 
   m_showFamilyTogglesAction = m_optionsMenu->addAction(
@@ -736,6 +750,11 @@ void TouchPresetPopup::syncOptionsMenu() {
     m_deferTapAction->setChecked(
         Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
   }
+  if (m_suppressContextMenuAction) {
+    QSignalBlocker contextBlock(m_suppressContextMenuAction);
+    m_suppressContextMenuAction->setChecked(
+        Preferences::instance()->isTouchSuppressViewerContextMenuEnabled());
+  }
   QSignalBlocker togglesBlock(m_showFamilyTogglesAction);
   m_showFamilyTogglesAction->setChecked(
       TouchPresetManager::instance()->showFamilyRecognitionToggles());
@@ -747,6 +766,11 @@ void TouchPresetPopup::syncOptionsMenu() {
 void TouchPresetPopup::onDeferTapToggled(bool checked) {
   Preferences::instance()->setValue(touchDeferTapForDoubleTap, checked);
   TouchWorkspaceSettingsPopup::syncDeferTapUiFromPreferences();
+}
+
+void TouchPresetPopup::onSuppressContextMenuToggled(bool checked) {
+  Preferences::instance()->setValue(touchSuppressViewerContextMenu, checked);
+  TouchWorkspaceSettingsPopup::syncSuppressContextMenuUiFromPreferences();
 }
 
 void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {

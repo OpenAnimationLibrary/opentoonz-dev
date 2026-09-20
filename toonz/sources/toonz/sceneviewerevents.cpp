@@ -278,7 +278,10 @@ void SceneViewer::onButtonPressed(FlipConsole::EGadget button) {
 void SceneViewer::tabletEvent(QTabletEvent *e) {
   if (m_freezedStatus != NO_FREEZED) return;
 
-  if (e->type() == QEvent::TabletPress) m_touchAwaitFreshContact = false;
+  if (e->type() == QEvent::TabletPress) {
+    m_touchAwaitFreshContact = false;
+    m_touchContextMenuArmed  = false;
+  }
 
   if (touchToolInputBlocked()) {
     if (e->type() == QEvent::TabletPress) m_touchSuppressedPointerDown = true;
@@ -771,8 +774,10 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
   // source can be useful for detecting touch vs mouse,
   // but has reports of being unreliable on mac
   // so m_gestureActive is the marker for rejecting touch events
-  if (event->source() == Qt::MouseEventNotSynthesized)
+  if (event->source() == Qt::MouseEventNotSynthesized) {
     m_touchAwaitFreshContact = false;
+    m_touchContextMenuArmed  = false;
+  }
   if (touchToolInputBlocked()) {
     m_touchSuppressedPointerDown = true;
     return;
@@ -1255,6 +1260,7 @@ void SceneViewer::resetTouchGestureSuppression() {
   m_touchSuppressedPointerDown   = false;
   m_touchToolInputLockedUntilEnd = false;
   m_touchAwaitFreshContact       = false;
+  m_touchContextMenuArmed        = false;
   m_touchPeakLiveCount           = 0;
   m_gestureActive                = false;
   m_touchActive                  = false;
@@ -1293,6 +1299,8 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
       m_touchActive   = true;
       m_firstPanPoint = e->touchPoints().at(0).pos();
       m_touchDevice   = e->device()->type();
+      if (m_touchDevice == QTouchDevice::TouchScreen)
+        m_touchContextMenuArmed = true;
     }
   } else if (type != QEvent::TouchEnd && type != QEvent::TouchCancel) {
     if (m_touchActive && e->touchPoints().count() == 1 &&
@@ -1975,6 +1983,12 @@ using namespace ImageUtils;
 
 void SceneViewer::contextMenuEvent(QContextMenuEvent *e) {
   if (m_tabletEvent) return;
+  if (touchGestureControlEnabled() &&
+      Preferences::instance()->isTouchSuppressViewerContextMenuEnabled() &&
+      m_touchContextMenuArmed) {
+    e->accept();
+    return;
+  }
 #ifndef _WIN32
   /* On windows the widget receive the release event before the menu
      is shown, on linux and osx the release event is lost, never

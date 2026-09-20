@@ -1514,7 +1514,9 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
           "won't work properly.)")},
       {touchDeferTapForDoubleTap,
        tr("Defer simple tap when a double tap is assigned on the same finger "
-          "count")}};
+          "count")},
+      {touchSuppressViewerContextMenu,
+       tr("Hide context menu on touch hold")}};
 
   return uiStringTable.value(id, QString());
 }

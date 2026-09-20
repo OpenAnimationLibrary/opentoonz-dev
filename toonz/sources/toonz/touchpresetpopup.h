@@ -44,6 +44,7 @@ class TouchPresetPopup final : public DVGui::Dialog {
   QAction *m_showFamilyTogglesAction;
   QAction *m_showFamilyColorsAction;
   QAction *m_deferTapAction;
+  QAction *m_suppressContextMenuAction;
   QAction *m_autoUsePresetAction;
   QLabel *m_selectedName;
   QLabel *m_selectedCommand;
@@ -54,6 +55,7 @@ public:
   ~TouchPresetPopup();
 
   static void syncDeferTapUiFromPreferences();
+  static void syncSuppressContextMenuUiFromPreferences();
 
 private:
   void rebuildPresetCombo();
@@ -76,6 +78,7 @@ private slots:
   void onShowFamilyTogglesToggled(bool checked);
   void onShowFamilyColorsToggled(bool checked);
   void onDeferTapToggled(bool checked);
+  void onSuppressContextMenuToggled(bool checked);
   void syncOptionsMenu();
   void onTreeItemChanged(QTreeWidgetItem *item, int column);
   void onPresetChanged(int);

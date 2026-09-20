@@ -563,6 +563,9 @@ public:
   bool isTouchDeferTapForDoubleTapEnabled() const {
     return getBoolValue(touchDeferTapForDoubleTap);
   }
+  bool isTouchSuppressViewerContextMenuEnabled() const {
+    return getBoolValue(touchSuppressViewerContextMenu);
+  }
 
   // Others (not appeared in the popup)
   // Shortcut popup settings
