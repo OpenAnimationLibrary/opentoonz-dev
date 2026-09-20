@@ -1,0 +1,23 @@
+<fxlayout>
+  <page name="Lighting">
+    <label>"Camera-relative three-point diffuse lighting for a GLB Model source. Shadows and PBR/specular response are not part of this first version."</label>
+    <separator label="Global"/>
+    <control>masterIntensity</control>
+    <control>ambient</control>
+    <separator label="Key Light"/>
+    <control>keyColor</control>
+    <control>keyIntensity</control>
+    <control>keyAzimuth</control>
+    <control>keyElevation</control>
+    <separator label="Fill Light"/>
+    <control>fillColor</control>
+    <control>fillIntensity</control>
+    <control>fillAzimuth</control>
+    <control>fillElevation</control>
+    <separator label="Rim Light"/>
+    <control>rimColor</control>
+    <control>rimIntensity</control>
+    <control>rimAzimuth</control>
+    <control>rimElevation</control>
+  </page>
+</fxlayout>

@@ -20,6 +20,7 @@
 
 #include "tgeometry.h"
 #include "tparam.h"
+#include "tfx.h"
 #include "tnotanimatableparam.h"
 #include "tspectrumparam.h"
 #include "ttonecurveparam.h"
@@ -85,6 +86,10 @@ public:
                         int frame) = 0;
 
   virtual void update(int frame) = 0;
+
+  // Optional source context for controls whose choices are discovered from an
+  // asset. Ordinary parameter fields need no FX-specific knowledge.
+  virtual void setFx(const TFxP &current, const TFxP &actual) {}
 
   static ParamField *create(QWidget *parent, QString name,
                             const TParamP &param);
@@ -631,6 +636,7 @@ class DVAPI StringParamField final : public ParamField {
   DVGui::LineEdit *m_textFld            = nullptr;
   component::MyTextEdit *m_multiTextFld = nullptr;
   bool m_lutFileControls                = false;
+  bool m_glbFileControls                = false;
 
 public:
   StringParamField(QWidget *parent, QString name, const TStringParamP &param);
@@ -639,12 +645,16 @@ public:
   // same undo and preview notifications as edits to the string field.
   void enableLutFileControls();
 
+  // Select or clear a GLB reference without opening or validating its data.
+  void enableGlbFileControls();
+
   void setParam(const TParamP &current, const TParamP &actual,
                 int frame) override;
   void update(int frame) override;
 
   QSize getPreferredSize() override {
-    if (m_lutFileControls) return sizeHint().expandedTo(QSize(260, 54));
+    if (m_lutFileControls || m_glbFileControls)
+      return sizeHint().expandedTo(QSize(260, 54));
     if (m_textFld)
       return QSize(100, 20);
     else

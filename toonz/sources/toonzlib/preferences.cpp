@@ -511,6 +511,7 @@ void Preferences::definePreferenceItems() {
 
   // Import / Export
   define(ffmpegPath, "ffmpegPath", QMetaType::QString, "");
+  define(pdfRendererPath, "pdfRendererPath", QMetaType::QString, "");
   define(ffmpegTimeout, "ffmpegTimeout", QMetaType::Int, 600, 1,
          std::numeric_limits<int>::max());
   define(fastRenderPath, "fastRenderPath", QMetaType::QString, "desktop");
@@ -577,6 +578,12 @@ void Preferences::definePreferenceItems() {
          1.0, 5.0);
   define(animateToolColor, "animateToolColor", QMetaType::QColor,
          QColor(250, 127, 240));
+  // The Preferences dialog updates both keys together. Advanced users may set
+  // these command IDs independently in preferences.ini.
+  define(defaultStartupTool, "defaultStartupTool", QMetaType::QString,
+         "T_Hand");
+  define(defaultNewSceneTool, "defaultNewSceneTool", QMetaType::QString,
+         "T_Hand");
 
   // Xsheet
   define(xsheetLayoutPreference, "xsheetLayoutPreference", QMetaType::QString,
@@ -704,6 +711,8 @@ void Preferences::definePreferenceItems() {
   // Others (not appearing in the popup)
   // -1: normal rendering, 0: ask, 1: save all before rendering.
   define(saveBeforeRendering, "saveBeforeRendering", QMetaType::Int, -1, -1, 1);
+  // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.
+  define(tapeToolFillRiskPolicy, "tapeToolFillRiskPolicy", QMetaType::Int, 0);
   // Shortcut popup settings
   define(shortcutPreset, "shortcutPreset", QMetaType::QString, "defopentoonz");
   // Viewer context menu

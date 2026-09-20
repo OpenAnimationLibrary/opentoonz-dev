@@ -194,6 +194,10 @@
   SHADER_spinblurGPU
   SHADER_HSLBlendGPU
 </Shaders>
+  <3D>
+    STD_glbModelFx
+    STD_threePointLightFx
+  </3D>
   <Utility>
     STD_nothingFx
   </Utility>

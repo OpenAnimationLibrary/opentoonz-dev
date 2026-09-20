@@ -82,6 +82,7 @@ enum PreferencesItemId {
   //----------
   // Import / Export
   ffmpegPath,
+  pdfRendererPath,
   ffmpegTimeout,
   fastRenderPath,
   ffmpegMultiThread,
@@ -130,6 +131,8 @@ enum PreferencesItemId {
   tempToolSwitchTimer,
   animateToolHandleSize,
   animateToolColor,
+  defaultStartupTool,
+  defaultNewSceneTool,
 
   //----------
   // Xsheet
@@ -237,6 +240,9 @@ enum PreferencesItemId {
   // textureSize, // set to 0
   // LineTestFpsCapture,
   // guidedDrawingType,
+
+  // Tape Tool confirmation (stored only; no Preferences popup control)
+  tapeToolFillRiskPolicy,
 
   PreferencesItemCount
 };
