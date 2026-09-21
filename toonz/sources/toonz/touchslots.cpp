@@ -35,6 +35,11 @@ const SlotInfo kSlots[] = {
     {TouchSlot_Hold4, "Hold_4", "4 finger hold", false},
     {TouchSlot_Hold5, "Hold_5", "5 finger hold", false},
 
+    {TouchSlot_Swipe2Left, "Swipe2_Left", "2 finger swipe left", false},
+    {TouchSlot_Swipe2Right, "Swipe2_Right", "2 finger swipe right", false},
+    {TouchSlot_Swipe2Up, "Swipe2_Up", "2 finger swipe up", false},
+    {TouchSlot_Swipe2Down, "Swipe2_Down", "2 finger swipe down", false},
+
     {TouchSlot_Swipe3Left, "Swipe3_Left", "3 finger swipe left", false},
     {TouchSlot_Swipe3Right, "Swipe3_Right", "3 finger swipe right", false},
     {TouchSlot_Swipe3Up, "Swipe3_Up", "3 finger swipe up", false},
@@ -110,6 +115,14 @@ QString touchSlotShortLabel(TouchSlot slot) {
   case TouchSlot_DoubleTap5:
   case TouchSlot_Hold5:
     return QObject::tr("5 fingers");
+  case TouchSlot_Swipe2Left:
+    return QObject::tr("2 left");
+  case TouchSlot_Swipe2Right:
+    return QObject::tr("2 right");
+  case TouchSlot_Swipe2Up:
+    return QObject::tr("2 up");
+  case TouchSlot_Swipe2Down:
+    return QObject::tr("2 down");
   case TouchSlot_Swipe3Left:
     return QObject::tr("3 left");
   case TouchSlot_Swipe3Right:
@@ -208,6 +221,10 @@ TouchSlotFamily touchSlotFamily(TouchSlot slot) {
   case TouchSlot_Hold4:
   case TouchSlot_Hold5:
     return TouchSlotFamily_Hold;
+  case TouchSlot_Swipe2Left:
+  case TouchSlot_Swipe2Right:
+  case TouchSlot_Swipe2Up:
+  case TouchSlot_Swipe2Down:
   case TouchSlot_Swipe3Left:
   case TouchSlot_Swipe3Right:
   case TouchSlot_Swipe3Up:

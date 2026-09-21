@@ -16,8 +16,11 @@ const int kDoubleTapMinMs  = 45;
 const int kDoubleTapMaxMs  = 190;
 const double kDoubleTapSlop = 26.0;
 const double kTapSlop      = 40.0;
-const double kSwipePx    = 100.0;
-const double kPinchRatio = 0.18;
+const double kSwipePx           = 100.0;
+const double kHorizSwipePx      = 120.0;
+const double kPinchRatio        = 0.18;
+const double kHorizMaxSpanDelta = 0.10;
+const int kTwoFingerHorizArmMs  = 90;
 const double kEdgeBand   = 36.0;
 
 QList<QTouchEvent::TouchPoint> livePoints(const QTouchEvent *e) {
@@ -120,6 +123,10 @@ TouchSlot holdSlot(int n) {
 
 TouchSlot swipeSlot(int n, const QPointF &delta) {
   const bool horiz = std::abs(delta.x()) >= std::abs(delta.y());
+  if (n == 2) {
+    if (horiz) return delta.x() < 0 ? TouchSlot_Swipe2Left : TouchSlot_Swipe2Right;
+    return delta.y() < 0 ? TouchSlot_Swipe2Up : TouchSlot_Swipe2Down;
+  }
   if (n == 3) {
     if (horiz) return delta.x() < 0 ? TouchSlot_Swipe3Left : TouchSlot_Swipe3Right;
     return delta.y() < 0 ? TouchSlot_Swipe3Up : TouchSlot_Swipe3Down;
@@ -211,6 +218,34 @@ void TouchGestureRecognizer::begin(const QTouchEvent *e, bool tabletActive,
 
   m_holdTimer.stop();
   m_holdTimer.start(kHoldMs);
+  if (pts.size() >= 2) storeTwoFingerStarts(pts);
+}
+
+void TouchGestureRecognizer::storeTwoFingerStarts(
+    const QList<QTouchEvent::TouchPoint> &pts) {
+  if (pts.size() < 2) {
+    m_session.twoFingerStartsValid = false;
+    return;
+  }
+  m_session.fingerStart0         = pts[0].pos();
+  m_session.fingerStart1         = pts[1].pos();
+  m_session.twoFingerStartsValid = true;
+}
+
+bool TouchGestureRecognizer::twoFingerHorizontalParallel(
+    const QList<QTouchEvent::TouchPoint> &pts) const {
+  if (!m_session.twoFingerStartsValid || pts.size() < 2) return false;
+  const QPointF d0 = pts[0].pos() - m_session.fingerStart0;
+  const QPointF d1 = pts[1].pos() - m_session.fingerStart1;
+  if (d0.manhattanLength() < 24 && d1.manhattanLength() < 24) return false;
+  if (std::abs(d0.x()) < std::abs(d0.y()) * 1.25) return false;
+  if (std::abs(d1.x()) < std::abs(d1.y()) * 1.25) return false;
+  if (d0.x() * d1.x() <= 0) return false;
+  const double len0 = QLineF(QPointF(), d0).length();
+  const double len1 = QLineF(QPointF(), d1).length();
+  if (len0 < 1.0 || len1 < 1.0) return false;
+  const double dot = (d0.x() * d1.x() + d0.y() * d1.y()) / (len0 * len1);
+  return dot > 0.78;
 }
 
 void TouchGestureRecognizer::update(const QTouchEvent *e, bool reservedBusy) {
@@ -234,6 +269,7 @@ void TouchGestureRecognizer::update(const QTouchEvent *e, bool reservedBusy) {
       m_session.edge = nearestEdge(m_session.startCentroid, m_session.widgetSize);
     m_holdTimer.stop();
     m_holdTimer.start(kHoldMs);
+    if (n >= 2) storeTwoFingerStarts(pts);
     return;
   }
 
@@ -250,20 +286,52 @@ void TouchGestureRecognizer::update(const QTouchEvent *e, bool reservedBusy) {
   const double moved = QLineF(m_session.startCentroid, c).length();
   if (moved > kTapSlop) m_holdTimer.stop();
 
-  considerSwipeOrPinch(c, span);
+  considerSwipeOrPinch(c, span, pts);
 }
 
-void TouchGestureRecognizer::considerSwipeOrPinch(const QPointF &centroid,
-                                                  double span) {
+void TouchGestureRecognizer::considerSwipeOrPinch(
+    const QPointF &centroid, double span,
+    const QList<QTouchEvent::TouchPoint> &pts) {
   if (m_session.tablet || m_session.reservedBusy) return;
   const int n = m_session.maxCount;
-  if (n < 3) return;
 
   const QPointF fromStart = centroid - m_session.startCentroid;
   const double moved      = QLineF(QPointF(), fromStart).length();
   const double spanRatio =
       (m_session.startSpan > 8.0) ? (span / m_session.startSpan) : 1.0;
   const double spanDelta = std::abs(spanRatio - 1.0);
+
+  if (n == 2) {
+    if (!m_session.pinchFired && spanDelta >= kPinchRatio &&
+        spanDelta * m_session.startSpan > moved) {
+      m_session.pinchFired = true;
+      return;
+    }
+    if (m_session.pinchFired) return;
+
+    const QPointF fromAnchor = centroid - m_session.swipeAnchor;
+    const double segLen      = QLineF(QPointF(), fromAnchor).length();
+    const bool horizSeg =
+        std::abs(fromAnchor.x()) >= std::abs(fromAnchor.y());
+
+    if (horizSeg) {
+      if (segLen < kHorizSwipePx) return;
+      const qint64 elapsed =
+          QDateTime::currentMSecsSinceEpoch() - m_session.startMs;
+      if (elapsed < kTwoFingerHorizArmMs) return;
+      if (spanDelta >= kHorizMaxSpanDelta) return;
+      if (!twoFingerHorizontalParallel(pts)) return;
+    } else if (segLen < kSwipePx) {
+      return;
+    }
+
+    emitSlot(swipeSlot(2, fromAnchor), true);
+    m_session.swipeAnchor = centroid;
+    m_session.swipeArmed  = true;
+    return;
+  }
+
+  if (n < 3) return;
 
   if (!m_session.pinchFired && spanDelta >= kPinchRatio &&
       spanDelta * m_session.startSpan > moved) {

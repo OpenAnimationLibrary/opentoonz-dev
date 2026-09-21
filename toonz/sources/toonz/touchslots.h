@@ -31,6 +31,11 @@ enum TouchSlot {
   TouchSlot_Hold4,
   TouchSlot_Hold5,
 
+  TouchSlot_Swipe2Left,
+  TouchSlot_Swipe2Right,
+  TouchSlot_Swipe2Up,
+  TouchSlot_Swipe2Down,
+
   TouchSlot_Swipe3Left,
   TouchSlot_Swipe3Right,
   TouchSlot_Swipe3Up,

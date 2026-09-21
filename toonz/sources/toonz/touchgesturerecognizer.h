@@ -9,8 +9,7 @@
 #include <QPointF>
 #include <QSize>
 #include <QTimer>
-
-class QTouchEvent;
+#include <QTouchEvent>
 
 class TouchGestureRecognizer final : public QObject {
   Q_OBJECT
@@ -32,6 +31,9 @@ class TouchGestureRecognizer final : public QObject {
     int edge            = 0;
     int liveCount       = 0;
     QSize widgetSize;
+    QPointF fingerStart0;
+    QPointF fingerStart1;
+    bool twoFingerStartsValid = false;
   } m_session;
 
   QTimer m_holdTimer;
@@ -60,7 +62,11 @@ private:
   void onHoldTimeout();
   void onTapTimeout();
   void classifyRelease();
-  void considerSwipeOrPinch(const QPointF &centroid, double span);
+  void storeTwoFingerStarts(const QList<QTouchEvent::TouchPoint> &pts);
+  bool twoFingerHorizontalParallel(
+      const QList<QTouchEvent::TouchPoint> &pts) const;
+  void considerSwipeOrPinch(const QPointF &centroid, double span,
+                            const QList<QTouchEvent::TouchPoint> &pts);
 };
 
 #endif
