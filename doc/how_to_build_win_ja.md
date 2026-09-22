@@ -10,7 +10,8 @@ Visual Studio 2019 (2015以降) と Qt 5.15 でビルドできることを確認
 
 ### CMake
 - https://cmake.org/download/
-- Visual Studio 用のプロジェクトファイルの生成に使用します
+- バージョン 3.14 以降が必要です。Visual Studio 用のプロジェクトファイルの生成に使用します。
+- デフォルトの設定では、固定された OpenEXR 3.5.0 と Imath 3.2.3 のソースをダウンロードして静的リンクするため、初回の設定時にはインターネット接続が必要です。インストール済みの OpenEXR 3.5 以降を使う場合は、`OT_USE_SYSTEM_OPENEXR=ON` を指定してください。
 
 ## ソースコードの取得
 - 本リポジトリを `git clone` します

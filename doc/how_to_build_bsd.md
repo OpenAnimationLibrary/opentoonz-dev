@@ -5,7 +5,7 @@
 Building OpenToonz from source requires the following dependencies:
 - Git
 - GCC or Clang
-- CMake (3.10 or newer)
+- CMake (3.14 or newer)
 - Qt 5.x (5.15 or newer)
 - Boost (1.55 or newer)
 - LibPNG
@@ -15,6 +15,11 @@ Building OpenToonz from source requires the following dependencies:
 - LibMyPaint (1.3 or newer)
 - Jpeg-Turbo (1.4 or newer)
 - OpenCV 3.2 or newer
+
+The default CMake configuration downloads the pinned OpenEXR 3.5.0 and Imath
+3.2.3 sources and links them statically. The first configuration therefore
+requires internet access. To use an installed OpenEXR 3.5 or newer instead,
+configure with `-DOT_USE_SYSTEM_OPENEXR=ON`.
 
 ## OpenBSD example
 ```

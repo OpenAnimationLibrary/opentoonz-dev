@@ -24,7 +24,6 @@ set(HEADERS
     ffmpeg/tiio_ff_mov.h
     sprite/tiio_sprite.h
     mesh/tiio_mesh.h
-    exr/tinyexr_otmod.h
     exr/tiio_exr.h
     tzm/tiio_tzm.h
 )
@@ -118,10 +117,10 @@ if(WITH_TRANSLATION)
     add_compile_translations_command(image image)
 endif()
 
-add_definitions(
-    -DTNZIMAGE_DLL
-    -D_USRDLL
-    -DIMAGE_EXPORTS
+target_compile_definitions(image PRIVATE
+    TNZIMAGE_DLL
+    _USRDLL
+    IMAGE_EXPORTS
 )
 
 if(BUILD_ENV_APPLE)
@@ -156,11 +155,6 @@ if(BUILD_TARGET_WIN AND PLATFORM EQUAL 32)
         ${SDKROOT}/quicktime/QT73SDK/CIncludes
     )
 endif()
-
-include_directories(
-    ${SDKROOT}/tinyexr
-)
-
 
 _find_toonz_library(TNZLIBS "tnzcore;tnzbase;toonzlib")
 
@@ -202,4 +196,24 @@ elseif(BUILD_ENV_UNIXLIKE)
     endif()
 endif()
 
-target_link_libraries(image Qt5::Core Qt5::Gui Qt5::Network ${Z_LIB} ${GLUT_LIB} ${GL_LIB} ${JPEG_LIB} ${TIFF_LIB} ${PNG_LIB} ${EXTRA_LIBS})
+target_link_libraries(image
+    PRIVATE
+    OpenEXR::OpenEXR
+    PUBLIC
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Network
+    ${Z_LIB}
+    ${GLUT_LIB}
+    ${GL_LIB}
+    ${JPEG_LIB}
+    ${TIFF_LIB}
+    ${PNG_LIB}
+    ${EXTRA_LIBS}
+)
+
+if(BUILD_EXR_TESTS)
+    add_executable(tiio_exr_test tests/tiio_exr_test.cpp)
+    target_link_libraries(tiio_exr_test PRIVATE image OpenEXR::OpenEXR)
+    add_test(NAME tiio_exr COMMAND tiio_exr_test)
+endif()
