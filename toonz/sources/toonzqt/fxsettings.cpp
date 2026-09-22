@@ -173,6 +173,30 @@ void ParamsPage::setPageField(TIStream &is, const TFxP &fx, bool isVertical) {
           if (auto stringField = dynamic_cast<StringParamField *>(field))
             stringField->enableGlbFileControls();
         }
+        if (paramName == "STD_openExrAovFx.exrFile") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableExrFileControls();
+        }
+        if (paramName == "STD_openExrAovFx.part") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableExrChoiceControls(TFxAovChoiceKind::Part);
+        }
+        if (paramName == "STD_openExrAovFx.layer" ||
+            paramName == "STD_openExrAovFx.slot1Layer" ||
+            paramName == "STD_openExrAovFx.slot2Layer" ||
+            paramName == "STD_openExrAovFx.slot3Layer" ||
+            paramName == "STD_openExrAovFx.slot4Layer") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableExrChoiceControls(TFxAovChoiceKind::Layer);
+        }
+        if (paramName == "STD_openExrAovFx.channel" ||
+            paramName == "STD_openExrAovFx.redChannel" ||
+            paramName == "STD_openExrAovFx.greenChannel" ||
+            paramName == "STD_openExrAovFx.blueChannel" ||
+            paramName == "STD_openExrAovFx.alphaChannel") {
+          if (auto stringField = dynamic_cast<StringParamField *>(field))
+            stringField->enableExrChoiceControls(TFxAovChoiceKind::Channel);
+        }
         if (field) {
           if (decimals >= 0) field->setPrecision(decimals);
           m_fields.push_back(field);

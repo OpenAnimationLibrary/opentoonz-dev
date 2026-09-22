@@ -29,6 +29,7 @@
 #include <QKeyEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QInputDialog>
 #include <QVBoxLayout>
 #include <QTimer>
 #include <stdexcept>
@@ -1705,6 +1706,121 @@ void StringParamField::enableGlbFileControls() {
 
 //-----------------------------------------------------------------------------
 
+void StringParamField::enableExrFileControls() {
+  if (!m_textFld || m_exrFileControls) return;
+  m_exrFileControls = true;
+  auto column       = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  m_layout->removeWidget(m_textFld);
+  column->addWidget(m_textFld);
+  auto buttons = new QHBoxLayout();
+  auto browse  = new QPushButton(tr("Browse..."), this);
+  auto inspect = new QPushButton(tr("Inspect"), this);
+  auto clear   = new QPushButton(tr("Clear"), this);
+  buttons->addWidget(browse);
+  buttons->addWidget(inspect);
+  buttons->addWidget(clear);
+  column->addLayout(buttons);
+  m_layout->addLayout(column);
+  m_textFld->setToolTip(
+      tr("Select an OpenEXR file, or enter a numbered sequence using # "
+         "placeholders such as render.####.exr."));
+  inspect->setToolTip(
+      tr("List the parts, storage types, windows, channels, and layers."));
+  clear->setToolTip(tr("Clear the reference without deleting the EXR file."));
+
+  connect(browse, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select OpenEXR Image"), m_textFld->text(),
+        tr("OpenEXR images (*.exr *.EXR)"));
+    if (path.isEmpty()) return;
+    m_textFld->setText(QFileInfo(path).absoluteFilePath());
+    onChange();
+  });
+  connect(inspect, &QPushButton::clicked, this, [this]() {
+    auto *source = dynamic_cast<TFxAovSource *>(m_actualFx.getPointer());
+    if (!source) {
+      DVGui::warning(tr("The current FX cannot inspect OpenEXR AOVs."));
+      return;
+    }
+    try {
+      DVGui::info(QString::fromStdWString(source->getAovSummary(m_frame)));
+    } catch (const std::exception &error) {
+      DVGui::warning(
+          tr("Cannot inspect EXR: %1").arg(QString::fromUtf8(error.what())));
+    }
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::enableExrChoiceControls(TFxAovChoiceKind kind) {
+  if (!m_textFld || m_exrChoiceControls) return;
+  m_exrChoiceControls = true;
+  m_exrChoiceKind     = kind;
+  auto choose         = new QPushButton(tr("Choose..."), this);
+  auto clear          = new QPushButton(tr("Clear"), this);
+  m_layout->addWidget(choose);
+  m_layout->addWidget(clear);
+
+  connect(choose, &QPushButton::clicked, this, [this]() {
+    auto *source = dynamic_cast<TFxAovSource *>(m_actualFx.getPointer());
+    if (!source) {
+      DVGui::warning(tr("The current FX cannot discover OpenEXR AOVs."));
+      return;
+    }
+    try {
+      const auto choices = source->getAovChoices(m_exrChoiceKind, m_frame);
+      if (choices.empty()) {
+        DVGui::warning(tr("No matching choices were found in this EXR part."));
+        return;
+      }
+      QStringList labels;
+      int current = 0;
+      for (int i = 0; i < int(choices.size()); ++i) {
+        labels << QString::fromStdWString(choices[i].label);
+        if (QString::fromStdWString(choices[i].value) == m_textFld->text())
+          current = i;
+      }
+      QString title;
+      if (m_exrChoiceKind == TFxAovChoiceKind::Part)
+        title = tr("Select EXR Part");
+      else if (m_exrChoiceKind == TFxAovChoiceKind::Layer)
+        title = tr("Select EXR Layer");
+      else
+        title = tr("Select EXR Channel");
+      bool accepted       = false;
+      const QString label = QInputDialog::getItem(
+          this, title, tr("Available in the selected EXR:"), labels, current,
+          false, &accepted);
+      if (!accepted) return;
+      const int selected = labels.indexOf(label);
+      if (selected < 0) return;
+      m_textFld->setText(QString::fromStdWString(choices[selected].value));
+      onChange();
+    } catch (const std::exception &error) {
+      DVGui::warning(
+          tr("Cannot inspect EXR: %1").arg(QString::fromUtf8(error.what())));
+    }
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::setFx(const TFxP &, const TFxP &actual) {
+  m_actualFx = actual;
+}
+
+//-----------------------------------------------------------------------------
+
 void StringParamField::onChange() {
   std::wstring value;
   if (m_multiTextFld)
@@ -1734,6 +1850,7 @@ void StringParamField::setParam(const TParamP &current, const TParamP &actual,
                                 int frame) {
   m_currentParam = current;
   m_actualParam  = actual;
+  m_frame        = frame;
   assert(m_currentParam);
   assert(m_actualParam);
   update(frame);
@@ -1742,6 +1859,7 @@ void StringParamField::setParam(const TParamP &current, const TParamP &actual,
 //-----------------------------------------------------------------------------
 
 void StringParamField::update(int frame) {
+  m_frame = frame;
   if (!m_actualParam || !m_currentParam) return;
   QString str;
   QString strValue = str.fromStdWString(m_actualParam->getValue());

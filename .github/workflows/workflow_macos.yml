@@ -85,9 +85,10 @@ jobs:
             -DCMAKE_PREFIX_PATH=$(brew --prefix qt@5)/lib/cmake/Qt5 \
             -DOpenCV_DIR=$(brew --prefix opencv@4)/lib/cmake/opencv4 \
             -DBUILD_EXR_TESTS=ON \
+            -DBUILD_EXR_AOV_FX_TESTS=ON \
             -DWITH_TRANSLATION=OFF
           ninja -j $(sysctl -n hw.ncpu)
-          ctest --output-on-failure -R '^tiio_exr$'
+          ctest --output-on-failure -R '^(tiio_exr|openexraovfx)$'
       - name: Introduce Libraries and Stuff
         run: |
           cd toonz/build/toonz
