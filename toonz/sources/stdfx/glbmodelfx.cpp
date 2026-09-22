@@ -190,7 +190,8 @@ class GlbModelFx final : public TStandardZeraryFx,
 
   std::shared_ptr<const otglb::RenderScene> projected(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const {
+      const otglb::LightingRig *lighting                   = nullptr,
+      const std::vector<otglb::ModelTransform> *transforms = nullptr) const {
     if (m_modelFile->getValue().empty()) return {};
     auto settings = options(frame);
     QMutexLocker lock(&m_cache->mutex);
@@ -218,6 +219,7 @@ class GlbModelFx final : public TStandardZeraryFx,
       settings.lighting = *lighting;
       settings.headlight = false;
     }
+    if (transforms) settings.transforms = *transforms;
     if (!m_cache->projected || !(settings == m_cache->options)) {
       auto scene = std::make_shared<otglb::RenderScene>(
           otglb::prepareRender(*m_cache->loaded.asset, settings, canceled));
@@ -256,8 +258,10 @@ public:
 
   std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const override {
-    return projected(frame, canceled, lighting);
+      const otglb::LightingRig *lighting = nullptr,
+      const std::vector<otglb::ModelTransform> *transforms =
+          nullptr) const override {
+    return projected(frame, canceled, lighting, transforms);
   }
 
   GlbModelFx()

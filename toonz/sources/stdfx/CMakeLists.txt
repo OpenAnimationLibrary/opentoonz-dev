@@ -170,6 +170,7 @@ set(SOURCES
     threepointlightfx.cpp
     tilefx.cpp
     tonecurvefx.cpp
+    transform3dfx.cpp
     unmultiplyfx.cpp
     warp.cpp
     warpfx.cpp
@@ -351,11 +352,13 @@ if(BUILD_LUT3D_TESTS)
     target_link_libraries(lut3dbake_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
 endif()
 
-# Optional regression targets for the GLB Model and downstream 3D-lighting FX.
-option(BUILD_GLB_FX_TESTS "Build the GLB Model FX framework regression executables" OFF)
+# Optional regression targets for the GLB-backed 3D FX framework.
+option(BUILD_GLB_FX_TESTS "Build the 3D FX framework regression executables" OFF)
 if(BUILD_GLB_FX_TESTS)
     add_executable(glbmodelfx_test tests/glbmodelfx_test.cpp)
     target_link_libraries(glbmodelfx_test otglb toonzqt Qt5::Core Qt5::Gui Qt5::Widgets ${TNZLIBS} ${PTHREAD_LIBRARY})
     add_executable(threepointlightfx_test tests/threepointlightfx_test.cpp)
     target_link_libraries(threepointlightfx_test otglb Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+    add_executable(transform3dfx_test tests/transform3dfx_test.cpp)
+    target_link_libraries(transform3dfx_test otglb Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
 endif()
