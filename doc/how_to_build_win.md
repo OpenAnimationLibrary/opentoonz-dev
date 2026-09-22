@@ -10,7 +10,12 @@ This software can be built using Visual Studio 2019 and Qt 5.x
 
 ### CMake
 - https://cmake.org/download/
-- This will be used to create the `MSVC 2019` project file.
+- Version 3.14 or newer is required. This will be used to create the
+  `MSVC 2019` project file.
+- The default configuration downloads the pinned OpenEXR 3.5.0 and Imath
+  3.2.3 sources and links them statically, so the first configuration requires
+  internet access. Set `OT_USE_SYSTEM_OPENEXR=ON` only when an installed
+  OpenEXR 3.5 or newer should be used instead.
 
 ### Qt
 - https://www.qt.io/download-open-source/

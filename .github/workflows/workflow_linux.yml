@@ -56,8 +56,9 @@ jobs:
         cd toonz
         mkdir build
         cd build
-        cmake ../sources -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }} -DWITH_TRANSLATION=OFF
+        cmake ../sources -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }} -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON
         ninja
+        ctest --output-on-failure -R '^tiio_exr$'
 
     - name: Create Artifact
       run: |
@@ -145,5 +146,6 @@ jobs:
         cd toonz
         mkdir build
         cd build
-        cmake ../sources -G Ninja -DWITH_TRANSLATION=OFF
+        cmake ../sources -G Ninja -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON
         ninja
+        ctest --output-on-failure -R '^tiio_exr$'

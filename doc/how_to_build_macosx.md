@@ -5,7 +5,7 @@
 - git
 - brew
 - Xcode
-- cmake (3.10 or later)
+- cmake (3.14 or later)
 - Qt 5.x (5.15 or later)
 - boost (1.55.0 or later)
 
@@ -36,6 +36,11 @@ In a Terminal window, execute the following statements:
 brew install glew lz4 libjpeg libpng lzo pkg-config libusb cmake git-lfs libmypaint qt@5 boost jpeg-turbo opencv
 git lfs install
 ```
+
+The default CMake configuration downloads the pinned OpenEXR 3.5.0 and Imath
+3.2.3 sources and links them statically. The first configuration therefore
+requires internet access. To use an installed OpenEXR 3.5 or newer instead,
+configure with `-DOT_USE_SYSTEM_OPENEXR=ON`.
 
 NOTE: This will install the latest version of QT v5.x which may not be compatible with older OS versions.
 
