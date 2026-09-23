@@ -11,15 +11,58 @@
 #include "toonzqt/gutil.h"
 #include "tlevel_io.h"
 
+#include <QCryptographicHash>
 #include <QFile>
 #include <QTemporaryDir>
+
+#include <cstring>
 
 using namespace std;
 
 namespace {
 const char *const VectorClipboardFormat =
-    "application/x-opentoonz-vector-selection-v1";
+    "application/x-opentoonz-vector-selection-v2";
+const char VectorClipboardMagic[]       = {'O', 'T', 'V', '2'};
+constexpr int VectorClipboardHeaderSize = 4 + 4 + 32;
+constexpr int MaxVectorClipboardSize    = 64 * 1024 * 1024;
+
+QByteArray makeVectorClipboardPayload(const QByteArray &pliData) {
+  QByteArray payload;
+  payload.reserve(VectorClipboardHeaderSize + pliData.size());
+  payload.append(VectorClipboardMagic, 4);
+  const quint32 size = static_cast<quint32>(pliData.size());
+  payload.append(static_cast<char>((size >> 24) & 0xff));
+  payload.append(static_cast<char>((size >> 16) & 0xff));
+  payload.append(static_cast<char>((size >> 8) & 0xff));
+  payload.append(static_cast<char>(size & 0xff));
+  payload.append(QCryptographicHash::hash(pliData, QCryptographicHash::Sha256));
+  payload.append(pliData);
+  return payload;
 }
+
+QByteArray vectorPliData(const QByteArray &payload) {
+  if (payload.size() < VectorClipboardHeaderSize ||
+      memcmp(payload.constData(), VectorClipboardMagic, 4) != 0)
+    return QByteArray();
+
+  const unsigned char *data =
+      reinterpret_cast<const unsigned char *>(payload.constData());
+  const quint32 size = (static_cast<quint32>(data[4]) << 24) |
+                       (static_cast<quint32>(data[5]) << 16) |
+                       (static_cast<quint32>(data[6]) << 8) |
+                       static_cast<quint32>(data[7]);
+  if (size == 0 || size > MaxVectorClipboardSize ||
+      payload.size() != VectorClipboardHeaderSize + static_cast<int>(size))
+    return QByteArray();
+
+  const QByteArray pliData      = payload.mid(VectorClipboardHeaderSize);
+  const QByteArray expectedHash = payload.mid(8, 32);
+  if (QCryptographicHash::hash(pliData, QCryptographicHash::Sha256) !=
+      expectedHash)
+    return QByteArray();
+  return pliData;
+}
+}  // namespace
 
 void StrokesData::setClipboardFormats() {
   if (!m_image || m_image->getStrokeCount() == 0) return;
@@ -34,15 +77,31 @@ void StrokesData::setClipboardFormats() {
   if (!dir.isValid()) return;
   QString path = dir.filePath("selection.pli");
   try {
+    // A split selection can retain internal state from its source image that
+    // is not suitable for a standalone PLI. Rebuild it just as the custom
+    // vector-brush exporter does before handing it to the PLI writer.
+    TPaletteP palette           = new TPalette();
+    TVectorImageP sourceCopy    = m_image->clone();
+    TVectorImageP transferImage = new TVectorImage();
+    transferImage->setPalette(palette.getPointer());
+    transferImage->setAutocloseTolerance(m_image->getAutocloseTolerance());
+    transferImage->mergeImage(sourceCopy, TAffine());
+    transferImage->findRegions();
+    if (transferImage->getStrokeCount() == 0) return;
+
     TLevelP level = new TLevel();
-    level->setPalette(m_image->getPalette());
-    level->setFrame(TFrameId(1), m_image);
+    level->setPalette(palette.getPointer());
+    level->setFrame(TFrameId(1), transferImage);
     TLevelWriterP writer(TFilePath(path.toStdWString()));
     writer->save(level);
     writer = TLevelWriterP();  // The PLI writer finishes on destruction.
     QFile file(path);
-    if (file.open(QIODevice::ReadOnly))
-      QMimeData::setData(VectorClipboardFormat, file.readAll());
+    if (file.open(QIODevice::ReadOnly)) {
+      const QByteArray pliData = file.readAll();
+      if (!pliData.isEmpty() && pliData.size() <= MaxVectorClipboardSize)
+        QMimeData::setData(VectorClipboardFormat,
+                           makeVectorClipboardPayload(pliData));
+    }
   } catch (...) {
     // The image representation and in-process vector data still work.
   }
@@ -50,8 +109,8 @@ void StrokesData::setClipboardFormats() {
 
 StrokesData *StrokesData::fromClipboard(const QMimeData *mime) {
   if (!mime || !mime->hasFormat(VectorClipboardFormat)) return nullptr;
-  QByteArray bytes = mime->data(VectorClipboardFormat);
-  if (bytes.isEmpty() || bytes.size() > 64 * 1024 * 1024) return nullptr;
+  const QByteArray bytes = vectorPliData(mime->data(VectorClipboardFormat));
+  if (bytes.isEmpty()) return nullptr;
   QTemporaryDir dir;
   if (!dir.isValid()) return nullptr;
   QString path = dir.filePath("selection.pli");
@@ -67,7 +126,10 @@ StrokesData *StrokesData::fromClipboard(const QMimeData *mime) {
     TImageReaderP frame = reader->getFrameReader(TFrameId(1));
     TImageP loaded      = frame ? frame->load() : TImageP();
     TVectorImageP image = loaded;
-    if (!image || !level->getPalette()) return nullptr;
+    if (!image || image->getStrokeCount() == 0 || !level->getPalette() ||
+        level->getPalette()->getPageCount() == 0 ||
+        level->getPalette()->getStyleCount() == 0)
+      return nullptr;
     image->setPalette(level->getPalette());
     return new StrokesData(image.getPointer());
   } catch (...) {
