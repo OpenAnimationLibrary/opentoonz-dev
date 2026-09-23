@@ -7,10 +7,12 @@
 #include "toonzqt/dvdialog.h"
 #include "toonzqt/selection.h"
 #include "saveloadqsettings.h"
+#include "toonz/txshsimplelevel.h"
 
 // Qt includes
 #include <QScrollArea>
 #include <QKeyEvent>
+#include <QPointer>
 
 // STD includes
 #include <vector>
@@ -173,6 +175,8 @@ protected:
   void timerEvent(QTimerEvent *) override;
   TFrameId getCurrentFrameId();
   void contextMenuEvent(QContextMenuEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
+  void cancelCopyPasteFrameRange();
 
   void startDragDrop();
   int dropInsertionIndex(const QPoint &pos) const;
@@ -218,6 +222,13 @@ private:
   FilmstripFrameHeadGadget *m_frameHeadGadget;
   InbetweenDialog *m_inbetweenDialog;
   SceneViewer *m_viewer;
+  QPointer<SceneViewer> m_rangeViewer;
+  TXshSimpleLevelP m_rangeLevel;
+  std::vector<TImageP> m_rangeImages;
+  TPointD m_rangeFirstPoint;
+  bool m_rangeHasFirstPoint    = false;
+  bool m_rangeEatRelease       = false;
+  bool m_rangeComplete         = false;
   bool m_isActive              = false;
   bool m_isSynchronized        = true;
   bool m_dragInProgress        = false;
