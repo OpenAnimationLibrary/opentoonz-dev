@@ -1,5 +1,6 @@
 #include <memory>
 #include <cwctype>
+#include <exception>
 
 #include "iocommand.h"
 #include "importpdf.h"
@@ -52,6 +53,7 @@
 #include "toonz/tpalettehandle.h"
 #include "toonz/toonzscene.h"
 #include "toonz/tproject.h"
+#include "toonz/txshexrlevel.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/txshchildlevel.h"
 #include "toonz/sceneproperties.h"
@@ -74,6 +76,10 @@
 #include "toutputproperties.h"
 #include "toonz/studiopalette.h"
 #include "convert2tlv.h"
+
+// Dedicated EXR level support.  This header intentionally stays private to
+// toonzlib until the retained-source API settles.
+#include "../toonzlib/exrlevelloader.h"
 
 // TnzCore includes
 #include "tofflinegl.h"
@@ -299,14 +305,56 @@ public:
 
     // refresh icons and level path
     if (overwritten) {
-      TXshLevel *xl       = getLevelByPath(scene, actualDstPath);
-      TXshSimpleLevel *sl = 0;
-      if (xl && 0 != (sl = xl->getSimpleLevel())) {
+      class LoadingRangeRestorer final {
+        TFrameId m_from, m_to;
+
+      public:
+        LoadingRangeRestorer(TFrameId from, TFrameId to)
+            : m_from(from), m_to(to) {}
+        ~LoadingRangeRestorer() { setLoadingLevelRange(m_from, m_to); }
+      };
+
+      std::vector<TXshSimpleLevel *> levelsToRefresh;
+      TLevelSet *levelSet       = scene->getLevelSet();
+      const bool isExrOverwrite = actualDstPath.getType() == "exr";
+      std::unique_ptr<LoadingRangeRestorer> loadingRangeRestorer;
+      if (isExrOverwrite) {
+        TFrameId loadingRangeFrom, loadingRangeTo;
+        getLoadingLevelRange(loadingRangeFrom, loadingRangeTo);
+        loadingRangeRestorer = std::make_unique<LoadingRangeRestorer>(
+            loadingRangeFrom, loadingRangeTo);
+
+        // Refresh every already-loaded EXR binding in full. Preserve the
+        // one-shot range for the requested import that follows this resource
+        // operation. Other formats retain their legacy consume-on-refresh
+        // behavior.
+        setLoadingLevelRange(TFrameId(1), TFrameId(0));
+
+        for (int i = 0; i < levelSet->getLevelCount(); ++i) {
+          TXshLevel *level = levelSet->getLevel(i);
+          TXshSimpleLevel *simpleLevel =
+              level ? level->getSimpleLevel() : nullptr;
+          if (simpleLevel &&
+              scene->decodeFilePath(simpleLevel->getPath()) == actualDstPath)
+            levelsToRefresh.push_back(simpleLevel);
+        }
+      }
+
+      // A multipart EXR document may back several retained sibling levels.
+      // Refresh all of them after overwrite so no AOV keeps an old builder or
+      // cached image. Other formats retain the established path-only lookup.
+      if (levelsToRefresh.empty()) {
+        TXshLevel *level = getLevelByPath(scene, actualDstPath);
+        if (level && level->getSimpleLevel())
+          levelsToRefresh.push_back(level->getSimpleLevel());
+      }
+
+      for (TXshSimpleLevel *sl : levelsToRefresh) {
         std::vector<TFrameId> fids;
         sl->getFids(fids);
         sl->setPath(sl->getPath(), false);
-        for (int i = 0; i < (int)fids.size(); i++)
-          IconGenerator::instance()->invalidate(sl, fids[i]);
+        for (const TFrameId &fid : fids)
+          IconGenerator::instance()->invalidate(sl, fid);
       }
     }
     return dstPath;
@@ -322,6 +370,12 @@ TXshLevel *getLevelByPath(ToonzScene *scene, const TFilePath &actualPath) {
   for (int i = 0; i < levelSet->getLevelCount(); i++) {
     TXshLevel *xl = levelSet->getLevel(i);
     if (!xl) continue;
+    // Multiple EXR levels may intentionally share one physical document.
+    // Path-only callers mean the document's primary image; selected sibling
+    // images are found through ExrLevel::findRetainedLevel instead.
+    if (TXshExrLevel *exrLevel =
+            dynamic_cast<TXshExrLevel *>(xl->getSimpleLevel()))
+      if (!exrLevel->isDefaultSelection()) continue;
     TFilePath fp = scene->decodeFilePath(xl->getPath());
     if (fp == actualPath) return xl;
   }
@@ -697,7 +751,14 @@ void ChildLevelResourceImporter::process(TXshSimpleLevel *sl) {
       TFilePath otherActualPath =
           m_parentScene->decodeFilePath(other->getPath());
       TFilePath slActualPath = m_childScene->decodeFilePath(sl->getPath());
-      if (otherActualPath == slActualPath &&
+      const auto *sourceExr  = dynamic_cast<const TXshExrLevel *>(sl);
+      const auto *otherExr   = dynamic_cast<const TXshExrLevel *>(other);
+      const bool sameExrBinding =
+          (!sourceExr && !otherExr) ||
+          (sourceExr && otherExr &&
+           sourceExr->getSelection() == otherExr->getSelection() &&
+           sourceExr->isPrimaryBinding() == otherExr->isPrimaryBinding());
+      if (otherActualPath == slActualPath && sameExrBinding &&
           other->getProperties()->options() == sl->getProperties()->options()) {
         substituteLevel(m_childScene->getXsheet(), sl, other);
         return;
@@ -1045,6 +1106,101 @@ TXshLevel *loadLevel(ToonzScene *scene,
 
   if (replaceUndo) TUndoManager::manager()->add(replaceUndo);
 
+  return xl;
+}
+
+//===========================================================================
+// loadExrBinding(scene, path, binding, castFolder, row, col)
+//
+// A selected EXR part/layer cannot pass through loadLevel(): its historical
+// path-only lookup would collapse every image in the document onto one level.
+// Keep the established load/expose/undo behavior, but use selector-aware EXR
+// lookup and construction.
+//---------------------------------------------------------------------------
+
+TXshLevel *loadExrBinding(
+    ToonzScene *scene, const IoCmd::LoadResourceArguments::ResourceData &rd,
+    const ExrLevel::Binding &binding, const TFilePath &castFolder, int row0,
+    int &col0, bool expose, const std::vector<TFrameId> &requestedFids,
+    TFrameId xFrom, TFrameId xTo, const std::wstring &requestedLevelName,
+    int step, int inc, int frameCount, bool doesFileActuallyExist) {
+  const TFilePath actualPath = scene->decodeFilePath(rd.m_path);
+
+  TXshExrLevel *exrLevel =
+      ExrLevel::findRetainedLevel(scene, actualPath, binding);
+  const bool isFirstTime = !exrLevel;
+
+  std::wstring levelName = requestedLevelName.empty() ? actualPath.getWideName()
+                                                      : requestedLevelName;
+  if (!binding.label.empty()) levelName += L" [" + binding.label + L"]";
+
+  if (!exrLevel) {
+    try {
+      exrLevel = ExrLevel::loadRetainedLevel(
+          scene, actualPath, binding, levelName, requestedFids,
+          rd.m_options ? &*rd.m_options : nullptr);
+    } catch (TException &e) {
+      error(QString::fromStdWString(e.getMessage()));
+      return nullptr;
+    } catch (const std::exception &e) {
+      error(QString::fromUtf8(e.what()));
+      return nullptr;
+    }
+    if (!exrLevel) return nullptr;
+
+    if (exrLevel->isReadOnly()) {
+      TLevelSet *levelSet = new TLevelSet;
+      levelSet->insertLevel(exrLevel);
+      VersionControlManager::instance()->setFrameRange(levelSet, true);
+    }
+
+    if (castFolder != TFilePath())
+      scene->getLevelSet()->moveLevelToFolder(castFolder, exrLevel);
+
+    if (exrLevel->getProperties()->isForbidden()) {
+      error(QObject::tr("It is not possible to load the level %1 because its "
+                        "version is not supported.")
+                .arg(toQString(actualPath)));
+      scene->getLevelSet()->removeLevel(exrLevel);
+      return nullptr;
+    }
+
+    History::instance()->addItem(actualPath);
+  }
+
+  TXshLevel *xl       = exrLevel;
+  LoadLevelUndo *undo = nullptr;
+  if (isFirstTime) {
+    undo = new LoadLevelUndo();
+    undo->setLevel(xl);
+    undo->setLevelSetFolder(castFolder);
+    undo->setIsFirstTime(true);
+  }
+
+  if (expose) {
+    if (!undo) {
+      undo = new LoadLevelUndo();
+      undo->setLevel(xl);
+      undo->setIsFirstTime(false);
+    }
+
+    std::vector<TFrameId> fids = requestedFids;
+    if (fids.empty()) exrLevel->getFids(fids);
+
+    const bool columnInserted = beforeCellsInsert(
+        scene->getXsheet(), row0, col0, exrLevel->getFrameCount(),
+        TXshColumn::toColumnType(exrLevel->getType()));
+    scene->getXsheet()->exposeLevel(row0, col0, exrLevel, fids, xFrom, xTo,
+                                    step, inc, frameCount,
+                                    doesFileActuallyExist);
+
+    const int exposedCount =
+        frameCount > 0 ? frameCount : exrLevel->getFrameCount();
+    undo->setCells(scene->getXsheet(), row0, col0, exposedCount);
+    undo->setColumnInserted(columnInserted);
+  }
+
+  if (undo) TUndoManager::manager()->add(undo);
   return xl;
 }
 
@@ -2696,6 +2852,94 @@ int IoCmd::loadResources(LoadResourceArguments &args, bool updateRecentFile,
             toQString(scene->decodeFilePath(path)), RecentFiles::Level);
       continue;
     }
+
+    // OpenEXR can carry several independently displayable images.  Keep the
+    // normal path for the primary image, but offer the document-style load
+    // when more than one flat part/layer binding is available.  Numbered EXR
+    // files remain the time axis; every binding becomes a sibling level.
+    if (path.getType() == "exr" && args.doesFileActuallyExist && row1 == -1 &&
+        col1 == -1) {
+      std::string inspectionError;
+      const TFilePath actualPath = scene->decodeFilePath(path);
+      TFrameId loadingRangeFrom, loadingRangeTo;
+      getLoadingLevelRange(loadingRangeFrom, loadingRangeTo);
+      const bool hasLoadingRange   = loadingRangeFrom <= loadingRangeTo;
+      const auto resetLoadingRange = []() {
+        setLoadingLevelRange(TFrameId(1), TFrameId(0));
+      };
+      const std::vector<ExrLevel::Binding> bindings =
+          ExrLevel::inspectBindings(actualPath, &inspectionError);
+
+      if (bindings.empty() && !inspectionError.empty()) {
+        resetLoadingRange();
+        error(QString::fromUtf8(inspectionError.c_str()));
+        continue;
+      }
+
+      if (bindings.size() > 1) {
+        const QString question =
+            QObject::tr(
+                "OpenEXR file '%1' contains %2 displayable images.\n"
+                "How would you like to load it?")
+                .arg(path.withoutParentDir().getQString())
+                .arg(static_cast<int>(bindings.size()));
+        QList<QString> choices;
+        choices.append(
+            args.expose
+                ? QObject::tr("All images as separate levels and columns")
+                : QObject::tr("All images as separate levels"));
+        choices.append(QObject::tr("Primary image only"));
+
+        const int choice =
+            DVGui::RadioButtonMsgBox(DVGui::QUESTION, question, choices,
+                                     TApp::instance()->getMainWindow());
+        if (choice == 0) {
+          resetLoadingRange();
+          continue;
+        }
+
+        if (choice == 1) {
+          int exrLoadedCount = 0;
+          for (const ExrLevel::Binding &binding : bindings) {
+            // Every sibling receives the same one-shot subsequence filter;
+            // TXshExrLevel::load() consumes and resets it after each load.
+            if (hasLoadingRange)
+              setLoadingLevelRange(loadingRangeFrom, loadingRangeTo);
+            TXshLevel *bindingLevel = loadExrBinding(
+                scene, rds[i], binding, args.castFolder, row0, col0,
+                args.expose, rds[i].m_frameIdSet, args.xFrom, args.xTo,
+                args.levelName, args.step, args.inc, args.frameCount,
+                args.doesFileActuallyExist);
+            if (!bindingLevel) continue;
+
+            args.loadedLevels.push_back(bindingLevel);
+            ++loadedCount;
+            ++exrLoadedCount;
+
+            // Retained EXR builders are intentionally lazy. Their source
+            // document can back several sibling levels, so the generic
+            // per-level eager image/icon pass would duplicate work.
+            if (args.cachingBehavior != LoadResourceArguments::ON_DEMAND &&
+                !dynamic_cast<TXshExrLevel *>(bindingLevel)) {
+              TXshSimpleLevel *simpleLevel = bindingLevel->getSimpleLevel();
+              if (simpleLevel) {
+                const bool cacheImagesAsWell =
+                    args.cachingBehavior ==
+                    LoadResourceArguments::ALL_ICONS_AND_IMAGES;
+                simpleLevel->loadAllIconsAndPutInCache(cacheImagesAsWell);
+              }
+            }
+          }
+
+          if (exrLoadedCount && updateRecentFile)
+            RecentFiles::instance()->addFilePath(toQString(actualPath),
+                                                 RecentFiles::Level);
+          resetLoadingRange();
+          continue;
+        }
+      }
+    }
+
     // LOAD OTHER FILE
     try {
       // reuse TFrameIds retrieved by FileBrowser, m_frameIdSet
@@ -2711,6 +2955,10 @@ int IoCmd::loadResources(LoadResourceArguments &args, bool updateRecentFile,
       error(QString::fromStdWString(e.getMessage()));
     }
 
+    // An already-loaded level does not call load() again, so consume the
+    // one-shot range here as well. New EXR loads have already reset it.
+    if (path.getType() == "exr") setLoadingLevelRange(TFrameId(1), TFrameId(0));
+
     // if load success
     if (!xl) continue;
     isSoundLevel = isSoundLevel || xl->getType() == SND_XSHLEVEL;
@@ -2720,7 +2968,8 @@ int IoCmd::loadResources(LoadResourceArguments &args, bool updateRecentFile,
     ++loadedCount;
 
     // load the image data of all frames to cache at the beginning
-    if (args.cachingBehavior != LoadResourceArguments::ON_DEMAND) {
+    if (args.cachingBehavior != LoadResourceArguments::ON_DEMAND &&
+        !dynamic_cast<TXshExrLevel *>(xl)) {
       TXshSimpleLevel *simpleLevel = xl->getSimpleLevel();
       if (simpleLevel && (simpleLevel->getType() == TZP_XSHLEVEL ||
                           simpleLevel->getType() == OVL_XSHLEVEL)) {

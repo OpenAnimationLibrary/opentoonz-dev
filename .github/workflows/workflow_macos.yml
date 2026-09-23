@@ -88,7 +88,7 @@ jobs:
             -DBUILD_EXR_AOV_FX_TESTS=ON \
             -DWITH_TRANSLATION=OFF
           ninja -j $(sysctl -n hw.ncpu)
-          ctest --output-on-failure -R '^(tiio_exr|openexraovfx)$'
+          ctest --output-on-failure -R '^(tiio_exr(_level)?|openexraovfx)$'
       - name: Introduce Libraries and Stuff
         run: |
           cd toonz/build/toonz

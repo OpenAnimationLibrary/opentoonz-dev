@@ -5,6 +5,7 @@
 // TnzLib includes
 #include "toonz/txsheet.h"
 #include "toonz/txshcell.h"
+#include "toonz/txshexrlevel.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/txshchildlevel.h"
 #include "toonz/txshleveltypes.h"
@@ -1257,7 +1258,14 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     m_levelSet->insertLevel(sl);
     return sl;
   } else {
-    TXshSimpleLevel *xl = new TXshSimpleLevel(levelName);
+    // Keep EXR source identity in a dedicated level object.  The class still
+    // reports OVL_XSHLEVEL, so the existing full-color level behavior remains
+    // intact while its virtual load() can restore the selected EXR part/layer.
+    const bool isExrLevel =
+        ltype.m_ltype == OVL_XSHLEVEL && levelPath.getType() == "exr";
+    TXshSimpleLevel *xl =
+        isExrLevel ? static_cast<TXshSimpleLevel *>(new TXshExrLevel(levelName))
+                   : new TXshSimpleLevel(levelName);
     xl->setType(ltype.m_ltype);
     xl->setScene(this);
 
@@ -1267,7 +1275,12 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
     xl->setPath(codeFilePath(levelPath), true);
 
     try {
-      if (fIds.size() != 0 && !ltype.m_oldLevelFlag)
+      if (isExrLevel && fIds.size() != 0)
+        // The selected-frame overload in TXshSimpleLevel predates virtual
+        // dispatch. Call the EXR overload explicitly so retained builders are
+        // installed for just the requested physical frames.
+        static_cast<TXshExrLevel *>(xl)->load(fIds);
+      else if (fIds.size() != 0 && !ltype.m_oldLevelFlag)
         xl->load(fIds);
       else
         xl->load();
