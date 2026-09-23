@@ -6,16 +6,23 @@
 
 #include <memory>
 
-// Internal contract for FX nodes that can provide an unevaluated 3D render
-// result to another 3D-aware FX. It is deliberately separate from raster
-// compute so lighting can be applied before the model is flattened to pixels.
+// Internal contract for composable 3D FX. Lighting and material state are kept
+// separate so either modifier can appear before or after the other in the FX
+// Schematic. Downstream state wins when two nodes of the same kind are chained.
+struct T3DRenderContext {
+  bool hasLighting = false;
+  otglb::LightingRig lighting;
+  bool hasMaterial = false;
+  otglb::MaterialRig material;
+};
+
 class T3DRenderSource {
 public:
   virtual ~T3DRenderSource() = default;
 
   virtual std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const = 0;
+      const T3DRenderContext &context = T3DRenderContext()) const = 0;
 };
 
 // The schematic connects a zerary column, whereas the render tree connects the
@@ -31,7 +38,7 @@ class T3DSourcePort final : public TRasterFxPort {
 public:
   void setFx(TFx *fx) override {
     if (fx && !resolve(fx))
-      throw TException("Fx: 3D source port requires a compatible 3D model FX");
+      throw TException("Fx: 3D source port requires a compatible 3D FX");
     TRasterFxPort::setFx(fx);
   }
 

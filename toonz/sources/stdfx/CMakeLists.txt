@@ -117,6 +117,7 @@ set(SOURCES
     despecklefx.cpp
     diamondgradientfx.cpp
     dissolvefx.cpp
+    duplicate3dfx.cpp
     embossfx.cpp
     erodilatefx.cpp
     externalpalettefx.cpp
@@ -124,6 +125,7 @@ set(SOURCES
     freedistortfx.cpp
     gammafx.cpp
     glbmodelfx.cpp
+    material3dfx.cpp
     glowfx.cpp
     gradients.cpp
     hsvkeyfx.cpp
@@ -193,7 +195,6 @@ set(SOURCES
     igs_hsv_noise_in_camera.cpp
     igs_level_auto.cpp
     igs_level_auto_in_camera.cpp
-    igs_levels.cpp
     igs_line_blur.cpp
     igs_math_random.cpp
     igs_maxmin.cpp
@@ -346,14 +347,12 @@ if(OpenCV_FOUND)
     target_link_libraries(tnzstdfx ${OpenCV_LIBS})
 endif()
 
-# Optional regression target for the production LUT parser and raster FX.
 option(BUILD_LUT3D_TESTS "Build the 3D LUT Bake regression executable" OFF)
 if(BUILD_LUT3D_TESTS)
     add_executable(lut3dbake_test tests/lut3dbake_test.cpp)
     target_link_libraries(lut3dbake_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
 endif()
 
-# Optional regression targets for the GLB Model and downstream 3D-lighting FX.
 option(BUILD_GLB_FX_TESTS "Build the GLB Model FX framework regression executables" OFF)
 if(BUILD_GLB_FX_TESTS)
     add_executable(glbmodelfx_test tests/glbmodelfx_test.cpp)
