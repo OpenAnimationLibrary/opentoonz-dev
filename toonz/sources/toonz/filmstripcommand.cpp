@@ -1503,7 +1503,8 @@ public:
 bool FilmstripCmd::copyPasteFrameRange(TXshSimpleLevel *source,
                                        const std::vector<TImageP> &images,
                                        const TPointD &first,
-                                       const TPointD &last) {
+                                       const TPointD &last,
+                                       const std::wstring &levelName) {
   if (!source || images.empty()) return false;
   TApp *app         = TApp::instance();
   ToonzScene *scene = app->getCurrentScene()->getScene();
@@ -1514,8 +1515,8 @@ bool FilmstripCmd::copyPasteFrameRange(TXshSimpleLevel *source,
   TDimension resolution = source->getProperties()->getImageRes();
   TPointD dpi           = source->getProperties()->getImageDpi();
   double levelDpi       = dpi.x > 0 ? dpi.x : 0;
-  TXshLevel *created    = scene->createNewLevel(
-         source->getType(), source->getName() + L"_range", resolution, levelDpi);
+  TXshLevel *created =
+      scene->createNewLevel(source->getType(), levelName, resolution, levelDpi);
   TXshSimpleLevel *target = created ? created->getSimpleLevel() : nullptr;
   if (!target) return false;
   target->getProperties()->setImageRes(resolution);

@@ -37,10 +37,12 @@
 #include "toonz/levelset.h"
 #include "toonz/preferences.h"
 #include "toonz/dpiscale.h"
+#include "toonz/namebuilder.h"
 #include "tools/toolhandle.h"
 
 // TnzCore includes
 #include "tpalette.h"
+#include "tsystem.h"
 
 // Qt includes
 #include <QPainter>
@@ -56,9 +58,39 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QTimer>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <algorithm>
 
 namespace {
+bool rangeLevelNameInUse(ToonzScene *scene, int type,
+                         const std::wstring &name) {
+  TLevelSet *levels = scene->getLevelSet();
+  if (levels->hasLevel(name)) return true;
+
+  TFilePath path =
+      scene->decodeFilePath(scene->getDefaultLevelPath(type, name));
+  if (TSystem::doesExistFileOrLevel(path)) return true;
+  std::vector<TXshLevel *> existing;
+  levels->listLevels(existing);
+  for (TXshLevel *level : existing) {
+    TXshSimpleLevel *simple = level->getSimpleLevel();
+    if (simple && !simple->getPath().isEmpty() &&
+        scene->decodeFilePath(simple->getPath()) == path)
+      return true;
+  }
+  return false;
+}
+
+bool validRangeLevelName(const QString &name) {
+  if (name.isEmpty() || name.endsWith('.') || name != name.trimmed())
+    return false;
+  const QString invalid = QStringLiteral("/\\:*?\"<>|");
+  for (QChar character : invalid)
+    if (name.contains(character)) return false;
+  return true;
+}
+
 QString fidToFrameNumberWithLetter(int f) {
   QString str = QString::number((int)(f / 10));
   while (str.length() < 3) str.push_front("0");
@@ -1637,6 +1669,34 @@ void FilmstripFrames::startCopyPasteFrameRange() {
     DVGui::warning(tr("Open the source level in a 2D viewer first."));
     return;
   }
+  ToonzScene *scene = sl->getScene();
+  if (!scene) return;
+  m_rangeLevelName = sl->getName() + L"_range";
+  if (rangeLevelNameInUse(scene, sl->getType(), m_rangeLevelName)) {
+    NameModifier names(m_rangeLevelName);
+    std::wstring suggested;
+    do {
+      suggested = names.getNext();
+    } while (rangeLevelNameInUse(scene, sl->getType(), suggested));
+
+    for (;;) {
+      bool accepted = false;
+      QString name  = QInputDialog::getText(
+           this, tr("Copy Paste Frame Range"), tr("New level name:"),
+           QLineEdit::Normal, QString::fromStdWString(suggested), &accepted);
+      if (!accepted) {
+        m_rangeLevelName.clear();
+        return;
+      }
+      if (!validRangeLevelName(name)) {
+        DVGui::warning(tr("Enter a valid level filename."));
+        continue;
+      }
+      m_rangeLevelName = name.toStdWString();
+      if (!rangeLevelNameInUse(scene, sl->getType(), m_rangeLevelName)) break;
+      DVGui::warning(tr("A level with that name or filename already exists."));
+    }
+  }
   for (const TFrameId &fid : m_selection->getSelectedFids()) {
     TImageP image = sl->getFrame(fid, false);
     m_rangeImages.push_back(image ? image->cloneImage() : nullptr);
@@ -1656,6 +1716,7 @@ void FilmstripFrames::cancelCopyPasteFrameRange() {
   m_rangeViewer = nullptr;
   m_rangeLevel  = nullptr;
   m_rangeImages.clear();
+  m_rangeLevelName.clear();
   m_rangeHasFirstPoint = false;
   m_rangeComplete      = false;
   m_rangeEatRelease    = false;
@@ -1716,12 +1777,14 @@ bool FilmstripFrames::eventFilter(QObject *watched, QEvent *event) {
     m_rangeHasFirstPoint = true;
     if (m_rangeImages.size() == 1) {
       FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(),
-                                        m_rangeImages, point, point);
+                                        m_rangeImages, point, point,
+                                        m_rangeLevelName);
       m_rangeComplete = true;
     }
   } else {
     FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(), m_rangeImages,
-                                      m_rangeFirstPoint, point);
+                                      m_rangeFirstPoint, point,
+                                      m_rangeLevelName);
     m_rangeComplete = true;
   }
   return true;

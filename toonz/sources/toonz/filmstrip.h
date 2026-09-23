@@ -17,6 +17,7 @@
 // STD includes
 #include <vector>
 #include <map>
+#include <string>
 
 // forward declaration
 class TFrameId;
@@ -226,6 +227,7 @@ private:
   QPointer<SceneViewer> m_rangeViewer;
   TXshSimpleLevelP m_rangeLevel;
   std::vector<TImageP> m_rangeImages;
+  std::wstring m_rangeLevelName;
   TPointD m_rangeFirstPoint;
   bool m_rangeHasFirstPoint    = false;
   bool m_rangeEatRelease       = false;
