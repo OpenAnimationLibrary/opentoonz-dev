@@ -1707,6 +1707,11 @@ bool FilmstripFrames::eventFilter(QObject *watched, QEvent *event) {
   if (!m_rangeHasFirstPoint) {
     m_rangeFirstPoint    = point;
     m_rangeHasFirstPoint = true;
+    if (m_rangeImages.size() == 1) {
+      FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(),
+                                        m_rangeImages, point, point);
+      m_rangeComplete = true;
+    }
   } else {
     FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(), m_rangeImages,
                                       m_rangeFirstPoint, point);
