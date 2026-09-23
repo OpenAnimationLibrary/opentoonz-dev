@@ -1368,7 +1368,8 @@ void CellArea::showFramePreview() {
 
   dismissFramePreview();
   QToolTip::hideText();
-  auto *popup = new QScrollArea(this, Qt::Popup);
+  auto *popup = new QScrollArea(this);
+  popup->setWindowFlags(Qt::Popup);
   popup->setAttribute(Qt::WA_DeleteOnClose);
   popup->setFrameShape(QFrame::StyledPanel);
   popup->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
