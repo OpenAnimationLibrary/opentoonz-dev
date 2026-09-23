@@ -1520,6 +1520,9 @@ bool FilmstripCmd::copyPasteFrameRange(TXshSimpleLevel *source,
   if (!target) return false;
   target->getProperties()->setImageRes(resolution);
   target->getProperties()->setImageDpi(dpi);
+  target->getProperties()->setDpiPolicy(
+      source->getProperties()->getDpiPolicy());
+  target->getProperties()->setDpi(source->getProperties()->getDpi());
   if (source->getPalette()) {
     TPaletteP palette = source->getPalette()->clone();
     target->setPalette(palette.getPointer());
