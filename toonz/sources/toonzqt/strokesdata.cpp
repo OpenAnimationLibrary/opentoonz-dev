@@ -8,8 +8,67 @@
 #include "toonz/toonzimageutils.h"
 #include "toonz/trasterimageutils.h"
 #include "toonz/stage.h"
+#include "toonzqt/gutil.h"
+#include "tlevel_io.h"
+
+#include <QFile>
+#include <QTemporaryDir>
 
 using namespace std;
+
+namespace {
+const char *const VectorClipboardFormat =
+    "application/x-opentoonz-vector-selection-v1";
+}
+
+void StrokesData::setClipboardFormats() {
+  if (!m_image || m_image->getStrokeCount() == 0) return;
+  try {
+    TRaster32P raster = m_image->render(false);
+    if (raster) setImageData(rasterToQImage(raster).copy());
+  } catch (...) {
+    // Native copy remains available when a rendering context cannot be made.
+  }
+
+  QTemporaryDir dir;
+  if (!dir.isValid()) return;
+  QString path = dir.filePath("selection.pli");
+  try {
+    TLevelP level = new TLevel();
+    level->setPalette(m_image->getPalette());
+    level->setFrame(TFrameId(1), m_image);
+    TLevelWriterP writer(TFilePath(path.toStdWString()));
+    writer->save(level);
+    writer = TLevelWriterP();  // The PLI writer finishes on destruction.
+    QFile file(path);
+    if (file.open(QIODevice::ReadOnly))
+      QMimeData::setData(VectorClipboardFormat, file.readAll());
+  } catch (...) {
+    // The image representation and in-process vector data still work.
+  }
+}
+
+StrokesData *StrokesData::fromClipboard(const QMimeData *mime) {
+  if (!mime || !mime->hasFormat(VectorClipboardFormat)) return nullptr;
+  QByteArray bytes = mime->data(VectorClipboardFormat);
+  if (bytes.isEmpty() || bytes.size() > 64 * 1024 * 1024) return nullptr;
+  QTemporaryDir dir;
+  if (!dir.isValid()) return nullptr;
+  QString path = dir.filePath("selection.pli");
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
+    return nullptr;
+  file.close();
+  try {
+    TLevelReaderP reader(TFilePath(path.toStdWString()));
+    TImageReaderP frame = reader->getFrameReader(TFrameId(1));
+    TImageP loaded      = frame ? frame->load() : TImageP();
+    TVectorImageP image = loaded;
+    return image ? new StrokesData(image.getPointer()) : nullptr;
+  } catch (...) {
+    return nullptr;
+  }
+}
 
 //=============================================================================
 namespace {

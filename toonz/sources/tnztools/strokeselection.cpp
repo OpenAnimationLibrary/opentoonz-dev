@@ -162,6 +162,7 @@ void copyStrokesWithoutUndo(TVectorImageP image, std::set<int> &indexes) {
   QClipboard *clipboard = QApplication::clipboard();
   StrokesData *data     = new StrokesData();
   data->setImage(image, indexes);
+  data->setClipboardFormats();
   clipboard->setMimeData(data, QClipboard::Clipboard);
 }
 
@@ -173,6 +174,11 @@ bool pasteStrokesWithoutUndo(TVectorImageP image, std::set<int> &outIndexes,
   QClipboard *clipboard = QApplication::clipboard();
   const StrokesData *stData =
       dynamic_cast<const StrokesData *>(clipboard->mimeData());
+  std::unique_ptr<StrokesData> transferredData;
+  if (!stData) {
+    transferredData.reset(StrokesData::fromClipboard(clipboard->mimeData()));
+    stData = transferredData.get();
+  }
   const ToonzImageData *tiData =
       dynamic_cast<const ToonzImageData *>(clipboard->mimeData());
   const FullColorImageData *fciData =
