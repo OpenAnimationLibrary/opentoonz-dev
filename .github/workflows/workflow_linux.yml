@@ -56,9 +56,9 @@ jobs:
         cd toonz
         mkdir build
         cd build
-        cmake ../sources -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }} -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON
+        cmake ../sources -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_C_COMPILER=${{ matrix.cc }} -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON
         ninja
-        ctest --output-on-failure -R '^tiio_exr$'
+        ctest --output-on-failure -R '^(tiio_exr|openexraovfx)$'
 
     - name: Create Artifact
       run: |
@@ -146,6 +146,6 @@ jobs:
         cd toonz
         mkdir build
         cd build
-        cmake ../sources -G Ninja -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON
+        cmake ../sources -G Ninja -DWITH_TRANSLATION=OFF -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON
         ninja
-        ctest --output-on-failure -R '^tiio_exr$'
+        ctest --output-on-failure -R '^(tiio_exr|openexraovfx)$'

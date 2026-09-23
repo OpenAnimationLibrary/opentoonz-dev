@@ -1,4 +1,35 @@
 <stringtable>
+  <item>"STD_openExrAovFx" "EXR AOV Switchboard" </item>
+  <item>"STD_openExrAovFx.exrFile" "EXR File / Sequence" </item>
+  <item>"STD_openExrAovFx.frameOffset" "Sequence Frame Offset" </item>
+  <item>"STD_openExrAovFx.part" "Part" </item>
+  <item>"STD_openExrAovFx.interpretation" "Interpretation" </item>
+  <item>"STD_openExrAovFx.outputMode" "Output" </item>
+  <item>"STD_openExrAovFx.layer" "Layer" </item>
+  <item>"STD_openExrAovFx.channel" "Channel" </item>
+  <item>"STD_openExrAovFx.falseColorLow" "False Color Low" </item>
+  <item>"STD_openExrAovFx.falseColorHigh" "False Color High" </item>
+  <item>"STD_openExrAovFx.falseColorInvert" "Invert Ramp" </item>
+  <item>"STD_openExrAovFx.redChannel" "Red Channel" </item>
+  <item>"STD_openExrAovFx.greenChannel" "Green Channel" </item>
+  <item>"STD_openExrAovFx.blueChannel" "Blue Channel" </item>
+  <item>"STD_openExrAovFx.alphaChannel" "Alpha Channel" </item>
+  <item>"STD_openExrAovFx.slot1Enabled" "Slot 1 Enabled" </item>
+  <item>"STD_openExrAovFx.slot1Layer" "Slot 1 Layer" </item>
+  <item>"STD_openExrAovFx.slot1Gain" "Slot 1 Gain" </item>
+  <item>"STD_openExrAovFx.slot1Operation" "Slot 1 Operation" </item>
+  <item>"STD_openExrAovFx.slot2Enabled" "Slot 2 Enabled" </item>
+  <item>"STD_openExrAovFx.slot2Layer" "Slot 2 Layer" </item>
+  <item>"STD_openExrAovFx.slot2Gain" "Slot 2 Gain" </item>
+  <item>"STD_openExrAovFx.slot2Operation" "Slot 2 Operation" </item>
+  <item>"STD_openExrAovFx.slot3Enabled" "Slot 3 Enabled" </item>
+  <item>"STD_openExrAovFx.slot3Layer" "Slot 3 Layer" </item>
+  <item>"STD_openExrAovFx.slot3Gain" "Slot 3 Gain" </item>
+  <item>"STD_openExrAovFx.slot3Operation" "Slot 3 Operation" </item>
+  <item>"STD_openExrAovFx.slot4Enabled" "Slot 4 Enabled" </item>
+  <item>"STD_openExrAovFx.slot4Layer" "Slot 4 Layer" </item>
+  <item>"STD_openExrAovFx.slot4Gain" "Slot 4 Gain" </item>
+  <item>"STD_openExrAovFx.slot4Operation" "Slot 4 Operation" </item>
   <item>"STD_glbModelFx" "GLB Model" </item>
   <item>"STD_glbModelFx.modelFile" "GLB File" </item>
   <item>"STD_glbModelFx.positionX" "Position X" </item>

@@ -21,6 +21,7 @@
 #include "tgeometry.h"
 #include "tparam.h"
 #include "tfx.h"
+#include "tfxaovsource.h"
 #include "tnotanimatableparam.h"
 #include "tspectrumparam.h"
 #include "ttonecurveparam.h"
@@ -637,6 +638,11 @@ class DVAPI StringParamField final : public ParamField {
   component::MyTextEdit *m_multiTextFld = nullptr;
   bool m_lutFileControls                = false;
   bool m_glbFileControls                = false;
+  bool m_exrFileControls                = false;
+  bool m_exrChoiceControls              = false;
+  TFxAovChoiceKind m_exrChoiceKind      = TFxAovChoiceKind::Channel;
+  TFxP m_actualFx;
+  int m_frame = 0;
 
 public:
   StringParamField(QWidget *parent, QString name, const TStringParamP &param);
@@ -648,12 +654,20 @@ public:
   // Select or clear a GLB reference without opening or validating its data.
   void enableGlbFileControls();
 
+  // Select/inspect an EXR, or choose a stable part/layer/channel value
+  // discovered from the current EXR AOV source.
+  void enableExrFileControls();
+  void enableExrChoiceControls(TFxAovChoiceKind kind);
+
+  void setFx(const TFxP &current, const TFxP &actual) override;
+
   void setParam(const TParamP &current, const TParamP &actual,
                 int frame) override;
   void update(int frame) override;
 
   QSize getPreferredSize() override {
-    if (m_lutFileControls || m_glbFileControls)
+    if (m_lutFileControls || m_glbFileControls || m_exrFileControls ||
+        m_exrChoiceControls)
       return sizeHint().expandedTo(QSize(260, 54));
     if (m_textFld)
       return QSize(100, 20);

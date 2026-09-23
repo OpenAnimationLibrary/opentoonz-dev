@@ -199,6 +199,7 @@
     STD_threePointLightFx
   </3D>
   <Utility>
+    STD_openExrAovFx
     STD_nothingFx
   </Utility>
 </fxs>
