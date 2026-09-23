@@ -15,7 +15,8 @@ public:
 
   virtual std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
       double frame, const int *canceled,
-      const otglb::LightingRig *lighting = nullptr) const = 0;
+      const otglb::LightingRig *lighting                   = nullptr,
+      const std::vector<otglb::ModelTransform> *transforms = nullptr) const = 0;
 };
 
 // The schematic connects a zerary column, whereas the render tree connects the
@@ -31,7 +32,7 @@ class T3DSourcePort final : public TRasterFxPort {
 public:
   void setFx(TFx *fx) override {
     if (fx && !resolve(fx))
-      throw TException("Fx: 3D source port requires a compatible 3D model FX");
+      throw TException("Fx: 3D source port requires a compatible 3D FX");
     TRasterFxPort::setFx(fx);
   }
 

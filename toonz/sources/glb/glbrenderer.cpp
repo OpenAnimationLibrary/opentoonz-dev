@@ -25,6 +25,19 @@ Vec transform(const Matrix &m, Vec p) {
           m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
           m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]};
 }
+Vec transform(Vec p, const ModelTransform &t) {
+  const double sx = std::sin(t.rotation[0] * Pi / 180.0);
+  const double cx = std::cos(t.rotation[0] * Pi / 180.0);
+  const double sy = std::sin(t.rotation[1] * Pi / 180.0);
+  const double cy = std::cos(t.rotation[1] * Pi / 180.0);
+  const double sz = std::sin(t.rotation[2] * Pi / 180.0);
+  const double cz = std::cos(t.rotation[2] * Pi / 180.0);
+  p               = {p.x * t.scale[0], p.y * t.scale[1], p.z * t.scale[2]};
+  p               = {p.x, cx * p.y - sx * p.z, sx * p.y + cx * p.z};
+  p               = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
+  p               = {cz * p.x - sz * p.y, sz * p.x + cz * p.y, p.z};
+  return {p.x + t.position[0], p.y + t.position[1], p.z + t.position[2]};
+}
 struct Instance {
   const RenderOptions &o;
   double sx, cx, sy, cy, sz, cz;
@@ -38,8 +51,9 @@ struct Instance {
     p = {p.x, cx * p.y - sx * p.z, sx * p.y + cx * p.z};
     p = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
     p = {cz * p.x - sz * p.y, sz * p.x + cz * p.y, p.z};
-    return {p.x + o.position[0], p.y + o.position[1],
-            p.z + o.position[2] - o.cameraDistance};
+    p = {p.x + o.position[0], p.y + o.position[1], p.z + o.position[2]};
+    for (const auto &additional : o.transforms) p = transform(p, additional);
+    return {p.x, p.y, p.z - o.cameraDistance};
   }
 };
 
@@ -98,7 +112,8 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          headlight == b.headlight && wireframe == b.wireframe &&
          materialColors == b.materialColors && colors == b.colors &&
          useLightingRig == b.useLightingRig && lighting == b.lighting &&
-         animation == b.animation && sourceSeconds == b.sourceSeconds;
+         transforms == b.transforms && animation == b.animation &&
+         sourceSeconds == b.sourceSeconds;
 }
 
 float linearToSrgb(float v) {
@@ -118,6 +133,15 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
                           const int *canceled) {
   for (double v : o.position) require(std::isfinite(v), "Non-finite GLB position.");
   for (double v : o.rotation) require(std::isfinite(v), "Non-finite GLB rotation.");
+  for (const auto &additional : o.transforms) {
+    for (double v : additional.position)
+      require(std::isfinite(v), "Non-finite 3D transform position.");
+    for (double v : additional.rotation)
+      require(std::isfinite(v), "Non-finite 3D transform rotation.");
+    for (double v : additional.scale)
+      require(std::isfinite(v) && v > 0.0,
+              "3D transform scale must be positive and finite.");
+  }
   require(std::isfinite(o.scale) && o.scale > 0 &&
               std::isfinite(o.cameraDistance) && o.cameraDistance > 0 &&
               std::isfinite(o.nearClip) && std::isfinite(o.farClip) &&

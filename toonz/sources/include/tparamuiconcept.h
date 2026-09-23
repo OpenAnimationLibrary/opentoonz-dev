@@ -76,6 +76,10 @@ public:
                    // { [TDoubleParamP] }
     PARALLELOGRAM,
 
+    // A mode-switchable 3D translation, rotation and scale gizmo.
+    // { [9 TDoubleParamP], TIntEnumParamP }
+    TRANSFORM_3D,
+
     TYPESCOUNT
   };
 

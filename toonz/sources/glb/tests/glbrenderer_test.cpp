@@ -111,6 +111,28 @@ int main() {
       o = {}; o.rotation[1] = 60;
       s = prepareRender(a, o); near(s.bounds[0], -50); near(s.bounds[2], 50);
     });
+    run("ordered downstream nonuniform model transforms", [] {
+      auto a = triangle();
+      RenderOptions o;
+      ModelTransform first;
+      first.position[0] = 1;
+      ModelTransform second;
+      second.scale = {{2, .5, 1}};
+      o.transforms = {first, second};
+      auto s       = prepareRender(a, o);
+      near(s.bounds[0], 0);
+      near(s.bounds[2], 400);
+      near(s.bounds[1], -50);
+      near(s.bounds[3], 50);
+      auto reversed = o;
+      std::reverse(reversed.transforms.begin(), reversed.transforms.end());
+      s = prepareRender(a, reversed);
+      near(s.bounds[0], -100);
+      near(s.bounds[2], 300);
+      check(!(o == reversed), "Transform order missing from cache identity");
+      reversed.transforms[0].scale[0] = 0;
+      rejects([&] { prepareRender(a, reversed); });
+    });
     run("near and far clipping including camera crossings", [] {
       auto a = triangle(); RenderOptions o;
       o.nearClip = 11; check(prepareRender(a, o).triangles.empty(), "Near clip ignored");

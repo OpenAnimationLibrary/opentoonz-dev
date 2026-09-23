@@ -55,6 +55,17 @@
   <item>"STD_glbModelFx.timeOffset" "Time Offset (seconds)" </item>
   <item>"STD_glbModelFx.animationSpeed" "Speed" </item>
   <item>"STD_glbModelFx.loopMode" "Loop Mode" </item>
+  <item>"STD_transform3DFx" "3D Transformer" </item>
+  <item>"STD_transform3DFx.positionX" "Position X" </item>
+  <item>"STD_transform3DFx.positionY" "Position Y" </item>
+  <item>"STD_transform3DFx.positionZ" "Position Z" </item>
+  <item>"STD_transform3DFx.rotationX" "Rotation X" </item>
+  <item>"STD_transform3DFx.rotationY" "Rotation Y" </item>
+  <item>"STD_transform3DFx.rotationZ" "Rotation Z" </item>
+  <item>"STD_transform3DFx.scaleX" "Scale X (%)" </item>
+  <item>"STD_transform3DFx.scaleY" "Scale Y (%)" </item>
+  <item>"STD_transform3DFx.scaleZ" "Scale Z (%)" </item>
+  <item>"STD_transform3DFx.gizmoMode" "Canvas Gizmo" </item>
   <item>"STD_threePointLightFx" "Three-Point Light" </item>
   <item>"STD_threePointLightFx.masterIntensity" "Master Intensity (%)" </item>
   <item>"STD_threePointLightFx.ambient" "Ambient (%)" </item>

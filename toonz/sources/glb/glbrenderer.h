@@ -34,6 +34,20 @@ struct LightingRig {
   }
 };
 
+// A downstream 3D FX can add one or more transforms without flattening the
+// source to a raster. Transforms are evaluated in vector order after the GLB
+// Model node's own instance transform and before the camera transform.
+struct ModelTransform {
+  std::array<double, 3> position{};
+  std::array<double, 3> rotation{};  // Degrees, applied X then Y then Z.
+  std::array<double, 3> scale{{1.0, 1.0, 1.0}};
+
+  bool operator==(const ModelTransform &other) const {
+    return position == other.position && rotation == other.rotation &&
+           scale == other.scale;
+  }
+};
+
 struct RenderOptions {
   std::array<double, 3> position{}, rotation{};  // Degrees, applied X then Y then Z.
   double scale = 1.0;
@@ -50,6 +64,9 @@ struct RenderOptions {
   // source node's geometry, camera, material and animation settings.
   bool useLightingRig = false;
   LightingRig lighting;
+
+  // Additional model-space transforms supplied by downstream 3D nodes.
+  std::vector<ModelTransform> transforms;
 
   // NoIndex preserves the historical static/base-geometry path exactly.
   // A valid index evaluates that embedded glTF clip at sourceSeconds and applies
