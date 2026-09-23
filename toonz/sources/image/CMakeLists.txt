@@ -216,4 +216,8 @@ if(BUILD_EXR_TESTS)
     add_executable(tiio_exr_test tests/tiio_exr_test.cpp)
     target_link_libraries(tiio_exr_test PRIVATE image OpenEXR::OpenEXR)
     add_test(NAME tiio_exr COMMAND tiio_exr_test)
+
+    add_executable(tiio_exr_level_test tests/tiio_exr_level_test.cpp)
+    target_link_libraries(tiio_exr_level_test PRIVATE toonzlib OpenEXR::OpenEXR)
+    add_test(NAME tiio_exr_level COMMAND tiio_exr_level_test)
 endif()
