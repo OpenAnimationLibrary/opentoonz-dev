@@ -61,6 +61,9 @@ StrokesData *StrokesData::fromClipboard(const QMimeData *mime) {
   file.close();
   try {
     TLevelReaderP reader(TFilePath(path.toStdWString()));
+    // PLI frame readers need loadInfo() to initialize the stream and palette.
+    TLevelP level = reader->loadInfo();
+    if (!level || level->getFrameCount() != 1) return nullptr;
     TImageReaderP frame = reader->getFrameReader(TFrameId(1));
     TImageP loaded      = frame ? frame->load() : TImageP();
     TVectorImageP image = loaded;

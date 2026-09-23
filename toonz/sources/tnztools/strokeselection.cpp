@@ -922,6 +922,12 @@ void StrokeSelection::paste() {
   if (TTool::getApplication()->getCurrentObject()->isSpline()) {
     const StrokesData *stData = dynamic_cast<const StrokesData *>(
         QApplication::clipboard()->mimeData());
+    std::unique_ptr<StrokesData> transferredData;
+    if (!stData) {
+      transferredData.reset(
+          StrokesData::fromClipboard(QApplication::clipboard()->mimeData()));
+      stData = transferredData.get();
+    }
     if (!stData) return;
     TVectorImageP splineImg = tool->getImage(true);
     TVectorImageP img       = stData->m_image;
