@@ -33,7 +33,7 @@ void check(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
 }
 
-void near(double actual, double expected) {
+void checkNear(double actual, double expected) {
   check(std::abs(actual - expected) < 0.00001,
         "unexpected transformed coordinate");
 }
@@ -83,9 +83,9 @@ int main(int argc, char **argv) {
           "unexpected 3D Transformer parameter count");
     for (const char *name : {"positionX", "positionY", "positionZ", "rotationX",
                              "rotationY", "rotationZ"})
-      near(param<TDoubleParam>(transform, name)->getValue(0), 0.0);
+      checkNear(param<TDoubleParam>(transform, name)->getValue(0), 0.0);
     for (const char *name : {"scaleX", "scaleY", "scaleZ"})
-      near(param<TDoubleParam>(transform, name)->getValue(0), 100.0);
+      checkNear(param<TDoubleParam>(transform, name)->getValue(0), 100.0);
     check(param<TIntEnumParam>(transform, "gizmoMode")->getItemCount() == 3,
           "gizmo mode does not expose translate, rotate and scale");
 
@@ -114,23 +114,23 @@ int main(int argc, char **argv) {
     auto scene = rendered(transform);
     check(scene && scene->triangles.size() == 1,
           "connected transformer did not preserve source geometry");
-    near(scene->bounds[0], -100.0);
-    near(scene->bounds[2], 100.0);
+    checkNear(scene->bounds[0], -100.0);
+    checkNear(scene->bounds[2], 100.0);
 
     param<TDoubleParam>(transform, "positionX")->setValue(0, 2.0);
     param<TDoubleParam>(transform, "scaleX")->setValue(0, 200.0);
     scene = rendered(transform);
-    near(scene->bounds[0], 0.0);
-    near(scene->bounds[2], 400.0);
-    near(scene->bounds[1], -100.0);
-    near(scene->bounds[3], 100.0);
+    checkNear(scene->bounds[0], 0.0);
+    checkNear(scene->bounds[2], 400.0);
+    checkNear(scene->bounds[1], -100.0);
+    checkNear(scene->bounds[3], 100.0);
 
     param<TDoubleParam>(transform, "rotationZ")->setValue(0, 90.0);
     scene = rendered(transform);
-    near(scene->bounds[0], 100.0);
-    near(scene->bounds[2], 300.0);
-    near(scene->bounds[1], -200.0);
-    near(scene->bounds[3], 200.0);
+    checkNear(scene->bounds[0], 100.0);
+    checkNear(scene->bounds[2], 300.0);
+    checkNear(scene->bounds[1], -200.0);
+    checkNear(scene->bounds[3], 200.0);
 
     // Downstream nodes are applied after upstream nodes. This makes multiple
     // transformer nodes composable without flattening intermediate results.
@@ -145,8 +145,8 @@ int main(int argc, char **argv) {
     downstreamPort->setFx(&transform);
     param<TDoubleParam>(downstream, "scaleX")->setValue(0, 200.0);
     scene = rendered(downstream);
-    near(scene->bounds[0], 0.0);
-    near(scene->bounds[2], 400.0);
+    checkNear(scene->bounds[0], 0.0);
+    checkNear(scene->bounds[2], 400.0);
 
     TRectD bbox;
     TRenderSettings settings;
