@@ -125,6 +125,7 @@
     STD_inoFogFx
     STD_glowFx
     STD_lightSpotFx
+    STD_normalPassRelightingFx
     STD_raylitFx
     STD_iwa_SpectrumFx
     STD_iwa_SoapBubbleFx
