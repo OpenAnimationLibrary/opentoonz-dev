@@ -67,7 +67,9 @@ StrokesData *StrokesData::fromClipboard(const QMimeData *mime) {
     TImageReaderP frame = reader->getFrameReader(TFrameId(1));
     TImageP loaded      = frame ? frame->load() : TImageP();
     TVectorImageP image = loaded;
-    return image ? new StrokesData(image.getPointer()) : nullptr;
+    if (!image || !level->getPalette()) return nullptr;
+    image->setPalette(level->getPalette());
+    return new StrokesData(image.getPointer());
   } catch (...) {
     return nullptr;
   }
