@@ -45,6 +45,7 @@ public:
   void selectAll();
   void invertSelection();
   void copyFrames();
+  void copyPasteFrameRange();
   void cutFrames();
   void pasteFrames();
   void mergeFrames();

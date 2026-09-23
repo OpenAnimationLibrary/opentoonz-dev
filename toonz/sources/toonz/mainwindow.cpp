@@ -2559,6 +2559,8 @@ void MainWindow::defineActions() {
   // Menu - Cells
 
   createMenuCellsAction(MI_MergeFrames, QT_TR_NOOP("&Merge"), "", "merge");
+  createMenuCellsAction(MI_CopyPasteFrameRange,
+                        QT_TR_NOOP("Copy Paste Frame Range"), "");
   createMenuCellsAction(MI_Reverse, QT_TR_NOOP("&Reverse"), "", "reverse");
   createMenuCellsAction(MI_Swing, QT_TR_NOOP("&Swing"), "", "swing");
   createMenuCellsAction(MI_Random, QT_TR_NOOP("&Random"), "", "random");

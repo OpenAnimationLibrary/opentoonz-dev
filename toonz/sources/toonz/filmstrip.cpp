@@ -1567,24 +1567,7 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
   if (sl && !sl->isSubsequence() && !m_selection->isEmpty() &&
       (sl->getType() == PLI_XSHLEVEL || sl->getType() == TZP_XSHLEVEL ||
        sl->getType() == OVL_XSHLEVEL)) {
-    QAction *rangeAction = menu->addAction(tr("Copy Paste Frame Range"));
-    connect(rangeAction, &QAction::triggered, this, [this, sl] {
-      cancelCopyPasteFrameRange();
-      getViewer();
-      if (!m_viewer || m_viewer->is3DView() || !isCurrentContextLevel()) {
-        DVGui::warning(tr("Open the source level in a 2D viewer first."));
-        return;
-      }
-      for (const TFrameId &fid : m_selection->getSelectedFids()) {
-        TImageP image = sl->getFrame(fid, false);
-        m_rangeImages.push_back(image ? image->cloneImage() : nullptr);
-      }
-      if (m_rangeImages.empty()) return;
-      m_rangeLevel  = sl;
-      m_rangeViewer = m_viewer;
-      m_rangeViewer->installEventFilter(this);
-      m_rangeViewer->setCursor(Qt::CrossCursor);
-    });
+    menu->addAction(cm->getAction(MI_CopyPasteFrameRange));
   }
 
   if (!isSubsequenceLevel && !isReadOnly) {
@@ -1639,6 +1622,30 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
           SLOT(responsiveThumbnailsToggled(bool)));
 
   menu->exec(event->globalPos());
+}
+
+void FilmstripFrames::startCopyPasteFrameRange() {
+  TXshSimpleLevel *sl = getLevel();
+  if (!sl || sl->isSubsequence() || m_selection->isEmpty() ||
+      (sl->getType() != PLI_XSHLEVEL && sl->getType() != TZP_XSHLEVEL &&
+       sl->getType() != OVL_XSHLEVEL))
+    return;
+
+  cancelCopyPasteFrameRange();
+  getViewer();
+  if (!m_viewer || m_viewer->is3DView() || !isCurrentContextLevel()) {
+    DVGui::warning(tr("Open the source level in a 2D viewer first."));
+    return;
+  }
+  for (const TFrameId &fid : m_selection->getSelectedFids()) {
+    TImageP image = sl->getFrame(fid, false);
+    m_rangeImages.push_back(image ? image->cloneImage() : nullptr);
+  }
+  if (m_rangeImages.empty()) return;
+  m_rangeLevel  = sl;
+  m_rangeViewer = m_viewer;
+  m_rangeViewer->installEventFilter(this);
+  m_rangeViewer->setCursor(Qt::CrossCursor);
 }
 
 void FilmstripFrames::cancelCopyPasteFrameRange() {

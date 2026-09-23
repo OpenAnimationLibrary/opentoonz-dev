@@ -67,6 +67,7 @@ public:
   // Level displayed by this strip. The application current level remains
   // the active editing context.
   TXshSimpleLevel *getLevel() const;
+  void startCopyPasteFrameRange();
   void setLevel(TXshSimpleLevel *level);
   void setActive(bool active);
   void setSynchronized(bool synchronized);

@@ -154,6 +154,7 @@
 #define MI_FillEmptyCell "MI_FillEmptyCell"
 
 #define MI_MergeFrames "MI_MergeFrames"
+#define MI_CopyPasteFrameRange "MI_CopyPasteFrameRange"
 #define MI_Reverse "MI_Reverse"
 #define MI_Swing "MI_Swing"
 #define MI_Random "MI_Random"
