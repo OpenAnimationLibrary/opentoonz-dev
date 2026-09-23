@@ -41,7 +41,11 @@ public:
 
     bool raw = false;
 
-    bool operator==(const Selection &other) const;
+    bool operator==(const Selection &other) const {
+      return part == other.part &&
+             partIndexFallback == other.partIndexFallback &&
+             layer == other.layer && raw == other.raw;
+    }
     bool operator!=(const Selection &other) const { return !(*this == other); }
   };
 

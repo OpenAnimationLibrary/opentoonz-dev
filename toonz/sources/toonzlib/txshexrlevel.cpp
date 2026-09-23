@@ -44,13 +44,6 @@ double readDouble(const std::string &value, double fallback) {
 
 //-----------------------------------------------------------------------------
 
-bool TXshExrLevel::Selection::operator==(const Selection &other) const {
-  return part == other.part && partIndexFallback == other.partIndexFallback &&
-         layer == other.layer && raw == other.raw;
-}
-
-//-----------------------------------------------------------------------------
-
 TXshExrLevel::TXshExrLevel(const std::wstring &name) : TXshSimpleLevel(name) {
   setType(OVL_XSHLEVEL);
   setFloatChannelLevel(true);
