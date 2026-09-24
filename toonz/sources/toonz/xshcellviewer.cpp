@@ -72,6 +72,7 @@
 #include <QToolTip>
 #include <QApplication>
 #include <QCursor>
+#include <QKeyEvent>
 #include <QClipboard>
 #include <QRegularExpression>
 #include <QScreen>
@@ -1320,11 +1321,16 @@ CellArea::~CellArea() { dismissFramePreview(); }
 void CellArea::dismissFramePreview() {
   m_framePreviewTimer->stop();
   m_previewRow = m_previewCol = -1;
+  if (qApp) qApp->removeEventFilter(this);
   if (m_framePreview) m_framePreview->close();
 }
 
 void CellArea::updateFramePreviewHover(const QPoint &pos) {
-  if (!rect().contains(pos) || m_isMousePressed || getDragTool()) {
+  if (!Preferences::instance()->isXsheetHoverFramePreviewEnabled() ||
+      !rect().contains(pos) || m_isMousePressed || getDragTool()) {
+    if (!Preferences::instance()->isXsheetHoverFramePreviewEnabled() &&
+        m_framePreview)
+      dismissFramePreview();
     m_framePreviewTimer->stop();
     m_previewRow = m_previewCol = -1;
     return;
@@ -1352,7 +1358,8 @@ void CellArea::updateFramePreviewHover(const QPoint &pos) {
 
 void CellArea::showFramePreview() {
   const int row = m_previewRow, col = m_previewCol;
-  if (row < 0 || col < 0 || m_isMousePressed || getDragTool() ||
+  if (!Preferences::instance()->isXsheetHoverFramePreviewEnabled() ||
+      row < 0 || col < 0 || m_isMousePressed || getDragTool() ||
       !rect().contains(mapFromGlobal(QCursor::pos())))
     return;
   CellPosition hovered = m_viewer->xyToPosition(mapFromGlobal(QCursor::pos()));
@@ -1369,7 +1376,8 @@ void CellArea::showFramePreview() {
   dismissFramePreview();
   QToolTip::hideText();
   auto *popup = new QScrollArea(this);
-  popup->setWindowFlags(Qt::Popup);
+  popup->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint |
+                        Qt::WindowDoesNotAcceptFocus);
   popup->setAttribute(Qt::WA_DeleteOnClose);
   popup->setFrameShape(QFrame::StyledPanel);
   popup->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1401,6 +1409,7 @@ void CellArea::showFramePreview() {
   m_framePreview = popup;
   popup->move(location);
   popup->show();
+  qApp->installEventFilter(this);
   const int currentIndex = contents->indexOf(cell.getFrameId());
   if (currentIndex >= 0)
     popup->verticalScrollBar()->setValue(
@@ -4043,6 +4052,27 @@ bool CellArea::event(QEvent *event) {
     mouseReleaseEvent(&e);
   }
   return QWidget::event(event);
+}
+
+bool CellArea::eventFilter(QObject *watched, QEvent *event) {
+  if (!m_framePreview) return QWidget::eventFilter(watched, event);
+
+  if (event->type() == QEvent::MouseButtonPress) {
+    QWidget *target = qobject_cast<QWidget *>(watched);
+    if (target != m_framePreview &&
+        (!target || !m_framePreview->isAncestorOf(target))) {
+      // Keep the event for the clicked widget, so the first click selects the
+      // Xsheet cell instead of merely dismissing the preview.
+      dismissFramePreview();
+    }
+  } else if (event->type() == QEvent::ApplicationDeactivate) {
+    dismissFramePreview();
+  } else if (event->type() == QEvent::KeyPress &&
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+    dismissFramePreview();
+    return true;
+  }
+  return QWidget::eventFilter(watched, event);
 }
 //-----------------------------------------------------------------------------
 

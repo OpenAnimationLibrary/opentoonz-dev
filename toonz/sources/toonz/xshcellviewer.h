@@ -181,6 +181,7 @@ protected:
   void dragMoveEvent(QDragMoveEvent *event) override;
   void dropEvent(QDropEvent *event) override;
   bool event(QEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
   /*! Creates the right-click menu that appears when clicking on a cell,
       distinguishing between the two cases: full cell, empty cell. */
