@@ -5,6 +5,7 @@
 
 #include <QWidget>
 #include <QLineEdit>
+#include <QPointer>
 #include "orientation.h"
 
 #include "toonz/txshcell.h"
@@ -15,6 +16,8 @@ class XsheetViewer;
 class QMenu;
 class TXsheetHandle;
 class TXshSoundTextColumn;
+class TXshLevel;
+class QTimer;
 
 namespace XsheetGUI {
 
@@ -90,6 +93,16 @@ class CellArea final : public QWidget {
   QString m_tooltip;
 
   RenameCellField *m_renameCell;
+  QTimer *m_framePreviewTimer;
+  QPointer<QWidget> m_framePreview;
+  int m_previewRow = -1;
+  int m_previewCol = -1;
+
+  void updateFramePreviewHover(const QPoint &pos);
+  void showFramePreview();
+  void dismissFramePreview();
+  void choosePreviewFrame(int row, int col, TXshLevel *originalLevel,
+                          TXshLevel *selectedLevel, const TFrameId &fid);
 
   void drawCells(QPainter &p, const QRect toBeUpdated);
   void drawNonEmptyBackground(QPainter &p) const;
@@ -168,6 +181,7 @@ protected:
   void dragMoveEvent(QDragMoveEvent *event) override;
   void dropEvent(QDropEvent *event) override;
   bool event(QEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
   /*! Creates the right-click menu that appears when clicking on a cell,
       distinguishing between the two cases: full cell, empty cell. */
