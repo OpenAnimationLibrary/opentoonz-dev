@@ -1549,6 +1549,9 @@ FxDag *TXsheet::getFxDag() const { return m_imp->m_fxDag.get(); }
 
 ColumnFan *TXsheet::getColumnFan(const Orientation *o) const {
   int index = o->dimension(PredefinedDimension::INDEX);
+  m_imp->m_columnFans[index].setDimensions(
+      o->dimension(PredefinedDimension::LAYER),
+      o->dimension(PredefinedDimension::CAMERA_LAYER));
   return &m_imp->m_columnFans[index];
 }
 
