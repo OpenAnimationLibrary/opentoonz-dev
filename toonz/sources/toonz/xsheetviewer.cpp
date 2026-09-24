@@ -1493,6 +1493,7 @@ void XsheetViewer::onPreferenceChanged(const QString &prefName) {
     refreshContentSize(0, 0);
   } else if (prefName == "CurrentCellColor") {
     m_cellArea->update();
+    m_columnArea->update();
   }
 }
 
