@@ -381,6 +381,12 @@ jobs:
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
 
+      - name: Test packaged tcomposer worker probe
+        shell: pwsh
+        run: |
+          python doc/tools/tcomposer_worker_probe_smoke.py toonz/build/Opentoonz/tcomposer.exe
+          if ($LASTEXITCODE) { throw 'Packaged tcomposer worker probe failed' }
+
       - name: Test 3D LUT Bake
         shell: cmd
         run: |
