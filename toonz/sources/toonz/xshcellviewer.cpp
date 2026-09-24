@@ -1219,7 +1219,7 @@ class FramePreviewContents final : public QWidget {
     TXshLevel *level;
     TFrameId fid;
     QString name;
-    int top;
+    int offset;
     bool header;
   };
 
@@ -1227,50 +1227,63 @@ class FramePreviewContents final : public QWidget {
   std::vector<Row> m_rows;
   TXshLevel *m_currentLevel;
   TFrameId m_current;
+  bool m_horizontal;
   std::function<void(TXshLevel *, const TFrameId &)> m_choose;
-  int m_currentSectionTop = 0;
+  int m_currentSectionStart = 0;
   int m_currentSectionEnd = 0;
-  int m_currentFrameTop = 0;
+  int m_currentFrameStart = 0;
 
   static constexpr int rowHeight = 82;
   static constexpr int headerHeight = 24;
+  static constexpr int rowWidth = 112;
+  static constexpr int headerWidth = 84;
+
+  int rowExtent() const { return m_horizontal ? rowWidth : rowHeight; }
+  int headerExtent() const {
+    return m_horizontal ? headerWidth : headerHeight;
+  }
 
 public:
   FramePreviewContents(
       const std::vector<TXshSimpleLevel *> &levels, TXshLevel *currentLevel,
-      const TFrameId &current,
+      const TFrameId &current, bool horizontal,
       std::function<void(TXshLevel *, const TFrameId &)> choose)
       : m_currentLevel(currentLevel)
       , m_current(current)
+      , m_horizontal(horizontal)
       , m_choose(std::move(choose)) {
-    int top = 0;
+    int offset = 0;
     for (TXshSimpleLevel *level : levels) {
       m_levels.emplace_back(level);
-      if (level == currentLevel) m_currentSectionTop = top;
+      if (level == currentLevel) m_currentSectionStart = offset;
       m_rows.push_back({level, TFrameId(),
-                        QString::fromStdWString(level->getName()), top, true});
-      top += headerHeight;
+                        QString::fromStdWString(level->getName()), offset,
+                        true});
+      offset += headerExtent();
       for (const TFrameId &fid : level->getFids()) {
-        if (level == currentLevel && fid == current) m_currentFrameTop = top;
-        m_rows.push_back({level, fid, QString(), top, false});
-        top += rowHeight;
+        if (level == currentLevel && fid == current)
+          m_currentFrameStart = offset;
+        m_rows.push_back({level, fid, QString(), offset, false});
+        offset += rowExtent();
       }
-      if (level == currentLevel) m_currentSectionEnd = top;
+      if (level == currentLevel) m_currentSectionEnd = offset;
     }
-    setFixedSize(112, top);
+    setFixedSize(m_horizontal ? QSize(offset, 106) : QSize(112, offset));
     connect(IconGenerator::instance(), &IconGenerator::iconGenerated, this,
             QOverload<>::of(&QWidget::update));
   }
 
-  int currentSectionHeight() const {
-    return m_currentSectionEnd - m_currentSectionTop;
+  int currentSectionExtent() const {
+    return m_currentSectionEnd - m_currentSectionStart;
   }
 
-  int initialScrollValue(int viewportHeight) const {
+  int initialScrollValue(int viewportExtent) const {
     const int lastStart =
-        std::max(m_currentSectionTop, m_currentSectionEnd - viewportHeight);
-    return std::max(m_currentSectionTop,
-                    std::min(m_currentFrameTop - (viewportHeight - rowHeight) / 2,
+        std::max(m_currentSectionStart,
+                 m_currentSectionEnd - viewportExtent);
+    return std::max(m_currentSectionStart,
+                    std::min(m_currentFrameStart -
+                                 (viewportExtent - rowExtent()) / 2,
                              lastStart));
   }
 
@@ -1278,17 +1291,24 @@ protected:
   void paintEvent(QPaintEvent *event) override {
     QPainter painter(this);
     painter.fillRect(event->rect(), palette().base());
+    const int visibleStart =
+        m_horizontal ? event->rect().left() : event->rect().top();
+    const int visibleEnd =
+        m_horizontal ? event->rect().right() : event->rect().bottom();
     for (const Row &entry : m_rows) {
-      const int height = entry.header ? headerHeight : rowHeight;
-      if (entry.top + height < event->rect().top()) continue;
-      if (entry.top > event->rect().bottom()) break;
+      const int extent = entry.header ? headerExtent() : rowExtent();
+      if (entry.offset + extent < visibleStart) continue;
+      if (entry.offset > visibleEnd) break;
 
-      QRect row(2, entry.top + 2, width() - 4, height - 4);
+      QRect row = m_horizontal
+                      ? QRect(entry.offset + 2, 2, extent - 4, height() - 4)
+                      : QRect(2, entry.offset + 2, width() - 4, extent - 4);
       if (entry.header) {
         painter.fillRect(row, palette().alternateBase());
         painter.setPen(palette().text().color());
-        painter.drawText(row.adjusted(5, 0, -5, 0),
-                         Qt::AlignLeft | Qt::AlignVCenter, entry.name);
+        painter.drawText(row.adjusted(5, 0, -5, 0), Qt::AlignCenter,
+                         painter.fontMetrics().elidedText(
+                             entry.name, Qt::ElideRight, row.width() - 10));
         continue;
       }
       const bool current =
@@ -1320,9 +1340,11 @@ protected:
 
   void mousePressEvent(QMouseEvent *event) override {
     if (event->button() != Qt::LeftButton) return;
+    const int position =
+        m_horizontal ? event->pos().x() : event->pos().y();
     for (const Row &entry : m_rows) {
-      if (event->pos().y() < entry.top) break;
-      if (!entry.header && event->pos().y() < entry.top + rowHeight) {
+      if (position < entry.offset) break;
+      if (!entry.header && position < entry.offset + rowExtent()) {
         m_choose(entry.level, entry.fid);
         event->accept();
         return;
@@ -1452,9 +1474,13 @@ void CellArea::showFramePreview() {
                         Qt::WindowDoesNotAcceptFocus);
   popup->setAttribute(Qt::WA_DeleteOnClose);
   popup->setFrameShape(QFrame::StyledPanel);
-  popup->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  const bool horizontal = !m_viewer->orientation()->isVerticalTimeline();
+  popup->setHorizontalScrollBarPolicy(
+      horizontal ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOff);
+  popup->setVerticalScrollBarPolicy(
+      horizontal ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
   auto *contents = new FramePreviewContents(
-      previewLevels, level, cell.getFrameId(),
+      previewLevels, level, cell.getFrameId(), horizontal,
       [this, row, col, level](TXshLevel *selectedLevel,
                               const TFrameId &fid) {
         choosePreviewFrame(row, col, level, selectedLevel, fid);
@@ -1470,21 +1496,38 @@ void CellArea::showFramePreview() {
   const QRect available =
       screen ? screen->availableGeometry()
              : QGuiApplication::primaryScreen()->availableGeometry();
-  const int height = std::min(
-      {482, contents->currentSectionHeight() + 2, available.height() - 20});
-  popup->setFixedSize(132, height);
-  QPoint location(anchor.x() + 4, anchor.y());
-  if (location.x() + popup->width() > available.right())
-    location.setX(mapToGlobal(cellRect.topLeft()).x() - popup->width() - 4);
-  location.setX(std::max(available.left(), location.x()));
+  const int width = horizontal
+                        ? std::min({642, contents->currentSectionExtent() + 2,
+                                    available.width() - 20})
+                        : 132;
+  const int height = horizontal
+                         ? 130
+                         : std::min({482, contents->currentSectionExtent() + 2,
+                                     available.height() - 20});
+  popup->setFixedSize(width, height);
+  QPoint location;
+  if (horizontal) {
+    location = QPoint(mapToGlobal(cellRect.center()).x() - width / 2,
+                      mapToGlobal(cellRect.topLeft()).y() - height - 4);
+    if (location.y() < available.top())
+      location.setY(mapToGlobal(cellRect.bottomLeft()).y() + 4);
+  } else {
+    location = QPoint(anchor.x() + 4, anchor.y());
+    if (location.x() + width > available.right())
+      location.setX(mapToGlobal(cellRect.topLeft()).x() - width - 4);
+  }
+  location.setX(std::max(available.left(),
+                         std::min(location.x(), available.right() - width)));
   location.setY(std::max(available.top(),
                          std::min(location.y(), available.bottom() - height)));
   m_framePreview = popup;
   popup->move(location);
   popup->show();
   qApp->installEventFilter(this);
-  popup->verticalScrollBar()->setValue(
-      contents->initialScrollValue(popup->viewport()->height()));
+  QScrollBar *scrollbar = horizontal ? popup->horizontalScrollBar()
+                                 : popup->verticalScrollBar();
+  scrollbar->setValue(contents->initialScrollValue(
+      horizontal ? popup->viewport()->width() : popup->viewport()->height()));
 }
 
 void CellArea::choosePreviewFrame(int row, int col, TXshLevel *originalLevel,
