@@ -746,6 +746,11 @@ void PreferencesPopup::onShowKeyframesOnCellAreaChanged() {
   TApp::instance()->getCurrentScene()->notifyPreferenceChanged("XsheetCamera");
 }
 
+void PreferencesPopup::onCurrentCellColorChanged() {
+  TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+      "CurrentCellColor");
+}
+
 //-----------------------------------------------------------------------------
 
 void PreferencesPopup::onShowXSheetToolbarClicked() {
@@ -1433,6 +1438,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Sync Level Strip Drawing Number Changes with the Xsheet")},
       {currentTimelineEnabled, tr("Show Current Time Indicator")},
       {currentColumnColor, tr("Current Column Color:")},
+      {customCurrentCellColorEnabled, tr("Use Custom Current Cell Color")},
+      {currentCellColor, tr("Current Cell Outline Color:")},
       //{ levelNameOnEachMarkerEnabled, tr("Display Level Name on Each
       // Marker")
       //},
@@ -2315,12 +2322,23 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(showColumnNumbers, xshColHeaderLay);
     insertUI(unifyColumnVisibilityToggles, xshColHeaderLay);
     insertUI(parentColorsInXsheetColumn, xshColHeaderLay);
+    insertUI(currentColumnColor, xshColHeaderLay);
   }
   QGridLayout* xshCellAreaLay = insertGroupBox(tr("Xsheet Cell Area"), lay);
   {
     insertUI(highlightLineEverySecond, xshCellAreaLay);
     insertUI(currentTimelineEnabled, xshCellAreaLay);
     insertUI(showFrameNumberWithLetters, xshCellAreaLay);
+    insertUI(customCurrentCellColorEnabled, xshCellAreaLay);
+    insertUI(currentCellColor, xshCellAreaLay);
+    QWidget* cellColorField = getUI<QWidget*>(currentCellColor);
+    QCheckBox* customCellColorCheck =
+        getUI<QCheckBox*>(customCurrentCellColorEnabled);
+    cellColorField->setEnabled(customCellColorCheck->isChecked());
+    connect(customCellColorCheck, &QCheckBox::toggled, cellColorField,
+            &QWidget::setEnabled);
+    customCellColorCheck->setToolTip(
+        tr("When disabled, the current cell outline uses the theme color."));
   }
 
   QGridLayout* showKeyLay =
@@ -2337,7 +2355,6 @@ QWidget* PreferencesPopup::createXsheetPage() {
   insertUI(useArrowKeyToShiftCellSelection, lay);
   insertUI(shortcutCommandsWhileRenamingCellEnabled, lay);
   insertUI(syncLevelRenumberWithXsheet, lay);
-  insertUI(currentColumnColor, lay);
 
   lay->setRowStretch(lay->rowCount(), 1);
   insertFootNote(lay);
@@ -2347,6 +2364,10 @@ QWidget* PreferencesPopup::createXsheetPage() {
                            &PreferencesPopup::onShowKeyframesOnCellAreaChanged);
   m_onEditedFuncMap.insert(showXsheetCameraColumn,
                            &PreferencesPopup::onShowKeyframesOnCellAreaChanged);
+  m_onEditedFuncMap.insert(customCurrentCellColorEnabled,
+                           &PreferencesPopup::onCurrentCellColorChanged);
+  m_onEditedFuncMap.insert(currentCellColor,
+                           &PreferencesPopup::onCurrentCellColorChanged);
   m_onEditedFuncMap.insert(
       unifyColumnVisibilityToggles,
       &PreferencesPopup::onUnifyColumnVisibilityTogglesChanged);

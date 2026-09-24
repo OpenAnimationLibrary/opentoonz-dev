@@ -159,6 +159,8 @@ enum PreferencesItemId {
   syncLevelRenumberWithXsheet,
   currentTimelineEnabled,
   currentColumnColor,
+  customCurrentCellColorEnabled,
+  currentCellColor,
   levelNameDisplayType,
   showFrameNumberWithLetters,
   linkColumnNameWithLevel,
