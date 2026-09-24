@@ -101,8 +101,8 @@ class CellArea final : public QWidget {
   void updateFramePreviewHover(const QPoint &pos);
   void showFramePreview();
   void dismissFramePreview();
-  void choosePreviewFrame(int row, int col, TXshLevel *level,
-                          const TFrameId &fid);
+  void choosePreviewFrame(int row, int col, TXshLevel *originalLevel,
+                          TXshLevel *selectedLevel, const TFrameId &fid);
 
   void drawCells(QPainter &p, const QRect toBeUpdated);
   void drawNonEmptyBackground(QPainter &p) const;

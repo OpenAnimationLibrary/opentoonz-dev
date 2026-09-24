@@ -1215,44 +1215,85 @@ namespace {
 // The preview draws only visible thumbnails and uses the same icon cache as
 // the Level Strip. It does not change the Level Strip's level or selection.
 class FramePreviewContents final : public QWidget {
-  TXshLevelP m_level;
-  std::vector<TFrameId> m_fids;
+  struct Row {
+    TXshLevel *level;
+    TFrameId fid;
+    QString name;
+    int top;
+    bool header;
+  };
+
+  std::vector<TXshLevelP> m_levels;
+  std::vector<Row> m_rows;
+  TXshLevel *m_currentLevel;
   TFrameId m_current;
-  std::function<void(const TFrameId &)> m_choose;
+  std::function<void(TXshLevel *, const TFrameId &)> m_choose;
+  int m_currentSectionTop = 0;
+  int m_currentSectionEnd = 0;
+  int m_currentFrameTop = 0;
 
   static constexpr int rowHeight = 82;
+  static constexpr int headerHeight = 24;
 
 public:
-  FramePreviewContents(TXshLevel *level, const std::vector<TFrameId> &fids,
-                       const TFrameId &current,
-                       std::function<void(const TFrameId &)> choose)
-      : m_level(level)
-      , m_fids(fids)
+  FramePreviewContents(
+      const std::vector<TXshSimpleLevel *> &levels, TXshLevel *currentLevel,
+      const TFrameId &current,
+      std::function<void(TXshLevel *, const TFrameId &)> choose)
+      : m_currentLevel(currentLevel)
       , m_current(current)
       , m_choose(std::move(choose)) {
-    setFixedSize(112, rowHeight * static_cast<int>(m_fids.size()));
+    int top = 0;
+    for (TXshSimpleLevel *level : levels) {
+      m_levels.emplace_back(level);
+      if (level == currentLevel) m_currentSectionTop = top;
+      m_rows.push_back({level, TFrameId(),
+                        QString::fromStdWString(level->getName()), top, true});
+      top += headerHeight;
+      for (const TFrameId &fid : level->getFids()) {
+        if (level == currentLevel && fid == current) m_currentFrameTop = top;
+        m_rows.push_back({level, fid, QString(), top, false});
+        top += rowHeight;
+      }
+      if (level == currentLevel) m_currentSectionEnd = top;
+    }
+    setFixedSize(112, top);
     connect(IconGenerator::instance(), &IconGenerator::iconGenerated, this,
             QOverload<>::of(&QWidget::update));
   }
 
-  int indexOf(const TFrameId &fid) const {
-    auto it = std::find(m_fids.begin(), m_fids.end(), fid);
-    return it == m_fids.end() ? -1 : static_cast<int>(it - m_fids.begin());
+  int currentSectionHeight() const {
+    return m_currentSectionEnd - m_currentSectionTop;
   }
 
-  static int itemHeight() { return rowHeight; }
+  int initialScrollValue(int viewportHeight) const {
+    const int lastStart =
+        std::max(m_currentSectionTop, m_currentSectionEnd - viewportHeight);
+    return std::max(m_currentSectionTop,
+                    std::min(m_currentFrameTop - (viewportHeight - rowHeight) / 2,
+                             lastStart));
+  }
 
 protected:
   void paintEvent(QPaintEvent *event) override {
     QPainter painter(this);
     painter.fillRect(event->rect(), palette().base());
-    const int first = std::max(0, event->rect().top() / rowHeight);
-    const int last  = std::min(static_cast<int>(m_fids.size()) - 1,
-                               event->rect().bottom() / rowHeight);
-    for (int i = first; i <= last; ++i) {
-      const TFrameId &fid = m_fids[i];
-      QRect row(2, i * rowHeight + 2, width() - 4, rowHeight - 4);
-      if (fid == m_current) {
+    for (const Row &entry : m_rows) {
+      const int height = entry.header ? headerHeight : rowHeight;
+      if (entry.top + height < event->rect().top()) continue;
+      if (entry.top > event->rect().bottom()) break;
+
+      QRect row(2, entry.top + 2, width() - 4, height - 4);
+      if (entry.header) {
+        painter.fillRect(row, palette().alternateBase());
+        painter.setPen(palette().text().color());
+        painter.drawText(row.adjusted(5, 0, -5, 0),
+                         Qt::AlignLeft | Qt::AlignVCenter, entry.name);
+        continue;
+      }
+      const bool current =
+          entry.level == m_currentLevel && entry.fid == m_current;
+      if (current) {
         painter.fillRect(row, palette().highlight());
         painter.setPen(palette().highlightedText().color());
       } else {
@@ -1261,7 +1302,7 @@ protected:
 
       QRect iconRect(row.left() + 6, row.top() + 2, 96, 58);
       QPixmap icon =
-          IconGenerator::instance()->getIcon(m_level.getPointer(), fid);
+          IconGenerator::instance()->getIcon(entry.level, entry.fid);
       if (!icon.isNull()) {
         icon = icon.scaled(iconRect.size(), Qt::KeepAspectRatio,
                            Qt::SmoothTransformation);
@@ -1271,17 +1312,21 @@ protected:
       }
       painter.drawText(row.adjusted(4, 60, -4, 0),
                        Qt::AlignHCenter | Qt::AlignVCenter,
-                       QString::number(fid.getNumber()) + fid.getLetter());
-      if (fid == m_current) painter.drawRect(row.adjusted(0, 0, -1, -1));
+                       QString::number(entry.fid.getNumber()) +
+                           entry.fid.getLetter());
+      if (current) painter.drawRect(row.adjusted(0, 0, -1, -1));
     }
   }
 
   void mousePressEvent(QMouseEvent *event) override {
-    const int index = event->pos().y() / rowHeight;
-    if (event->button() == Qt::LeftButton && index >= 0 &&
-        index < static_cast<int>(m_fids.size())) {
-      m_choose(m_fids[index]);
-      event->accept();
+    if (event->button() != Qt::LeftButton) return;
+    for (const Row &entry : m_rows) {
+      if (event->pos().y() < entry.top) break;
+      if (!entry.header && event->pos().y() < entry.top + rowHeight) {
+        m_choose(entry.level, entry.fid);
+        event->accept();
+        return;
+      }
     }
   }
 };
@@ -1371,7 +1416,34 @@ void CellArea::showFramePreview() {
   TXshCell cell          = xsheet->getCell(row, col);
   TXshSimpleLevel *level = cell.getSimpleLevel();
   if (!level || level->getFrameCount() == 0) return;
-  std::vector<TFrameId> fids = level->getFids();
+
+  // Adjacent levels are the nearest usable drawings in the scene's Cast,
+  // sorted by name. A missing neighbor simply contributes no section.
+  std::vector<TXshSimpleLevel *> levels;
+  TLevelSet *levelSet =
+      TApp::instance()->getCurrentScene()->getScene()->getLevelSet();
+  for (int i = 0; i < levelSet->getLevelCount(); ++i) {
+    TXshLevel *candidate = levelSet->getLevel(i);
+    TXshSimpleLevel *simple = candidate ? candidate->getSimpleLevel() : nullptr;
+    if (simple && (simple->getType() & LEVELCOLUMN_XSHLEVEL) &&
+        simple->getFrameCount() > 0)
+      levels.push_back(simple);
+  }
+  if (std::find(levels.begin(), levels.end(), level) == levels.end())
+    levels.push_back(level);
+  std::sort(levels.begin(), levels.end(),
+            [](const TXshSimpleLevel *a, const TXshSimpleLevel *b) {
+              const QString nameA = QString::fromStdWString(a->getName());
+              const QString nameB = QString::fromStdWString(b->getName());
+              const int result =
+                  QString::compare(nameA, nameB, Qt::CaseInsensitive);
+              return result != 0 ? result < 0 : nameA < nameB;
+            });
+  const auto it = std::find(levels.begin(), levels.end(), level);
+  std::vector<TXshSimpleLevel *> previewLevels;
+  if (it != levels.begin()) previewLevels.push_back(*(it - 1));
+  previewLevels.push_back(level);
+  if (it + 1 != levels.end()) previewLevels.push_back(*(it + 1));
 
   dismissFramePreview();
   QToolTip::hideText();
@@ -1381,12 +1453,13 @@ void CellArea::showFramePreview() {
   popup->setAttribute(Qt::WA_DeleteOnClose);
   popup->setFrameShape(QFrame::StyledPanel);
   popup->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-  auto *contents =
-      new FramePreviewContents(level, fids, cell.getFrameId(),
-                               [this, row, col, level](const TFrameId &fid) {
-                                 choosePreviewFrame(row, col, level, fid);
-                                 dismissFramePreview();
-                               });
+  auto *contents = new FramePreviewContents(
+      previewLevels, level, cell.getFrameId(),
+      [this, row, col, level](TXshLevel *selectedLevel,
+                              const TFrameId &fid) {
+        choosePreviewFrame(row, col, level, selectedLevel, fid);
+        dismissFramePreview();
+      });
   popup->setWidget(contents);
 
   const QPoint origin  = m_viewer->positionToXY(CellPosition(row, col));
@@ -1397,8 +1470,8 @@ void CellArea::showFramePreview() {
   const QRect available =
       screen ? screen->availableGeometry()
              : QGuiApplication::primaryScreen()->availableGeometry();
-  const int height =
-      std::min({482, contents->height() + 2, available.height() - 20});
+  const int height = std::min(
+      {482, contents->currentSectionHeight() + 2, available.height() - 20});
   popup->setFixedSize(132, height);
   QPoint location(anchor.x() + 4, anchor.y());
   if (location.x() + popup->width() > available.right())
@@ -1410,27 +1483,32 @@ void CellArea::showFramePreview() {
   popup->move(location);
   popup->show();
   qApp->installEventFilter(this);
-  const int currentIndex = contents->indexOf(cell.getFrameId());
-  if (currentIndex >= 0)
-    popup->verticalScrollBar()->setValue(
-        std::max(0, currentIndex * FramePreviewContents::itemHeight() -
-                        (height - FramePreviewContents::itemHeight()) / 2));
+  popup->verticalScrollBar()->setValue(
+      contents->initialScrollValue(popup->viewport()->height()));
 }
 
-void CellArea::choosePreviewFrame(int row, int col, TXshLevel *level,
+void CellArea::choosePreviewFrame(int row, int col, TXshLevel *originalLevel,
+                                  TXshLevel *selectedLevel,
                                   const TFrameId &fid) {
   TXsheet *xsheet    = m_viewer->getXsheet();
   TXshColumn *column = xsheet->getColumn(col);
   TXshCell oldCell   = xsheet->getCell(row, col);
-  if (!column || column->isLocked() || oldCell.m_level.getPointer() != level ||
-      oldCell.m_frameId == fid)
+  if (!column || column->isLocked() ||
+      oldCell.m_level.getPointer() != originalLevel ||
+      (originalLevel == selectedLevel && oldCell.m_frameId == fid))
     return;
-  TXshSimpleLevel *simpleLevel = oldCell.getSimpleLevel();
+  TXshSimpleLevel *simpleLevel =
+      selectedLevel ? selectedLevel->getSimpleLevel() : nullptr;
   if (!simpleLevel || !simpleLevel->isFid(fid)) return;
+  if (selectedLevel != originalLevel &&
+      TApp::instance()->getCurrentScene()->getScene()->getLevelSet()->getLevel(
+          selectedLevel->getName()) != selectedLevel)
+    return;
 
-  TXshCell newCell  = oldCell;
+  TXshCell newCell = oldCell;
+  newCell.m_level = TXshLevelP(selectedLevel);
   newCell.m_frameId = fid;
-  xsheet->setCell(row, col, newCell);
+  if (!xsheet->setCell(row, col, newCell)) return;
   TUndoManager::manager()->add(
       new ChangeExposureUndo(row, col, oldCell, newCell));
   TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
