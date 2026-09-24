@@ -72,8 +72,18 @@
 
 // Qt includes
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QSysInfo>
 #include <QWaitCondition>
 #include <QMessageBox>
+
+#include <atomic>
+#include <cstring>
 
 #ifdef _WIN32
 #ifndef x64
@@ -260,16 +270,113 @@ void UnsetPremultiplyOptionsInPngLevels(ToonzScene *scene) {
 
 //==============================================================================================
 
+namespace {
+
+// This is a protocol identity, not a build compatibility or GPU capability
+// test.
+void printWorkerInfo() {
+  QJsonObject features;
+  features.insert("scene_render", true);
+  features.insert("timing_jsonl", true);
+
+  QJsonObject info;
+  info.insert("schema_version", 1);
+  info.insert("role", "tcomposer");
+  info.insert("product", "OpenToonz");
+  info.insert("build_abi", QSysInfo::buildAbi());
+  info.insert("features", features);
+  std::cout << QJsonDocument(info).toJson(QJsonDocument::Compact).constData()
+            << std::endl;
+}
+
+// The timer starts when the optional sidecar is opened, just before rendering.
+// Frame callbacks can come from different threads or arrive out of frame order.
+class WorkerTimingLog final {
+public:
+  bool open(const QString &path) {
+    if (!path.endsWith(".jsonl", Qt::CaseInsensitive)) {
+      m_openError = "Timing sidecar must have a .jsonl extension";
+      return false;
+    }
+    if (QFile::exists(path)) {
+      m_openError = "Timing sidecar already exists";
+      return false;
+    }
+    m_file.setFileName(path);
+    QIODevice::OpenMode mode = QIODevice::WriteOnly | QIODevice::Text;
+#if QT_VERSION >= QT_VERSION_CHECK(5, 11, 0)
+    mode |= QIODevice::NewOnly;
+#endif
+    if (!m_file.open(mode)) return false;
+    m_timer.start();
+    return true;
+  }
+
+  bool isOpen() const { return m_file.isOpen(); }
+  QString errorString() const {
+    return m_openError.isEmpty() ? m_file.errorString() : m_openError;
+  }
+
+  bool record(QJsonObject event) {
+    QMutexLocker lock(&m_mutex);
+    if (m_failed) return false;
+    event.insert("schema_version", 1);
+    event.insert("elapsed_ms", static_cast<double>(m_timer.elapsed()));
+    QByteArray line = QJsonDocument(event).toJson(QJsonDocument::Compact);
+    line.append('\n');
+    if (m_file.write(line) != line.size() || !m_file.flush()) {
+      m_failed = true;
+      return false;
+    }
+    return true;
+  }
+
+  void frameCompleted(int frame, int column = -1) {
+    QJsonObject event;
+    event.insert("event", "frame_completed");
+    event.insert("frame", frame);
+    if (column >= 0) event.insert("column", column);
+    if (record(event)) ++m_completed;
+  }
+
+  void frameFailed(int frame, int column = -1) {
+    QJsonObject event;
+    event.insert("event", "frame_failed");
+    event.insert("frame", frame);
+    if (column >= 0) event.insert("column", column);
+    if (record(event)) ++m_failedFrames;
+  }
+
+  int completedFrames() const { return m_completed; }
+  int failedFrames() const { return m_failedFrames; }
+  bool failed() const { return m_failed; }
+
+private:
+  QFile m_file;
+  QString m_openError;
+  QElapsedTimer m_timer;
+  QMutex m_mutex;
+  std::atomic<int> m_completed{0};
+  std::atomic<int> m_failedFrames{0};
+  bool m_failed = false;
+};
+
+}  // namespace
+
+//==============================================================================================
+
 class MyMovieRenderListener final : public MovieRenderer::Listener {
 public:
   MyMovieRenderListener(const TFilePath &fp, int frameCount,
-                        QWaitCondition &renderCompleted, bool stereo)
+                        QWaitCondition &renderCompleted, bool stereo,
+                        WorkerTimingLog *timingLog)
       : m_fp(fp)
       , m_frameCount(frameCount)
       , m_frameCompletedCount(0)
       , m_frameFailedCount(0)
       , m_renderCompleted(renderCompleted)
-      , m_stereo(stereo) {}
+      , m_stereo(stereo)
+      , m_timingLog(timingLog) {}
 
   bool onFrameCompleted(int frame) override;
   bool onFrameFailed(int frame, TException &e) override;
@@ -281,6 +388,7 @@ public:
   int m_frameFailedCount;
   QWaitCondition &m_renderCompleted;
   bool m_stereo;
+  WorkerTimingLog *m_timingLog;
 };
 
 //==================================================================================
@@ -310,6 +418,7 @@ bool MyMovieRenderListener::onFrameCompleted(int frame) {
   }
 
   m_frameCompletedCount++;
+  if (m_timingLog) m_timingLog->frameCompleted(frame + 1);
 
   return true;
 }
@@ -339,6 +448,7 @@ bool MyMovieRenderListener::onFrameFailed(int frame, TException &e) {
   }
 
   m_frameFailedCount++;
+  if (m_timingLog) m_timingLog->frameFailed(frame + 1);
 
   return true;
 }
@@ -359,16 +469,21 @@ public:
   int m_frameCompletedCount;
   int m_frameFailedCount;
 
-  MyMultimediaRenderListener(const TFilePath &fp, int frameCount)
+  MyMultimediaRenderListener(const TFilePath &fp, int frameCount,
+                             WorkerTimingLog *timingLog)
       : m_fp(fp)
       , m_frameCount(frameCount)
       , m_frameCompletedCount(0)
-      , m_frameFailedCount(0) {}
+      , m_frameFailedCount(0)
+      , m_timingLog(timingLog) {}
 
   bool onFrameCompleted(int frame, int column) override;
   bool onFrameFailed(int frame, int column, TException &e) override;
   void onSequenceCompleted(int column) override {}
   void onRenderCompleted() override {}
+
+private:
+  WorkerTimingLog *m_timingLog;
 };
 
 //==================================================================================
@@ -393,6 +508,7 @@ bool MyMultimediaRenderListener::onFrameCompleted(int frame, int column) {
   }
 
   m_frameCompletedCount++;
+  if (m_timingLog) m_timingLog->frameCompleted(actualFrame, column);
   return true;
 }
 
@@ -422,6 +538,7 @@ bool MyMultimediaRenderListener::onFrameFailed(int frame, int column,
   }
 
   m_frameFailedCount++;
+  if (m_timingLog) m_timingLog->frameFailed(actualFrame, column);
   return true;
 }
 
@@ -429,7 +546,8 @@ bool MyMultimediaRenderListener::onFrameFailed(int frame, int column,
 
 static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
                                          int r0, int r1, int step, int shrink,
-                                         int threadCount, int maxTileSize) {
+                                         int threadCount, int maxTileSize,
+                                         WorkerTimingLog *timingLog) {
   QWaitCondition renderCompleted;
 
   // riporto gli indici a base zero
@@ -482,6 +600,16 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
   double r                 = (r0)*timeStretchFactor;
   double stepd             = step * timeStretchFactor;
 
+  if (timingLog) {
+    QJsonObject event;
+    event.insert("event", "render_parameters");
+    event.insert("effective_first_frame", r0 + 1);
+    event.insert("effective_last_frame", r1 + 1);
+    event.insert("time_stretch_factor", timeStretchFactor);
+    if (!timingLog->record(event))
+      throw TException("Cannot write render timing parameters");
+  }
+
   int multimediaRender = outputSettings.getMultimediaRendering();
 
   //---------------------------------------------------------
@@ -500,9 +628,11 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
     for (int i = 0; i < numFrames; i += step, r += stepd)
       multimediaRenderer.addFrame(r);
 
-    MyMultimediaRenderListener *listener = new MyMultimediaRenderListener(
-        fp, multimediaRenderer.getFrameCount() *
-                multimediaRenderer.getColumnsCount());
+    MyMultimediaRenderListener *listener =
+        new MyMultimediaRenderListener(fp,
+                                       multimediaRenderer.getFrameCount() *
+                                           multimediaRenderer.getColumnsCount(),
+                                       timingLog);
     multimediaRenderer.addListener(listener);
 
     multimediaRenderer.start();
@@ -537,9 +667,9 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
 
     movieRenderer.enablePrecomputing(true);
 
-    MyMovieRenderListener *listener =
-        new MyMovieRenderListener(fp, tceil((numFrames) / (float)step),
-                                  renderCompleted, rs.m_stereoscopic);
+    MyMovieRenderListener *listener = new MyMovieRenderListener(
+        fp, tceil((numFrames) / (float)step), renderCompleted,
+        rs.m_stereoscopic, timingLog);
 
     movieRenderer.addListener(listener);
 
@@ -597,6 +727,17 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
 DV_IMPORT_API void initStdFx();
 DV_IMPORT_API void initColorFx();
 int main(int argc, char *argv[]) {
+  // The worker probe must work without a scene, a display, or TOONZROOT.
+  if (argc > 1 && std::strcmp(argv[1], "--worker-info-json") == 0) {
+    if (argc != 2) {
+      std::cerr << "--worker-info-json takes no additional arguments"
+                << std::endl;
+      return 1;
+    }
+    printWorkerInfo();
+    return 0;
+  }
+
   TCli::UsageLine usageLine;
   //  setCurrentModule("tcomposer");
   TCli::FilePathArgument srcName("srcName", "Source file");
@@ -611,8 +752,10 @@ int main(int argc, char *argv[]) {
   StringQualifier tileSize("-maxtilesize n",
                            "Enable tile rendering of max n MB per tile");
   StringQualifier tmsg("-tmsg val", "only internal use");
+  FilePathQualifier timingFile("-timing-jsonl file",
+                               "Write opt-in render timing events to JSONL");
   usageLine = srcName + dstName + range + stepOpt + shrinkOpt + multimedia +
-              farmData + idq + nthreads + tileSize + tmsg;
+              farmData + idq + nthreads + tileSize + tmsg + timingFile;
 
   // system path qualifiers
   std::map<QString, std::unique_ptr<TCli::QualifierT<TFilePath>>>
@@ -783,6 +926,8 @@ int main(int argc, char *argv[]) {
   while (!PluginLoader::load_entries("")) app.processEvents();
 
   std::pair<int, int> framePair(1, 0);
+  WorkerTimingLog timingLog;
+  bool renderFailed = false;
 
   try {
     Tiio::defineStd();
@@ -996,8 +1141,40 @@ int main(int argc, char *argv[]) {
 #endif
 #endif
 
-    framePair = generateMovie(scene, theDstFilePath, r0, r1, step, shrink,
-                              threadCount, maxTileSize);
+    if (timingFile.isSelected()) {
+      if (!timingLog.open(timingFile.getValue().getQString())) {
+        msg =
+            "Cannot open timing file: " + timingLog.errorString().toStdString();
+        std::cerr << msg << std::endl;
+        m_userLog->error(msg);
+        return 1;
+      }
+      QJsonObject event;
+      event.insert("event", "render_started");
+      event.insert("requested_first_frame", r0);
+      event.insert("requested_last_frame", r1);
+      event.insert("step", step);
+      event.insert("shrink", shrink);
+      event.insert("render_threads", threadCount);
+      if (maxTileSize == (std::numeric_limits<int>::max)())
+        event.insert("max_tile_mb", QJsonValue::Null);
+      else
+        event.insert("max_tile_mb", maxTileSize);
+      event.insert("output_type",
+                   QString::fromStdString(theDstFilePath.getType()));
+      event.insert("multimedia", outProp->getMultimediaRendering() != 0);
+      if (!timingLog.record(event)) {
+        msg = "Cannot write render timing event: " +
+              timingLog.errorString().toStdString();
+        std::cerr << msg << std::endl;
+        m_userLog->error(msg);
+        return 2;
+      }
+    }
+
+    framePair =
+        generateMovie(scene, theDstFilePath, r0, r1, step, shrink, threadCount,
+                      maxTileSize, timingLog.isOpen() ? &timingLog : nullptr);
 
     Sw1.stop();
 
@@ -1024,16 +1201,37 @@ int main(int argc, char *argv[]) {
     DVGui::info(QString::fromStdString(msg));
     TImageCache::instance()->clear(true);
   } catch (TException &e) {
+    renderFailed = true;
     msg = "Untrapped exception: " + ::to_string(e.getMessage()),
     cout << msg << endl;
     m_userLog->error(msg);
     TImageCache::instance()->clear(true);
   } catch (...) {
+    renderFailed = true;
     cout << "Untrapped exception" << endl;
     m_userLog->error("Untrapped exception");
     TImageCache::instance()->clear(true);
   }
 
-  if (framePair.first != framePair.second) return -1;
+  if (timingLog.isOpen()) {
+    QJsonObject event;
+    event.insert("event", "render_finished");
+    event.insert("completed_frames", timingLog.completedFrames());
+    event.insert("failed_frames", timingLog.failedFrames());
+    event.insert("status", renderFailed ||
+                                   framePair.first != framePair.second ||
+                                   timingLog.failedFrames() > 0
+                               ? "failed"
+                               : "completed");
+    timingLog.record(event);
+    if (timingLog.failed()) {
+      std::cerr << "Failed to write the complete timing file: "
+                << timingLog.errorString().toStdString() << std::endl;
+      return 2;
+    }
+  }
+
+  if (framePair.first != framePair.second || timingLog.failedFrames() > 0)
+    return -1;
   return 0;
 }
