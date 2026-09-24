@@ -4137,14 +4137,22 @@ bool CellArea::eventFilter(QObject *watched, QEvent *event) {
 
   if (event->type() == QEvent::MouseButtonPress) {
     QWidget *target = qobject_cast<QWidget *>(watched);
-    if (target != m_framePreview &&
-        (!target || !m_framePreview->isAncestorOf(target))) {
+    const QPoint clickPos = static_cast<QMouseEvent *>(event)->globalPos();
+    const bool insidePreview =
+        target == m_framePreview ||
+        (target && m_framePreview->isAncestorOf(target)) ||
+        m_framePreview->frameGeometry().contains(clickPos);
+    if (!insidePreview) {
       // Keep the event for the clicked widget, so the first click selects the
       // Xsheet cell instead of merely dismissing the preview.
       dismissFramePreview();
     }
   } else if (event->type() == QEvent::ApplicationDeactivate) {
-    dismissFramePreview();
+    // Clicking the non-activating popup (including its scrollbar) can briefly
+    // deactivate the main window on some platforms. Keep the popup if the
+    // pointer is still inside it.
+    if (!m_framePreview->frameGeometry().contains(QCursor::pos()))
+      dismissFramePreview();
   } else if (event->type() == QEvent::KeyPress &&
              static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
     dismissFramePreview();
