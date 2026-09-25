@@ -55,10 +55,7 @@
 #include <QFile>
 #include <QPushButton>
 #include <QApplication>
-#include <QColorDialog>
-#include <QIcon>
 #include <QMainWindow>
-#include <QPixmap>
 #include <QStringList>
 #include <QListWidget>
 #include <QGroupBox>
@@ -1126,7 +1123,8 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
   case QMetaType::QColor:  // create ColorField
   {
     ColorField* field =
-        new ColorField(this, false, colorToTPixel(item.value.value<QColor>()));
+        new ColorField(this, false, colorToTPixel(item.value.value<QColor>()),
+                       24, true, 44, true);
     connect(field, &ColorField::colorChanged, this,
             &PreferencesPopup::onColorFieldChanged);
     widget = field;
@@ -2330,31 +2328,10 @@ QWidget* PreferencesPopup::createXsheetPage() {
     // Reuse the existing color row so the Xsheet page does not grow taller.
     QCheckBox* customColorCheck =
         qobject_cast<QCheckBox*>(createUI(customCurrentCellColorEnabled));
-    QPushButton* outlineColorButton = new QPushButton(this);
-    outlineColorButton->setFixedSize(30, 24);
-    outlineColorButton->setToolTip(
-        tr("Choose the active cell and column outline color."));
-    auto setOutlineSwatch = [outlineColorButton](const QColor& color) {
-      QPixmap swatch(20, 16);
-      swatch.fill(color);
-      outlineColorButton->setIcon(QIcon(swatch));
-      outlineColorButton->setIconSize(swatch.size());
-    };
-    setOutlineSwatch(m_pref->getItem(currentCellColor).value.value<QColor>());
-    outlineColorButton->setEnabled(customColorCheck->isChecked());
-    connect(customColorCheck, &QCheckBox::toggled, outlineColorButton,
+    QWidget* outlineColorField = createUI(currentCellColor);
+    outlineColorField->setEnabled(customColorCheck->isChecked());
+    connect(customColorCheck, &QCheckBox::toggled, outlineColorField,
             &QWidget::setEnabled);
-    connect(outlineColorButton, &QPushButton::clicked, this,
-            [this, setOutlineSwatch] {
-              QColor current =
-                  m_pref->getItem(currentCellColor).value.value<QColor>();
-              QColor chosen = QColorDialog::getColor(
-                  current, this, tr("Active Cell/Column Outline Color"));
-              if (!chosen.isValid()) return;
-              m_pref->setValue(currentCellColor, chosen);
-              setOutlineSwatch(chosen);
-              onCurrentCellColorChanged();
-            });
 
     QHBoxLayout* outlineLayout = new QHBoxLayout();
     outlineLayout->setContentsMargins(0, 0, 0, 0);
@@ -2364,7 +2341,7 @@ QWidget* PreferencesPopup::createXsheetPage() {
         tr("The active cell and column use the same outline color."));
     outlineLayout->addWidget(outlineLabel);
     outlineLayout->addWidget(customColorCheck);
-    outlineLayout->addWidget(outlineColorButton);
+    outlineLayout->addWidget(outlineColorField);
     outlineLayout->addStretch(1);
     xshColHeaderLay->addLayout(outlineLayout, xshColHeaderLay->rowCount() - 1,
                                2);
@@ -2402,6 +2379,8 @@ QWidget* PreferencesPopup::createXsheetPage() {
   m_onEditedFuncMap.insert(showXsheetCameraColumn,
                            &PreferencesPopup::onShowKeyframesOnCellAreaChanged);
   m_onEditedFuncMap.insert(customCurrentCellColorEnabled,
+                           &PreferencesPopup::onCurrentCellColorChanged);
+  m_onEditedFuncMap.insert(currentCellColor,
                            &PreferencesPopup::onCurrentCellColorChanged);
   m_onEditedFuncMap.insert(
       unifyColumnVisibilityToggles,
