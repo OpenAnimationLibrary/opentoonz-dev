@@ -146,7 +146,7 @@ class DVAPI TFilePath {
   struct TFilePathInfo {
     QString parentDir;  // with slash
     QString levelName;
-    QChar sepChar;  // either "." or "_"
+    QChar sepChar;  // ".", "_" or "-"
     TFrameId fId;
     QString extension;
   };
