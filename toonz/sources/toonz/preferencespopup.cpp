@@ -1438,9 +1438,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Sync Level Strip Drawing Number Changes with the Xsheet")},
       {currentTimelineEnabled, tr("Show Current Time Indicator")},
       {currentColumnColor, tr("Current Column Text Color:")},
-      {customCurrentCellColorEnabled,
-       tr("Use Custom Current Cell and Column Outline Color")},
-      {currentCellColor, tr("Current Cell and Column Outline Color:")},
+      {customCurrentCellColorEnabled, tr("Custom")},
+      {currentCellColor, tr("Active Cell/Column Outlines:")},
       //{ levelNameOnEachMarkerEnabled, tr("Display Level Name on Each
       // Marker")
       //},
@@ -2330,20 +2329,26 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(highlightLineEverySecond, xshCellAreaLay);
     insertUI(currentTimelineEnabled, xshCellAreaLay);
     insertUI(showFrameNumberWithLetters, xshCellAreaLay);
-  }
-  QGridLayout* currentIndicatorLay =
-      insertGroupBox(tr("Current Cell and Column Indicators"), lay);
-  {
-    insertUI(customCurrentCellColorEnabled, currentIndicatorLay);
-    insertUI(currentCellColor, currentIndicatorLay);
-    QWidget* cellColorField = getUI<QWidget*>(currentCellColor);
+
+    QWidget* cellColorField = createUI(currentCellColor);
     QCheckBox* customCellColorCheck =
-        getUI<QCheckBox*>(customCurrentCellColorEnabled);
+        qobject_cast<QCheckBox*>(createUI(customCurrentCellColorEnabled));
+    QHBoxLayout* cellColorLayout = new QHBoxLayout();
+    cellColorLayout->setContentsMargins(0, 0, 0, 0);
+    cellColorLayout->addWidget(customCellColorCheck);
+    cellColorLayout->addWidget(cellColorField);
+    cellColorLayout->addStretch(1);
+
+    int row = xshCellAreaLay->rowCount();
+    xshCellAreaLay->addWidget(new QLabel(getUIString(currentCellColor), this),
+                              row, 0, Qt::AlignRight | Qt::AlignVCenter);
+    xshCellAreaLay->addLayout(cellColorLayout, row, 1, 1, 2);
     cellColorField->setEnabled(customCellColorCheck->isChecked());
     connect(customCellColorCheck, &QCheckBox::toggled, cellColorField,
             &QWidget::setEnabled);
     customCellColorCheck->setToolTip(
-        tr("When disabled, both outlines use the current cell theme color."));
+        tr("Use the same custom outline color for the active cell and column. "
+           "When unchecked, both outlines use the current theme color."));
   }
 
   QGridLayout* showKeyLay =
