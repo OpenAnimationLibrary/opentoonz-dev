@@ -162,6 +162,14 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
     ++i;
   }
 
+  TFilePath stuffDir = TEnv::getStuffDir();
+  if (stuffDir == TFilePath())
+    fatalError("Undefined or empty: \"" + toQString(TEnv::getRootVarPath()) +
+               "\"");
+  else if (!TFileStatus(stuffDir).isDirectory())
+    fatalError("Folder \"" + toQString(stuffDir) +
+               "\" not found or not readable");
+
   // Apply the transaction before registered environment variables and
   // Preferences are read for this process.
   QString restoreError;
@@ -184,14 +192,6 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
   /*-- ENGLISH: Confirm TOONZROOT Path
         Check if the xxxroot is defined and corresponds to an existing folder
   --*/
-
-  TFilePath stuffDir = TEnv::getStuffDir();
-  if (stuffDir == TFilePath())
-    fatalError("Undefined or empty: \"" + toQString(TEnv::getRootVarPath()) +
-               "\"");
-  else if (!TFileStatus(stuffDir).isDirectory())
-    fatalError("Folder \"" + toQString(stuffDir) +
-               "\" not found or not readable");
 
   // Setup third party
   ThirdParty::initialize();

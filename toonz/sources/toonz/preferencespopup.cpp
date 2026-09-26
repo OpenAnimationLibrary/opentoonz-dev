@@ -1702,7 +1702,7 @@ PreferencesPopup::PreferencesPopup()
 #ifdef _WIN32
   categories << tr("Addons");
 #endif
-  categories << tr("Config Backup, Restore and Transfer");
+  categories << tr("Config Backup/Restore");
   categoryList->addItems(categories);
   categoryList->setFixedWidth(160);
   categoryList->setCurrentRow(0);
@@ -1852,6 +1852,7 @@ QWidget* PreferencesPopup::createConfigTransferPage() {
       row->setText(2, item.detail.isEmpty()
                           ? item.destination
                           : item.detail + "  " + item.destination);
+      row->setToolTip(2, row->text(2));
       row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
       row->setCheckState(0, item.selected ? Qt::Checked : Qt::Unchecked);
       if (!item.compatible || item.status == tr("Identical"))

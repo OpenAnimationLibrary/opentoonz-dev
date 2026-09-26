@@ -32,6 +32,8 @@
 #include <QVersionNumber>
 #include <QXmlStreamReader>
 
+#include <limits>
+
 namespace ConfigTransfer {
 namespace {
 
@@ -41,14 +43,18 @@ const quint64 kMaxTotal = 4ull * 1024 * 1024 * 1024 - 64 * 1024 * 1024;
 const int kMaxFiles     = 60000;
 const int kMaxManifest  = 32 * 1024 * 1024;
 
-QString path(const TFilePath &fp) { return QDir::cleanPath(fp.getQString()); }
+QString path(const TFilePath &fp) {
+  return fp.isEmpty() ? QString() : QDir::cleanPath(fp.getQString());
+}
 
 QString userName() {
   return QString::fromStdWString(TSystem::getUserName().toStdWString());
 }
 
 QString pendingDir() {
-  return QDir(path(TEnv::getConfigDir())).filePath("config-restore-transfer");
+  const QString config = path(TEnv::getConfigDir());
+  return config.isEmpty() ? QString()
+                          : QDir(config).filePath("config-restore-transfer");
 }
 
 QString hashFile(const QString &name) {
@@ -98,7 +104,9 @@ QString rootPath(const QString &root) {
   if (root == "fxs") return path(ToonzFolder::getFxPresetFolder());
   if (root == "library") return path(ToonzFolder::getLibraryFolder());
   if (root == "plugins")
-    return QDir(path(TEnv::getStuffDir())).filePath("plugins");
+    return path(TEnv::getStuffDir()).isEmpty()
+               ? QString()
+               : QDir(path(TEnv::getStuffDir())).filePath("plugins");
   return QString();
 }
 
@@ -486,10 +494,13 @@ bool save(const QString &archivePath, const Options &options, QString &error) {
     return false;
   }
   quint64 total = 0;
+  quint64 centralBytes = 46 + sizeof("manifest.json") - 1;
   for (const Source &source : sources) {
     const qint64 size = QFileInfo(source.file).size();
+    const QString archiveName = "files/" + source.root + "/" + source.relative;
+    centralBytes += 46 + archiveName.toUtf8().size();
     if (size < 0 || quint64(size) > kMaxFile ||
-        (total += quint64(size)) > kMaxTotal) {
+        (total += quint64(size)) > kMaxTotal || centralBytes > kMaxManifest) {
       error = QObject::tr(
           "The configuration exceeds this ZIP format's size limit.");
       return false;
@@ -536,6 +547,11 @@ bool save(const QString &archivePath, const Options &options, QString &error) {
   }
   if (!writer.addData("manifest.json", manifestBytes) || !writer.close()) {
     error = writer.errorString();
+    return false;
+  }
+  if (quint64(QFileInfo(tempZip).size()) >
+      std::numeric_limits<quint32>::max()) {
+    error = QObject::tr("The archive exceeds the classic ZIP size limit.");
     return false;
   }
   QFile source(tempZip);
@@ -643,6 +659,14 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
     item.category     = root;
     item.destination  = destination(root, relative);
     item.compatible   = !item.destination.isEmpty();
+    const quint32 entrySize = reader.entries().value(archiveName).size;
+    if (((root == "settings" &&
+          (relative == "preferences.ini" || relative == "shortcuts.ini")) ||
+         root == "env") &&
+        entrySize > 4 * 1024 * 1024) {
+      item.compatible = false;
+      item.detail = QObject::tr("This settings file is too large to migrate.");
+    }
     QString targetKey = QDir::cleanPath(item.destination);
 #ifdef Q_OS_WIN
     targetKey = targetKey.toCaseFolded();
@@ -688,7 +712,7 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
       const int order = archived.isNull() || installed.isNull()
                             ? 0
                             : QVersionNumber::compare(archived, installed);
-      item.status = order > 0 ? QObject::tr("Archive newer; review replacement")
+      item.status = order > 0 ? QObject::tr("Archive newer; select to replace")
                     : order < 0 ? QObject::tr("Installed newer; keep installed")
                                 : QObject::tr("Different; version unknown");
     } else
@@ -705,7 +729,18 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
     if (root == "settings" && relative == "preferences.ini") {
       item.selected =
           item.compatible && item.status != QObject::tr("Identical");
-      item.detail = preferenceSummary(reader, archiveName);
+      if (item.compatible) item.detail = preferenceSummary(reader, archiveName);
+    }
+    if (optionalRoot(root) && item.existing && localHash != sha) {
+      const QString comparison =
+          QObject::tr(
+              "Archive: %1 bytes, SHA-256 %2; installed: %3 bytes, "
+              "SHA-256 %4.")
+              .arg(reader.entries().value(archiveName).size)
+              .arg(sha)
+              .arg(QFileInfo(item.destination).size())
+              .arg(localHash);
+      item.detail += (item.detail.isEmpty() ? QString() : "  ") + comparison;
     }
     items.append(item);
   }
@@ -735,6 +770,10 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
     }
   }
   const QString base = pendingDir();
+  if (base.isEmpty()) {
+    error = QObject::tr("The configuration folder is not available.");
+    return false;
+  }
   if (QFileInfo::exists(base)) {
     error = QObject::tr("A configuration restore is already pending.");
     return false;
@@ -844,12 +883,14 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
 
 bool applyPending(QString &error) {
   const QString base = pendingDir();
+  if (base.isEmpty()) return true;
   const QString plan = QDir(base).filePath("pending.json");
   if (!QFileInfo::exists(plan)) return true;
   const QString marker = QDir(base).filePath("applying.json");
   if (QFileInfo::exists(marker)) {
     QFile interrupted(marker);
-    if (!interrupted.open(QIODevice::ReadOnly)) {
+    if (QFileInfo(marker).size() > kMaxManifest ||
+        !interrupted.open(QIODevice::ReadOnly)) {
       error = QObject::tr("Cannot read the interrupted restore record.");
       return false;
     }
@@ -890,7 +931,8 @@ bool applyPending(QString &error) {
     return false;
   }
   QFile file(plan);
-  if (!file.open(QIODevice::ReadOnly)) {
+  if (QFileInfo(plan).size() > kMaxManifest ||
+      !file.open(QIODevice::ReadOnly)) {
     error = QObject::tr("Cannot read the pending restore.");
     return false;
   }
@@ -905,6 +947,7 @@ bool applyPending(QString &error) {
     return false;
   }
   QJsonArray records;
+  const QString canonicalBase = QFileInfo(base).canonicalFilePath();
   // Validate and back up every destination before touching any of them.
   for (int i = 0; i < entries.size(); ++i) {
     const QJsonObject entry = entries.at(i).toObject();
@@ -912,10 +955,12 @@ bool applyPending(QString &error) {
     const QString relative  = entry.value("relative").toString();
     const QString target    = destination(root, relative);
     const QString staged    = entry.value("staged").toString();
+    const QString canonicalStaged = QFileInfo(staged).canonicalFilePath();
     if (!allowed(root, relative) || target.isEmpty() ||
         target != entry.value("destination").toString() ||
-        !staged.startsWith(base + "/") || !QFileInfo(staged).isFile() ||
-        QFileInfo(staged).isSymLink() ||
+        canonicalBase.isEmpty() ||
+        !canonicalStaged.startsWith(canonicalBase + "/files/") ||
+        !QFileInfo(staged).isFile() || QFileInfo(staged).isSymLink() ||
         hashFile(staged) != entry.value("sha256").toString()) {
       error = QObject::tr("Invalid staged configuration path.");
       break;

@@ -108,8 +108,8 @@ public:
       const quint16 nameSize = u16(directory, p + 28);
       const quint16 extra    = u16(directory, p + 30);
       const quint16 comment  = u16(directory, p + 32);
-      if (method != 0 || (flags & ~quint16(0x0808)) || !(flags & 0x0800) ||
-          u32(directory, p + 20) != size ||
+      if (method != 0 || (flags & ~quint16(0x0808)) ||
+          u32(directory, p + 20) != size || u16(directory, p + 34) != 0 ||
           p + 46 + nameSize + extra + comment > directory.size())
         break;
       const QByteArray utf8 = directory.mid(p + 46, nameSize);
@@ -127,6 +127,16 @@ public:
           u16(local, 6) != flags || u16(local, 8) != method ||
           u16(local, 26) != nameSize ||
           quint64(e.offset) + 30 + nameSize + u16(local, 28) + size > start)
+        break;
+      // With a data descriptor the local values may be zero. Otherwise they
+      // must match the central directory before any bytes are extracted.
+      if (flags & 0x0008) {
+        if ((u32(local, 14) && u32(local, 14) != e.crc) ||
+            (u32(local, 18) && u32(local, 18) != size) ||
+            (u32(local, 22) && u32(local, 22) != size))
+          break;
+      } else if (u32(local, 14) != e.crc || u32(local, 18) != size ||
+                 u32(local, 22) != size)
         break;
       QByteArray localName;
       if (!readAt(quint64(e.offset) + 30, nameSize, localName) ||
