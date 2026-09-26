@@ -105,15 +105,15 @@ void roundTrip(const QString &scratch) {
   ConfigTransfer::Options options;
   options.library = options.plugins = true;
   QString error;
-  check(ConfigTransfer::save(archive, options, error),
-        qPrintable("save failed: " + error));
+  const bool saved = ConfigTransfer::save(archive, options, error);
+  check(saved, qPrintable("save failed: " + error));
 
   TestEnvironment::root() = QDir(scratch).filePath("destination");
   TestEnvironment::user() = "bob";
   destinationProfile();
   QList<ConfigTransfer::Item> items;
-  check(ConfigTransfer::inspect(archive, items, error),
-        qPrintable("inspect failed: " + error));
+  const bool inspected = ConfigTransfer::inspect(archive, items, error);
+  check(inspected, qPrintable("inspect failed: " + error));
   const auto &room = item(items, "files/rooms/Default/room1.ini");
   check(room.selected && room.destination.endsWith("Default.bob/room1.ini"),
         "personal room did not map to destination user");
@@ -134,12 +134,12 @@ void roundTrip(const QString &scratch) {
   check(item(items, "files/plugins/upgrade/upgrade.dll")
             .status.contains("Archive newer"),
         "newer archived plugin was not identified");
-  check(ConfigTransfer::queueRestore(archive, items, error),
-        qPrintable("staging failed: " + error));
+  const bool staged = ConfigTransfer::queueRestore(archive, items, error);
+  check(staged, qPrintable("staging failed: " + error));
   check(QFileInfo::exists(file("config/config-restore-transfer/pending.json")),
         "restore was not staged");
-  check(ConfigTransfer::applyPending(error),
-        qPrintable("startup restore failed: " + error));
+  const bool applied = ConfigTransfer::applyPending(error);
+  check(applied, qPrintable("startup restore failed: " + error));
   check(!QFileInfo::exists(file("config/config-restore-transfer/pending.json")),
         "applied restore remains pending");
 
@@ -188,13 +188,15 @@ void roundTrip(const QString &scratch) {
   // even when the user chose its previous version in the preview.
   QList<ConfigTransfer::Item> conflictItems;
   error.clear();
-  check(ConfigTransfer::inspect(archive, conflictItems, error),
-        qPrintable("second inspect failed: " + error));
+  const bool secondInspected =
+      ConfigTransfer::inspect(archive, conflictItems, error);
+  check(secondInspected, qPrintable("second inspect failed: " + error));
   for (auto &candidate : conflictItems)
     candidate.selected = candidate.archivePath ==
                          "files/library/mypaint brushes/Custom/brush.myb";
-  check(ConfigTransfer::queueRestore(archive, conflictItems, error),
-        qPrintable("second staging failed: " + error));
+  const bool secondStaged =
+      ConfigTransfer::queueRestore(archive, conflictItems, error);
+  check(secondStaged, qPrintable("second staging failed: " + error));
   write(file("library/mypaint brushes/Custom/brush.myb"),
         "edited after staging");
   error.clear();

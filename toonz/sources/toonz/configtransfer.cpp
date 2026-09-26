@@ -1032,7 +1032,9 @@ bool applyPending(QString &error) {
       error = QObject::tr("Cannot read the interrupted restore record.");
       return false;
     }
-    const QJsonArray records = QJsonDocument::fromJson(interrupted.readAll())
+    const QByteArray interruptedBytes = interrupted.readAll();
+    interrupted.close();
+    const QJsonArray records = QJsonDocument::fromJson(interruptedBytes)
                                    .object()
                                    .value("files")
                                    .toArray();
@@ -1074,7 +1076,9 @@ bool applyPending(QString &error) {
     error = QObject::tr("Cannot read the pending restore.");
     return false;
   }
-  const QJsonDocument json = QJsonDocument::fromJson(file.readAll());
+  const QByteArray planBytes = file.readAll();
+  file.close();  // Windows cannot remove pending.json while its handle is open.
+  const QJsonDocument json = QJsonDocument::fromJson(planBytes);
   if (!json.isObject() || json.object().value("schema").toInt() != kSchema) {
     error = QObject::tr("Invalid pending configuration restore.");
     return false;
