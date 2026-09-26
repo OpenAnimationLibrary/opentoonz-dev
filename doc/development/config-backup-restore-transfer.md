@@ -21,6 +21,8 @@ that do not exist in the receiving build are skipped. Environment variables
 are limited to names registered by that build, and values resembling machine
 paths stay local. Room INIs receive basic syntax and pane-sequence validation;
 unavailable panel types can fall back to OpenToonz's generic panel behavior.
+Room XML and selected user XML files receive syntax validation. A changed room
+set must be selected as a unit so its list, layouts and menus stay together.
 
 Selected files are staged under the current config root and installed **at the
 next launch**, before preferences, rooms and plugins load. Every destination is

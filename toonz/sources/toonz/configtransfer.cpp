@@ -30,6 +30,7 @@
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QVersionNumber>
+#include <QXmlStreamReader>
 
 namespace ConfigTransfer {
 namespace {
@@ -415,6 +416,16 @@ bool validRoom(SimpleZipReader &reader, const QString &entry) {
   return true;
 }
 
+bool validXml(SimpleZipReader &reader, const QString &entry) {
+  QByteArray bytes;
+  QBuffer output(&bytes);
+  output.open(QIODevice::WriteOnly);
+  if (!reader.extract(entry, &output, 4 * 1024 * 1024)) return false;
+  QXmlStreamReader xml(bytes);
+  while (!xml.atEnd()) xml.readNext();
+  return !xml.hasError();
+}
+
 QString preferenceSummary(SimpleZipReader &reader, const QString &entry) {
   QTemporaryFile temp;
   if (!temp.open() || !reader.extract(entry, &temp, 4 * 1024 * 1024))
@@ -580,6 +591,8 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
     const QString entry    = object.value("path").toString();
     if (relative.endsWith(".ini") && !validRoom(reader, entry))
       invalidRoomSets.insert(set);
+    if (relative.endsWith(".xml") && !validXml(reader, entry))
+      invalidRoomSets.insert(set);
     if (relative.endsWith("/layouts.txt")) {
       QByteArray bytes;
       QBuffer buffer(&bytes);
@@ -646,6 +659,11 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
       item.detail =
           QObject::tr("This room set contains an invalid or missing layout.");
     }
+    if ((root == "settings" || root == "fxs" || root == "config") &&
+        relative.endsWith(".xml") && !validXml(reader, archiveName)) {
+      item.compatible = false;
+      item.detail     = QObject::tr("This XML file is invalid or too large.");
+    }
     if (root == "plugins") {
       item.compatible = item.compatible && samePlatform;
       item.detail     = samePlatform ? QObject::tr(
@@ -701,6 +719,21 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
   QHash<QString, Item> choices;
   for (const Item &item : items)
     if (item.selected) choices.insert(item.archivePath, item);
+  QSet<QString> requestedRoomSets;
+  for (const Item &item : verified)
+    if (item.category == "rooms" && choices.contains(item.archivePath))
+      requestedRoomSets.insert(item.archivePath.section('/', 2, 2));
+  for (const Item &item : verified) {
+    if (item.category == "rooms" &&
+        requestedRoomSets.contains(item.archivePath.section('/', 2, 2)) &&
+        item.status != QObject::tr("Identical") &&
+        !choices.contains(item.archivePath)) {
+      error = QObject::tr(
+          "Select every changed file in a room set, or leave "
+          "that room set unchecked.");
+      return false;
+    }
+  }
   const QString base = pendingDir();
   if (QFileInfo::exists(base)) {
     error = QObject::tr("A configuration restore is already pending.");
