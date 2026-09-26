@@ -20,7 +20,9 @@ Existing FX presets are also unchecked because the folder can contain installed
 defaults that changed between builds.
 
 Recognized preference keys are merged with the destination's current INI;
-unrecognized keys and machine-specific paths are skipped. Shortcut commands
+the separate user level-format array is validated and copied using fields
+recognized by the current build. Unrecognized keys and machine-specific paths
+are skipped. Shortcut commands
 that do not exist in the receiving build are skipped; room commands belonging
 to restored layouts are kept for registration after restart. Environment
 variables are limited to names registered by that build, and values resembling
@@ -45,9 +47,13 @@ dependency is present, nor does it validate a plugin's OpenToonz ABI.
 
 ## Review and testing
 
-The optional `BUILD_CONFIG_TRANSFER_TESTS` CMake target runs stored ZIP
+The optional `BUILD_CONFIG_TRANSFER_TESTS` CMake targets run stored ZIP
 round-trip, CRC, size limit, traversal, duplicate entry, header mismatch,
-method, and ASCII filename checks. Windows CI builds and runs this target.
+method, and ASCII filename checks. A second focused test builds the production
+transfer code with isolated OpenToonz paths and runs save, inspect, stage and
+startup apply across two user profiles. It checks registered preferences,
+custom level formats, removed options, room layouts, shortcuts, environment
+variables, MyPaint files and an existing newer plugin. Windows CI runs both.
 
 1. Modify preferences, shortcuts, two named rooms and a custom brush. Export,
    inspect the ZIP manifest, then restore to a separate portable installation.

@@ -483,6 +483,11 @@ if(BUILD_CONFIG_TRANSFER_TESTS)
     add_executable(configtransfer_zip_test tests/simplezipreader_test.cpp)
     target_link_libraries(configtransfer_zip_test PRIVATE Qt5::Core)
     add_test(NAME configtransfer_zip COMMAND configtransfer_zip_test)
+
+    add_executable(configtransfer_roundtrip_test tests/configtransfer_roundtrip_test.cpp configtransfer.cpp)
+    target_include_directories(configtransfer_roundtrip_test BEFORE PRIVATE tests/stubs)
+    target_link_libraries(configtransfer_roundtrip_test PRIVATE Qt5::Core Qt5::Gui)
+    add_test(NAME configtransfer_roundtrip COMMAND configtransfer_roundtrip_test)
 endif()
 
 if(WITH_TRANSLATION)

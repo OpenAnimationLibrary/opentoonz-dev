@@ -33,6 +33,7 @@
 #include <QXmlStreamReader>
 
 #include <limits>
+#include <cmath>
 
 namespace ConfigTransfer {
 namespace {
@@ -312,6 +313,58 @@ bool validType(const PreferencesItem &item, const QVariant &value) {
   return true;
 }
 
+// The level format array is stored in preferences.ini, but it is not a
+// PreferencesItem. Copy only the fields read by Preferences::getValue(), and
+// reject a malformed array before replacing the destination's formats.
+int validLevelFormatCount(QSettings &source) {
+  if (!source.contains("levelFormats/size")) return -1;
+  const int count = source.beginReadArray("levelFormats");
+  source.endArray();
+  if (count < 0 || count > 256) return -1;
+  static const QSet<QString> integers = {"priority",    "dpiPolicy",
+                                         "subsampling", "antialias",
+                                         "premultiply", "whiteTransp"};
+  static const QSet<QString> decimals = {"dpi", "colorSpaceGamma"};
+  for (int i = 1; i <= count; ++i) {
+    const QString prefix  = QString("levelFormats/%1/").arg(i);
+    const QString name    = source.value(prefix + "name").toString();
+    const QString pattern = source.value(prefix + "regexp").toString();
+    if (name.isEmpty() || name.size() > 256 || pattern.isEmpty() ||
+        pattern.size() > 2048 || !QRegularExpression(pattern).isValid())
+      return -1;
+    for (const QString &key : integers) {
+      if (!source.contains(prefix + key)) continue;
+      bool ok = false;
+      source.value(prefix + key).toInt(&ok);
+      if (!ok) return -1;
+    }
+    for (const QString &key : decimals) {
+      if (!source.contains(prefix + key)) continue;
+      bool ok             = false;
+      const double number = source.value(prefix + key).toDouble(&ok);
+      if (!ok || !std::isfinite(number)) return -1;
+    }
+  }
+  return count;
+}
+
+void copyLevelFormats(QSettings &source, QSettings &output, int count) {
+  static const QStringList fields = {
+      "name",        "regexp",         "priority",  "dpiPolicy",
+      "dpi",         "subsampling",    "antialias", "premultiply",
+      "whiteTransp", "colorSpaceGamma"};
+  output.remove("levelFormats");
+  output.beginWriteArray("levelFormats", count);
+  for (int i = 0; i < count; ++i) {
+    output.setArrayIndex(i);
+    const QString prefix = QString("levelFormats/%1/").arg(i + 1);
+    for (const QString &field : fields)
+      if (source.contains(prefix + field))
+        output.setValue(field, source.value(prefix + field));
+  }
+  output.endArray();
+}
+
 // Preferences are merged by registered key, not replaced by a foreign INI.
 bool filterPreferences(const QString &sourcePath, const QString &targetPath,
                        const QString &outputPath, QString &error) {
@@ -335,6 +388,8 @@ bool filterPreferences(const QString &sourcePath, const QString &targetPath,
     const QVariant value = source.value(key);
     if (validType(item, value)) output.setValue(key, value);
   }
+  const int formats = validLevelFormatCount(source);
+  if (formats >= 0) copyLevelFormats(source, output, formats);
   output.sync();
   if (source.status() != QSettings::NoError ||
       output.status() != QSettings::NoError) {
@@ -469,11 +524,13 @@ QString preferenceSummary(SimpleZipReader &reader, const QString &entry) {
   }
   int skipped = 0;
   for (const QString &key : source.allKeys())
-    if (!known.contains(key)) ++skipped;
+    if (!known.contains(key) && !key.startsWith("levelFormats/")) ++skipped;
+  const int formats = validLevelFormatCount(source);
   return QObject::tr(
-             "%1 recognized values; %2 unknown keys skipped. "
+             "%1 recognized values; %2 level formats; %3 unknown keys skipped. "
              "Machine paths stay local.")
       .arg(applicable)
+      .arg(qMax(formats, 0))
       .arg(skipped);
 }
 
