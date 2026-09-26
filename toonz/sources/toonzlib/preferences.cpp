@@ -309,6 +309,8 @@ Preferences::~Preferences() {
   // DO NOT REMOVE
 }
 
+void Preferences::syncSettings() { m_settings->sync(); }
+
 //-----------------------------------------------------------------
 
 Preferences *Preferences::instance() {

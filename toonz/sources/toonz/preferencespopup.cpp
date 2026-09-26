@@ -12,6 +12,8 @@
 #include "cleanupsettingsmodel.h"
 #include "formatsettingspopups.h"
 #include "columncommand.h"
+#include "configtransfer.h"
+#include "mainwindow.h"
 
 // TnzQt includes
 #include "toonzqt/tabbar.h"
@@ -36,6 +38,7 @@
 
 // TnzCore includes
 #include "tsystem.h"
+#include "tenv.h"
 #include "tfont.h"
 
 // TnzTools includes
@@ -59,8 +62,13 @@
 #include <QStringList>
 #include <QListWidget>
 #include <QGroupBox>
+#include <QCheckBox>
 #include <QKeySequence>
 #include <QSignalBlocker>
+#include <QDialogButtonBox>
+#include <QMessageBox>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
 using namespace DVGui;
 
@@ -1694,6 +1702,7 @@ PreferencesPopup::PreferencesPopup()
 #ifdef _WIN32
   categories << tr("Addons");
 #endif
+  categories << tr("Config Backup, Restore and Transfer");
   categoryList->addItems(categories);
   categoryList->setFixedWidth(160);
   categoryList->setCurrentRow(0);
@@ -1719,6 +1728,7 @@ PreferencesPopup::PreferencesPopup()
 #ifdef _WIN32
   stackedWidget->addWidget(createAddonsPage());
 #endif  // WIN32
+  stackedWidget->addWidget(createConfigTransferPage());
 
   QHBoxLayout* mainLayout = new QHBoxLayout();
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -1744,6 +1754,137 @@ PreferencesPopup::PreferencesPopup()
             QSignalBlocker blocker(saveboxCheck);
             saveboxCheck->setChecked(enabled);
           });
+}
+
+//-----------------------------------------------------------------------------
+
+QWidget* PreferencesPopup::createConfigTransferPage() {
+  QWidget* page       = new QWidget(this);
+  QVBoxLayout* layout = new QVBoxLayout(page);
+  QLabel* description = new QLabel(
+      tr("Save preferences, all personal room layouts, shortcuts, menus and "
+         "presets in one configuration archive. Plugins and library files "
+         "can be included separately."),
+      page);
+  description->setWordWrap(true);
+  layout->addWidget(description);
+
+  QCheckBox* recent  = new QCheckBox(tr("Include recent-file history"), page);
+  QCheckBox* library = new QCheckBox(
+      tr("Include library files (MyPaint brushes, shaders and custom styles)"),
+      page);
+  QCheckBox* plugins = new QCheckBox(tr("Include plugin files"), page);
+  layout->addWidget(recent);
+  layout->addWidget(library);
+  layout->addWidget(plugins);
+
+  QPushButton* save = new QPushButton(tr("Save Configuration..."), page);
+  QPushButton* load = new QPushButton(tr("Load Configuration..."), page);
+  layout->addWidget(save);
+  layout->addWidget(load);
+  layout->addStretch();
+
+  connect(
+      save, &QPushButton::clicked, page, [this, recent, library, plugins]() {
+        const QString filename = QFileDialog::getSaveFileName(
+            this, tr("Save Configuration"), "OpenToonz-configuration.otconfig",
+            tr("OpenToonz Configuration (*.otconfig)"));
+        if (filename.isEmpty()) return;
+        if (auto* window =
+                qobject_cast<MainWindow*>(TApp::instance()->getMainWindow()))
+          window->refreshWriteSettings();
+        m_pref->syncSettings();
+        TEnv::saveAllEnvVariables();
+        ConfigTransfer::Options options;
+        options.recentFiles = recent->isChecked();
+        options.library     = library->isChecked();
+        options.plugins     = plugins->isChecked();
+        QString error;
+        if (!ConfigTransfer::save(filename, options, error))
+          QMessageBox::warning(this, tr("Save Configuration"), error);
+        else
+          QMessageBox::information(this, tr("Save Configuration"),
+                                   tr("Configuration archive saved."));
+      });
+
+  connect(load, &QPushButton::clicked, page, [this]() {
+    const QString filename = QFileDialog::getOpenFileName(
+        this, tr("Load Configuration"), QString(),
+        tr("OpenToonz Configuration (*.otconfig);;ZIP Archives (*.zip)"));
+    if (filename.isEmpty()) return;
+    QList<ConfigTransfer::Item> items;
+    QString error;
+    if (!ConfigTransfer::inspect(filename, items, error)) {
+      QMessageBox::warning(this, tr("Load Configuration"), error);
+      return;
+    }
+    QDialog preview(this);
+    preview.setWindowTitle(tr("Review Configuration Restore"));
+    preview.resize(800, 540);
+    QVBoxLayout* content = new QVBoxLayout(&preview);
+    QLabel* help         = new QLabel(
+                tr("Select the files to restore on the next launch. Existing plugin "
+                           "and library files are never replaced unless you select them."),
+                &preview);
+    help->setWordWrap(true);
+    content->addWidget(help);
+    QTreeWidget* tree = new QTreeWidget(&preview);
+    tree->setHeaderLabels(
+        {tr("File"), tr("Status"), tr("Destination / Notes")});
+    tree->setRootIsDecorated(true);
+    tree->setColumnWidth(0, 270);
+    tree->setColumnWidth(1, 195);
+    content->addWidget(tree);
+    QMap<QString, QTreeWidgetItem*> groups;
+    QList<QTreeWidgetItem*> rows;
+    for (const ConfigTransfer::Item& item : items) {
+      if (!groups.contains(item.category)) {
+        auto* group = new QTreeWidgetItem(tree);
+        group->setText(0, item.category);
+        group->setFlags(group->flags() | Qt::ItemIsTristate |
+                        Qt::ItemIsUserCheckable);
+        groups.insert(item.category, group);
+      }
+      auto* row = new QTreeWidgetItem(groups.value(item.category));
+      rows.append(row);
+      row->setText(0, item.archivePath.mid(7 + item.category.size()));
+      row->setText(1, item.status);
+      row->setText(2, item.detail.isEmpty()
+                          ? item.destination
+                          : item.detail + "  " + item.destination);
+      row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
+      row->setCheckState(0, item.selected ? Qt::Checked : Qt::Unchecked);
+      if (!item.compatible || item.status == tr("Identical"))
+        row->setDisabled(true);
+    }
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &preview);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("Stage Restore"));
+    content->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &preview, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &preview, &QDialog::reject);
+    if (preview.exec() != QDialog::Accepted) return;
+    int selected = 0;
+    for (int i = 0; i < items.size(); ++i) {
+      items[i].selected =
+          rows[i]->checkState(0) == Qt::Checked && !rows[i]->isDisabled();
+      if (items[i].selected) ++selected;
+    }
+    if (!selected) return;
+    if (QMessageBox::question(this, tr("Stage Configuration Restore"),
+                              tr("Stage %1 files for the next launch? Existing "
+                                 "selected files will be backed up first.")
+                                  .arg(selected)) != QMessageBox::Yes)
+      return;
+    if (!ConfigTransfer::queueRestore(filename, items, error))
+      QMessageBox::warning(this, tr("Load Configuration"), error);
+    else
+      QMessageBox::information(
+          this, tr("Restore Staged"),
+          tr("The selected configuration will be installed the next time "
+             "OpenToonz starts. Close and restart OpenToonz to apply it."));
+  });
+  return page;
 }
 
 //-----------------------------------------------------------------------------

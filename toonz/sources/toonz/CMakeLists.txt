@@ -75,6 +75,8 @@ set(MOC_HEADERS
     pane.h
     pltgizmopopup.h
     preferencespopup.h
+    configtransfer.h
+    simplezipreader.h
     previewer.h
     previewfxmanager.h
     projectpopup.h
@@ -295,6 +297,7 @@ set(SOURCES
     overwritepopup.cpp
     pltgizmopopup.cpp
     preferencespopup.cpp
+    configtransfer.cpp
     projectpopup.cpp
     psdsettingspopup.cpp
     renumberpopup.cpp
