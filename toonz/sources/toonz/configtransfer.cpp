@@ -165,7 +165,7 @@ bool allowed(const QString &root, const QString &relative) {
 }
 
 bool optionalRoot(const QString &root) {
-  return root == "library" || root == "plugins";
+  return root == "library" || root == "plugins" || root == "fxs";
 }
 
 QString versionFor(const QString &file) {
@@ -474,11 +474,23 @@ bool save(const QString &archivePath, const Options &options, QString &error) {
   collect(sources, options);
   const QString target =
       QDir::cleanPath(QFileInfo(archivePath).absoluteFilePath());
+  QString targetParent = QDir::fromNativeSeparators(
+      QFileInfo(QFileInfo(target).absolutePath()).canonicalFilePath());
+#ifdef Q_OS_WIN
+  targetParent = targetParent.toCaseFolded();
+#endif
   const QStringList roots = {"settings", "config",  "fxs",    "rooms",
                              "env",      "library", "plugins"};
   for (const QString &root : roots) {
-    const QString directory = QDir::cleanPath(rootPath(root));
-    if (target.startsWith(directory + "/")) {
+    const QString rootDirectory = rootPath(root);
+    if (rootDirectory.isEmpty()) continue;
+    QString directory = QDir::fromNativeSeparators(
+        QFileInfo(rootDirectory).canonicalFilePath());
+#ifdef Q_OS_WIN
+    directory = directory.toCaseFolded();
+#endif
+    if (!directory.isEmpty() && (targetParent == directory ||
+                                 targetParent.startsWith(directory + "/"))) {
       error = QObject::tr(
           "Save the configuration archive outside the captured folders.");
       return false;

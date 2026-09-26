@@ -1812,6 +1812,11 @@ QWidget* PreferencesPopup::createConfigTransferPage() {
         this, tr("Load Configuration"), QString(),
         tr("OpenToonz Configuration (*.otconfig);;ZIP Archives (*.zip)"));
     if (filename.isEmpty()) return;
+    if (auto* window =
+            qobject_cast<MainWindow*>(TApp::instance()->getMainWindow()))
+      window->refreshWriteSettings();
+    m_pref->syncSettings();
+    TEnv::saveAllEnvVariables();
     QList<ConfigTransfer::Item> items;
     QString error;
     if (!ConfigTransfer::inspect(filename, items, error)) {
@@ -1823,8 +1828,9 @@ QWidget* PreferencesPopup::createConfigTransferPage() {
     preview.resize(800, 540);
     QVBoxLayout* content = new QVBoxLayout(&preview);
     QLabel* help         = new QLabel(
-                tr("Select the files to restore on the next launch. Existing plugin "
-                           "and library files are never replaced unless you select them."),
+                tr("Select the files to restore on the next launch. Existing plugin, "
+                           "library and FX preset files are never replaced unless "
+                           "you select them."),
                 &preview);
     help->setWordWrap(true);
     content->addWidget(help);

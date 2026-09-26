@@ -14,6 +14,8 @@ newer only when both sides have comparable package version metadata; file dates
 alone do not establish a version. Plugin packages from another OS or CPU
 architecture cannot be selected. Same-platform plugins still require the user
 to check OpenToonz API compatibility before selecting them.
+Existing FX presets are also unchecked because the folder can contain installed
+defaults that changed between builds.
 
 Recognized preference keys are merged with the destination's current INI;
 unrecognized keys and machine-specific paths are skipped. Shortcut commands
