@@ -117,6 +117,8 @@ QString destination(const QString &root, const QString &relative) {
   if (root == "env") {
     if (relative != "user.env") return QString();
     translated = userName() + ".env";
+  } else if (root == "config" && relative == "user_history.txt") {
+    translated = userName() + "_history.txt";
   } else if (root == "rooms") {
     const QStringList parts = relative.split('/');
     if (parts.size() < 2 || !safePart(parts.first())) return QString();
@@ -138,7 +140,8 @@ bool allowedConfig(const QString &relative) {
                                     "cleanupreslist.txt",
                                     "exportsettings.txt",
                                     "colornames.txt",
-                                    "safearea.ini"};
+                                    "safearea.ini",
+                                    "user_history.txt"};
   if (files.contains(relative)) return true;
   for (const QString &dir : {"outputpresets/", "qss/", "fdg/"})
     if (relative.startsWith(dir)) return true;
@@ -194,6 +197,7 @@ void addTree(QList<Source> &sources, const QString &root,
     QString relative =
         QDir(sourceDir).relativeFilePath(file).replace('\\', '/');
     if (!prefix.isEmpty()) relative = prefix + "/" + relative;
+    if (root == "config" && relative == "user_history.txt") continue;
     if (!allowed(root, relative) || QFileInfo(file).isSymLink() ||
         !noLinks(sourceDir,
                  QDir(sourceDir).relativeFilePath(file).replace('\\', '/')))
@@ -223,6 +227,12 @@ bool collect(QList<Source> &sources, const Options &options) {
   const QString env = QDir(rootPath("env")).filePath(userName() + ".env");
   if (QFileInfo(env).isFile() && !QFileInfo(env).isSymLink())
     sources.append({"env", "user.env", env});
+  if (options.recentFiles) {
+    const QString history =
+        QDir(rootPath("config")).filePath(userName() + "_history.txt");
+    if (QFileInfo(history).isFile() && !QFileInfo(history).isSymLink())
+      sources.append({"config", "user_history.txt", history});
+  }
   if (options.library)
     addTree(sources, "library", rootPath("library"), "", options);
   if (options.library) {
@@ -750,6 +760,13 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
     }
     if (relative == "mainwindow.ini" || relative == "popups.ini")
       item.selected = false;  // Screen geometry is machine-specific.
+    if (relative == "RecentFiles.ini" || relative == "fliphistory.ini" ||
+        relative == "user_history.txt") {
+      item.selected = false;
+      item.detail   = QObject::tr(
+            "Recent-file paths may be machine-specific; review before "
+              "restoring them.");
+    }
     if (root == "settings" && relative == "preferences.ini") {
       item.selected =
           item.compatible && item.status != QObject::tr("Identical");

@@ -5,6 +5,8 @@ ZIP writer. It backs up personal preferences, shortcuts, room sets, menus, user
 settings, selected config files, FX presets and registered environment values.
 The user may also include the OpenToonz library (including MyPaint brushes and
 brushes found in standard MyPaint data locations) and the plugin folder.
+Recent-file history is opt in on export and unchecked on restore; the personal
+history filename is remapped to the destination username.
 
 ## Restore behavior
 
