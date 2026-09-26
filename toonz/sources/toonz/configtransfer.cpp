@@ -335,7 +335,9 @@ bool filterPreferences(const QString &sourcePath, const QString &targetPath,
 }
 
 bool filterShortcuts(const QString &sourcePath, const QString &targetPath,
-                     const QString &outputPath, QString &error) {
+                     const QString &outputPath,
+                     const QSet<QString> &restoredRoomCommands,
+                     QString &error) {
   QSettings source(sourcePath, QSettings::IniFormat);
   QSettings target(targetPath, QSettings::IniFormat);
   QSettings output(outputPath, QSettings::IniFormat);
@@ -343,7 +345,8 @@ bool filterShortcuts(const QString &sourcePath, const QString &targetPath,
     output.setValue(key, target.value(key));
   source.beginGroup("shortcuts");
   for (const QString &id : source.allKeys()) {
-    if (!CommandManager::instance()->getAction(id.toUtf8().constData(), false))
+    if (!restoredRoomCommands.contains(id) &&
+        !CommandManager::instance()->getAction(id.toUtf8().constData(), false))
       continue;
     const QString shortcut = source.value(id).toString();
     if (shortcut.isEmpty() || !QKeySequence(shortcut).isEmpty())
@@ -401,7 +404,8 @@ bool filterEnvironment(const QString &sourcePath, const QString &targetPath,
   return true;
 }
 
-bool validRoom(SimpleZipReader &reader, const QString &entry) {
+bool validRoom(SimpleZipReader &reader, const QString &entry,
+               QString *roomName = nullptr) {
   QTemporaryFile temp;
   if (!temp.open() || !reader.extract(entry, &temp, 4 * 1024 * 1024))
     return false;
@@ -421,6 +425,7 @@ bool validRoom(SimpleZipReader &reader, const QString &entry) {
     room.endGroup();
     if (!present) return false;
   }
+  if (roomName) *roomName = name;
   return true;
 }
 
@@ -599,17 +604,21 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
       producer.value("architecture").toString() ==
           QSysInfo::currentCpuArchitecture();
   QSet<QString> invalidRoomSets;
+  QSet<QString> roomSets;
+  QSet<QString> roomLists;
   for (const QJsonValue &value : entries) {
     const QJsonObject object = value.toObject();
     if (object.value("root").toString() != "rooms") continue;
     const QString relative = object.value("relative").toString();
     const QString set      = relative.section('/', 0, 0);
     const QString entry    = object.value("path").toString();
+    roomSets.insert(set);
     if (relative.endsWith(".ini") && !validRoom(reader, entry))
       invalidRoomSets.insert(set);
     if (relative.endsWith(".xml") && !validXml(reader, entry))
       invalidRoomSets.insert(set);
     if (relative.endsWith("/layouts.txt")) {
+      roomLists.insert(set);
       QByteArray bytes;
       QBuffer buffer(&bytes);
       buffer.open(QIODevice::WriteOnly);
@@ -626,6 +635,8 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
       }
     }
   }
+  for (const QString &set : roomSets)
+    if (!roomLists.contains(set)) invalidRoomSets.insert(set);
   quint64 total = 0;
   QSet<QString> targets;
   for (const QJsonValue &value : entries) {
@@ -684,7 +695,8 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
           QObject::tr("This room set contains an invalid or missing layout.");
     }
     if ((root == "settings" || root == "fxs" || root == "config") &&
-        relative.endsWith(".xml") && !validXml(reader, archiveName)) {
+        (relative.endsWith(".xml") || relative.endsWith(".ui")) &&
+        !validXml(reader, archiveName)) {
       item.compatible = false;
       item.detail     = QObject::tr("This XML file is invalid or too large.");
     }
@@ -797,6 +809,16 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
   for (const QJsonValue &v : manifests)
     digests.insert(v.toObject().value("path").toString(),
                    v.toObject().value("sha256").toString());
+  QSet<QString> restoredRoomCommands;
+  for (const Item &item : verified) {
+    if (item.category != "rooms" || !item.archivePath.endsWith(".ini") ||
+        (!choices.contains(item.archivePath) &&
+         item.status != QObject::tr("Identical")))
+      continue;
+    QString roomName;
+    if (validRoom(reader, item.archivePath, &roomName))
+      restoredRoomCommands.insert("MI_Room_" + roomName);
+  }
   QJsonArray selected;
   bool failed = false;
   for (const Item &item : verified) {
@@ -844,7 +866,8 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
     } else if (item.category == "settings" &&
                item.archivePath == "files/settings/shortcuts.ini") {
       const QString merged = staged + ".merged";
-      if (!filterShortcuts(staged, item.destination, merged, error)) {
+      if (!filterShortcuts(staged, item.destination, merged,
+                           restoredRoomCommands, error)) {
         failed = true;
         break;
       }
