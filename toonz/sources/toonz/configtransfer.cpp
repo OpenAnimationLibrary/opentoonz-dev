@@ -26,14 +26,15 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QSet>
+#include <QSize>
 #include <QSysInfo>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QVersionNumber>
 #include <QXmlStreamReader>
 
-#include <limits>
 #include <cmath>
+#include <limits>
 
 namespace ConfigTransfer {
 namespace {
@@ -159,7 +160,7 @@ bool allowed(const QString &root, const QString &relative) {
     const QString file = parts.last();
     return parts.size() == 2 &&
            (file.endsWith(".ini") || file.endsWith(".xml") ||
-            file == "layouts.txt" || file == "currentRoom.txt");
+            file.endsWith(".txt"));
   }
   if (root == "settings") {
     return !relative.startsWith("layouts/") &&
@@ -696,7 +697,7 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
       invalidRoomSets.insert(set);
     if (relative.endsWith(".xml") && !validXml(reader, entry))
       invalidRoomSets.insert(set);
-    if (relative.endsWith("/layouts.txt")) {
+    if (relative.endsWith(".txt") && !relative.endsWith("/currentRoom.txt")) {
       roomLists.insert(set);
       QByteArray bytes;
       QBuffer buffer(&bytes);
@@ -705,13 +706,16 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
         invalidRoomSets.insert(set);
         continue;
       }
+      bool hasRoom = false;
       for (const QByteArray &raw : bytes.split('\n')) {
         const QString room = QString::fromUtf8(raw).trimmed();
+        if (!room.isEmpty()) hasRoom = true;
         if (!room.isEmpty() &&
             (!safePart(room) || !room.endsWith(".ini") ||
              !reader.entries().contains("files/rooms/" + set + "/" + room)))
           invalidRoomSets.insert(set);
       }
+      if (!hasRoom) invalidRoomSets.insert(set);
     }
   }
   for (const QString &set : roomSets)
@@ -791,6 +795,7 @@ bool inspect(const QString &archivePath, QList<Item> &items, QString &error) {
     item.existing = QFileInfo::exists(item.destination);
     const QString localHash =
         item.existing ? hashFile(item.destination) : QString();
+    item.currentSha256 = localHash;
     if (!item.compatible)
       item.status = QObject::tr("Unsupported");
     else if (localHash == sha)
@@ -867,6 +872,24 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
       return false;
     }
   }
+  QSet<QString> requestedPlugins;
+  for (const Item &item : verified) {
+    if (item.category != "plugins" || !choices.contains(item.archivePath))
+      continue;
+    const QString package = item.archivePath.section('/', 2, 2);
+    if (item.archivePath.count('/') > 2) requestedPlugins.insert(package);
+  }
+  for (const Item &item : verified) {
+    if (item.category == "plugins" && item.archivePath.count('/') > 2 &&
+        requestedPlugins.contains(item.archivePath.section('/', 2, 2)) &&
+        item.status != QObject::tr("Identical") &&
+        !choices.contains(item.archivePath)) {
+      error = QObject::tr(
+          "Select every changed file in a plugin package, or leave "
+          "that package unchecked.");
+      return false;
+    }
+  }
   const QString base = pendingDir();
   if (base.isEmpty()) {
     error = QObject::tr("The configuration folder is not available.");
@@ -913,7 +936,9 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
       continue;
     const Item choice = choices.value(item.archivePath);
     if (choice.destination != item.destination ||
-        (item.existing && !choice.existing)) {
+        choice.existing != item.existing ||
+        choice.currentSha256 != item.currentSha256 ||
+        choice.status != item.status) {
       error = QObject::tr("The restore preview changed. Please reopen it.");
       QDir(base).removeRecursively();
       return false;
@@ -941,6 +966,10 @@ bool queueRestore(const QString &archivePath, const QList<Item> &items,
         {"staged", staged},
         {"root", item.category},
         {"relative", item.archivePath.mid(7 + item.category.size())}};
+    if (optionalRoot(item.category)) {
+      record["expectedExisting"] = item.existing;
+      record["expectedSha256"]   = item.currentSha256;
+    }
     if (item.category == "settings" &&
         item.archivePath == "files/settings/preferences.ini") {
       const QString merged = staged + ".merged";
@@ -1072,6 +1101,17 @@ bool applyPending(QString &error) {
         !QFileInfo(staged).isFile() || QFileInfo(staged).isSymLink() ||
         hashFile(staged) != entry.value("sha256").toString()) {
       error = QObject::tr("Invalid staged configuration path.");
+      break;
+    }
+    if (optionalRoot(root) &&
+        (QFileInfo::exists(target) !=
+             entry.value("expectedExisting").toBool() ||
+         (QFileInfo::exists(target) &&
+          hashFile(target) != entry.value("expectedSha256").toString()))) {
+      error = QObject::tr(
+                  "%1 changed after the restore preview. Review the "
+                  "archive again before replacing it.")
+                  .arg(target);
       break;
     }
     if (!QDir().mkpath(QFileInfo(target).absolutePath())) {

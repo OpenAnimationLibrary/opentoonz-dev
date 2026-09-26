@@ -17,6 +17,7 @@ struct Item {
   QString destination;
   QString status;
   QString detail;
+  QString currentSha256;  // Destination at preview time.
   bool selected   = false;
   bool existing   = false;
   bool compatible = true;

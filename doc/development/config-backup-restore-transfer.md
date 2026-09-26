@@ -17,20 +17,24 @@ alone do not establish a version. Plugin packages from another OS or CPU
 architecture cannot be selected. Same-platform plugins still require the user
 to check OpenToonz API compatibility before selecting them.
 Existing FX presets are also unchecked because the folder can contain installed
-defaults that changed between builds.
+defaults that changed between builds. Changed plugin files within a package
+must be selected together so a binary and its metadata cannot diverge.
+If a selected optional destination changes between review and restart,
+startup stops the restore before replacing anything.
 
 Recognized preference keys are merged with the destination's current INI;
 the separate user level-format array is validated and copied using fields
 recognized by the current build. Unrecognized keys and machine-specific paths
-are skipped. Shortcut commands
-that do not exist in the receiving build are skipped; room commands belonging
+are skipped. Shortcut commands that do not exist in the receiving build are
+skipped; room commands belonging
 to restored layouts are kept for registration after restart. Environment
 variables are limited to names registered by that build, and values resembling
 machine paths stay local. Room INIs receive basic syntax and pane-sequence
-validation;
-unavailable panel types can fall back to OpenToonz's generic panel behavior.
+validation; unavailable panel types can fall back to OpenToonz's generic panel
+behavior.
 Room XML and selected user XML files receive syntax validation. A changed room
-set must be selected as a unit so its list, layouts and menus stay together.
+set must be selected as a unit so its lists, layouts and menus stay together.
+Named room lists used with `-layout` are included alongside `layouts.txt`.
 
 Selected files are staged under the current config root and installed **at the
 next launch**, before preferences, rooms and plugins load. Every destination is

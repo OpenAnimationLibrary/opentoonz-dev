@@ -1842,6 +1842,7 @@ QWidget* PreferencesPopup::createConfigTransferPage() {
     tree->setColumnWidth(1, 195);
     content->addWidget(tree);
     QMap<QString, QTreeWidgetItem*> groups;
+    QMap<QString, QTreeWidgetItem*> folders;
     QList<QTreeWidgetItem*> rows;
     for (const ConfigTransfer::Item& item : items) {
       if (!groups.contains(item.category)) {
@@ -1851,9 +1852,25 @@ QWidget* PreferencesPopup::createConfigTransferPage() {
                         Qt::ItemIsUserCheckable);
         groups.insert(item.category, group);
       }
-      auto* row = new QTreeWidgetItem(groups.value(item.category));
+      QString label           = item.archivePath.mid(7 + item.category.size());
+      QTreeWidgetItem* parent = groups.value(item.category);
+      if ((item.category == "rooms" || item.category == "plugins") &&
+          label.contains('/')) {
+        const QString folder = label.section('/', 0, 0);
+        const QString key    = item.category + "/" + folder;
+        if (!folders.contains(key)) {
+          auto* group = new QTreeWidgetItem(parent);
+          group->setText(0, folder);
+          group->setFlags(group->flags() | Qt::ItemIsTristate |
+                          Qt::ItemIsUserCheckable);
+          folders.insert(key, group);
+        }
+        parent = folders.value(key);
+        label  = label.mid(folder.size() + 1);
+      }
+      auto* row = new QTreeWidgetItem(parent);
       rows.append(row);
-      row->setText(0, item.archivePath.mid(7 + item.category.size()));
+      row->setText(0, label);
       row->setText(1, item.status);
       row->setText(2, item.detail.isEmpty()
                           ? item.destination

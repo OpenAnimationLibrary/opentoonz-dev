@@ -54,6 +54,8 @@ void sourceProfile() {
         "MI_Gone=Ctrl+G\n");
   write(file("profiles/layouts/personal/Default.alice/layouts.txt"),
         "room1.ini\n");
+  write(file("profiles/layouts/personal/Default.alice/studio_layout.txt"),
+        "room1.ini\n");
   write(file("profiles/layouts/personal/Default.alice/room1.ini"),
         "[room]\nname=Drawing\nhierarchy=0\n"
         "pane_0\\name=SceneViewer\n");
@@ -66,8 +68,11 @@ void sourceProfile() {
         "RecognizedOption \"from-source\"\n"
         "RemovedOption \"obsolete\"\n");
   write(file("library/mypaint brushes/Custom/brush.myb"), "brush data");
+  write(file("library/mypaint brushes/Custom/new.myb"), "new brush");
   write(file("plugins/example/manifest.json"), "{\"version\":\"1.0\"}");
   write(file("plugins/example/example.dll"), "old plugin");
+  write(file("plugins/upgrade/manifest.json"), "{\"version\":\"3.0\"}");
+  write(file("plugins/upgrade/upgrade.dll"), "upgraded plugin");
 }
 
 void destinationProfile() {
@@ -82,6 +87,9 @@ void destinationProfile() {
         "OnlyDestination \"preserved\"\n");
   write(file("plugins/example/manifest.json"), "{\"version\":\"2.0\"}");
   write(file("plugins/example/example.dll"), "newer plugin");
+  write(file("plugins/upgrade/manifest.json"), "{\"version\":\"2.0\"}");
+  write(file("plugins/upgrade/upgrade.dll"), "older plugin");
+  write(file("library/mypaint brushes/Custom/brush.myb"), "local brush");
 }
 
 void roundTrip(const QString &scratch) {
@@ -115,10 +123,17 @@ void roundTrip(const QString &scratch) {
   check(plugin.existing && !plugin.selected &&
             plugin.status.contains("Installed newer"),
         "newer installed plugin was not protected");
-  check(item(items, "files/library/mypaint brushes/Custom/brush.myb").selected,
-        "missing MyPaint brush was not selected");
+  check(
+      !item(items, "files/library/mypaint brushes/Custom/brush.myb").selected &&
+          item(items, "files/library/mypaint brushes/Custom/new.myb").selected,
+      "missing MyPaint brush was not selected");
   for (auto &candidate : items)
-    if (candidate.category == "env") candidate.selected = true;
+    if (candidate.category == "env" ||
+        candidate.archivePath.startsWith("files/plugins/upgrade/"))
+      candidate.selected = true;
+  check(item(items, "files/plugins/upgrade/upgrade.dll")
+            .status.contains("Archive newer"),
+        "newer archived plugin was not identified");
   check(ConfigTransfer::queueRestore(archive, items, error),
         qPrintable("staging failed: " + error));
   check(QFileInfo::exists(file("config/config-restore-transfer/pending.json")),
@@ -152,16 +167,42 @@ void roundTrip(const QString &scratch) {
                 "[room]\nname=Drawing\nhierarchy=0\n"
                 "pane_0\\name=SceneViewer\n" &&
             read(file("profiles/layouts/personal/Default.bob/layouts.txt")) ==
+                "room1.ini\n" &&
+            read(file(
+                "profiles/layouts/personal/Default.bob/studio_layout.txt")) ==
                 "room1.ini\n",
         "room set did not survive restore");
-  check(read(file("config/brush_vector.txt")) == "custom brush" &&
-            read(file("library/mypaint brushes/Custom/brush.myb")) ==
-                "brush data" &&
-            read(file("plugins/example/example.dll")) == "newer plugin",
-        "config, library, or plugin restore policy failed");
+  check(
+      read(file("config/brush_vector.txt")) == "custom brush" &&
+          read(file("library/mypaint brushes/Custom/brush.myb")) ==
+              "local brush" &&
+          read(file("library/mypaint brushes/Custom/new.myb")) == "new brush" &&
+          read(file("plugins/example/example.dll")) == "newer plugin" &&
+          read(file("plugins/upgrade/upgrade.dll")) == "upgraded plugin",
+      "config, library, or plugin restore policy failed");
   check(read(file("profiles/env/bob.env")).contains("from-source") &&
             !read(file("profiles/env/bob.env")).contains("RemovedOption"),
         "environment migration failed");
+
+  // A newly changed local file must not be silently replaced at startup,
+  // even when the user chose its previous version in the preview.
+  QList<ConfigTransfer::Item> conflictItems;
+  error.clear();
+  check(ConfigTransfer::inspect(archive, conflictItems, error),
+        qPrintable("second inspect failed: " + error));
+  for (auto &candidate : conflictItems)
+    candidate.selected = candidate.archivePath ==
+                         "files/library/mypaint brushes/Custom/brush.myb";
+  check(ConfigTransfer::queueRestore(archive, conflictItems, error),
+        qPrintable("second staging failed: " + error));
+  write(file("library/mypaint brushes/Custom/brush.myb"),
+        "edited after staging");
+  error.clear();
+  check(!ConfigTransfer::applyPending(error) && error.contains("changed"),
+        "startup ignored a changed optional destination");
+  check(read(file("library/mypaint brushes/Custom/brush.myb")) ==
+            "edited after staging",
+        "changed library file was overwritten");
 }
 
 }  // namespace
