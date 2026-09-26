@@ -290,8 +290,18 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON -DBUILD_CONFIG_TRANSFER_TESTS=ON
         shell: cmd
+
+      - name: Test configuration ZIP reader
+        shell: cmd
+        run: |
+          cd toonz\build
+          cmake --build . --config RelWithDebInfo --target configtransfer_zip_test --parallel
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          set "PATH=%QT_PATH%\bin;%PATH%"
+          ctest -C RelWithDebInfo --output-on-failure -R "^configtransfer_zip$"
+          if %errorlevel% neq 0 exit /b %errorlevel%
 
       - name: Build and test OpenEXR image I/O and level source
         shell: cmd

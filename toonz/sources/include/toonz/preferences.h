@@ -150,6 +150,7 @@ public:
 
   void setValue(const PreferencesItemId id, QVariant value,
                 bool saveToFile = true);
+  void syncSettings();
 
   // General settings  tab
   bool isDefaultViewerEnabled() const {

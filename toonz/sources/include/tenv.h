@@ -6,6 +6,7 @@
 //#include "texception.h"
 #include "tgeometry.h"
 #include "tfilepath.h"
+#include <set>
 
 //===================================================================
 
@@ -142,6 +143,8 @@ DVAPI TFilePath getConfigDir();
 DVAPI void setStuffDir(const TFilePath &stuffDir);
 
 DVAPI void saveAllEnvVariables();
+// Names registered by this build, excluding legacy names found only in a file.
+DVAPI std::set<std::string> getRegisteredVariableNames();
 
 // register command line argument paths.
 // returns true on success
