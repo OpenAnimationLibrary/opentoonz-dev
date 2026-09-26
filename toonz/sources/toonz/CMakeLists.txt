@@ -479,6 +479,12 @@ else()
     #)
 endif()
 
+if(BUILD_CONFIG_TRANSFER_TESTS)
+    add_executable(configtransfer_zip_test tests/simplezipreader_test.cpp)
+    target_link_libraries(configtransfer_zip_test PRIVATE Qt5::Core)
+    add_test(NAME configtransfer_zip COMMAND configtransfer_zip_test)
+endif()
+
 if(WITH_TRANSLATION)
     add_translation(toonz ${HEADERS} ${SOURCES})
     add_compile_translations_command(OpenToonz toonz)

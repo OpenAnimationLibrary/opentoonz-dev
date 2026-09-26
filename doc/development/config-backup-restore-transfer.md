@@ -41,6 +41,10 @@ dependency is present, nor does it validate a plugin's OpenToonz ABI.
 
 ## Review and testing
 
+The optional `BUILD_CONFIG_TRANSFER_TESTS` CMake target runs stored ZIP
+round-trip, CRC, size limit, traversal, duplicate entry, header mismatch,
+method, and ASCII filename checks. Windows CI builds and runs this target.
+
 1. Modify preferences, shortcuts, two named rooms and a custom brush. Export,
    inspect the ZIP manifest, then restore to a separate portable installation.
 2. Transfer between two usernames and a different monitor arrangement. Confirm
