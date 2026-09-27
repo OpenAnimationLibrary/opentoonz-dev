@@ -24,14 +24,19 @@ startup stops the restore before replacing anything.
 
 Recognized preference keys are merged with the destination's current INI;
 the separate user level-format array is validated and copied using fields
-recognized by the current build. Unrecognized keys and machine-specific paths
+recognized by the current build. Five legacy preference names are translated
+using the current build's compatibility rules when the archive does not have
+the replacement key. The preview counts translated, removed, invalid and
+machine-path values. Unknown keys, malformed values and machine-specific paths
 are skipped. Shortcut commands that do not exist in the receiving build are
-skipped; room commands belonging
-to restored layouts are kept for registration after restart. Environment
+skipped; room commands belonging to restored layouts are kept for registration
+after restart. Environment
 variables are limited to names registered by that build, and values resembling
-machine paths stay local. Room INIs receive basic syntax and pane-sequence
-validation; unavailable panel types can fall back to OpenToonz's generic panel
-behavior.
+machine paths stay local. Room INIs are checked against the docking hierarchy
+grammar, including pane indices, nested regions, tab groups and active tabs.
+If any layout fails validation, its entire set is disabled in the preview and
+the destination set remains available. Unavailable panel types can fall back
+to OpenToonz's generic panel behavior.
 Room XML and selected user XML files receive syntax validation. A changed room
 set must be selected as a unit so its lists, layouts and menus stay together.
 Named room lists used with `-layout` are included alongside `layouts.txt`.
@@ -55,9 +60,10 @@ The optional `BUILD_CONFIG_TRANSFER_TESTS` CMake targets run stored ZIP
 round-trip, CRC, size limit, traversal, duplicate entry, header mismatch,
 method, and ASCII filename checks. A second focused test builds the production
 transfer code with isolated OpenToonz paths and runs save, inspect, stage and
-startup apply across two user profiles. It checks registered preferences,
-custom level formats, removed options, room layouts, shortcuts, environment
-variables, MyPaint files and an existing newer plugin. Windows CI runs both.
+startup apply across two user profiles. It checks registered and legacy
+preferences, invalid values, custom level formats, removed options, tabbed and
+invalid room layouts, shortcuts, environment variables, MyPaint files and an
+existing newer plugin. Windows CI runs both.
 
 1. Modify preferences, shortcuts, two named rooms and a custom brush. Export,
    inspect the ZIP manifest, then restore to a separate portable installation.

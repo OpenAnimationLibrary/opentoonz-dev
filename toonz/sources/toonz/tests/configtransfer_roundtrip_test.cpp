@@ -46,21 +46,35 @@ const ConfigTransfer::Item &item(const QList<ConfigTransfer::Item> &items,
 void sourceProfile() {
   write(file("profiles/layouts/settings.alice/preferences.ini"),
         "RecognizedOption=from-source\nLocalPath=C:/source\n"
-        "RemovedOption=obsolete\n[levelFormats]\nsize=1\n"
+        "RemovedOption=obsolete\nBrokenInt=1.5\nInvalidBool=perhaps\n"
+        "AutocreationType=2\nlevelNameOnEachMarkerEnabled=1\n"
+        "scanLevelType=png\ninitialLoadTlvCachingBehavior=1\n"
+        "inputCellsWithoutDoubleClickingEnabled=1\n"
+        "[levelFormats]\nsize=1\n"
         "1\\name=Custom PNG\n1\\regexp=.*\\.png\n"
         "1\\priority=10\n1\\antialias=40\n1\\removedField=old\n");
   write(file("profiles/layouts/settings.alice/shortcuts.ini"),
         "[shortcuts]\nMI_Open=Ctrl+M\nMI_Room_Drawing=Alt+1\n"
         "MI_Gone=Ctrl+G\n");
   write(file("profiles/layouts/personal/Default.alice/layouts.txt"),
-        "room1.ini\n");
+        "room1.ini\nroom2.ini\n");
   write(file("profiles/layouts/personal/Default.alice/studio_layout.txt"),
-        "room1.ini\n");
+        "room1.ini\nroom2.ini\n");
   write(file("profiles/layouts/personal/Default.alice/room1.ini"),
-        "[room]\nname=Drawing\nhierarchy=0\n"
+        "[room]\nname=Drawing\nhierarchy=-1 0 0\n"
         "pane_0\\name=SceneViewer\n");
+  write(file("profiles/layouts/personal/Default.alice/room2.ini"),
+        "[room]\nname=Animation\nhierarchy=-1 1 [ 0 { 1 2 @0 } ]\n"
+        "pane_0\\name=SceneViewer\n"
+        "pane_1\\name=Xsheet\n"
+        "pane_2\\name=FunctionEditor\n");
   write(file("profiles/layouts/personal/Default.alice/room1_menubar.xml"),
         "<menubar><menu/></menubar>");
+  write(file("profiles/layouts/personal/Invalid.alice/layouts.txt"),
+        "room1.ini\n");
+  write(file("profiles/layouts/personal/Invalid.alice/room1.ini"),
+        "[room]\nname=Broken\nhierarchy=-1 0 [ 0 0 ]\n"
+        "pane_0\\name=SceneViewer\n");
   write(file("profiles/layouts/personal/Default.alice/currentRoom.txt"),
         "Drawing");
   write(file("config/brush_vector.txt"), "custom brush");
@@ -78,7 +92,8 @@ void sourceProfile() {
 void destinationProfile() {
   write(file("profiles/layouts/settings.bob/preferences.ini"),
         "RecognizedOption=from-destination\nLocalPath=D:/local\n"
-        "OnlyDestination=preserved\n[levelFormats]\nsize=1\n"
+        "OnlyDestination=preserved\nBrokenInt=4\nInvalidBool=1\n"
+        "[levelFormats]\nsize=1\n"
         "1\\name=Old Format\n1\\regexp=.*\\.tga\n");
   write(file("profiles/layouts/settings.bob/shortcuts.ini"),
         "[shortcuts]\nMI_Open=Ctrl+O\nMI_Local=F5\n");
@@ -90,6 +105,8 @@ void destinationProfile() {
   write(file("plugins/upgrade/manifest.json"), "{\"version\":\"2.0\"}");
   write(file("plugins/upgrade/upgrade.dll"), "older plugin");
   write(file("library/mypaint brushes/Custom/brush.myb"), "local brush");
+  write(file("profiles/layouts/personal/Invalid.bob/layouts.txt"),
+        "existing.ini\n");
 }
 
 void roundTrip(const QString &scratch) {
@@ -97,6 +114,22 @@ void roundTrip(const QString &scratch) {
       0, {"RecognizedOption", QMetaType::QString, {}, {}});
   Preferences::instance()->m_items.insert(
       1, {"LocalPath", QMetaType::QString, {}, {}});
+  Preferences::instance()->m_items.insert(
+      2, {"EnableAutocreation", QMetaType::Bool, {}, {}});
+  Preferences::instance()->m_items.insert(
+      3, {"NumberingSystem", QMetaType::Int, 0, 2});
+  Preferences::instance()->m_items.insert(
+      4, {"levelNameDisplayType", QMetaType::Int, 0, 2});
+  Preferences::instance()->m_items.insert(
+      5, {"DefRasterFormat", QMetaType::QString, {}, {}});
+  Preferences::instance()->m_items.insert(
+      6, {"rasterLevelCachingBehavior", QMetaType::Int, 0, 2});
+  Preferences::instance()->m_items.insert(
+      7, {"cellInputMethod", QMetaType::Int, 0, 2});
+  Preferences::instance()->m_items.insert(
+      8, {"BrokenInt", QMetaType::Int, 0, 5});
+  Preferences::instance()->m_items.insert(
+      9, {"InvalidBool", QMetaType::Bool, {}, {}});
 
   TestEnvironment::root() = QDir(scratch).filePath("source");
   TestEnvironment::user() = "alice";
@@ -117,8 +150,18 @@ void roundTrip(const QString &scratch) {
   const auto &room = item(items, "files/rooms/Default/room1.ini");
   check(room.selected && room.destination.endsWith("Default.bob/room1.ini"),
         "personal room did not map to destination user");
+  check(item(items, "files/rooms/Default/room2.ini").selected,
+        "valid tabbed layout was not accepted");
+  check(!item(items, "files/rooms/Invalid/room1.ini").compatible &&
+            !item(items, "files/rooms/Invalid/layouts.txt").selected,
+        "malformed room hierarchy did not block its entire set");
   check(item(items, "files/settings/preferences.ini").selected,
         "different preferences were not selected");
+  check(item(items, "files/settings/preferences.ini")
+            .detail.contains("6 old values translated") &&
+            item(items, "files/settings/preferences.ini")
+                .detail.contains("2 invalid values"),
+        "preference preview did not explain migrations and invalid values");
   const auto &plugin = item(items, "files/plugins/example/example.dll");
   check(plugin.existing && !plugin.selected &&
             plugin.status.contains("Installed newer"),
@@ -149,8 +192,18 @@ void roundTrip(const QString &scratch) {
         "recognized preference did not migrate");
   check(preferences.value("LocalPath").toString() == "D:/local" &&
             preferences.value("OnlyDestination").toString() == "preserved" &&
-            !preferences.contains("RemovedOption"),
+            preferences.value("BrokenInt").toInt() == 4 &&
+            preferences.value("InvalidBool").toBool() &&
+            !preferences.contains("RemovedOption") &&
+            !preferences.contains("AutocreationType"),
         "migration replaced local or removed preferences");
+  check(preferences.value("EnableAutocreation").toBool() &&
+            preferences.value("NumberingSystem").toInt() == 1 &&
+            preferences.value("levelNameDisplayType").toInt() == 1 &&
+            preferences.value("DefRasterFormat").toString() == "png" &&
+            preferences.value("rasterLevelCachingBehavior").toInt() == 1 &&
+            preferences.value("cellInputMethod").toInt() == 2,
+        "known legacy preferences did not migrate");
   check(preferences.value("levelFormats/1/name").toString() == "Custom PNG" &&
             preferences.value("levelFormats/1/antialias").toInt() == 40 &&
             !preferences.contains("levelFormats/1/removedField"),
@@ -164,13 +217,19 @@ void roundTrip(const QString &scratch) {
           !shortcuts.contains("shortcuts/MI_Gone"),
       "shortcut compatibility merge failed");
   check(read(file("profiles/layouts/personal/Default.bob/room1.ini")) ==
-                "[room]\nname=Drawing\nhierarchy=0\n"
+                "[room]\nname=Drawing\nhierarchy=-1 0 0\n"
                 "pane_0\\name=SceneViewer\n" &&
             read(file("profiles/layouts/personal/Default.bob/layouts.txt")) ==
-                "room1.ini\n" &&
+                "room1.ini\nroom2.ini\n" &&
             read(file(
                 "profiles/layouts/personal/Default.bob/studio_layout.txt")) ==
-                "room1.ini\n",
+                "room1.ini\nroom2.ini\n" &&
+            read(file("profiles/layouts/personal/Default.bob/room2.ini"))
+                .contains("{ 1 2 @0 }") &&
+            read(file("profiles/layouts/personal/Invalid.bob/layouts.txt")) ==
+                "existing.ini\n" &&
+            !QFileInfo::exists(
+                file("profiles/layouts/personal/Invalid.bob/room1.ini")),
         "room set did not survive restore");
   check(
       read(file("config/brush_vector.txt")) == "custom brush" &&

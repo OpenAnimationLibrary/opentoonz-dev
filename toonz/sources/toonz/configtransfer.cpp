@@ -31,9 +31,11 @@
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QVersionNumber>
+#include <QVector>
 #include <QXmlStreamReader>
 
 #include <cmath>
+#include <functional>
 #include <limits>
 
 namespace ConfigTransfer {
@@ -302,16 +304,76 @@ bool validType(const PreferencesItem &item, const QVariant &value) {
     return size.width() > 0 && size.height() > 0 && size.width() <= 4096 &&
            size.height() <= 4096;
   }
+  if (item.type == QMetaType::Bool) {
+    const QString boolean = value.toString().toLower();
+    return boolean == "0" || boolean == "1" || boolean == "true" ||
+           boolean == "false";
+  }
   if (!value.canConvert(item.type)) return false;
   if (item.type == QMetaType::Int || item.type == QMetaType::Double) {
     bool ok        = false;
     const double n = value.toDouble(&ok);
-    if (!ok || (item.min.isValid() && n < item.min.toDouble())) return false;
+    if (!ok || !std::isfinite(n)) return false;
+    if (item.type == QMetaType::Int) {
+      bool integerOk = false;
+      const int integer = value.toInt(&integerOk);
+      if (!integerOk || n != integer) return false;
+    }
+    if (item.min.isValid() && n < item.min.toDouble())
+      return false;
     if (item.max.isValid() && item.max.toDouble() >= 0 &&
         n > item.max.toDouble())
       return false;
   }
   return true;
+}
+
+bool machinePathKey(const QString &key) {
+  return key.contains("path", Qt::CaseInsensitive) ||
+         key.contains("folder", Qt::CaseInsensitive) ||
+         key.contains("root", Qt::CaseInsensitive) ||
+         key.contains("directory", Qt::CaseInsensitive);
+}
+
+// Keep these translations aligned with Preferences::resolveCompatibility().
+// Apply them only if the archive has no value for the receiving build's key.
+QMap<QString, QVariant> legacyPreferences(QSettings &source) {
+  QMap<QString, QVariant> values;
+  auto oldInt = [&source](const QString &key, int &number) {
+    if (!source.contains(key)) return false;
+    bool ok = false;
+    number  = source.value(key).toInt(&ok);
+    return ok;
+  };
+  int number = 0;
+  if (oldInt("AutocreationType", number) && number >= 0 && number <= 2) {
+    values.insert("EnableAutocreation", number != 0);
+    if (number != 0) values.insert("NumberingSystem", number - 1);
+  }
+  if (oldInt("levelNameOnEachMarkerEnabled", number) &&
+      (number == 0 || number == 1))
+    values.insert("levelNameDisplayType", number);
+  if (source.contains("scanLevelType"))
+    values.insert("DefRasterFormat", source.value("scanLevelType"));
+  if (oldInt("initialLoadTlvCachingBehavior", number))
+    values.insert("rasterLevelCachingBehavior", number);
+  if (oldInt("inputCellsWithoutDoubleClickingEnabled", number) &&
+      number == 1)
+    values.insert("cellInputMethod", 2);
+  return values;
+}
+
+QMap<QString, QVariant> applicableLegacyPreferences(QSettings &source) {
+  QMap<QString, QVariant> applicable;
+  const auto legacy = legacyPreferences(source);
+  for (const PreferencesItem &item : Preferences::instance()->m_items) {
+    if (source.contains(item.idString) || machinePathKey(item.idString) ||
+        !legacy.contains(item.idString) ||
+        !validType(item, legacy.value(item.idString)))
+      continue;
+    applicable.insert(item.idString, legacy.value(item.idString));
+  }
+  return applicable;
 }
 
 // The level format array is stored in preferences.ini, but it is not a
@@ -375,18 +437,17 @@ bool filterPreferences(const QString &sourcePath, const QString &targetPath,
   for (const QString &key : target.allKeys())
     output.setValue(key, target.value(key));
   const auto &known = Preferences::instance()->m_items;
+  const auto legacy = applicableLegacyPreferences(source);
   for (auto it = known.cbegin(); it != known.cend(); ++it) {
     const PreferencesItem &item = it.value();
-    if (!source.contains(item.idString)) continue;
     const QString key = item.idString;
     // Machine-specific paths stay local unless a later UI explicitly remaps
     // them.
-    if (key.contains("path", Qt::CaseInsensitive) ||
-        key.contains("folder", Qt::CaseInsensitive) ||
-        key.contains("root", Qt::CaseInsensitive) ||
-        key.contains("directory", Qt::CaseInsensitive))
+    if (machinePathKey(key) ||
+        (!source.contains(key) && !legacy.contains(key)))
       continue;
-    const QVariant value = source.value(key);
+    const QVariant value =
+        source.contains(key) ? source.value(key) : legacy.value(key);
     if (validType(item, value)) output.setValue(key, value);
   }
   const int formats = validLevelFormatCount(source);
@@ -470,6 +531,66 @@ bool filterEnvironment(const QString &sourcePath, const QString &targetPath,
   return true;
 }
 
+// Match the saved DockLayout grammar before a room can replace a receiving
+// build's room set. Panels not mentioned here are floating, but each docked
+// panel must have a unique, in-range index.
+bool validRoomHierarchy(const QString &hierarchy, int paneCount) {
+  const QStringList tokens =
+      hierarchy.split(QRegularExpression("\\s+"), Qt::SkipEmptyParts);
+  if (tokens.isEmpty()) return false;
+  bool ok           = false;
+  const int maximum = tokens[0].toInt(&ok);
+  if (!ok || maximum < -1 || maximum >= paneCount) return false;
+  if (tokens.size() == 1) return maximum == -1;  // All panes are floating.
+  if (tokens.size() < 3 || (tokens[1] != "0" && tokens[1] != "1"))
+    return false;
+  QVector<bool> used(paneCount, false);
+  int pos = 2;
+  auto panel = [&]() {
+    if (pos >= tokens.size()) return false;
+    bool valid      = false;
+    const int index = tokens[pos++].toInt(&valid);
+    if (!valid || index < 0 || index >= paneCount || used[index]) return false;
+    used[index] = true;
+    return true;
+  };
+  std::function<bool(int)> region = [&](int depth) {
+    if (depth > paneCount || pos >= tokens.size()) return false;
+    if (tokens[pos] == "[") {
+      ++pos;
+      int children = 0;
+      while (pos < tokens.size() && tokens[pos] != "]") {
+        if (!region(depth + 1)) return false;
+        ++children;
+      }
+      if (!children || pos == tokens.size()) return false;
+      ++pos;
+      return true;
+    }
+    if (tokens[pos] == "{") {
+      ++pos;
+      int members = 0;
+      while (pos < tokens.size() && !tokens[pos].startsWith('@') &&
+             tokens[pos] != "}") {
+        if (!panel()) return false;
+        ++members;
+      }
+      if (members < 2 || pos >= tokens.size() ||
+          !tokens[pos].startsWith('@'))
+        return false;
+      bool valid       = false;
+      const int active = tokens[pos++].mid(1).toInt(&valid);
+      if (!valid || active < 0 || active >= members ||
+          pos >= tokens.size() || tokens[pos] != "}")
+        return false;
+      ++pos;
+      return true;
+    }
+    return panel();
+  };
+  return region(0) && pos == tokens.size();
+}
+
 bool validRoom(SimpleZipReader &reader, const QString &entry,
                QString *roomName = nullptr) {
   QTemporaryFile temp;
@@ -483,7 +604,8 @@ bool validRoom(SimpleZipReader &reader, const QString &entry,
   const QString hierarchy = room.value("hierarchy").toString();
   const QStringList panes = room.childGroups();
   if (name.isEmpty() || hierarchy.isEmpty() || hierarchy.size() > 8192 ||
-      room.status() != QSettings::NoError || panes.size() > 256)
+      room.status() != QSettings::NoError || panes.isEmpty() ||
+      panes.size() > 256 || !validRoomHierarchy(hierarchy, panes.size()))
     return false;
   for (int i = 0; i < panes.size(); ++i) {
     room.beginGroup("pane_" + QString::number(i));
@@ -513,26 +635,41 @@ QString preferenceSummary(SimpleZipReader &reader, const QString &entry) {
   QSettings source(temp.fileName(), QSettings::IniFormat);
   QSet<QString> known;
   int applicable = 0;
+  int paths = 0;
+  int invalid = 0;
+  const auto legacy = applicableLegacyPreferences(source);
   for (const PreferencesItem &item : Preferences::instance()->m_items) {
     known.insert(item.idString);
-    if (source.contains(item.idString) &&
-        validType(item, source.value(item.idString)) &&
-        !item.idString.contains("path", Qt::CaseInsensitive) &&
-        !item.idString.contains("folder", Qt::CaseInsensitive) &&
-        !item.idString.contains("root", Qt::CaseInsensitive) &&
-        !item.idString.contains("directory", Qt::CaseInsensitive))
+    if (!source.contains(item.idString)) continue;
+    if (machinePathKey(item.idString))
+      ++paths;
+    else if (validType(item, source.value(item.idString)))
       ++applicable;
+    else
+      ++invalid;
   }
   int skipped = 0;
-  for (const QString &key : source.allKeys())
-    if (!known.contains(key) && !key.startsWith("levelFormats/")) ++skipped;
+  const QMap<QString, QString> translatedKeys = {
+      {"AutocreationType", "EnableAutocreation"},
+      {"levelNameOnEachMarkerEnabled", "levelNameDisplayType"},
+      {"scanLevelType", "DefRasterFormat"},
+      {"initialLoadTlvCachingBehavior", "rasterLevelCachingBehavior"},
+      {"inputCellsWithoutDoubleClickingEnabled", "cellInputMethod"}};
+  for (const QString &key : source.allKeys()) {
+    if (!known.contains(key) && !key.startsWith("levelFormats/") &&
+        !legacy.contains(translatedKeys.value(key)))
+      ++skipped;
+  }
   const int formats = validLevelFormatCount(source);
   return QObject::tr(
-             "%1 recognized values; %2 level formats; %3 unknown keys skipped. "
-             "Machine paths stay local.")
+             "%1 recognized values; %2 old values translated; %3 level formats. "
+             "Skipped: %4 removed keys, %5 invalid values, %6 machine paths.")
       .arg(applicable)
+      .arg(legacy.size())
       .arg(qMax(formats, 0))
-      .arg(skipped);
+      .arg(skipped)
+      .arg(invalid)
+      .arg(paths);
 }
 
 }  // namespace
