@@ -196,7 +196,9 @@
 </Shaders>
   <3D>
     STD_glbModelFx
+    STD_material3dFx
     STD_threePointLightFx
+    STD_duplicate3dFx
   </3D>
   <Utility>
     STD_openExrAovFx

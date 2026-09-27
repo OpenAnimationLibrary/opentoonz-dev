@@ -8,6 +8,20 @@ namespace otglb {
 // resolution and tile size. The FX applies the normal OpenToonz 2D affine.
 constexpr double ProjectionHeight = 1000.0;
 
+enum class MaterialShader { Source, MetallicRoughness, Matcap, Normal };
+
+struct MaterialRig {
+  MaterialShader shader = MaterialShader::Source;
+  double metallicScale = 1.0;
+  double roughnessScale = 1.0;
+  double exposure = 1.0;
+
+  bool operator==(const MaterialRig &other) const {
+    return shader == other.shader && metallicScale == other.metallicScale &&
+           roughnessScale == other.roughnessScale && exposure == other.exposure;
+  }
+};
+
 struct DirectionalLight {
   // Camera-space direction from the shaded surface toward the light.
   std::array<double, 3> direction{{0.0, 0.0, 1.0}};
@@ -23,7 +37,7 @@ struct DirectionalLight {
 
 struct LightingRig {
   // Ambient and master are linear-light multipliers. Directional colors are
-  // converted from sRGB before contributing to diffuse illumination.
+  // converted from sRGB before contributing to diffuse/PBR illumination.
   double ambient = 0.0;
   double master = 1.0;
   std::vector<DirectionalLight> lights;
@@ -45,15 +59,14 @@ struct RenderOptions {
   // Empty uses the asset's linear baseColor factors, converted to sRGB.
   std::vector<std::array<float, 3>> colors;
 
-  // Optional camera-relative directional lighting supplied by a downstream 3D
-  // FX. When enabled it supersedes the legacy headlight but preserves the
-  // source node's geometry, camera, material and animation settings.
+  // Optional downstream 3D material and lighting state. These are independent
+  // so Material and Light FX can be composed in either order in the schematic.
+  bool useMaterialRig = false;
+  MaterialRig material;
   bool useLightingRig = false;
   LightingRig lighting;
 
   // NoIndex preserves the historical static/base-geometry path exactly.
-  // A valid index evaluates that embedded glTF clip at sourceSeconds and applies
-  // node animation plus skinning before projection. Time is always glTF seconds.
   int animation = NoIndex;
   double sourceSeconds = 0.0;
 
@@ -61,39 +74,30 @@ struct RenderOptions {
 };
 
 struct ProjectedVertex {
-  double x, y, depth;  // Larger depth is nearer (1/d for perspective, -d otherwise).
+  double x, y, depth;
 };
 struct RenderTriangle {
   std::array<ProjectedVertex, 3> vertices;
-  std::array<bool, 3> edges;  // Excludes triangulation diagonals after clipping.
+  std::array<bool, 3> edges;
   std::array<float, 3> color;
 };
 struct RenderScene {
   std::vector<RenderTriangle> triangles;
-  std::array<double, 4> bounds{};  // x0, y0, x1, y1 in the fixed image plane.
+  std::array<double, 4> bounds{};
   std::vector<std::string> warnings;
   bool wireframe = false;
 };
 struct ColorPixel {
-  float r = 0, g = 0, b = 0, alpha = 0;  // Premultiplied sRGB, in [0,1].
+  float r = 0, g = 0, b = 0, alpha = 0;
 };
 struct RenderTile {
   int width = 0, height = 0;
   double x = 0, y = 0;
-  // Row-major 2D affine: a11,a12,a13,a21,a22,a23.
   std::array<double, 6> affine{{1, 0, 0, 0, 1, 0}};
 };
 
-// Opaque, two-sided geometry. With options.animation == NoIndex this preserves
-// the original static base-geometry path. Otherwise embedded node animation and
-// skeletal skinning are evaluated. Morph deformation remains deferred.
-// Uses the declared default scene, otherwise the first scene.
-// Throws std::runtime_error on invalid settings, animation data or resource limits.
 RenderScene prepareRender(const Asset &asset, const RenderOptions &options,
                           const int *canceled = nullptr);
-
-// Four coverage/depth samples per pixel; coordinates and coverage do not
-// depend on tile boundaries. No graphics context or global mutable state.
 std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
                                    const int *canceled = nullptr);
 

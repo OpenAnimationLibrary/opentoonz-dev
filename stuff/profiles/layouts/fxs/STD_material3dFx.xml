@@ -1,0 +1,10 @@
+<fxlayout>
+  <page name="Material">
+    <label>"Generic 3D material/shading stage. PBR is the first physical model; additional source-native materials such as Animation:Master can be added here later."</label>
+    <control>materialMode</control>
+    <separator label="PBR"/>
+    <control>metallicScale</control>
+    <control>roughnessScale</control>
+    <control>exposure</control>
+  </page>
+</fxlayout>
