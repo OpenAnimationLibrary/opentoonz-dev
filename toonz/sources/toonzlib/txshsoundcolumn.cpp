@@ -16,6 +16,8 @@
 #include <QAudioFormat>
 #include <QAudioDeviceInfo>
 
+#include <cmath>
+
 //=============================================================================
 
 ColumnLevel::ColumnLevel(TXshSoundLevel *soundLevel, int startFrame,
@@ -934,7 +936,12 @@ TSoundTrackP TXshSoundColumn::getOverallSoundTrack(int fromFrame, int toFrame,
 
   if (levelsCount == 0) return 0;
 
-  if (fps == -1) fps = m_levels[0]->getSoundLevel()->getFrameRate();
+  if (fps == -1) {
+    TXshSoundLevel *firstLevel = m_levels[0]->getSoundLevel();
+    if (!firstLevel) return TSoundTrackP();
+    fps = firstLevel->getFrameRate();
+  }
+  if (!std::isfinite(fps) || fps <= 0) return TSoundTrackP();
   if (fromFrame == -1) fromFrame = getFirstRow();
   if (toFrame == -1) toFrame = getMaxFrame();
 
@@ -1040,7 +1047,9 @@ TSoundTrackP TXshSoundColumn::getOverallSoundTrack(int fromFrame, int toFrame,
   try {
     overallSoundTrack = TSoundTrack::create(format, lsamp);
   } catch (TSoundDeviceException &) {
+    return TSoundTrackP();
   }
+  if (!overallSoundTrack) return TSoundTrackP();
 
   // Blank the whole track
   overallSoundTrack->blank(0, lsamp);
@@ -1050,6 +1059,7 @@ TSoundTrackP TXshSoundColumn::getOverallSoundTrack(int fromFrame, int toFrame,
   for (int i = 0; i < levelsCount; i++) {
     ColumnLevel *l             = m_levels.at(i);
     TXshSoundLevel *soundLevel = l->getSoundLevel();
+    if (!soundLevel || !soundLevel->getSoundTrack()) continue;
 
     // Check if the soundtrack is inside the frame Range.
     int levelStartFrame = l->getStartFrame() + l->getStartOffset();
@@ -1091,48 +1101,43 @@ TSoundTrackP TXshSoundColumn::getOverallSoundTrack(int fromFrame, int toFrame,
 TSoundTrackP TXshSoundColumn::mixingTogether(
     const std::vector<TXshSoundColumn *> &vect, int fromFrame, int toFrame,
     double fps) {
-  int offset       = 0xffff;
-  long sampleCount = 0;
-  std::vector<TSoundTrackP> tracks;
   TSoundTrackP mix;
-
-  int size = vect.size(), i = 0;
-
-  ColumnLevel *l = vect[0]->getColumnLevel(0);
-  if (!l)        // May happen if the sound level is not
-    return mix;  // correctly loaded from disk
-
-  TXshSoundLevel *soundLevel = l->getSoundLevel();
-  assert(soundLevel);
+  TXshSoundLevel *soundLevel = nullptr;
+  for (TXshSoundColumn *column : vect) {
+    if (!column || column->isEmpty()) continue;
+    for (ColumnLevel *level : column->m_levels) {
+      if (level && level->getSoundLevel() &&
+          level->getSoundLevel()->getSoundTrack()) {
+        soundLevel = level->getSoundLevel();
+        break;
+      }
+    }
+    if (soundLevel) break;
+  }
+  if (!soundLevel) return mix;
 
   if (fps == -1) fps = soundLevel->getFrameRate();
+  if (!std::isfinite(fps) || fps <= 0) return mix;
   if (fromFrame == -1) fromFrame = 0;
   if (toFrame == -1) toFrame = getXsheet()->getFrameCount();
 
-  if (!soundLevel->getSoundTrack()) return mix;
   TSoundTrackFormat format = soundLevel->getSoundTrack()->getFormat();
 
-  TXshSoundColumn *c = 0;
-  int j;
-  for (j = 0; j < size; ++j) {
-    TXshSoundColumn *oldC = c;
-    c                     = vect[j];
-    if (j == 0) {
-      mix = c->getOverallSoundTrack(fromFrame, toFrame, fps, format);
+  for (TXshSoundColumn *column : vect) {
+    if (!column || column->getVolume() == 0 || column->isEmpty()) continue;
+    TSoundTrackP track =
+        column->getOverallSoundTrack(fromFrame, toFrame, fps, format);
+    if (!track) continue;
+    if (!mix) {
       TSoundTrackP mixedTrack =
-          TSoundTrack::create(mix->getFormat(), mix->getSampleCount());
-      mix = TSop::mix(mixedTrack, mix, 1.0, c->getVolume());
-      continue;
+          TSoundTrack::create(track->getFormat(), track->getSampleCount());
+      if (!mixedTrack) return TSoundTrackP();
+      mix = TSop::mix(mixedTrack, track, 1.0, column->getVolume());
+    } else {
+      mix = TSop::mix(mix, track, 1.0, column->getVolume());
     }
-    assert(oldC);
-    if (c->getVolume() == 0 || c->isEmpty()) {
-      c = oldC;
-      continue;
-    }
-    mix =
-        TSop::mix(mix, c->getOverallSoundTrack(fromFrame, toFrame, fps, format),
-                  1.0, c->getVolume());
   }
+  if (!mix) return mix;
 
   // Per ora perche mov vuole solo 16 bit
   TSoundTrackFormat fmt = mix->getFormat();
