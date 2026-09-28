@@ -93,8 +93,7 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
                     QObject::tr("This target would create a dependency cycle."));
       return;
     }
-    scene->onSceneChanged();
-    scene->onXsheetChanged();
+    scene->getXsheetHandle()->notifyXsheetChanged();
   };
   QObject::connect(constraints->addAction(QObject::tr("Aim At...")),
                    &QAction::triggered, constraints,
@@ -107,8 +106,7 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
     QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
                      &QAction::triggered, constraints, [scene, object]() {
                        object->clearConstraints();
-                       scene->onSceneChanged();
-                       scene->onXsheetChanged();
+                       scene->getXsheetHandle()->notifyXsheetChanged();
                      });
   }
 }
