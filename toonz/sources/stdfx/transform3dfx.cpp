@@ -62,7 +62,8 @@ class Transform3DFx final : public TStandardRasterFx, public T3DRenderSource {
   std::shared_ptr<const otglb::RenderScene> scene(
       double frame, const int *canceled,
       const otglb::LightingRig *lighting                   = nullptr,
-      const std::vector<otglb::ModelTransform> *downstream = nullptr) const {
+      const std::vector<otglb::ModelTransform> *downstream = nullptr,
+      const TRenderSettings *renderSettings = nullptr) const {
     if (!m_source.isConnected()) return {};
     auto *source = m_source.source();
     if (!source)
@@ -75,7 +76,8 @@ class Transform3DFx final : public TStandardRasterFx, public T3DRenderSource {
     if (downstream)
       transforms.insert(transforms.end(), downstream->begin(),
                         downstream->end());
-    return source->get3DRenderScene(frame, canceled, lighting, &transforms);
+    return source->get3DRenderScene(frame, canceled, lighting, &transforms,
+                                    renderSettings);
   }
 
 public:
@@ -117,8 +119,22 @@ public:
       double frame, const int *canceled,
       const otglb::LightingRig *lighting = nullptr,
       const std::vector<otglb::ModelTransform> *transforms =
-          nullptr) const override {
-    return scene(frame, canceled, lighting, transforms);
+          nullptr,
+      const TRenderSettings *renderSettings = nullptr) const override {
+    return scene(frame, canceled, lighting, transforms, renderSettings);
+  }
+
+  std::shared_ptr<const otglb::RenderScene> get3DRenderGeometry(
+      double frame, const int *canceled,
+      const std::vector<otglb::ModelTransform> *downstream = nullptr,
+      const TRenderSettings *renderSettings = nullptr) const override {
+    if (!m_source.isConnected()) return {};
+    std::vector<otglb::ModelTransform> transforms;
+    transforms.push_back(transform(frame));
+    if (downstream)
+      transforms.insert(transforms.end(), downstream->begin(), downstream->end());
+    return m_source.source()->get3DRenderGeometry(frame, canceled,
+                                                  &transforms, renderSettings);
   }
 
   void getParamUIs(TParamUIConcept *&concepts, int &length) override {
@@ -135,7 +151,8 @@ public:
     bbox = TRectD();
     if (!m_source.isConnected()) return false;
     try {
-      const auto transformed = scene(frame, info.m_isCanceled);
+      const auto transformed = get3DRenderGeometry(frame, info.m_isCanceled,
+                                                    nullptr, &info);
       if (!transformed || transformed->triangles.empty()) return false;
       const auto &bounds = transformed->bounds;
       bbox               = TRectD(bounds[0], bounds[1], bounds[2], bounds[3]);
@@ -166,7 +183,7 @@ public:
     tile.getRaster()->clear();
     if (!m_source.isConnected()) return;
     try {
-      const auto transformed = scene(frame, info.m_isCanceled);
+      const auto transformed = scene(frame, info.m_isCanceled, nullptr, nullptr, &info);
       if (!transformed || transformed->triangles.empty()) return;
 
       otglb::RenderTile request;

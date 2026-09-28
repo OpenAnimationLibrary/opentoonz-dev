@@ -1,6 +1,7 @@
 #pragma once
 
 #include "glbloader.h"
+#include <memory>
 
 namespace otglb {
 
@@ -84,15 +85,19 @@ struct RenderTriangle {
   std::array<ProjectedVertex, 3> vertices;
   std::array<bool, 3> edges;  // Excludes triangulation diagonals after clipping.
   std::array<float, 3> color;
+  std::array<std::array<double, 2>, 3> uv{};
+  bool textured = false;
+};
+struct ColorPixel {
+  float r = 0, g = 0, b = 0, alpha = 0;  // Premultiplied sRGB.
 };
 struct RenderScene {
   std::vector<RenderTriangle> triangles;
   std::array<double, 4> bounds{};  // x0, y0, x1, y1 in the fixed image plane.
   std::vector<std::string> warnings;
   bool wireframe = false;
-};
-struct ColorPixel {
-  float r = 0, g = 0, b = 0, alpha = 0;  // Premultiplied sRGB, in [0,1].
+  int textureWidth = 0, textureHeight = 0;
+  std::shared_ptr<const std::vector<ColorPixel>> texture;
 };
 struct RenderTile {
   int width = 0, height = 0;
@@ -113,6 +118,16 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &options,
 // depend on tile boundaries. No graphics context or global mutable state.
 std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &tile,
                                    const int *canceled = nullptr);
+
+// Center a raster on a camera-facing plane. One input pixel equals one image
+// plane unit at the default orthographic camera; alpha remains in the texture.
+RenderScene prepareImagePlane(
+    int width, int height,
+    std::shared_ptr<const std::vector<ColorPixel>> pixels,
+    const std::vector<ModelTransform> &transforms);
+// Geometry-only query for FX bounds; does not allocate or evaluate pixels.
+RenderScene projectImagePlane(int width, int height,
+                              const std::vector<ModelTransform> &transforms);
 
 float linearToSrgb(float value);
 float srgbToLinear(float value);

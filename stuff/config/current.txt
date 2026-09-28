@@ -24,6 +24,7 @@
   <item>"STD_glbModelFx.timeOffset" "Time Offset (seconds)" </item>
   <item>"STD_glbModelFx.animationSpeed" "Speed" </item>
   <item>"STD_glbModelFx.loopMode" "Loop Mode" </item>
+  <item>"STD_imagePlaneFx" "3D Plane" </item>
   <item>"STD_transform3DFx" "3D Transformer" </item>
   <item>"STD_transform3DFx.positionX" "Position X" </item>
   <item>"STD_transform3DFx.positionY" "Position Y" </item>
