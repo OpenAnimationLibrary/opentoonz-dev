@@ -44,8 +44,9 @@ class ImagePlaneFx final : public TStandardRasterFx, public T3DRenderSource {
     neutral.m_affine = TAffine();
     neutral.m_bpp = 32;
     neutral.m_linearColorSpace = false;
+    auto *input = static_cast<TRasterFx *>(m_input.getFx());
     TRectD bbox;
-    if (!m_input->doGetBBox(frame, bbox, neutral) || bbox.isEmpty()) return {};
+    if (!input->doGetBBox(frame, bbox, neutral) || bbox.isEmpty()) return {};
     if (!std::isfinite(bbox.x0) || !std::isfinite(bbox.y0) ||
         !std::isfinite(bbox.x1) || !std::isfinite(bbox.y1))
       throw std::runtime_error("Image Plane requires a finite input bounding box.");
@@ -59,7 +60,7 @@ class ImagePlaneFx final : public TStandardRasterFx, public T3DRenderSource {
     TRaster32P raster(w, h);
     raster->clear();
     TTile source(raster, TPointD(x0, y0));
-    m_input->compute(source, frame, neutral);
+    input->compute(source, frame, neutral);
     if (canceled && *canceled) return {};
     auto pixels = std::make_shared<std::vector<otglb::ColorPixel>>(
         std::size_t(w) * h);
