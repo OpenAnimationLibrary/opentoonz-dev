@@ -74,8 +74,17 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
     int index = names.indexOf(choice);
     if (index < 0) return;
     TStageObject::Constraint link;
-    link.type   = type;
-    link.target = ids[index];
+    link.type     = type;
+    link.target   = ids[index];
+    QString scope = QInputDialog::getItem(
+                  nullptr, QObject::tr("Constraint Scope"), QObject::tr("Apply to:"),
+                  QStringList{QObject::tr("This Object"),
+                    QObject::tr("Child Objects (automatic)")},
+                  0, false, &ok);
+    if (!ok) return;
+    link.scope = scope == QObject::tr("Child Objects (automatic)")
+                               ? TStageObject::Constraint::Children
+                               : TStageObject::Constraint::Self;
     if (type == TStageObject::Constraint::Buffer) {
       link.radius = QInputDialog::getDouble(
                     nullptr, QObject::tr("Buffer Radius"),
