@@ -16,7 +16,8 @@ public:
   virtual std::shared_ptr<const otglb::RenderScene> get3DRenderScene(
       double frame, const int *canceled,
       const otglb::LightingRig *lighting                   = nullptr,
-      const std::vector<otglb::ModelTransform> *transforms = nullptr) const = 0;
+      const std::vector<otglb::ModelTransform> *transforms = nullptr,
+      const TRenderSettings *renderSettings = nullptr) const = 0;
 };
 
 // The schematic connects a zerary column, whereas the render tree connects the

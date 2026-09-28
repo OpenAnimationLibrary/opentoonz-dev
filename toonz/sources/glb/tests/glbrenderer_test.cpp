@@ -79,6 +79,25 @@ int main() {
   auto run = [&](const char *name, auto test) {
     test(); ++passed; std::cout << "PASS " << name << '\n';
   };
+  run("image plane preserves cutout alpha through 3D rotation", [] {
+    auto pixels = std::make_shared<std::vector<ColorPixel>>(4);
+    (*pixels)[0] = {1, 0, 0, 1};
+    (*pixels)[1] = {0, 0, 0, 0};
+    (*pixels)[2] = {0, 0, 0, 0};
+    (*pixels)[3] = {0, 0, 1, 1};
+    ModelTransform rotation;
+    rotation.rotation = {{0, 45, 0}};
+    const auto plane = prepareImagePlane(2, 2, pixels, {rotation});
+    check(plane.triangles.size() == 2, "Plane geometry is missing");
+    RenderTile request;
+    request.width = request.height = 8;
+    request.x = request.y = -4;
+    const auto output = renderTile(plane, request);
+    check(coverage(output) > 0, "Plane is invisible after rotation");
+    check(coverage(output) < 4, "Transparent pixels became opaque");
+    for (const auto &p : output)
+      check(p.g == 0, "Unexpected color from a transparent texel");
+  });
   try {
     run("GLB load to visible antialiased grayscale pixels", [] {
       const auto path = std::filesystem::temp_directory_path() /

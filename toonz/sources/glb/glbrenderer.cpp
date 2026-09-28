@@ -403,7 +403,28 @@ std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &t
             (triangle.edges[2] && std::abs(e2) <= 0.65 * lengths[2]);
         const double epsilon = 1e-10 * std::max(1.0, std::abs(depth));
         if (depth > sample.depth + epsilon) {
-          sample = {depth, line ? ColorPixel{triangle.color[0], triangle.color[1], triangle.color[2], 1} : ColorPixel{}};
+          ColorPixel color{triangle.color[0], triangle.color[1], triangle.color[2], 1};
+          if (triangle.textured) {
+            color = {};
+            if (scene.texture && scene.textureWidth > 0 && scene.textureHeight > 0) {
+              // The plane uses an orthographic camera; UVs interpolate linearly.
+              {
+                const double u = a * triangle.uv[0][0] +
+                                 b * triangle.uv[1][0] +
+                                 c * triangle.uv[2][0];
+                const double v = a * triangle.uv[0][1] +
+                                 b * triangle.uv[1][1] +
+                                 c * triangle.uv[2][1];
+                if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+                  const int tx = std::min(scene.textureWidth - 1, int(u * scene.textureWidth));
+                  const int ty = std::min(scene.textureHeight - 1, int(v * scene.textureHeight));
+                  color = (*scene.texture)[std::size_t(ty) * scene.textureWidth + tx];
+                }
+              }
+            }
+          }
+          // Transparent texels do not occlude other geometry.
+          if (color.alpha > 0) sample = {depth, line ? color : ColorPixel{}};
         } else if (scene.wireframe && line && std::abs(depth - sample.depth) <= epsilon) {
           sample.color = {triangle.color[0], triangle.color[1], triangle.color[2], 1};
         }
@@ -418,5 +439,58 @@ std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &t
     output[i].alpha += c.alpha * 0.25f;
   }
   return output;
+}
+
+RenderScene prepareImagePlane(
+    int width, int height,
+    std::shared_ptr<const std::vector<ColorPixel>> pixels,
+    const std::vector<ModelTransform> &transforms) {
+  require(width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+              pixels && pixels->size() == std::size_t(width) * height,
+          "Invalid image plane texture dimensions.");
+  for (const auto &t : transforms) {
+    for (double v : t.position) require(std::isfinite(v), "Invalid image plane position.");
+    for (double v : t.rotation) require(std::isfinite(v), "Invalid image plane rotation.");
+    for (double v : t.scale)
+      require(std::isfinite(v) && v > 0, "Invalid image plane scale.");
+  }
+  RenderScene scene;
+  scene.textureWidth = width;
+  scene.textureHeight = height;
+  scene.texture = std::move(pixels);
+  std::array<Vec, 4> corners{{{-width / 200.0, -height / 200.0, 0},
+                              {width / 200.0, -height / 200.0, 0},
+                              {width / 200.0, height / 200.0, 0},
+                              {-width / 200.0, height / 200.0, 0}}};
+  std::array<ProjectedVertex, 4> projected;
+  for (int i = 0; i < 4; ++i) {
+    Vec p = corners[i];
+    for (const auto &t : transforms) p = transform(p, t);
+    // Keep geometry behind or crossing the camera out of the rasterizer.
+    if (p.z >= 9.9) return scene;
+    projected[i] = {p.x * 100.0, p.y * 100.0, p.z - 10.0};
+  }
+  const std::array<std::array<double, 2>, 4> uv{{{{0, 0}}, {{1, 0}},
+                                                  {{1, 1}}, {{0, 1}}}};
+  for (const auto indices : {std::array<int, 3>{{0, 1, 2}},
+                              std::array<int, 3>{{0, 2, 3}}}) {
+    RenderTriangle triangle;
+    triangle.vertices = {{projected[indices[0]], projected[indices[1]],
+                          projected[indices[2]]}};
+    triangle.edges = {{true, true, true}};
+    triangle.color = {{1, 1, 1}};
+    triangle.uv = {{uv[indices[0]], uv[indices[1]], uv[indices[2]]}};
+    triangle.textured = true;
+    scene.triangles.push_back(triangle);
+  }
+  scene.bounds = {{projected[0].x, projected[0].y,
+                   projected[0].x, projected[0].y}};
+  for (const auto &v : projected) {
+    scene.bounds[0] = std::min(scene.bounds[0], v.x);
+    scene.bounds[1] = std::min(scene.bounds[1], v.y);
+    scene.bounds[2] = std::max(scene.bounds[2], v.x);
+    scene.bounds[3] = std::max(scene.bounds[3], v.y);
+  }
+  return scene;
 }
 }  // namespace otglb

@@ -260,7 +260,8 @@ public:
       double frame, const int *canceled,
       const otglb::LightingRig *lighting = nullptr,
       const std::vector<otglb::ModelTransform> *transforms =
-          nullptr) const override {
+          nullptr,
+      const TRenderSettings * = nullptr) const override {
     return projected(frame, canceled, lighting, transforms);
   }
 

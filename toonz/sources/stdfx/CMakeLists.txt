@@ -123,6 +123,7 @@ set(SOURCES
     freedistortfx.cpp
     gammafx.cpp
     glbmodelfx.cpp
+    imageplanefx.cpp
     glowfx.cpp
     gradients.cpp
     hsvkeyfx.cpp
