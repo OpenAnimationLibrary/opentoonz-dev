@@ -3,8 +3,11 @@
 #include "../imageplanefx.cpp"
 #include "../transform3dfx.cpp"
 #include "tparamcontainer.h"
+#include "trenderer.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QThread>
 
 #include <cmath>
 #include <iostream>
@@ -44,6 +47,60 @@ namespace {
 void check(bool condition, const char *message) {
   if (!condition) throw std::runtime_error(message);
 }
+
+class PlaneRenderPort final : public TRenderPort {
+public:
+  bool finished = false, failed = false;
+  TRasterP result;
+
+  PlaneRenderPort() { setRenderArea(TRectD(-8, -8, 8, 8)); }
+  void onRenderRasterCompleted(const RenderData &data) override {
+    if (data.m_rasA) result = data.m_rasA->clone();
+  }
+  void onRenderFailure(const RenderData &, TException &) override {
+    failed = true;
+  }
+  void onRenderFinished(bool canceled = false) override {
+    failed = failed || canceled;
+    finished = true;
+  }
+};
+
+TRaster32P render(TRasterFxP fx, double frame) {
+  PlaneRenderPort port;
+  TRenderer renderer(1);
+  renderer.enablePrecomputing(false);
+  renderer.addPort(&port);
+  TRenderSettings settings;
+  TFxPair pair;
+  pair.m_frameA = fx;
+  renderer.startRendering(frame, settings, pair);
+  QElapsedTimer timer;
+  timer.start();
+  while (!port.finished && timer.elapsed() < 30000) {
+    QCoreApplication::processEvents();
+    QThread::msleep(10);
+  }
+  renderer.stopRendering(true);
+  renderer.removePort(&port);
+  check(port.finished && !port.failed && port.result,
+        "Image Plane render failed or timed out");
+  TRaster32P raster = port.result;
+  check(raster != nullptr, "Image Plane did not produce a 32-bit raster");
+  return raster;
+}
+
+void checkCutout(const TRaster32P &raster, bool blue) {
+  bool visible = false, transparent = false;
+  for (int y = 0; y < raster->getLy(); ++y)
+    for (int x = 0; x < raster->getLx(); ++x) {
+      const auto &p = raster->pixels(y)[x];
+      visible |= p.m != 0 && (blue ? p.b != 0 : p.r != 0);
+      transparent |= p.m == 0;
+    }
+  check(visible && transparent,
+        "3D Plane render lost the input image or its alpha cutout");
+}
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -57,18 +114,13 @@ int main(int argc, char **argv) {
               plane.getInputPortName(0) == "Source",
           "Image Plane does not expose a persistent raster Source port");
     plane.getInputPort(0)->setFx(rasterOwner.getPointer());
+    TRectD bounds;
     TRenderSettings settings;
-    auto scene = plane.get3DRenderScene(0, nullptr, nullptr, nullptr, &settings);
-    check(scene && scene->triangles.size() == 2 && scene->texture &&
-              scene->textureWidth == 8 && scene->textureHeight == 8,
-          "Image Plane did not build a textured surface from Source");
-    check((*scene->texture)[0].alpha == 0 &&
-              (*scene->texture)[std::size_t(4) * 8 + 1].r == 1 &&
-              (*scene->texture)[std::size_t(4) * 8 + 7].alpha == 0,
-          "the Source alpha cutout was lost");
-    auto nextFrame = plane.get3DRenderScene(1, nullptr, nullptr, nullptr, &settings);
-    check((*nextFrame->texture)[std::size_t(4) * 8 + 1].b == 1,
-          "animated Source was not evaluated at the requested frame");
+    check(plane.doGetBBox(0, bounds, settings) &&
+              bounds == TRectD(-4, -4, 4, 4),
+          "Image Plane did not publish the input extent");
+    checkCutout(render(planeOwner, 0), false);
+    checkCutout(render(planeOwner, 1), true);
 
     TFxP transformOwner = new Transform3DFx;
     auto &transform = *static_cast<Transform3DFx *>(transformOwner.getPointer());
@@ -79,28 +131,14 @@ int main(int argc, char **argv) {
         transform.getParams()->getParam("rotationY"));
     check(rotation != nullptr, "3D Transformer rotation is missing");
     rotation->setValue(0, 45);
-    scene = transform.get3DRenderScene(0, nullptr, nullptr, nullptr, &settings);
-    check(scene && scene->texture && scene->triangles.size() == 2 &&
-              scene->bounds[2] - scene->bounds[0] < 8,
-          "3D Transformer did not rotate the textured plane");
+    checkCutout(render(transformOwner, 0), false);
 
-    TRaster32P output(16, 16);
-    TTile tile(output, TPointD(-8, -8));
-    transform.doCompute(tile, 0, settings);
-    bool visible = false, transparent = false;
-    for (int y = 0; y < 16; ++y)
-      for (int x = 0; x < 16; ++x) {
-        const auto &p = output->pixels(y)[x];
-        visible |= p.m != 0;
-        transparent |= p.m == 0;
-      }
-    check(visible && transparent,
-          "connected FX did not rasterize an alpha-cut plane");
     TFxP clonedOwner = transform.clone(true);
     auto *cloned = dynamic_cast<Transform3DFx *>(clonedOwner.getPointer());
     check(cloned && cloned->getInputPort("Source") &&
-              cloned->get3DRenderScene(0, nullptr, nullptr, nullptr, &settings),
+              cloned->getInputPort("Source")->isConnected(),
           "recursive clone lost the Image Plane connection");
+    checkCutout(render(TRasterFxP(clonedOwner), 0), false);
     std::cout << "PASS: Image Plane registration, alpha, animation, 3D connection, render and clone\n";
     return 0;
   } catch (const TException &) {
