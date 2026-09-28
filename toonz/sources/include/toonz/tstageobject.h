@@ -96,6 +96,23 @@ class DVAPI TStageObject final : public TSmartObject, public TParamObserver {
   DECLARE_CLASS_CODE
 
 public:
+  struct Constraint {
+    enum Type { AimAt, Buffer };
+    Type type = AimAt;
+    TStageObjectId target;
+    bool enabled       = true;
+    double influence   = 1.0;
+    double radius      = 100.0;  // Stage units; Buffer only.
+    double strength    = 0.0;    // Positive attracts, negative repels.
+    double angleOffset = 0.0;    // Degrees; Aim At only.
+  };
+
+  const std::vector<Constraint> &getConstraints() const {
+    return m_constraints;
+  }
+  bool addConstraint(const Constraint &constraint);
+  void clearConstraints();
+
   /*!
 Used to describe the object status - ie how the object can move.
 The default value is XY.
@@ -514,6 +531,7 @@ private:
   TStageObjectTree *m_tree;
   TStageObject *m_parent;
   std::list<TStageObject *> m_children;
+  std::vector<Constraint> m_constraints;
 
   bool m_cycleEnabled;
 
@@ -601,6 +619,7 @@ class DVAPI TStageObjectParams {
 public:
   TStageObjectId m_id, m_parentId;
   std::vector<TStageObjectId> m_children;
+  std::vector<TStageObject::Constraint> m_constraints;
   std::map<int, TStageObject::Keyframe> m_keyframes;
   bool m_cycleEnabled, m_isOpened;
   TStageObjectSpline *m_spline;
