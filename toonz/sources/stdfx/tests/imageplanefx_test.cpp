@@ -67,6 +67,7 @@ public:
 };
 
 TRaster32P render(TRasterFxP fx, double frame) {
+  std::cerr << "plane test: begin render frame " << frame << std::endl;
   PlaneRenderPort port;
   TRenderer renderer(1);
   renderer.enablePrecomputing(false);
@@ -74,6 +75,7 @@ TRaster32P render(TRasterFxP fx, double frame) {
   TRenderSettings settings;
   TFxPair pair;
   pair.m_frameA = fx;
+  std::cerr << "plane test: start renderer" << std::endl;
   renderer.startRendering(frame, settings, pair);
   QElapsedTimer timer;
   timer.start();
@@ -82,6 +84,7 @@ TRaster32P render(TRasterFxP fx, double frame) {
     QThread::msleep(10);
   }
   renderer.stopRendering(true);
+  std::cerr << "plane test: renderer finished" << std::endl;
   renderer.removePort(&port);
   check(port.finished && !port.failed && port.result,
         "Image Plane render failed or timed out");
@@ -106,6 +109,7 @@ void checkCutout(const TRaster32P &raster, bool blue) {
 int main(int argc, char **argv) {
   QCoreApplication app(argc, argv);
   try {
+    std::cerr << "plane test: create nodes" << std::endl;
     TFxP rasterOwner = new PlaneRasterFixture;
     TFxP planeOwner = new ImagePlaneFx;
     auto &plane = *static_cast<ImagePlaneFx *>(planeOwner.getPointer());
@@ -114,11 +118,13 @@ int main(int argc, char **argv) {
               plane.getInputPortName(0) == "Source",
           "Image Plane does not expose a persistent raster Source port");
     plane.getInputPort(0)->setFx(rasterOwner.getPointer());
+    std::cerr << "plane test: connected source" << std::endl;
     TRectD bounds;
     TRenderSettings settings;
     check(plane.doGetBBox(0, bounds, settings) &&
               bounds == TRectD(-4, -4, 4, 4),
           "Image Plane did not publish the input extent");
+    std::cerr << "plane test: bbox passed" << std::endl;
     checkCutout(render(planeOwner, 0), false);
     checkCutout(render(planeOwner, 1), true);
 
@@ -127,6 +133,7 @@ int main(int argc, char **argv) {
     auto *port = dynamic_cast<T3DSourcePort *>(transform.getInputPort(0));
     check(port != nullptr, "3D Transformer has no 3D source port");
     port->setFx(&plane);
+    std::cerr << "plane test: connected transformer" << std::endl;
     auto *rotation = dynamic_cast<TDoubleParam *>(
         transform.getParams()->getParam("rotationY"));
     check(rotation != nullptr, "3D Transformer rotation is missing");
