@@ -98,7 +98,9 @@ class DVAPI TStageObject final : public TSmartObject, public TParamObserver {
 public:
   struct Constraint {
     enum Type { AimAt, Buffer };
-    Type type = AimAt;
+    enum Scope { Self, Children };
+    Type type   = AimAt;
+    Scope scope = Self;  // Children applies once to each direct child root.
     TStageObjectId target;
     bool enabled       = true;
     double influence   = 1.0;
