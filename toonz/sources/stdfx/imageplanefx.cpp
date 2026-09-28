@@ -55,6 +55,7 @@ class ImagePlaneFx final : public TStandardRasterFx, public T3DRenderSource {
       throw std::runtime_error("Image Plane input exceeds the 16 megapixel limit.");
     const int w = int(width), h = int(height);
     TRaster32P raster(w, h);
+    raster->clear();
     TTile source(raster, TPointD(x0, y0));
     m_input->compute(source, frame, neutral);
     if (canceled && *canceled) return {};
