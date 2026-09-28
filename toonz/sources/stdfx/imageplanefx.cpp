@@ -42,6 +42,8 @@ class ImagePlaneFx final : public TStandardRasterFx, public T3DRenderSource {
     if (!m_input.isConnected()) return {};
     TRenderSettings neutral = settings ? *settings : TRenderSettings();
     neutral.m_affine = TAffine();
+    neutral.m_bpp = 32;
+    neutral.m_linearColorSpace = false;
     TRectD bbox;
     if (!m_input->doGetBBox(frame, bbox, neutral) || bbox.isEmpty()) return {};
     if (!std::isfinite(bbox.x0) || !std::isfinite(bbox.y0) ||
