@@ -44,12 +44,75 @@
 #include <QFocusEvent>
 #include <QTimer>
 #include <QMenu>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QTextCursor>
 #include <QSet>
 
 #include "toonzqt/stageschematicnode.h"
 
 namespace {
+void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
+                       TStageObject *object) {
+  QMenu *constraints = menu.addMenu(QObject::tr("Constraints"));
+  auto add           = [scene, object](TStageObject::Constraint::Type type) {
+    TStageObjectTree *tree = scene->getXsheet()->getStageObjectTree();
+    QStringList names;
+    std::vector<TStageObjectId> ids;
+    for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+      TStageObject *candidate = tree->getStageObject(i);
+      if (candidate == object) continue;
+      ids.push_back(candidate->getId());
+      names << QString::fromStdString(candidate->getId().toString());
+    }
+    if (names.isEmpty()) return;
+    bool ok        = false;
+    QString choice = QInputDialog::getItem(
+                  nullptr, QObject::tr("Constraint Target"),
+                  QObject::tr("Target object:"), names, 0, false, &ok);
+    if (!ok) return;
+    int index = names.indexOf(choice);
+    if (index < 0) return;
+    TStageObject::Constraint link;
+    link.type   = type;
+    link.target = ids[index];
+    if (type == TStageObject::Constraint::Buffer) {
+      link.radius = QInputDialog::getDouble(
+                    nullptr, QObject::tr("Buffer Radius"),
+                    QObject::tr("Radius (stage units):"), 100.0, 0.01, 100000.0, 2, &ok);
+      if (!ok) return;
+      link.strength = QInputDialog::getDouble(
+                    nullptr, QObject::tr("Buffer Strength"),
+                    QObject::tr("Positive attracts; negative repels:"), 50.0, -100000.0,
+                    100000.0, 2, &ok);
+      if (!ok) return;
+    }
+    if (!object->addConstraint(link)) {
+      QMessageBox::warning(
+                    nullptr, QObject::tr("Constraint"),
+                    QObject::tr("This target would create a dependency cycle."));
+      return;
+    }
+    scene->onSceneChanged();
+    scene->onXsheetChanged();
+  };
+  QObject::connect(constraints->addAction(QObject::tr("Aim At...")),
+                   &QAction::triggered, constraints,
+                   [add]() { add(TStageObject::Constraint::AimAt); });
+  QObject::connect(constraints->addAction(QObject::tr("Buffer...")),
+                   &QAction::triggered, constraints,
+                   [add]() { add(TStageObject::Constraint::Buffer); });
+  if (!object->getConstraints().empty()) {
+    constraints->addSeparator();
+    QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
+                     &QAction::triggered, constraints, [scene, object]() {
+                       object->clearConstraints();
+                       scene->onSceneChanged();
+                       scene->onXsheetChanged();
+                     });
+  }
+}
+
 void drawCamera(QPainter *painter, const QColor &color, const QPen &pen,
                 double width, double height) {
   QPointF points[3];
@@ -244,6 +307,7 @@ void ColumnPainter::contextMenuEvent(QGraphicsSceneContextMenuEvent *cme) {
   menu.addSeparator();
 
   menu.addAction(group);
+  addConstraintMenu(menu, stageScene, m_parent->getStageObject());
   menu.exec(cme->screenPos());
 }
 
@@ -438,6 +502,7 @@ void PegbarPainter::contextMenuEvent(QGraphicsSceneContextMenuEvent *cme) {
   menu.addAction(paste);
   menu.addSeparator();
   menu.addAction(group);
+  addConstraintMenu(menu, stageScene, m_parent->getStageObject());
   menu.exec(cme->screenPos());
 }
 
