@@ -30,6 +30,7 @@
 #include <QMetaObject>
 
 // STD includes
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <set>
@@ -522,17 +523,21 @@ void TStageObject::onChange(const class TParamChange &c) {
 TStageObjectId TStageObject::getId() const { return m_id; }
 
 bool TStageObject::addConstraint(const Constraint &constraint) {
-  if (constraint.target == m_id || !m_tree ||
-      !m_tree->getStageObject(constraint.target, false))
+  if (!m_tree || !m_tree->getStageObject(constraint.target, false))
     return false;
 
-  // A target must not depend on this object through parenting or constraints.
+  // A target must not depend on an affected object through parenting or links.
+  std::set<TStageObjectId> affected;
+  if (constraint.scope == Constraint::Self)
+    affected.insert(m_id);
+  else
+    for (TStageObject *child : m_children) affected.insert(child->m_id);
   std::set<TStageObjectId> visited;
   std::vector<TStageObjectId> pending(1, constraint.target);
   while (!pending.empty()) {
     TStageObjectId id = pending.back();
     pending.pop_back();
-    if (id == m_id) return false;
+    if (affected.count(id)) return false;
     if (!visited.insert(id).second) continue;
     TStageObject *object = m_tree->getStageObject(id, false);
     if (!object) continue;
@@ -1466,7 +1471,20 @@ TAffine TStageObject::getPlacement(double t) {
   else
     place = computeLocalPlacement(tt);
 
-  for (const Constraint &link : m_constraints) {
+  std::vector<const Constraint *> links;
+  for (const Constraint &link : m_constraints)
+    if (link.scope == Constraint::Self) links.push_back(&link);
+  if (m_parent)
+    for (const Constraint &link : m_parent->m_constraints)
+      if (link.scope == Constraint::Children) links.push_back(&link);
+
+  // Move first, then aim from the final position, regardless of link owner.
+  std::stable_sort(
+      links.begin(), links.end(), [](const Constraint *a, const Constraint *b) {
+        return a->type == Constraint::Buffer && b->type == Constraint::AimAt;
+      });
+  for (const Constraint *linkPtr : links) {
+    const Constraint &link = *linkPtr;
     if (!link.enabled || link.influence <= 0.0) continue;
     TStageObject *target = m_tree->getStageObject(link.target, false);
     if (!target) continue;  // Preserve links to temporarily missing objects.
@@ -1708,6 +1726,7 @@ void TStageObject::saveData(TOStream &os) {
   for (const Constraint &link : m_constraints) {
     std::map<std::string, std::string> attrs;
     attrs["target"] = link.target.toString();
+    attrs["scope"]  = link.scope == Constraint::Children ? "children" : "self";
     os.openChild("constraint", attrs);
     os << (int)link.type << (int)link.enabled << link.influence << link.radius
        << link.strength << link.angleOffset;
@@ -1786,6 +1805,9 @@ void TStageObject::loadData(TIStream &is) {
     } else if (tagName == "constraint") {
       Constraint link;
       link.target = toStageObjectId(is.getTagAttribute("target"));
+      link.scope  = is.getTagAttribute("scope") == "children"
+                        ? Constraint::Children
+                        : Constraint::Self;
       int type = 0, enabled = 0;
       is >> type >> enabled >> link.influence >> link.radius >> link.strength >>
           link.angleOffset;
