@@ -124,6 +124,19 @@ public:
     return scene(frame, canceled, lighting, transforms, renderSettings);
   }
 
+  std::shared_ptr<const otglb::RenderScene> get3DRenderGeometry(
+      double frame, const int *canceled,
+      const std::vector<otglb::ModelTransform> *downstream = nullptr,
+      const TRenderSettings *renderSettings = nullptr) const override {
+    if (!m_source.isConnected()) return {};
+    std::vector<otglb::ModelTransform> transforms;
+    transforms.push_back(transform(frame));
+    if (downstream)
+      transforms.insert(transforms.end(), downstream->begin(), downstream->end());
+    return m_source.source()->get3DRenderGeometry(frame, canceled,
+                                                  &transforms, renderSettings);
+  }
+
   void getParamUIs(TParamUIConcept *&concepts, int &length) override {
     concepts             = new TParamUIConcept[length = 1];
     concepts[0].m_type   = TParamUIConcept::TRANSFORM_3D;
@@ -138,7 +151,8 @@ public:
     bbox = TRectD();
     if (!m_source.isConnected()) return false;
     try {
-      const auto transformed = scene(frame, info.m_isCanceled, nullptr, nullptr, &info);
+      const auto transformed = get3DRenderGeometry(frame, info.m_isCanceled,
+                                                    nullptr, &info);
       if (!transformed || transformed->triangles.empty()) return false;
       const auto &bounds = transformed->bounds;
       bbox               = TRectD(bounds[0], bounds[1], bounds[2], bounds[3]);

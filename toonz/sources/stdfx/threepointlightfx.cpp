@@ -158,7 +158,8 @@ public:
     bbox = TRectD();
     if (!m_source.isConnected()) return false;
     try {
-      const auto rendered = scene(frame, info.m_isCanceled, &info);
+      const auto rendered = m_source.source()->get3DRenderGeometry(
+          frame, info.m_isCanceled, nullptr, &info);
       if (!rendered || rendered->triangles.empty()) return false;
       const auto &b = rendered->bounds;
       bbox = TRectD(b[0], b[1], b[2], b[3]);

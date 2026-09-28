@@ -446,7 +446,7 @@ RenderScene prepareImagePlane(
     std::shared_ptr<const std::vector<ColorPixel>> pixels,
     const std::vector<ModelTransform> &transforms) {
   require(width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
-              pixels && pixels->size() == std::size_t(width) * height,
+              (!pixels || pixels->size() == std::size_t(width) * height),
           "Invalid image plane texture dimensions.");
   for (const auto &t : transforms) {
     for (double v : t.position) require(std::isfinite(v), "Invalid image plane position.");
@@ -492,5 +492,11 @@ RenderScene prepareImagePlane(
     scene.bounds[3] = std::max(scene.bounds[3], v.y);
   }
   return scene;
+}
+
+RenderScene projectImagePlane(
+    int width, int height,
+    const std::vector<ModelTransform> &transforms) {
+  return prepareImagePlane(width, height, {}, transforms);
 }
 }  // namespace otglb

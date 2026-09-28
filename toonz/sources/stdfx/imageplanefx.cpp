@@ -93,6 +93,30 @@ public:
     return scene(frame, canceled, transforms, settings);
   }
 
+  std::shared_ptr<const otglb::RenderScene> get3DRenderGeometry(
+      double frame, const int *,
+      const std::vector<otglb::ModelTransform> *transforms = nullptr,
+      const TRenderSettings *settings = nullptr) const override {
+    if (!m_input.isConnected()) return {};
+    TRenderSettings neutral = settings ? *settings : TRenderSettings();
+    neutral.m_affine = TAffine();
+    TRectD source;
+    auto *input = static_cast<TRasterFx *>(m_input.getFx());
+    if (!input->doGetBBox(frame, source, neutral) || source.isEmpty())
+      return {};
+    if (!std::isfinite(source.x0) || !std::isfinite(source.y0) ||
+        !std::isfinite(source.x1) || !std::isfinite(source.y1))
+      throw std::runtime_error("Image Plane requires a finite input bounding box.");
+    const double width = std::ceil(source.x1) - std::floor(source.x0);
+    const double height = std::ceil(source.y1) - std::floor(source.y0);
+    if (!(width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+          width * height <= 16.0 * 1024 * 1024))
+      throw std::runtime_error("Image Plane input exceeds the 16 megapixel limit.");
+    return std::make_shared<otglb::RenderScene>(otglb::projectImagePlane(
+        int(width), int(height),
+        transforms ? *transforms : std::vector<otglb::ModelTransform>{}));
+  }
+
   bool doGetBBox(double frame, TRectD &bbox,
                  const TRenderSettings &settings) override {
     bbox = TRectD();

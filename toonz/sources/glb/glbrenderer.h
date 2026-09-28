@@ -125,6 +125,9 @@ RenderScene prepareImagePlane(
     int width, int height,
     std::shared_ptr<const std::vector<ColorPixel>> pixels,
     const std::vector<ModelTransform> &transforms);
+// Geometry-only query for FX bounds; does not allocate or evaluate pixels.
+RenderScene projectImagePlane(int width, int height,
+                              const std::vector<ModelTransform> &transforms);
 
 float linearToSrgb(float value);
 float srgbToLinear(float value);
