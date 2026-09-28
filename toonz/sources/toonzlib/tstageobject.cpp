@@ -1488,6 +1488,15 @@ TAffine TStageObject::getPlacement(double t) {
     if (!link.enabled || link.influence <= 0.0) continue;
     TStageObject *target = m_tree->getStageObject(link.target, false);
     if (!target) continue;  // Preserve links to temporarily missing objects.
+    // Reparenting can make an automatic child its own target later on.
+    bool targetDependsOnThis = false;
+    for (TStageObject *ancestor = target; ancestor;
+         ancestor               = ancestor->m_parent)
+      if (ancestor == this) {
+                      targetDependsOnThis = true;
+                      break;
+      }
+    if (targetDependsOnThis) continue;
     TPointD source      = place * TPointD();
     TPointD destination = target->getPlacement(t) * TPointD();
     double dx           = destination.x - source.x;
