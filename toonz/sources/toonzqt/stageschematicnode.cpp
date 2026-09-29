@@ -30,6 +30,7 @@
 #include "toonz/hook.h"
 #include "toonz/preferences.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/stage.h"
 #include "toonz/txsheethandle.h"
 
 // TnzQt includes
@@ -48,6 +49,7 @@
 #include <QMessageBox>
 #include <QTextCursor>
 #include <QSet>
+#include <cmath>
 
 #include "toonzqt/stageschematicnode.h"
 
@@ -55,63 +57,136 @@ namespace {
 void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
                        TStageObject *object) {
   QMenu *constraints = menu.addMenu(QObject::tr("Constraints"));
-  auto add           = [scene, object](TStageObject::Constraint::Type type) {
+  auto chooseObject  = [scene](TStageObject *exclude,
+                              const QString &prompt) -> TStageObject  *{
     TStageObjectTree *tree = scene->getXsheet()->getStageObjectTree();
     QStringList names;
     std::vector<TStageObjectId> ids;
     for (int i = 0; i < tree->getStageObjectCount(); ++i) {
       TStageObject *candidate = tree->getStageObject(i);
-      if (candidate == object) continue;
+      if (candidate == exclude) continue;
       ids.push_back(candidate->getId());
       names << QString::fromStdString(candidate->getId().toString());
     }
-    if (names.isEmpty()) return;
-    bool ok        = false;
-    QString choice = QInputDialog::getItem(
-                  nullptr, QObject::tr("Constraint Target"),
-                  QObject::tr("Target object:"), names, 0, false, &ok);
-    if (!ok) return;
+    if (names.isEmpty()) return nullptr;
+    bool ok = false;
+    QString choice =
+        QInputDialog::getItem(nullptr, QObject::tr("Constraint Object"), prompt,
+                               names, 0, false, &ok);
+    if (!ok) return nullptr;
     int index = names.indexOf(choice);
-    if (index < 0) return;
+    if (index < 0) return nullptr;
+    return tree->getStageObject(ids[index], false);
+  };
+
+  auto addAim = [scene, object, chooseObject]() {
+    TStageObject *target = chooseObject(object, QObject::tr("Aim target:"));
+    if (!target) return;
     TStageObject::Constraint link;
-    link.type     = type;
-    link.target   = ids[index];
+    link.type     = TStageObject::Constraint::AimAt;
+    link.target   = target->getId();
+    bool ok       = false;
     QString scope = QInputDialog::getItem(
-                  nullptr, QObject::tr("Constraint Scope"), QObject::tr("Apply to:"),
-                  QStringList{QObject::tr("This Object"),
+        nullptr, QObject::tr("Aim At Scope"), QObject::tr("Apply to:"),
+        QStringList{QObject::tr("This Object"),
                     QObject::tr("Child Objects (automatic)")},
-                  0, false, &ok);
+        0, false, &ok);
     if (!ok) return;
     link.scope = scope == QObject::tr("Child Objects (automatic)")
-                               ? TStageObject::Constraint::Children
-                               : TStageObject::Constraint::Self;
-    if (type == TStageObject::Constraint::Buffer) {
-      link.radius = QInputDialog::getDouble(
-                    nullptr, QObject::tr("Buffer Radius"),
-                    QObject::tr("Radius (stage units):"), 100.0, 0.01, 100000.0, 2, &ok);
-      if (!ok) return;
-      link.strength = QInputDialog::getDouble(
-                    nullptr, QObject::tr("Buffer Strength"),
-                    QObject::tr("Positive attracts; negative repels:"), 50.0, -100000.0,
-                    100000.0, 2, &ok);
-      if (!ok) return;
-    }
+                     ? TStageObject::Constraint::Children
+                     : TStageObject::Constraint::Self;
     if (!object->addConstraint(link)) {
       QMessageBox::warning(
-                    nullptr, QObject::tr("Constraint"),
-                    QObject::tr("This target would create a dependency cycle."));
+          nullptr, QObject::tr("Constraint"),
+          QObject::tr("This target would create a dependency cycle."));
       return;
     }
     scene->getXsheetHandle()->notifyXsheetChanged();
   };
+
+  auto addBuffer = [scene, object, chooseObject]() {
+    bool ok       = false;
+    QString scope = QInputDialog::getItem(
+        nullptr, QObject::tr("Buffer Affected Objects"),
+        QObject::tr("Objects affected by this field:"),
+        QStringList{QObject::tr("Selected Object"),
+                    QObject::tr("Child Objects (automatic)")},
+        0, false, &ok);
+    if (!ok) return;
+    bool children = scope == QObject::tr("Child Objects (automatic)");
+    TStageObject *affected =
+        children ? object
+                 : chooseObject(object, QObject::tr("Affected object:"));
+    if (!affected) return;
+
+    QString mode = QInputDialog::getItem(
+        nullptr, QObject::tr("Buffer Mode"), QObject::tr("Field action:"),
+        QStringList{QObject::tr("Repel"), QObject::tr("Attract")}, 0, false,
+        &ok);
+    if (!ok) return;
+    double radius = QInputDialog::getDouble(
+        nullptr, QObject::tr("Buffer Radius"),
+        QObject::tr("Effective radius (inches):"), 4.0, 0.01, 10000.0, 2, &ok);
+    if (!ok) return;
+    double offset = QInputDialog::getDouble(
+        nullptr, QObject::tr("Buffer Strength"),
+        QObject::tr("Maximum position offset (inches):"), 1.0, 0.0, 10000.0, 2,
+        &ok);
+    if (!ok) return;
+
+    TStageObject::Constraint link;
+    link.type   = TStageObject::Constraint::Buffer;
+    link.scope  = children ? TStageObject::Constraint::Children
+                           : TStageObject::Constraint::Self;
+    link.target = object->getId();
+    link.radius = radius * Stage::inch;
+    link.strength =
+        (mode == QObject::tr("Repel") ? -offset : offset) * Stage::inch;
+    if (!affected->addConstraint(link)) {
+      QMessageBox::warning(
+          nullptr, QObject::tr("Buffer"),
+          QObject::tr("This assignment would create a dependency cycle."));
+      return;
+    }
+    scene->getXsheetHandle()->notifyXsheetChanged();
+    if (children && !object->hasChildren())
+      QMessageBox::information(
+          nullptr, QObject::tr("Buffer"),
+          QObject::tr("No child objects are attached yet. Child objects added "
+                      "later will be affected automatically."));
+  };
   QObject::connect(constraints->addAction(QObject::tr("Aim At...")),
-                   &QAction::triggered, constraints,
-                   [add]() { add(TStageObject::Constraint::AimAt); });
+                   &QAction::triggered, constraints, addAim);
   QObject::connect(constraints->addAction(QObject::tr("Buffer...")),
-                   &QAction::triggered, constraints,
-                   [add]() { add(TStageObject::Constraint::Buffer); });
+                   &QAction::triggered, constraints, addBuffer);
   if (!object->getConstraints().empty()) {
     constraints->addSeparator();
+    QObject::connect(
+        constraints->addAction(QObject::tr("Show Constraints")),
+        &QAction::triggered, constraints, [object]() {
+          QStringList lines;
+          for (const auto &link : object->getConstraints()) {
+            QString target = QString::fromStdString(link.target.toString());
+            QString scope  = link.scope == TStageObject::Constraint::Children
+                                 ? QObject::tr("children")
+                                 : QObject::tr("this object");
+            if (link.type == TStageObject::Constraint::Buffer) {
+              QString mode = link.strength < 0.0 ? QObject::tr("repel")
+                                                 : QObject::tr("attract");
+              lines << QObject::tr(
+                           "Buffer: %1 %2 from %3; radius %4 in; maximum "
+                           "offset %5 in")
+                           .arg(mode, scope, target)
+                           .arg(link.radius / Stage::inch, 0, 'f', 2)
+                           .arg(std::abs(link.strength) / Stage::inch, 0, 'f',
+                                2);
+            } else {
+              lines << QObject::tr("Aim At: %1 toward %2").arg(scope, target);
+            }
+          }
+          QMessageBox::information(nullptr, QObject::tr("Constraints"),
+                                   lines.join("\n"));
+        });
     QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
                      &QAction::triggered, constraints, [scene, object]() {
                        object->clearConstraints();
