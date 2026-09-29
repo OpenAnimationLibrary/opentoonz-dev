@@ -163,7 +163,6 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
   bool hasBufferAssignments = false;
   for (int i = 0; i < tree->getStageObjectCount(); ++i) {
     TStageObject *candidate = tree->getStageObject(i);
-    if (candidate == object) continue;
     for (const auto &link : candidate->getConstraints())
       if (link.type == TStageObject::Constraint::Buffer &&
           link.target == object->getId())
@@ -216,12 +215,88 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
           QMessageBox::information(nullptr, QObject::tr("Constraints"),
                                    lines.join("\n"));
         });
-    if (!object->getConstraints().empty())
-      QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
-                       &QAction::triggered, constraints, [scene, object]() {
-                         object->clearConstraints();
-                         scene->getXsheetHandle()->notifyXsheetChanged();
-                       });
+    if (hasBufferAssignments) {
+      QObject::connect(
+          constraints->addAction(QObject::tr("Remove Buffer Assignment...")),
+          &QAction::triggered, constraints, [scene, object, tree]() {
+            struct Entry {
+              TStageObject *owner;
+              int index;
+            };
+            std::vector<Entry> entries;
+            QStringList choices;
+            for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+              TStageObject *candidate = tree->getStageObject(i);
+              const auto &links       = candidate->getConstraints();
+              for (int j = 0; j < (int)links.size(); ++j) {
+                const auto &link = links[j];
+                if (link.type != TStageObject::Constraint::Buffer ||
+                    link.target != object->getId())
+                  continue;
+                entries.push_back({candidate, j});
+                QString affected =
+                    QString::fromStdString(candidate->getId().toString());
+                if (link.scope == TStageObject::Constraint::Children)
+                  affected += QObject::tr(" children");
+                choices << QObject::tr("%1. %2 %3 (radius %4 in)")
+                               .arg((int)entries.size())
+                               .arg(link.strength < 0.0
+                                        ? QObject::tr("Repel")
+                                        : QObject::tr("Attract"))
+                               .arg(affected)
+                               .arg(link.radius / Stage::inch, 0, 'f', 2);
+              }
+            }
+            bool ok        = false;
+            QString choice = QInputDialog::getItem(
+                nullptr, QObject::tr("Remove Buffer Assignment"),
+                QObject::tr("Select assignment to remove:"), choices, 0, false,
+                &ok);
+            if (!ok) return;
+            int index = choices.indexOf(choice);
+            if (index < 0 ||
+                !entries[index].owner->removeConstraint(entries[index].index))
+              return;
+            scene->getXsheetHandle()->notifyXsheetChanged();
+          });
+    }
+    if (!object->getConstraints().empty()) {
+      QObject::connect(
+          constraints->addAction(QObject::tr("Remove Constraint...")),
+          &QAction::triggered, constraints, [scene, object]() {
+            QStringList choices;
+            const auto &links = object->getConstraints();
+            for (int i = 0; i < (int)links.size(); ++i) {
+              const auto &link = links[i];
+              choices << QObject::tr("%1. %2 to %3 (%4)")
+                             .arg(i + 1)
+                             .arg(link.type == TStageObject::Constraint::Buffer
+                                      ? QObject::tr("Buffer")
+                                      : QObject::tr("Aim At"))
+                             .arg(
+                                 QString::fromStdString(link.target.toString()))
+                             .arg(link.scope ==
+                                          TStageObject::Constraint::Children
+                                      ? QObject::tr("children")
+                                      : QObject::tr("this object"));
+            }
+            bool ok        = false;
+            QString choice = QInputDialog::getItem(
+                nullptr, QObject::tr("Remove Constraint"),
+                QObject::tr("Select constraint to remove:"), choices, 0, false,
+                &ok);
+            if (!ok) return;
+            int index = choices.indexOf(choice);
+            if (index < 0 || !object->removeConstraint(index)) return;
+            scene->getXsheetHandle()->notifyXsheetChanged();
+          });
+      QObject::connect(
+          constraints->addAction(QObject::tr("Clear All Constraints")),
+          &QAction::triggered, constraints, [scene, object]() {
+            object->clearConstraints();
+            scene->getXsheetHandle()->notifyXsheetChanged();
+          });
+    }
   }
 }
 
