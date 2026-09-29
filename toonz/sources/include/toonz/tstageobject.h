@@ -113,6 +113,7 @@ public:
     return m_constraints;
   }
   bool addConstraint(const Constraint &constraint);
+  bool removeConstraint(int index);
   void clearConstraints();
 
   /*!
