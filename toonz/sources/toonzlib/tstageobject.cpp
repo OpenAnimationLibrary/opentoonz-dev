@@ -1512,12 +1512,15 @@ TAffine TStageObject::getPlacement(double t) {
                      std::min(1.0, link.influence);
       place = TTranslation(source) * TRotation(delta) * TTranslation(-source) *
               place;
-    } else if (link.type == Constraint::Buffer && distance > 1e-8 &&
-               link.radius > 0.0 && distance < link.radius) {
+    } else if (link.type == Constraint::Buffer && link.radius > 0.0 &&
+               distance < link.radius) {
       double falloff = 1.0 - distance / link.radius;
       double shift   = link.strength * falloff * std::min(1.0, link.influence);
-      place =
-          TTranslation(dx / distance * shift, dy / distance * shift) * place;
+      // Coincident centers have no direction. Pick a stable axis so the field
+      // still has an effect and frame evaluation remains deterministic.
+      double nx = distance > 1e-8 ? dx / distance : 1.0;
+      double ny = distance > 1e-8 ? dy / distance : 0.0;
+      place     = TTranslation(nx * shift, ny * shift) * place;
     }
   }
   m_absPlacement = place;
