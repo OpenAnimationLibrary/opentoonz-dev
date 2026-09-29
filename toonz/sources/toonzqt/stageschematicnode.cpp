@@ -159,11 +159,21 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
                    &QAction::triggered, constraints, addAim);
   QObject::connect(constraints->addAction(QObject::tr("Buffer...")),
                    &QAction::triggered, constraints, addBuffer);
-  if (!object->getConstraints().empty()) {
+  TStageObjectTree *tree    = scene->getXsheet()->getStageObjectTree();
+  bool hasBufferAssignments = false;
+  for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+    TStageObject *candidate = tree->getStageObject(i);
+    if (candidate == object) continue;
+    for (const auto &link : candidate->getConstraints())
+      if (link.type == TStageObject::Constraint::Buffer &&
+          link.target == object->getId())
+        hasBufferAssignments = true;
+  }
+  if (!object->getConstraints().empty() || hasBufferAssignments) {
     constraints->addSeparator();
     QObject::connect(
         constraints->addAction(QObject::tr("Show Constraints")),
-        &QAction::triggered, constraints, [object]() {
+        &QAction::triggered, constraints, [object, tree]() {
           QStringList lines;
           for (const auto &link : object->getConstraints()) {
             QString target = QString::fromStdString(link.target.toString());
@@ -184,14 +194,34 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
               lines << QObject::tr("Aim At: %1 toward %2").arg(scope, target);
             }
           }
+          for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+            TStageObject *candidate = tree->getStageObject(i);
+            if (candidate == object) continue;
+            for (const auto &link : candidate->getConstraints()) {
+              if (link.type != TStageObject::Constraint::Buffer ||
+                  link.target != object->getId())
+                continue;
+              QString mode = link.strength < 0.0 ? QObject::tr("repels")
+                                                 : QObject::tr("attracts");
+              lines << QObject::tr(
+                           "Buffer field %1 %2; radius %3 in; maximum offset "
+                           "%4 in")
+                           .arg(mode, QString::fromStdString(
+                                          candidate->getId().toString()))
+                           .arg(link.radius / Stage::inch, 0, 'f', 2)
+                           .arg(std::abs(link.strength) / Stage::inch, 0, 'f',
+                                2);
+            }
+          }
           QMessageBox::information(nullptr, QObject::tr("Constraints"),
                                    lines.join("\n"));
         });
-    QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
-                     &QAction::triggered, constraints, [scene, object]() {
-                       object->clearConstraints();
-                       scene->getXsheetHandle()->notifyXsheetChanged();
-                     });
+    if (!object->getConstraints().empty())
+      QObject::connect(constraints->addAction(QObject::tr("Clear Constraints")),
+                       &QAction::triggered, constraints, [scene, object]() {
+                         object->clearConstraints();
+                         scene->getXsheetHandle()->notifyXsheetChanged();
+                       });
   }
 }
 
