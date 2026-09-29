@@ -550,6 +550,13 @@ bool TStageObject::addConstraint(const Constraint &constraint) {
   return true;
 }
 
+bool TStageObject::removeConstraint(int index) {
+  if (index < 0 || index >= (int)m_constraints.size()) return false;
+  m_constraints.erase(m_constraints.begin() + index);
+  invalidate();
+  return true;
+}
+
 void TStageObject::clearConstraints() {
   m_constraints.clear();
   invalidate();
