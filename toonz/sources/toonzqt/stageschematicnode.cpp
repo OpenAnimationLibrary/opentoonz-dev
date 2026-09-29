@@ -64,7 +64,7 @@ void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
     std::vector<TStageObjectId> ids;
     for (int i = 0; i < tree->getStageObjectCount(); ++i) {
       TStageObject *candidate = tree->getStageObject(i);
-      if (candidate == exclude) continue;
+      if (candidate == exclude || candidate->getId().isTable()) continue;
       ids.push_back(candidate->getId());
       names << QString::fromStdString(candidate->getId().toString());
     }
