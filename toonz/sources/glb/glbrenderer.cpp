@@ -25,6 +25,19 @@ Vec transform(const Matrix &m, Vec p) {
           m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13],
           m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14]};
 }
+Vec transform(Vec p, const ModelTransform &t) {
+  const double sx = std::sin(t.rotation[0] * Pi / 180.0);
+  const double cx = std::cos(t.rotation[0] * Pi / 180.0);
+  const double sy = std::sin(t.rotation[1] * Pi / 180.0);
+  const double cy = std::cos(t.rotation[1] * Pi / 180.0);
+  const double sz = std::sin(t.rotation[2] * Pi / 180.0);
+  const double cz = std::cos(t.rotation[2] * Pi / 180.0);
+  p               = {p.x * t.scale[0], p.y * t.scale[1], p.z * t.scale[2]};
+  p               = {p.x, cx * p.y - sx * p.z, sx * p.y + cx * p.z};
+  p               = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
+  p               = {cz * p.x - sz * p.y, sz * p.x + cz * p.y, p.z};
+  return {p.x + t.position[0], p.y + t.position[1], p.z + t.position[2]};
+}
 struct Instance {
   const RenderOptions &o;
   double sx, cx, sy, cy, sz, cz;
@@ -38,8 +51,9 @@ struct Instance {
     p = {p.x, cx * p.y - sx * p.z, sx * p.y + cx * p.z};
     p = {cy * p.x + sy * p.z, p.y, -sy * p.x + cy * p.z};
     p = {cz * p.x - sz * p.y, sz * p.x + cz * p.y, p.z};
-    return {p.x + o.position[0], p.y + o.position[1],
-            p.z + o.position[2] - o.cameraDistance};
+    p = {p.x + o.position[0], p.y + o.position[1], p.z + o.position[2]};
+    for (const auto &additional : o.transforms) p = transform(p, additional);
+    return {p.x, p.y, p.z - o.cameraDistance};
   }
 };
 
@@ -98,7 +112,8 @@ bool RenderOptions::operator==(const RenderOptions &b) const {
          headlight == b.headlight && wireframe == b.wireframe &&
          materialColors == b.materialColors && colors == b.colors &&
          useLightingRig == b.useLightingRig && lighting == b.lighting &&
-         animation == b.animation && sourceSeconds == b.sourceSeconds;
+         transforms == b.transforms && animation == b.animation &&
+         sourceSeconds == b.sourceSeconds;
 }
 
 float linearToSrgb(float v) {
@@ -118,6 +133,15 @@ RenderScene prepareRender(const Asset &asset, const RenderOptions &o,
                           const int *canceled) {
   for (double v : o.position) require(std::isfinite(v), "Non-finite GLB position.");
   for (double v : o.rotation) require(std::isfinite(v), "Non-finite GLB rotation.");
+  for (const auto &additional : o.transforms) {
+    for (double v : additional.position)
+      require(std::isfinite(v), "Non-finite 3D transform position.");
+    for (double v : additional.rotation)
+      require(std::isfinite(v), "Non-finite 3D transform rotation.");
+    for (double v : additional.scale)
+      require(std::isfinite(v) && v > 0.0,
+              "3D transform scale must be positive and finite.");
+  }
   require(std::isfinite(o.scale) && o.scale > 0 &&
               std::isfinite(o.cameraDistance) && o.cameraDistance > 0 &&
               std::isfinite(o.nearClip) && std::isfinite(o.farClip) &&
@@ -379,7 +403,28 @@ std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &t
             (triangle.edges[2] && std::abs(e2) <= 0.65 * lengths[2]);
         const double epsilon = 1e-10 * std::max(1.0, std::abs(depth));
         if (depth > sample.depth + epsilon) {
-          sample = {depth, line ? ColorPixel{triangle.color[0], triangle.color[1], triangle.color[2], 1} : ColorPixel{}};
+          ColorPixel color{triangle.color[0], triangle.color[1], triangle.color[2], 1};
+          if (triangle.textured) {
+            color = {};
+            if (scene.texture && scene.textureWidth > 0 && scene.textureHeight > 0) {
+              // The plane uses an orthographic camera; UVs interpolate linearly.
+              {
+                const double u = a * triangle.uv[0][0] +
+                                 b * triangle.uv[1][0] +
+                                 c * triangle.uv[2][0];
+                const double v = a * triangle.uv[0][1] +
+                                 b * triangle.uv[1][1] +
+                                 c * triangle.uv[2][1];
+                if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+                  const int tx = std::min(scene.textureWidth - 1, int(u * scene.textureWidth));
+                  const int ty = std::min(scene.textureHeight - 1, int(v * scene.textureHeight));
+                  color = (*scene.texture)[std::size_t(ty) * scene.textureWidth + tx];
+                }
+              }
+            }
+          }
+          // Transparent texels do not occlude other geometry.
+          if (color.alpha > 0) sample = {depth, line ? color : ColorPixel{}};
         } else if (scene.wireframe && line && std::abs(depth - sample.depth) <= epsilon) {
           sample.color = {triangle.color[0], triangle.color[1], triangle.color[2], 1};
         }
@@ -394,5 +439,64 @@ std::vector<ColorPixel> renderTile(const RenderScene &scene, const RenderTile &t
     output[i].alpha += c.alpha * 0.25f;
   }
   return output;
+}
+
+RenderScene prepareImagePlane(
+    int width, int height,
+    std::shared_ptr<const std::vector<ColorPixel>> pixels,
+    const std::vector<ModelTransform> &transforms) {
+  require(width > 0 && height > 0 && width <= 8192 && height <= 8192 &&
+              (!pixels || pixels->size() == std::size_t(width) * height),
+          "Invalid image plane texture dimensions.");
+  for (const auto &t : transforms) {
+    for (double v : t.position) require(std::isfinite(v), "Invalid image plane position.");
+    for (double v : t.rotation) require(std::isfinite(v), "Invalid image plane rotation.");
+    for (double v : t.scale)
+      require(std::isfinite(v) && v > 0, "Invalid image plane scale.");
+  }
+  RenderScene scene;
+  scene.textureWidth = width;
+  scene.textureHeight = height;
+  scene.texture = std::move(pixels);
+  std::array<Vec, 4> corners{{{-width / 200.0, -height / 200.0, 0},
+                              {width / 200.0, -height / 200.0, 0},
+                              {width / 200.0, height / 200.0, 0},
+                              {-width / 200.0, height / 200.0, 0}}};
+  std::array<ProjectedVertex, 4> projected;
+  for (int i = 0; i < 4; ++i) {
+    Vec p = corners[i];
+    for (const auto &t : transforms) p = transform(p, t);
+    // Keep geometry behind or crossing the camera out of the rasterizer.
+    if (p.z >= 9.9) return scene;
+    projected[i] = {p.x * 100.0, p.y * 100.0, p.z - 10.0};
+  }
+  const std::array<std::array<double, 2>, 4> uv{{{{0, 0}}, {{1, 0}},
+                                                  {{1, 1}}, {{0, 1}}}};
+  for (const auto indices : {std::array<int, 3>{{0, 1, 2}},
+                              std::array<int, 3>{{0, 2, 3}}}) {
+    RenderTriangle triangle;
+    triangle.vertices = {{projected[indices[0]], projected[indices[1]],
+                          projected[indices[2]]}};
+    triangle.edges = {{true, true, true}};
+    triangle.color = {{1, 1, 1}};
+    triangle.uv = {{uv[indices[0]], uv[indices[1]], uv[indices[2]]}};
+    triangle.textured = true;
+    scene.triangles.push_back(triangle);
+  }
+  scene.bounds = {{projected[0].x, projected[0].y,
+                   projected[0].x, projected[0].y}};
+  for (const auto &v : projected) {
+    scene.bounds[0] = std::min(scene.bounds[0], v.x);
+    scene.bounds[1] = std::min(scene.bounds[1], v.y);
+    scene.bounds[2] = std::max(scene.bounds[2], v.x);
+    scene.bounds[3] = std::max(scene.bounds[3], v.y);
+  }
+  return scene;
+}
+
+RenderScene projectImagePlane(
+    int width, int height,
+    const std::vector<ModelTransform> &transforms) {
+  return prepareImagePlane(width, height, {}, transforms);
 }
 }  // namespace otglb
