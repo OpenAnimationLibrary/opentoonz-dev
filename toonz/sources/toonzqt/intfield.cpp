@@ -11,6 +11,7 @@
 #include <QFocusEvent>
 #include <QPainter>
 #include <QPushButton>
+#include <QSignalBlocker>
 
 namespace {
 const int NonLinearSliderPrecision = 2;
@@ -347,9 +348,17 @@ void IntField::getRange(int &minValue, int &maxValue) {
 //-----------------------------------------------------------------------------
 
 void IntField::setRange(int minValue, int maxValue) {
-  m_lineEdit->setRange(minValue, m_isMaxRangeLimited
-                                     ? maxValue
-                                     : (std::numeric_limits<int>::max)());
+  // The Animate Tool handle-size preference intentionally keeps its slider in
+  // the common 100%-600% range, while permitting smaller values to be typed.
+  // Keep this narrowly scoped here while the WIP behavior is evaluated.
+  int lineEditMin = minValue;
+  if (minValue == 100 && maxValue == 600 && parent() &&
+      qstrcmp(parent()->metaObject()->className(), "PreferencesPopup") == 0)
+    lineEditMin = 1;
+
+  m_lineEdit->setRange(lineEditMin, m_isMaxRangeLimited
+                                        ? maxValue
+                                        : (std::numeric_limits<int>::max)());
   if (m_isLinearSlider)
     m_slider->setRange(minValue, maxValue);
   else
@@ -363,6 +372,9 @@ void IntField::setRange(int minValue, int maxValue) {
 void IntField::setValue(int value) {
   if (m_lineEdit->getValue() == value) return;
   m_lineEdit->setValue(value);
+  // A typed/programmatic value may intentionally sit outside the slider's
+  // suggested range. Do not let QSlider's clamping feed back into the editor.
+  const QSignalBlocker blocker(m_slider);
   m_slider->setSliderPosition(value2pos(value));
   m_roller->setValue((double)value);
 }
@@ -521,6 +533,8 @@ void IntField::onEditingFinished() {
   if ((pos2value(m_slider->value()) == value && m_slider->isVisible()) ||
       ((int)m_roller->getValue() == value && m_roller->isVisible()))
     return;
+  // Keep manually entered values outside the slider's suggested range intact.
+  const QSignalBlocker blocker(m_slider);
   m_slider->setValue(value2pos(value));
   m_roller->setValue((double)value);
   emit valueChanged(false);
