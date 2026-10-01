@@ -348,22 +348,21 @@ void IntField::getRange(int &minValue, int &maxValue) {
 //-----------------------------------------------------------------------------
 
 void IntField::setRange(int minValue, int maxValue) {
-  // The Animate Tool handle-size preference intentionally keeps its slider in
-  // the common 100%-600% range, while permitting smaller values to be typed.
-  // Keep this narrowly scoped here while the WIP behavior is evaluated.
-  int lineEditMin = minValue;
-  if (minValue == 100 && maxValue == 600 && parent() &&
-      qstrcmp(parent()->metaObject()->className(), "PreferencesPopup") == 0)
-    lineEditMin = 1;
-
-  m_lineEdit->setRange(lineEditMin, m_isMaxRangeLimited
-                                        ? maxValue
-                                        : (std::numeric_limits<int>::max)());
+  m_lineEdit->setRange(minValue, m_isMaxRangeLimited
+                                     ? maxValue
+                                     : (std::numeric_limits<int>::max)());
   if (m_isLinearSlider)
     m_slider->setRange(minValue, maxValue);
   else
     m_slider->setRange(minValue * pow(10., NonLinearSliderPrecision),
                        maxValue * pow(10., NonLinearSliderPrecision));
+  m_roller->setRange(minValue, maxValue);
+}
+
+//-----------------------------------------------------------------------------
+
+void IntField::setInputRange(int minValue, int maxValue) {
+  m_lineEdit->setRange(minValue, maxValue);
   m_roller->setRange(minValue, maxValue);
 }
 

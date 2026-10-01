@@ -1177,7 +1177,7 @@ void EditTool::drawMainHandle() {
   const TPixel32 normalColor = Preferences::instance()->getAnimateToolColor();
   const TPixel32 highlightedColor = TPixel32(150, 255, 140);
   const double prefScale = Preferences::instance()->getAnimateToolHandleSize();
-  const bool showText     = prefScale >= MinTextVisibilityScale;
+  const bool showText    = prefScale >= MinTextVisibilityScale;
 
   // collect information
   TXsheet *xsh         = getXsheet();
@@ -1243,8 +1243,7 @@ void EditTool::drawMainHandle() {
   else
     tglDrawDisk(p, unit * 5);
   glPopName();
-  if (showText && m_highlightedDevice == Rotation && !dragging &&
-      !isPicking())
+  if (showText && m_highlightedDevice == Rotation && !dragging && !isPicking())
     drawText(p, textUnit, "Rotate");
   tglColor(normalColor);
   tglDrawSegment(p, center);
@@ -1285,8 +1284,7 @@ void EditTool::drawMainHandle() {
   else
     tglDrawRect(q.x - r, q.y - r, q.x + r, q.y + r);
   glPopName();
-  if (showText && m_highlightedDevice == ScaleXY && !dragging &&
-      !isPicking())
+  if (showText && m_highlightedDevice == ScaleXY && !dragging && !isPicking())
     drawText(scaleTooltipPos, textUnit, "Horizontal/Vertical scale");
 
   // draw shear handle
@@ -1352,7 +1350,7 @@ void EditTool::draw() {
   const TPixel32 normalColor = Preferences::instance()->getAnimateToolColor();
   const TPixel32 highlightedColor = TPixel32(150, 255, 140);
   const double prefScale = Preferences::instance()->getAnimateToolHandleSize();
-  const bool showText     = prefScale >= MinTextVisibilityScale;
+  const bool showText    = prefScale >= MinTextVisibilityScale;
 
   TXsheet *xsh         = getXsheet();
   /*-- Obtain ID of the current editing stage object --*/
@@ -1453,8 +1451,7 @@ void EditTool::draw() {
   /*-- Object name --*/
   TStageObject *pegbar = xsh->getStageObject(objId);
   std::string name     = pegbar->getFullName();
-  if (showText &&
-      (objId.isColumn() || objId.isPegbar() || objId.isTable())) {
+  if (showText && (objId.isColumn() || objId.isPegbar() || objId.isTable())) {
     glPushMatrix();
     glTranslated(center.x + labelUnit * 10, center.y - labelUnit * 20, 0);
     glScaled(textUnit * 2, textUnit * 1.5, 1);
