@@ -158,8 +158,15 @@ private:
   void setPath(const TFilePath path) const {
     TXshSoundLevelP sdl = m_xl->getSoundLevel();
     if (sdl) {
+      TFilePath oldPath = sdl->getPath();
       sdl->setPath(path);
-      sdl->loadSoundTrack();
+      try {
+        sdl->loadSoundTrack();
+      } catch (TException &e) {
+        sdl->setPath(oldPath);
+        error(QString::fromStdWString(e.getMessage()));
+        return;
+      }
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
       TApp::instance()->getCurrentXsheet()->notifyXsheetSoundChanged();
       return;
@@ -1054,7 +1061,14 @@ void LevelSettingsPopup::onPathChanged() {
       TFilePath oldPath = sdl->getPath();
       if (oldPath == newPath) return;
       sdl->setPath(newPath);
-      sdl->loadSoundTrack();
+      try {
+        sdl->loadSoundTrack();
+      } catch (TException &e) {
+        sdl->setPath(oldPath);
+        error(QString::fromStdWString(e.getMessage()));
+        updateLevelSettings();
+        return;
+      }
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
       TApp::instance()->getCurrentXsheet()->notifyXsheetSoundChanged();
       TUndoManager::manager()->add(
