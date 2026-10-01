@@ -1,5 +1,6 @@
 
 #include <cstring>
+#include <QStringList>
 
 // TnzCore includes
 #include "tsystem.h"
@@ -90,6 +91,11 @@ TRaster32P makeTexture(const TRaster32P &ras) {
 }
 
 //-----------------------------------------------------------------------------
+
+TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
+                                         const TStroke *stroke);
+void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
+                                 int step);
 
 class OutlineBuilder {
 private:
@@ -988,6 +994,49 @@ TColorStyle *TRasterImagePatternStrokeStyle::clone() const {
 
 //-----------------------------------------------------------------------------
 
+TColorStyle &TRasterImagePatternStrokeStyle::copy(const TColorStyle &other) {
+  const auto *trail =
+      dynamic_cast<const TRasterImagePatternStrokeStyle *>(&other);
+  assert(trail);
+  if (!trail) return *this;
+  TColorStyle::copy(other);
+  m_trailCycle = trail->m_trailCycle;
+  return *this;
+}
+
+//-----------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::getParamRange(int index,
+                                                   QStringList &items) const {
+  assert(index == TrailStyles::cycleParam);
+  items << QCoreApplication::translate("TRasterImagePatternStrokeStyle", "Off")
+        << QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Forward")
+        << QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Backward")
+        << QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Repeat");
+}
+
+//-----------------------------------------------------------------------------
+
+int TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
+                                                  int index) const {
+  assert(index == TrailStyles::cycleParam);
+  return int(m_trailCycle);
+}
+
+//-----------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::setParamValue(int index, int value) {
+  if (index == TrailStyles::cycleParam)
+    m_trailCycle = TrailCycle::modeFromValue(value);
+  else
+    setParamValue(index, double(value));
+}
+
+//-----------------------------------------------------------------------------
+
 TColorStyle *TRasterImagePatternStrokeStyle::clone(
     std::string brushIdName) const {
   TRasterImagePatternStrokeStyle *style =
@@ -1049,20 +1098,24 @@ void TRasterImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
-int TRasterImagePatternStrokeStyle::getParamCount() const { return 2; }
+int TRasterImagePatternStrokeStyle::getParamCount() const { return 3; }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle::ParamType TRasterImagePatternStrokeStyle::getParamType(
     int index) const {
   assert(0 <= index && index < getParamCount());
-  return TColorStyle::DOUBLE;
+  return index == TrailStyles::cycleParam ? TColorStyle::ENUM
+                                          : TColorStyle::DOUBLE;
 }
 
 //-----------------------------------------------------------------------------
 
 QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::cycleParam)
+    return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Trail Cycle");
   return (index == 0) ? QCoreApplication::translate(
                             "TRasterImagePatternStrokeStyle", "Distance")
                       : QCoreApplication::translate(
@@ -1276,9 +1329,13 @@ void TRasterImagePatternStrokeStyle::drawStroke(
 
   // visto che cambiare texture costa tempo il ciclo esterno e' sulle textures
   // piuttosto che sulle trasformazioni
-  TLevel::Iterator frameIt = m_level->begin();
-  for (int i = 0; i < (int)size && frameIt != m_level->end(); ++i, ++frameIt) {
-    TRasterImageP ri = frameIt->second;
+  TLevel::Iterator frameIt     = getPatternFrameIterator(m_level, stroke);
+  const int frameStep          = stroke->outlineOptions().m_patternFrameStep;
+  const int distinctFrameCount = (frameStep % frameCount == 0) ? 1 : frameCount;
+  for (int i = 0; i < (int)size && i < distinctFrameCount; ++i) {
+    TLevel::Iterator currentFrame = frameIt;
+    advancePatternFrameIterator(frameIt, m_level, frameStep);
+    TRasterImageP ri = currentFrame->second;
     TRasterP ras;
     if (ri) ras = ri->getRaster();
     if (!ras) continue;
@@ -1295,7 +1352,7 @@ void TRasterImagePatternStrokeStyle::drawStroke(
                  texInfo.format,  // pixel data type        // oh, SO much
                  texImage->getRawData());
 
-    for (int j = i; j < (int)size; j += frameCount) {
+    for (int j = i; j < (int)size; j += distinctFrameCount) {
       TAffine aff = rd.m_aff * transformations[j];
       glPushMatrix();
       tglMultMatrix(aff);
@@ -1416,6 +1473,49 @@ TColorStyle *TVectorImagePatternStrokeStyle::clone() const {
 
 //-----------------------------------------------------------------------------
 
+TColorStyle &TVectorImagePatternStrokeStyle::copy(const TColorStyle &other) {
+  const auto *trail =
+      dynamic_cast<const TVectorImagePatternStrokeStyle *>(&other);
+  assert(trail);
+  if (!trail) return *this;
+  TColorStyle::copy(other);
+  m_trailCycle = trail->m_trailCycle;
+  return *this;
+}
+
+//-----------------------------------------------------------------------------
+
+void TVectorImagePatternStrokeStyle::getParamRange(int index,
+                                                   QStringList &items) const {
+  assert(index == TrailStyles::cycleParam);
+  items << QCoreApplication::translate("TVectorImagePatternStrokeStyle", "Off")
+        << QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Forward")
+        << QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Backward")
+        << QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Repeat");
+}
+
+//-----------------------------------------------------------------------------
+
+int TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
+                                                  int index) const {
+  assert(index == TrailStyles::cycleParam);
+  return int(m_trailCycle);
+}
+
+//-----------------------------------------------------------------------------
+
+void TVectorImagePatternStrokeStyle::setParamValue(int index, int value) {
+  if (index == TrailStyles::cycleParam)
+    m_trailCycle = TrailCycle::modeFromValue(value);
+  else
+    setParamValue(index, double(value));
+}
+
+//-----------------------------------------------------------------------------
+
 TColorStyle *TVectorImagePatternStrokeStyle::clone(
     std::string brushIdName) const {
   TVectorImagePatternStrokeStyle *style =
@@ -1490,20 +1590,24 @@ void TVectorImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
-int TVectorImagePatternStrokeStyle::getParamCount() const { return 2; }
+int TVectorImagePatternStrokeStyle::getParamCount() const { return 3; }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle::ParamType TVectorImagePatternStrokeStyle::getParamType(
     int index) const {
   assert(0 <= index && index < getParamCount());
-  return TColorStyle::DOUBLE;
+  return index == TrailStyles::cycleParam ? TColorStyle::ENUM
+                                          : TColorStyle::DOUBLE;
 }
 
 //-----------------------------------------------------------------------------
 
 QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::cycleParam)
+    return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Trail Cycle");
   return (index == 0) ? QCoreApplication::translate(
                             "TVectorImagePatternStrokeStyle", "Distance")
                       : QCoreApplication::translate(
@@ -1571,6 +1675,50 @@ void TVectorImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
 //--------------------------------------------------------------------------------------------------
 
+namespace {
+
+TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
+                                         const TStroke *stroke) {
+  const int frameCount = level->getFrameCount();
+  assert(frameCount > 0);
+
+  int offset = stroke->outlineOptions().m_patternFrameOffset % frameCount;
+  if (offset < 0) offset += frameCount;
+
+  TLevel::Iterator it = level->begin();
+  while (offset-- > 0) {
+    if (++it == level->end()) it = level->begin();
+  }
+  return it;
+}
+
+// A step of zero holds the iterator still: the stroke shows one frame along
+// its whole length, which is how the brush's Repeat cycle mode freezes a
+// stamp.
+void advancePatternFrameIterator(TLevel::Iterator &it, const TLevelP &level,
+                                 int step) {
+  const int frameCount = level->getFrameCount();
+  assert(frameCount > 0);
+
+  step %= frameCount;
+  if (step < 0) step += frameCount;
+  if (step > frameCount / 2) step -= frameCount;
+
+  while (step > 0) {
+    if (++it == level->end()) it = level->begin();
+    --step;
+  }
+  while (step < 0) {
+    if (it == level->begin()) it = level->end();
+    --it;
+    ++step;
+  }
+}
+
+}  // namespace
+
+//--------------------------------------------------------------------------------------------------
+
 void TVectorImagePatternStrokeStyle::computeTransformations(
     std::vector<TAffine> &transformations, const TStroke *stroke) const {
   const int frameCount = m_level->getFrameCount();
@@ -1578,13 +1726,14 @@ void TVectorImagePatternStrokeStyle::computeTransformations(
   transformations.clear();
   const double length = stroke->getLength();
   assert(m_level->begin() != m_level->end());
-  TLevel::Iterator lit = m_level->begin();
+  TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
+  const int frameStep  = stroke->outlineOptions().m_patternFrameStep;
   double s             = 0;
 
   while (s < length) {
     TFrameId fid      = lit->first;
     TVectorImageP img = m_level->frame(fid);
-    if (++lit == m_level->end()) lit = m_level->begin();
+    advancePatternFrameIterator(lit, m_level, frameStep);
     assert(img);
     if (img->getType() != TImage::VECTOR) return;
     double t       = stroke->getParameterAtLength(s);
@@ -1647,7 +1796,7 @@ void TVectorImagePatternStrokeStyle::drawStroke(
 
     tglMultMatrix(rd.m_aff);
 
-    TLevel::Iterator lit = m_level->begin();
+    TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
 
     TFrameId fid      = lit->first;
     TVectorImageP img = m_level->frame(fid);
@@ -1711,13 +1860,14 @@ void TVectorImagePatternStrokeStyle::drawStroke(
   } else {
     //--------------------------------------------
     assert(m_level->begin() != m_level->end());
-    TLevel::Iterator lit = m_level->begin();
+    TLevel::Iterator lit = getPatternFrameIterator(m_level, stroke);
+    const int frameStep  = stroke->outlineOptions().m_patternFrameStep;
     UINT i, size = transformations.size();
 
     for (i = 0; i < size; i++) {
       TFrameId fid      = lit->first;
       TVectorImageP img = m_level->frame(fid);
-      if (++lit == m_level->end()) lit = m_level->begin();
+      advancePatternFrameIterator(lit, m_level, frameStep);
       assert(img);
       if (!img) continue;
       if (img->getType() != TImage::VECTOR) return;

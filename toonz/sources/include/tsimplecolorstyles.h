@@ -8,6 +8,7 @@
 #include "tlevel.h"
 #include "traster.h"
 #include "tstrokeoutline.h"
+#include "trailcycle.h"
 
 // Qt includes
 #include <QCoreApplication>
@@ -250,6 +251,7 @@ protected:
   TLevelP m_level;
   std::string m_name;
   double m_space, m_rotation;
+  TrailCycle::Mode m_trailCycle = TrailCycle::Mode::Off;
 
 public:
   TRasterImagePatternStrokeStyle();
@@ -258,7 +260,7 @@ public:
   bool isRegionStyle() const override { return false; }
   bool isStrokeStyle() const override { return true; }
 
-  int getLevelFrameCount() { return m_level->getFrameCount(); }
+  int getLevelFrameCount() const { return m_level->getFrameCount(); }
 
   void computeTransformations(std::vector<TAffine> &positions,
                               const TStroke *stroke) const;
@@ -269,6 +271,7 @@ public:
   void invalidate(){};
 
   TColorStyle *clone() const override;
+  TColorStyle &copy(const TColorStyle &other) override;
   TColorStyle *clone(std::string brushIdName) const override;
 
   QString getDescription() const override;
@@ -293,6 +296,11 @@ public:
     m_rootDir = path + "custom styles";
   }
 
+  TrailCycle::Mode getTrailCycleMode() const { return m_trailCycle; }
+  void setTrailCycleMode(TrailCycle::Mode mode) {
+    m_trailCycle = TrailCycle::modeFromValue(int(mode));
+  }
+
   int getParamCount() const override;
   TColorStyle::ParamType getParamType(int index) const override;
 
@@ -300,6 +308,9 @@ public:
   void getParamRange(int index, double &min, double &max) const override;
   double getParamValue(TColorStyle::double_tag, int index) const override;
   void setParamValue(int index, double value) override;
+  void getParamRange(int index, QStringList &items) const override;
+  int getParamValue(TColorStyle::int_tag, int index) const override;
+  void setParamValue(int index, int value) override;
 
   TRectD getStrokeBBox(const TStroke *stroke) const override;
 
@@ -328,6 +339,7 @@ protected:
   TLevelP m_level;
   std::string m_name;
   double m_space, m_rotation;
+  TrailCycle::Mode m_trailCycle = TrailCycle::Mode::Off;
 
 public:
   TVectorImagePatternStrokeStyle();
@@ -336,7 +348,7 @@ public:
   bool isRegionStyle() const override { return false; }
   bool isStrokeStyle() const override { return true; }
 
-  int getLevelFrameCount() { return m_level->getFrameCount(); }
+  int getLevelFrameCount() const { return m_level->getFrameCount(); }
 
   void computeTransformations(std::vector<TAffine> &positions,
                               const TStroke *stroke) const;
@@ -347,6 +359,7 @@ public:
   void invalidate(){};
 
   TColorStyle *clone() const override;
+  TColorStyle &copy(const TColorStyle &other) override;
   TColorStyle *clone(std::string brushIdName) const override;
 
   QString getDescription() const override;
@@ -371,6 +384,11 @@ public:
     m_rootDir = path + "custom styles";
   }
 
+  TrailCycle::Mode getTrailCycleMode() const { return m_trailCycle; }
+  void setTrailCycleMode(TrailCycle::Mode mode) {
+    m_trailCycle = TrailCycle::modeFromValue(int(mode));
+  }
+
   int getParamCount() const override;
   TColorStyle::ParamType getParamType(int index) const override;
 
@@ -378,6 +396,9 @@ public:
   void getParamRange(int index, double &min, double &max) const override;
   double getParamValue(TColorStyle::double_tag, int index) const override;
   void setParamValue(int index, double value) override;
+  void getParamRange(int index, QStringList &items) const override;
+  int getParamValue(TColorStyle::int_tag, int index) const override;
+  void setParamValue(int index, int value) override;
 
   static void clearGlDisplayLists();
 
@@ -396,5 +417,40 @@ private:
   TVectorImagePatternStrokeStyle &operator=(
       const TVectorImagePatternStrokeStyle &);
 };
+
+// Shared access for the Settings page, palette persistence and the Brush.
+namespace TrailStyles {
+
+constexpr int cycleParam = 2;
+
+inline bool isTrail(const TColorStyle *style) {
+  return dynamic_cast<const TRasterImagePatternStrokeStyle *>(style) ||
+         dynamic_cast<const TVectorImagePatternStrokeStyle *>(style);
+}
+
+inline TrailCycle::Mode getMode(const TColorStyle *style) {
+  if (auto *trail = dynamic_cast<const TRasterImagePatternStrokeStyle *>(style))
+    return trail->getTrailCycleMode();
+  if (auto *trail = dynamic_cast<const TVectorImagePatternStrokeStyle *>(style))
+    return trail->getTrailCycleMode();
+  return TrailCycle::Mode::Off;
+}
+
+inline void setMode(TColorStyle *style, TrailCycle::Mode mode) {
+  if (auto *trail = dynamic_cast<TRasterImagePatternStrokeStyle *>(style))
+    trail->setTrailCycleMode(mode);
+  else if (auto *trail = dynamic_cast<TVectorImagePatternStrokeStyle *>(style))
+    trail->setTrailCycleMode(mode);
+}
+
+inline int frameCount(const TColorStyle *style) {
+  if (auto *trail = dynamic_cast<const TRasterImagePatternStrokeStyle *>(style))
+    return trail->getLevelFrameCount();
+  if (auto *trail = dynamic_cast<const TVectorImagePatternStrokeStyle *>(style))
+    return trail->getLevelFrameCount();
+  return 0;
+}
+
+}  // namespace TrailStyles
 
 #endif  // TSIMPLECOLORSTYLES_H

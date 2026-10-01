@@ -103,8 +103,30 @@ public:
     return *this;
   }
 
+  void readTrailCycle(TColorStyle *style) {
+    if (!TrailStyles::isTrail(style) || m_count + 1 >= int(m_stream->size()))
+      return;
+    const TStyleParam &marker = (*m_stream)[m_count];
+    const TStyleParam &value  = (*m_stream)[m_count + 1];
+    if (marker.m_type != TStyleParam::SP_STRING ||
+        marker.m_string != "trail-cycle-v1" ||
+        value.m_type != TStyleParam::SP_INT)
+      return;
+    const double mode = value.m_numericVal;
+    if (mode >= 0 && mode <= 3 && mode == int(mode))
+      TrailStyles::setMode(style, TrailCycle::modeFromValue(int(mode)));
+  }
+
   VersionNumber versionNumber() const override { return m_version; }
 };
+
+void saveStyleWithTrailCycle(const TColorStyle *style,
+                             PliOutputStream &stream) {
+  style->save(stream);
+  const auto mode = TrailStyles::getMode(style);
+  if (mode != TrailCycle::Mode::Off)
+    stream << std::string("trail-cycle-v1") << int(mode);
+}
 
 //---------------------------------------------------------------------------
 
@@ -185,7 +207,7 @@ for (int pageIndex = 0; pageIndex < vPalette->getPageCount(); pageIndex++) {
     TColorStyle *style = vPalette->getStyle(styleId);
     std::vector<TStyleParam> stream;
     PliOutputStream chan(&stream);
-    style->save(chan);  // viene riempito lo stream;
+    saveStyleWithTrailCycle(style, chan);
 
     assert(pageIndex >= 0 && pageIndex <= 65535);
     StyleTag *styleTag = new StyleTag(
@@ -219,7 +241,7 @@ for (int pageIndex = 0; pageIndex < vPalette->getPageCount(); pageIndex++) {
           // TColorStyle*style = tempVecImg->getPalette()->getStyle(styleId);
           std::vector<TStyleParam> stream;
           PliOutputStream chan(&stream);
-          style->save(chan);  // viene riempito lo stream;
+          saveStyleWithTrailCycle(style, chan);
 
           assert(pageIndex >= 0 && pageIndex <= 65535);
           StyleTag *styleTag =
@@ -480,11 +502,12 @@ static void putStroke(TStroke *stroke, int &currStyleId,
     tags.push_back(colorTag.release());
   }
 
-  // If the outline options are non-standard (not round), add the outline infos
+  // If the outline options are non-standard, add the outline infos.
   TStroke::OutlineOptions &options = stroke->outlineOptions();
   if (options.m_capStyle != TStroke::OutlineOptions::ROUND_CAP ||
       options.m_joinStyle != TStroke::OutlineOptions::ROUND_JOIN ||
-      options.m_miterLower != 0.0 || options.m_miterUpper != 4.0) {
+      options.m_miterLower != 0.0 || options.m_miterUpper != 4.0 ||
+      options.m_patternFrameOffset != 0 || options.m_patternFrameStep != 1) {
     StrokeOutlineOptionsTag *outlineOptionsTag =
         new StrokeOutlineOptionsTag(options);
     tags.push_back((PliObjectTag *)outlineOptionsTag);
@@ -754,12 +777,15 @@ TPalette *readPalette(GroupTag *paletteTag, int majorVersion,
 
     PliInputStream chan(&params, majorVersion, minorVersion);
     TColorStyle *style = TColorStyle::load(chan);  // leggo params
+    chan.readTrailCycle(style);
     assert(id > 0);
     if (id < palette->getStyleCount()) {
       if (frame > -1) {
         TColorStyle *oldStyle = palette->getStyle(id);
+        const auto trailMode  = TrailStyles::getMode(oldStyle);
         oldStyle->copy(*style);
         palette->setKeyframe(id, frame);
+        TrailStyles::setMode(oldStyle, trailMode);
       } else
         palette->setStyle(id, style);
     } else {
