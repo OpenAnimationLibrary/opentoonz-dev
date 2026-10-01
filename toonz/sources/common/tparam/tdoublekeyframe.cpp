@@ -5,6 +5,23 @@
 #include "tconvert.h"
 #include "tunit.h"
 
+namespace {
+
+bool isDegreeUnitName(const std::string &unitName) {
+  // Keep the angle unit platform-neutral in scene files. Depending on the
+  // conversion path, U+00B0 may reach this legacy std::string field as UTF-8,
+  // Latin-1/Windows-1252, or legacy MacRoman. The scene format historically
+  // stores the degree unit as the ASCII escape "\\u00b0".
+  static const std::string degreeUtf8("\xC2\xB0", 2);
+  static const std::string degreeLatin1("\xB0", 1);
+  static const std::string degreeMacRoman("\xA1", 1);
+
+  return unitName == "\\u00b0" || unitName == degreeUtf8 ||
+         unitName == degreeLatin1 || unitName == degreeMacRoman;
+}
+
+}  // namespace
+
 TDoubleKeyframe::TDoubleKeyframe(double frame, double value)
     : m_type(Linear)
     , m_frame(frame)
@@ -54,10 +71,7 @@ void TDoubleKeyframe::saveData(TOStream &os) const {
     break;
   }
   std::string unitName = m_unitName != "" ? m_unitName : "default";
-  // Dirty resolution. Because the degree sign is converted to unexpected
-  // string...
-  if (QString::fromStdWString(L"\u00b0").toStdString() == unitName)
-    unitName = "\\u00b0";
+  if (isDegreeUnitName(unitName)) unitName = "\\u00b0";
   switch (m_type) {
   case Constant:
   case Exponential:
