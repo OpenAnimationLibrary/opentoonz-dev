@@ -5,18 +5,14 @@ on:
 permissions:
   contents: write
 jobs:
-  prepare:
+  publish:
     if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Install syntax-check and formatting dependencies
-        run: |
-          sudo apt-get -qq update > /tmp/trail-deps.log 2>&1
-          sudo apt-get -qq install -y clang-format-14 qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev >> /tmp/trail-deps.log 2>&1 || { tail -100 /tmp/trail-deps.log; exit 1; }
-      - name: Apply, format, validate and publish the isolated feature branch
-        run: python3 .github/ot-dev/trail-settings-workspace/prepare.py
+      - name: Publish scoped testing branch
+        run: python3 .github/ot-dev/trail-settings-workspace/publish.py
       - uses: actions/upload-artifact@v6
         if: always()
         with:
