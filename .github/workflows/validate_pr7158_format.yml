@@ -20,11 +20,13 @@ jobs:
           ref: 0e3f291ae89e7cf17d93eba7443327ebb6dad71b
           fetch-depth: 0
           persist-credentials: false
-      - name: Install the upstream formatter version
+      - name: Install pinned clang-format 14.0.6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format-14
-          clang-format-14 --version
+          python3 -m venv "$RUNNER_TEMP/clang14"
+          "$RUNNER_TEMP/clang14/bin/pip" install --disable-pip-version-check --no-cache-dir clang-format==14.0.6
+          ln -s "$RUNNER_TEMP/clang14/bin/clang-format" "$RUNNER_TEMP/clang14/bin/clang-format-14"
+          echo "$RUNNER_TEMP/clang14/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/clang14/bin/clang-format-14" --version
       - name: Reproduce, format, validate, and prepare a correction commit
         env:
           GH_TOKEN: ${{ github.token }}
