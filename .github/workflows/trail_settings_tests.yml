@@ -1,0 +1,22 @@
+name: Trail Settings Tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'toonz/sources/include/trailcycle.h'
+      - 'toonz/sources/tnztools/trailcyclestate.h'
+      - 'toonz/tests/trail_settings/**'
+      - '.github/workflows/trail_settings_tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  GestureState:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile and test gesture state
+        run: |
+          cmake -S toonz/tests/trail_settings -B build/trail-settings
+          cmake --build build/trail-settings
+          ctest --test-dir build/trail-settings --output-on-failure
