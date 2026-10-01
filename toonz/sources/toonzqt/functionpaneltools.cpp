@@ -677,8 +677,7 @@ StretchPointDragTool::StretchPointDragTool(FunctionPanel *panel,
                    curve->getKeyframe(k).m_speedIn,
                    curve->getKeyframe(k).m_speedOut, setter});
   }
-  m_previousRange =
-      m_keys.value(rightId).orgFramePos - m_keys.value(leftId).orgFramePos;
+  m_previousRange = lastOrgFrame() - firstOrgFrame();
 }
 
 StretchPointDragTool::~StretchPointDragTool() {
@@ -923,7 +922,7 @@ void StretchPointDragTool::applyStretch(double pivot, double orgRange,
       m_keys[ki].setter->moveKeyframes(dstFrame - curFrame, 0.);
     }
     m_keys[ki].setter->selectKeyframe(kId);
-    if (ki != 0 && segRatio[ki - 1] != 1.) {
+    if (ki != 0) {
       if (m_keys[ki].setter->isSpeedInOut(kId - 1))
         m_keys[ki].setter->setSpeedIn(
             TPointD(m_keys[ki].orgSpeedIn.x * segRatio[ki - 1],
@@ -932,7 +931,7 @@ void StretchPointDragTool::applyStretch(double pivot, double orgRange,
         m_keys[ki].setter->setEaseIn(m_keys[ki].orgSpeedIn.x *
                                      segRatio[ki - 1]);
     }
-    if (ki != m_keys.size() - 1 && segRatio[ki] != 1.) {
+    if (ki != m_keys.size() - 1) {
       if (m_keys[ki].setter->isSpeedInOut(kId))
         m_keys[ki].setter->setSpeedOut(TPointD(
             m_keys[ki].orgSpeedOut.x * segRatio[ki], m_keys[ki].orgSpeedOut.y));

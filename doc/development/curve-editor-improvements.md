@@ -93,11 +93,17 @@ graphs or expression linking.
   and stretch method bodies with lightweight parameter/setter fixtures. It covers
   explicit segment scope, mixed interpolation, invalid indices, shared translation
   limits and differing value scales, shared pivots with unequal/offset spans,
-  integer packing, neighbours, left/right stretching, dragging back to the original
-  positions, and cleanup of invalid selections. The fixture does not validate the
+  integer packing, neighbours, left/right stretching, subrange compression, dragging
+  back to the original positions and Bezier/ease handle lengths, and cleanup of
+  invalid selections. The fixture does not validate the
   complete KeyframeSetter/Undo stack or UI event sequence; those require the app.
-- Stage 1's Windows CI build passed. Full Windows/macOS/Linux builds and interactive application checks remain for
-  CI and manual testing. In particular, verify the editor's popup and embedded
+- The combined stages 1 and 2 passed the full Windows CI build and packaging
+  ([run 36811131424](https://github.com/OpenAnimationLibrary/opentoonz-dev/actions/runs/36811131424)).
+  A follow-up corrects the initial range of subrange stretching and restores
+  Bezier/ease handle lengths when dragging back to the original range. Focused
+  fixtures cover both corrections; the follow-up CI build is pending.
+  macOS/Linux builds and interactive application checks remain for testing.
+  In particular, verify the editor's popup and embedded
   modes and dynamic GLB material channels in the built application.
 
 Manual acceptance checks:
