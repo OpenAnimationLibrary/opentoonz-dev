@@ -77,7 +77,7 @@ enum CommandType {
 
 //-----------------------------------------------------------------------------
 
-class AuxActionsCreator {
+class DVAPI AuxActionsCreator {
 public:
   AuxActionsCreator();
   virtual ~AuxActionsCreator(){};
