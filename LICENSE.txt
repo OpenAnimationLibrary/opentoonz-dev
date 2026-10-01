@@ -1,3 +1,7 @@
+Toonz Raster Auto Fill adaptation from Ztoryc:
+Copyright (c) 2025-2026 Franco Bianco / Matitanimata
+Released under the BSD 3-Clause terms below; original project copyrights remain.
+
 Some of code in this repository is derived from thirdparty libraries.
 For files in the "thirdparty" directory: Please consult with the licenses in the appropriate READMEs or source codes.
 For files in the "stuff/library/mypaint brushes" directory: Please see the licenses in stuff/library/mypaint brushes/Licenses.txt.
