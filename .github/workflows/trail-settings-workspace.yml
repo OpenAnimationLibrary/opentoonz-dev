@@ -16,6 +16,7 @@ jobs:
       - name: Prepare pinned source snapshots for the Settings adaptation
         run: |
           set -euo pipefail
+          git fetch --depth=1 origin d850472cffdc7c502ba3dfd2ea6fd6293016b81f
           git fetch --depth=1 https://github.com/opentoonz/opentoonz.git 868d795e7d80687af7afad7866ffc4e1997dca30 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754
           mkdir -p snapshots/base snapshots/upstream
           git archive d850472cffdc7c502ba3dfd2ea6fd6293016b81f toonz/sources .github doc CONTRIBUTING.md | tar -x -C snapshots/base
