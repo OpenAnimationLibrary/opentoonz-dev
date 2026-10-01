@@ -13,6 +13,10 @@ alignments, and horizontal/vertical distribution. All eight commands can also
 be assigned shortcuts or added to a command bar. Set Linear Control Point and
 Set Nonlinear Control Point are registered commands as well.
 
+Existing saved Windows room menus gain the panel entry when loaded. There is
+no need to reset room layouts or remove customized menus. A panel entry already
+present in a submenu keeps its existing placement and label.
+
 ## References and scope
 
 - Stroke alignment: Selection Area, First Selected, Last Selected, Smallest
@@ -55,8 +59,10 @@ g++ -std=c++17 -DLINUX -Itoonz/sources/include \
 
 Local validation also includes C++17/Qt 5.15 syntax compilation of all changed
 implementation files, Qt moc/resource generation, XML/resource checks and
-clang-format 14 checks. A complete application build and interactive Windows
-testing are separate from these checks.
+clang-format 14 checks. An offscreen Qt menu-loading check covers saved-menu
+migration, preserved labels/order, nested panel entries, duplicate handling,
+and all seven shipped menus containing a Windows menu. A complete application
+build and interactive Windows testing are separate from these checks.
 
 Interactive verification before merging:
 
