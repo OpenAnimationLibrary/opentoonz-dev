@@ -5,7 +5,7 @@ and Ztoryc `546c003b672cffda339bec796e551b3b514cfd5f` (September 30, 2026).
 These enhancements use the shared Function Editor and animation code; they do
 not require Ztoryc's storyboard system or scene sidecar.
 
-## Stage 1: find and reveal channels (this PR)
+## Stage 1: find and reveal channels (implemented)
 
 - Search the parameter tree by channel, column, FX, or nested group name,
   ignoring case and leading/trailing spaces. Expand matching branches.
@@ -28,11 +28,34 @@ Source: Ztoryc's [navigation and selection work](https://github.com/matitanimata
 and [current-column/channel synchronization](https://github.com/matitanimata/ztoryc/commit/1380b90a643cfe216be21b9c97f3bc99c75cf5de),
 adapted to OT-Dev rather than replacing complete files.
 
+## Stage 2: select and edit across curves (implemented in this PR)
+
+- Shift-click keys or segments to add them across displayed curves. A rectangle
+  selects keys inside it and segments crossing it, including their endpoint keys.
+- Drag selected keys together in time and value. Each curve uses its own value
+  scale; time movement stops together at the closest unselected neighbour.
+- Alt-drag an outer endpoint of a contiguous selection to stretch several curves
+  about one shared pivot and ratio. All selected curves must contain at least two
+  consecutive keys. Integer-frame packing and neighbour limits apply to every
+  curve, including shorter and offset selections. An ineligible selection falls
+  back to ordinary dragging rather than stretching only part of the selection.
+- Right-click a selected segment to apply an interpolation type to all selected
+  segments in one undo operation, including selections with mixed types.
+- Show selected keys/segments on every curve; use weight for the current curve
+  and line patterns to distinguish the selected column from other displayed
+  columns. Empty clicks clear the current curve while allowing a new rectangle.
+
+OpenToonz's Ctrl-click key creation, Shift-drag axis constraint, and existing
+single-curve editing remain available. The graph tooltip lists the gestures.
+This ports graph selection/editing; tree multi-selection and its wider visibility
+menu are deferred. Tangents/easing, path generation/roving, speed graphs and
+curve links remain separate stages.
+
 ## Assessment and recommended follow-up PRs
 
 | Stage | Ztoryc enhancement | Assessment and review gates |
 | --- | --- | --- |
-| 2 | Multiple curve/key/segment selection; group drag and time scaling; current-curve emphasis and per-column line styles | Useful foundation for batch editing. Port selection, hit testing, segment targeting, drag, scaling, and their undo paths together. Test different channel units, overlapping curves, frame collisions, and selection after undo. Include the later fixes for a graph with no current channel. |
+| 2 (implemented here) | Multiple curve/key/segment selection; group drag and time scaling; current-curve emphasis and per-column line styles | Useful foundation for batch editing. Port selection, hit testing, segment targeting, drag, scaling, and their undo paths together. Test different channel units, overlapping curves, frame collisions, and selection after undo. Include the later fixes for a graph with no current channel. |
 | 3 | Auto Bezier, Flat, normalized tangent copy/paste, named easing presets | Good candidates once selection semantics are stable. Reuse KeyframeSetter and existing keyframe types. Include endpoint corrections; check extrema/overshoot, zero value/time spans, linked handles, adjacent segments, and undo. Treat optional automatic tangents on key creation separately because insertion also changes neighbouring keys. |
 | 4 | Rove Keys / Even Speed Along Path; Generate Path from Keys; inactive path-channel indicators | Keep separate from tangent editing: roving moves whole stage-object keys, and path generation changes the object's motion source. Verify synchronized rotation/scale keys, integer-frame rounding, existing spline replacement, attach/detach, undo/redo and save/reload. Constant speed applies to path-length percentage, not arbitrary independent X/Y channels. |
 | 5 | Read-only speed graph | Useful inspection aid, but Ztoryc overlays the lower value graph and samples evaluated curves on every paint. Define the derivative's meaning and units, guard non-finite expression/file values, check discontinuities and mouse/wheel interaction, and measure cost with many selected curves before porting. |
@@ -49,12 +72,13 @@ Relevant source commits:
 Do not wholesale cherry-pick the source series: it also contains Tahoma-specific
 Drawing Number handling and wider crash hardening. Preserve OT-Dev's dynamic
 material parameter support and upstream curve behaviour when adapting each stage.
-The selected stage-1 implementation does not include multi-selection, tangent
-commands, time retiming, generated paths, speed graphs or expression linking.
+This PR implements navigation and graph multi-selection/editing (stages 1 and 2).
+It does not include tangent commands, generated paths, path-speed retiming, speed
+graphs or expression linking.
 
-## Stage 1 validation
+## Validation
 
-- Both modified C++ translation units pass GCC C++17 syntax checks with Qt 5.15
+- All modified C++ translation units pass GCC C++17 syntax checks with Qt 5.15
   headers. Qt moc generation and generated-source syntax checks cover the changed
   headers. These are compilation checks, not a complete linked OpenToonz build.
 - An offscreen Qt harness uses the production TreeModel/TreeView and extracts the
@@ -65,7 +89,14 @@ commands, time retiming, generated paths, speed graphs or expression linking.
   navigation to hidden and null items. This is focused validation, not an
   end-to-end test of the running OpenToonz application.
 - Changed C/C++ lines pass clang-format 14; `git diff --check` passes.
-- Full Windows/macOS/Linux builds and interactive application checks remain for
+- A separate focused C++ harness executes the production selection, translation,
+  and stretch method bodies with lightweight parameter/setter fixtures. It covers
+  explicit segment scope, mixed interpolation, invalid indices, shared translation
+  limits and differing value scales, shared pivots with unequal/offset spans,
+  integer packing, neighbours, left/right stretching, dragging back to the original
+  positions, and cleanup of invalid selections. The fixture does not validate the
+  complete KeyframeSetter/Undo stack or UI event sequence; those require the app.
+- Stage 1's Windows CI build passed. Full Windows/macOS/Linux builds and interactive application checks remain for
   CI and manual testing. In particular, verify the editor's popup and embedded
   modes and dynamic GLB material channels in the built application.
 
@@ -82,7 +113,19 @@ Manual acceptance checks:
 5. Select a column/camera/pegbar or FX, then a different graph curve. Confirm the
    corresponding visible group/channel is revealed. A filtered-out item should
    not override the filter.
-6. Verify Ctrl+Shift+F and both Escape actions, ordinary text editing in search,
+6. Shift-click keys/segments on different curves, and rectangle-select a mixture
+   of lone keys and segments. Confirm every selected key and segment is marked.
+7. Drag the group into an unselected neighbour; all selected curves should stop
+   together. Check differently scaled channels and undo/redo.
+8. Alt-drag both outer ends of selections with equal and unequal frame spans.
+   Check integer packing, untouched neighbours, tangent lengths, return to the
+   starting position, and undo/redo. A gapped or single-key selection must not
+   partially stretch other selected curves.
+9. Right-click a selected segment on a different/overlapping curve and choose an
+   interpolation type. Only explicit selected segments should change in one undo.
+10. Click empty graph space, rectangle-select again, and open the menu without a
+    current curve. Confirm subsequent selection/menus still work.
+11. Verify Ctrl+Shift+F and both Escape actions, ordinary text editing in search,
    and graph/spreadsheet/popup editor modes.
 
 ## Credits

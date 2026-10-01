@@ -252,6 +252,7 @@ public:
   bool isAnimatedOnly() const { return m_animatedOnly; }
   ChannelGroup *getStageObjectChannelGroup(TStageObject *obj) const;
   ChannelGroup *getFxChannelGroup(TFx *fx) const;
+  static TreeModel::Item *columnScopeOf(TreeModel::Item *item);
 
   void setCurrentStageObject(TStageObject *obj) { m_currentStageObject = obj; }
   TStageObject *getCurrentStageObject() const { return m_currentStageObject; }
