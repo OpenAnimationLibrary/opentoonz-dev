@@ -1,0 +1,30 @@
+name: Trail Settings Workspace
+on:
+  push:
+    branches: [automation/trail-settings-workspace-20261001]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Prepare pinned source snapshots for the Settings adaptation
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 https://github.com/opentoonz/opentoonz.git 868d795e7d80687af7afad7866ffc4e1997dca30 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754
+          mkdir -p snapshots/base snapshots/upstream
+          git archive d850472cffdc7c502ba3dfd2ea6fd6293016b81f toonz/sources .github doc CONTRIBUTING.md | tar -x -C snapshots/base
+          git archive 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 toonz/sources toonz/tests doc/trail_cycle_validation.md | tar -x -C snapshots/upstream
+          git diff 868d795e7d80687af7afad7866ffc4e1997dca30 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 > snapshots/trail-7085.diff
+          git show -s --format=fuller 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 > snapshots/upstream-author.txt
+          tar -czf trail-settings-sources.tar.gz snapshots
+      - uses: actions/upload-artifact@v6
+        with:
+          name: trail-settings-sources
+          path: trail-settings-sources.tar.gz
+          retention-days: 1
