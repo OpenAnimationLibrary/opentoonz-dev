@@ -48,15 +48,43 @@ adapted to OT-Dev rather than replacing complete files.
 OpenToonz's Ctrl-click key creation, Shift-drag axis constraint, and existing
 single-curve editing remain available. The graph tooltip lists the gestures.
 This ports graph selection/editing; tree multi-selection and its wider visibility
-menu are deferred. Tangents/easing, path generation/roving, speed graphs and
-curve links remain separate stages.
+menu are deferred. Path generation/roving, speed graphs and curve links remain
+separate stages.
+
+## Stage 3: tangent commands and easing presets (implemented in this PR)
+
+- **Auto Bezier** computes locally clamped slopes at selected keys across curves.
+  Endpoints, extrema and plateaus receive flat tangents. **Flat Tangents** makes
+  selected keys horizontal. Both commands convert adjoining segments to
+  SpeedInOut without moving keys; unselected keys' slopes are not recomputed.
+- **Copy Tangents** requires one key with a usable Bezier side. **Paste Tangents**
+  scales the copied handle fractions by each destination segment's duration and
+  value change. A zero-height horizontal side copies as flat; a zero-height
+  overshooting side has no normalized shape and is skipped. The internal tangent
+  clipboard does not replace the system keyframe clipboard.
+- **Ease Presets** provides Sine, Quad, Cubic, Quart and Expo Bezier approximations,
+  each with slow-start, slow-end and slow-both-ends variants. Explicit segment
+  selections take precedence. With only keys selected, both endpoints must be
+  selected; disjoint and lone keys do not imply additional segments. The menu is
+  disabled when no segment qualifies.
+- Easing and tangent paste unlink the edited key's handles so the opposite side
+  is not silently reshaped. Auto/Flat preserve the original linked state.
+- Sample evaluated expression/file endpoint values before Bezier conversion;
+  reject non-finite spans before editing. Interpolation conversion records both
+  endpoints for undo, including the neighbour whose incoming handle changes.
+  Each command across multiple curves is grouped into one undo operation.
+
+These are explicit context-menu commands. Automatic tangent changes on key
+creation and cycle-seam smoothing are deferred. Existing scene interpolation is
+unchanged until a command is used. Source: Ztoryc's tangent work and endpoint
+corrections, plus its named easing presets (linked below).
 
 ## Assessment and recommended follow-up PRs
 
 | Stage | Ztoryc enhancement | Assessment and review gates |
 | --- | --- | --- |
 | 2 (implemented here) | Multiple curve/key/segment selection; group drag and time scaling; current-curve emphasis and per-column line styles | Useful foundation for batch editing. Port selection, hit testing, segment targeting, drag, scaling, and their undo paths together. Test different channel units, overlapping curves, frame collisions, and selection after undo. Include the later fixes for a graph with no current channel. |
-| 3 | Auto Bezier, Flat, normalized tangent copy/paste, named easing presets | Good candidates once selection semantics are stable. Reuse KeyframeSetter and existing keyframe types. Include endpoint corrections; check extrema/overshoot, zero value/time spans, linked handles, adjacent segments, and undo. Treat optional automatic tangents on key creation separately because insertion also changes neighbouring keys. |
+| 3 (implemented here) | Auto Bezier, Flat, normalized tangent copy/paste, named easing presets | Uses KeyframeSetter and SpeedInOut. Validates endpoint undo, extrema, unequal timing, flat spans, linked handles and selected segment scope. Optional automatic tangents on key creation and cycle-seam smoothing remain deferred. |
 | 4 | Rove Keys / Even Speed Along Path; Generate Path from Keys; inactive path-channel indicators | Keep separate from tangent editing: roving moves whole stage-object keys, and path generation changes the object's motion source. Verify synchronized rotation/scale keys, integer-frame rounding, existing spline replacement, attach/detach, undo/redo and save/reload. Constant speed applies to path-length percentage, not arbitrary independent X/Y channels. |
 | 5 | Read-only speed graph | Useful inspection aid, but Ztoryc overlays the lower value graph and samples evaluated curves on every paint. Define the derivative's meaning and units, guard non-finite expression/file values, check discontinuities and mouse/wheel interaction, and measure cost with many selected curves before porting. |
 | 6 | Link Curves with delay/multiplier/offset; driver/driven tree markers | Useful expression authoring. Verify destination overwrite behaviour, expression grammar and frame numbering, nested FX/channel matching, dependency cycles including links created in the same operation, disjoint selected spans, undo and save/reload. Source implementation matches target channels by expression name and builds an interval from selected key extrema; arbitrary selections need an explicit scope policy. |
@@ -72,9 +100,9 @@ Relevant source commits:
 Do not wholesale cherry-pick the source series: it also contains Tahoma-specific
 Drawing Number handling and wider crash hardening. Preserve OT-Dev's dynamic
 material parameter support and upstream curve behaviour when adapting each stage.
-This PR implements navigation and graph multi-selection/editing (stages 1 and 2).
-It does not include tangent commands, generated paths, path-speed retiming, speed
-graphs or expression linking.
+This PR implements navigation, graph multi-selection/editing and explicit tangent
+and easing commands (stages 1 through 3). Generated paths, path-speed retiming,
+speed graphs and expression linking remain future work.
 
 ## Validation
 
@@ -101,7 +129,16 @@ graphs or expression linking.
   ([run 36811131424](https://github.com/OpenAnimationLibrary/opentoonz-dev/actions/runs/36811131424)).
   A follow-up corrects the initial range of subrange stretching and restores
   Bezier/ease handle lengths when dragging back to the original range. Focused
-  fixtures cover both corrections; the follow-up CI build is pending.
+  fixtures cover both corrections; the follow-up Windows build also
+  [passed](https://github.com/OpenAnimationLibrary/opentoonz-dev/actions/runs/36813717115).
+  Stage 3's C++ and Qt-generated code pass compilation checks. A focused harness
+  uses the production KeyframeSetter methods, KeyframesUndo and TUndoManager
+  with lightweight parameter fixtures. It verifies endpoint undo/redo,
+  multi-curve grouping, clamped Auto/Flat slopes, linked state, all 15 presets on
+  rising/falling/flat segments, explicit/disjoint selection scope, evaluated
+  anchors, normalized tangent paste, and invalid spans. It does not replace
+  end-to-end tests of the production TDoubleParam evaluator or application UI.
+  Stage 3's full Windows build is pending.
   macOS/Linux builds and interactive application checks remain for testing.
   In particular, verify the editor's popup and embedded
   modes and dynamic GLB material channels in the built application.
@@ -133,6 +170,14 @@ Manual acceptance checks:
     current curve. Confirm subsequent selection/menus still work.
 11. Verify Ctrl+Shift+F and both Escape actions, ordinary text editing in search,
    and graph/spreadsheet/popup editor modes.
+12. Apply Auto Bezier and Flat to endpoints, extrema and intermediate keys on
+    multiple curves with unequal timing. Verify values/timing, linked state,
+    neighbours and one-step undo/redo.
+13. Copy tangents from an interior key and an endpoint; paste into rising,
+    falling and flat segments with different durations and channel units.
+14. Apply each ease family to explicit segments and pairs of selected keys.
+    Verify the unselected adjoining segments, mixed selection, expression/file
+    anchors, undo/redo and scene save/reload.
 
 ## Credits
 
@@ -140,3 +185,7 @@ Requested co-authors: MotionMonster (Jeremy Bullock), manongjohn, and
 matitanimata (Franco Bianco). The source enhancements build on their shared
 Tahoma2D/Function Editor work. The referenced Ztoryc commits also credit Claude
 Opus 5; that attribution is retained in the port commit.
+Ztoryc additions and modifications: Copyright (c) 2025-2026 Franco Bianco /
+Matitanimata. The adapted portions retain the BSD 3-Clause terms in LICENSE.txt.
+Stage 3 was adapted and checked with Codex (GPT-6); the staged plan above is the
+design context. Production setter and undo tests supplement human UI review.

@@ -1829,6 +1829,11 @@ void FunctionPanel::openContextMenu(QMouseEvent *e) {
   QAction setFileAction(tr("File Interpolation"), 0);
   QAction setConstantAction(tr("Constant Interpolation"), 0);
   QAction setSimilarShapeAction(tr("Similar Shape Interpolation"), 0);
+  QAction autoBezierAction(tr("Auto Bezier"), 0);
+  QAction flatAction(tr("Flat Tangents"), 0);
+  QAction copyTangentsAction(tr("Copy Tangents"), 0);
+  QAction pasteTangentsAction(tr("Paste Tangents"), 0);
+  QList<QAction *> easePresetActions;
   QAction fitSelectedAction(tr("Fit Selection"), 0);
   QAction fitAllAction(tr("Fit"), 0);
   QAction setStep1Action(tr("Step 1"), 0);
@@ -1877,11 +1882,11 @@ void FunctionPanel::openContextMenu(QMouseEvent *e) {
     if (FunctionTreeModel::Channel *channel = findClosestChannel(e->pos(), 20))
       curve = channel->getParam();
   }
-  if (!curve) return;
+  if (!curve && getSelection()->getSelectedKeyframeCount() == 0) return;
 
   // build menu
   QMenu menu(0);
-  if (curve == getCurrentCurve() && m_highlighted.handle == Point &&
+  if (curve && curve == getCurrentCurve() && m_highlighted.handle == Point &&
       m_highlighted.gIndex >= 0 &&
       m_highlighted.gIndex < (int)m_gadgets.size() &&
       m_gadgets[m_highlighted.gIndex].m_handle != 100) {
@@ -1892,7 +1897,7 @@ void FunctionPanel::openContextMenu(QMouseEvent *e) {
       menu.addAction(&linkHandlesAction);
     menu.addAction(&resetHandlesAction);
     menu.addAction(&deleteKeyframeAction);
-  } else {
+  } else if (curve) {
     int k0 = curve->getPrevKeyframe(frame);
     int k1 = curve->getNextKeyframe(frame);
     if (k0 == curve->getKeyframeCount() - 1)  // after last keyframe
@@ -1951,6 +1956,35 @@ void FunctionPanel::openContextMenu(QMouseEvent *e) {
       if (kf.m_step != 4) menu.addAction(&setStep4Action);
       menu.addSeparator();
     }
+  }
+  if (getSelection()->getSelectedKeyframeCount() > 0) {
+    menu.addSeparator();
+    menu.addAction(&autoBezierAction);
+    menu.addAction(&flatAction);
+    QMenu *easeMenu = menu.addMenu(tr("Ease Presets"));
+    easeMenu->setEnabled(getSelection()->canApplyEasePreset());
+    int count                 = 0;
+    const EasePreset *presets = KeyframeSetter::getEasePresets(count);
+    QMenu *familyMenu         = nullptr;
+    QString family;
+    for (int i = 0; i < count; ++i) {
+      const QString nextFamily = QString::fromLatin1(presets[i].m_family);
+      if (nextFamily != family || !familyMenu) {
+        family     = nextFamily;
+        familyMenu = easeMenu->addMenu(family);
+      }
+      const QString label = presets[i].m_variant == EasePreset::In
+                                ? tr("In (slow start)")
+                            : presets[i].m_variant == EasePreset::Out
+                                ? tr("Out (slow end)")
+                                : tr("In-Out (slow both ends)");
+      easePresetActions.append(familyMenu->addAction(label));
+    }
+    menu.addAction(&copyTangentsAction);
+    copyTangentsAction.setEnabled(getSelection()->canCopyTangents());
+    menu.addAction(&pasteTangentsAction);
+    pasteTangentsAction.setEnabled(getSelection()->hasCopiedTangents());
+    menu.addSeparator();
   }
   if (!getSelection()->isEmpty()) menu.addAction(&fitSelectedAction);
   menu.addAction(&fitAllAction);
@@ -2024,7 +2058,19 @@ void FunctionPanel::openContextMenu(QMouseEvent *e) {
   else if (action == &setConstantAction)
     setSegmentType(getSelection(), curve, segmentIndex,
                    TDoubleKeyframe::Constant);
-  else if (action == &fitSelectedAction)
+  else if (action == &autoBezierAction)
+    getSelection()->setSelectedKeyframesAutoBezier();
+  else if (action == &flatAction)
+    getSelection()->setSelectedKeyframesFlat();
+  else if (action == &copyTangentsAction)
+    getSelection()->copyTangents();
+  else if (action == &pasteTangentsAction)
+    getSelection()->pasteTangents();
+  else if (easePresetActions.contains(action)) {
+    int count                 = 0;
+    const EasePreset *presets = KeyframeSetter::getEasePresets(count);
+    getSelection()->applyEasePreset(presets[easePresetActions.indexOf(action)]);
+  } else if (action == &fitSelectedAction)
     fitSelectedPoints();
   else if (action == &fitAllAction)
     fitCurve();

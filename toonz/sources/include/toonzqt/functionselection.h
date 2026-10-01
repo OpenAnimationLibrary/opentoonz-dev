@@ -27,6 +27,7 @@
 // forward declaration
 class TDoubleParam;
 class TFrameHandle;
+struct EasePreset;
 
 //-----------------------------------------------------------------------------
 
@@ -60,6 +61,16 @@ class FunctionSelection final : public QObject, public TSelection {
   //-1 if curve not found
   int touchCurveIndex(TDoubleParam *curve);
   // as getCurve(); if curve not found then add it
+
+  struct TangentClip {
+    bool m_hasIn = false, m_hasOut = false;
+    double m_inXFrac = 0, m_inYFrac = 0;
+    double m_outXFrac = 0, m_outYFrac = 0;
+  };
+  static TangentClip m_tangentClip;
+  bool readSelectedTangents(TangentClip &clip) const;
+  void applyTangentsToSelection(bool flat);
+  QList<QPair<TDoubleParam *, int>> selectedEaseSegments() const;
 
 public:
   FunctionSelection();
@@ -149,6 +160,19 @@ public:
   //! means the selection spans several parameters, which the graph has to
   //! move as one block.
   QList<TDoubleParam *> getSelectedCurves() const;
+
+  void setSelectedKeyframesAutoBezier();
+  void setSelectedKeyframesFlat();
+  bool canCopyTangents() const;
+  bool hasCopiedTangents() const {
+    return m_tangentClip.m_hasIn || m_tangentClip.m_hasOut;
+  }
+  void copyTangents();
+  void pasteTangents();
+  bool canApplyEasePreset() const { return !selectedEaseSegments().isEmpty(); }
+  //! Explicit segments take precedence. With only keys selected, presets
+  //! affect segments whose two endpoints are selected.
+  void applyEasePreset(const EasePreset &preset);
 signals:
   void selectionChanged();
 };

@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QMimeData>
 #include <QClipboard>
+#include <cmath>
 
 //=============================================================================
 //
@@ -466,6 +467,153 @@ void FunctionSelection::addSegment(TDoubleParam *curve, int k) {
 
   makeCurrent();
   emit selectionChanged();
+}
+
+//-----------------------------------------------------------------------------
+
+void FunctionSelection::setSelectedKeyframesAutoBezier() {
+  applyTangentsToSelection(false);
+}
+
+void FunctionSelection::setSelectedKeyframesFlat() {
+  applyTangentsToSelection(true);
+}
+
+void FunctionSelection::applyTangentsToSelection(bool flat) {
+  if (getSelectedKeyframeCount() == 0) return;
+  TUndoManager::manager()->beginBlock();
+  for (const auto &col : m_selectedKeyframes) {
+    std::set<int> keys(col.second.begin(), col.second.end());
+    if (flat)
+      KeyframeSetter::setFlatTangents(col.first, keys);
+    else
+      KeyframeSetter::setAutoBezier(col.first, keys);
+  }
+  TUndoManager::manager()->endBlock();
+}
+
+//-----------------------------------------------------------------------------
+
+FunctionSelection::TangentClip FunctionSelection::m_tangentClip;
+
+bool FunctionSelection::readSelectedTangents(TangentClip &clip) const {
+  clip = TangentClip();
+  if (getSelectedKeyframeCount() != 1) return false;
+  const auto sel      = getSelectedKeyframe(0);
+  TDoubleParam *curve = sel.first;
+  const int k         = sel.second;
+  if (!curve || k < 0 || k >= curve->getKeyframeCount()) return false;
+  const auto key = curve->getKeyframe(k);
+  auto readSide = [&](int segment, const TPointD &speed, double &x, double &y) {
+    if (segment < 0 || segment + 1 >= curve->getKeyframeCount() ||
+        curve->getKeyframe(segment).m_type != TDoubleKeyframe::SpeedInOut)
+      return false;
+    const double f0 = curve->keyframeIndexToFrame(segment);
+    const double f1 = curve->keyframeIndexToFrame(segment + 1);
+    const double w  = f1 - f0;
+    const double h  = curve->getValue(f1) - curve->getValue(f0);
+    if (!std::isfinite(w) || w <= 0. || !std::isfinite(h) ||
+        !std::isfinite(speed.x) || !std::isfinite(speed.y) ||
+        (h == 0. && speed.y != 0.))
+      return false;
+    x = speed.x / w;
+    y = h == 0. ? 0. : speed.y / h;
+    return std::isfinite(x) && std::isfinite(y);
+  };
+  clip.m_hasOut = readSide(k, key.m_speedOut, clip.m_outXFrac, clip.m_outYFrac);
+  clip.m_hasIn = readSide(k - 1, key.m_speedIn, clip.m_inXFrac, clip.m_inYFrac);
+  return clip.m_hasOut || clip.m_hasIn;
+}
+
+bool FunctionSelection::canCopyTangents() const {
+  TangentClip clip;
+  return readSelectedTangents(clip);
+}
+
+void FunctionSelection::copyTangents() {
+  TangentClip clip;
+  if (readSelectedTangents(clip)) m_tangentClip = clip;
+}
+
+void FunctionSelection::pasteTangents() {
+  if (!hasCopiedTangents() || getSelectedKeyframeCount() == 0) return;
+  TUndoManager::manager()->beginBlock();
+  for (const auto &col : m_selectedKeyframes) {
+    TDoubleParam *curve = col.first;
+    if (!curve) continue;
+    const int n = curve->getKeyframeCount();
+    std::set<int> segments;
+    std::map<int, std::pair<TPointD, TPointD>> handles;
+    bool valid = true;
+    for (int k : col.second) {
+      if (k < 0 || k >= n) continue;
+      auto &pair = handles[k];
+      if (m_tangentClip.m_hasOut && k + 1 < n) {
+        segments.insert(k);
+        const double f0 = curve->keyframeIndexToFrame(k);
+        const double f1 = curve->keyframeIndexToFrame(k + 1);
+        pair.second     = TPointD(m_tangentClip.m_outXFrac * (f1 - f0),
+                                  m_tangentClip.m_outYFrac *
+                                      (curve->getValue(f1) - curve->getValue(f0)));
+      }
+      if (m_tangentClip.m_hasIn && k > 0) {
+        segments.insert(k - 1);
+        const double f0 = curve->keyframeIndexToFrame(k - 1);
+        const double f1 = curve->keyframeIndexToFrame(k);
+        pair.first      = TPointD(m_tangentClip.m_inXFrac * (f1 - f0),
+                                  m_tangentClip.m_inYFrac *
+                                      (curve->getValue(f1) - curve->getValue(f0)));
+      }
+      if (!std::isfinite(pair.first.x) || !std::isfinite(pair.first.y) ||
+          !std::isfinite(pair.second.x) || !std::isfinite(pair.second.y))
+        valid = false;
+    }
+    if (!valid || !KeyframeSetter::convertToBezier(curve, segments)) continue;
+    for (const auto &entry : handles) {
+      const int k         = entry.first;
+      const bool writeOut = m_tangentClip.m_hasOut && k + 1 < n;
+      const bool writeIn  = m_tangentClip.m_hasIn && k > 0;
+      if (!writeOut && !writeIn) continue;
+      KeyframeSetter setter(curve, k);
+      setter.unlinkHandles();
+      if (writeOut) setter.setSpeedOut(entry.second.second);
+      if (writeIn) setter.setSpeedIn(entry.second.first);
+    }
+  }
+  TUndoManager::manager()->endBlock();
+}
+
+//-----------------------------------------------------------------------------
+
+QList<QPair<TDoubleParam *, int>> FunctionSelection::selectedEaseSegments()
+    const {
+  QList<QPair<TDoubleParam *, int>> segments;
+  if (!m_selectedSegments.isEmpty()) {
+    for (const auto &segment : m_selectedSegments)
+      if (segment.first && segment.second >= 0 &&
+          segment.second + 1 < segment.first->getKeyframeCount())
+        segments.append(segment);
+  } else {
+    // A lone key is not a request to reshape both neighbouring segments.
+    for (const auto &col : m_selectedKeyframes) {
+      for (int k : col.second)
+        if (col.first && k >= 0 && k + 1 < col.first->getKeyframeCount() &&
+            col.second.contains(k + 1))
+          segments.append(qMakePair(col.first, k));
+    }
+  }
+  return segments;
+}
+
+void FunctionSelection::applyEasePreset(const EasePreset &preset) {
+  std::map<TDoubleParam *, std::set<int>> segments;
+  for (const auto &segment : selectedEaseSegments())
+    segments[segment.first].insert(segment.second);
+  if (segments.empty()) return;
+  TUndoManager::manager()->beginBlock();
+  for (const auto &entry : segments)
+    KeyframeSetter::setEasePreset(entry.first, entry.second, preset);
+  TUndoManager::manager()->endBlock();
 }
 
 //-----------------------------------------------------------------------------

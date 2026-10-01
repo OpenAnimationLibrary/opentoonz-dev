@@ -20,6 +20,14 @@
 class KeyframesUndo;
 class TSceneHandle;
 
+//! Unit-square Bezier control points for one named easing approximation.
+struct EasePreset {
+  enum Variant { In, Out, InOut };
+  const char *m_family;
+  Variant m_variant;
+  double m_x1, m_y1, m_x2, m_y2;
+};
+
 class DVAPI KeyframeSetter {
   TDoubleParamP m_param;
   int m_kIndex;
@@ -104,6 +112,26 @@ public:
 
   static void enableCycle(TDoubleParam *curve, bool enabled,
                           TSceneHandle *sceneHandle = nullptr);
+
+  //! Convert valid segments to Bezier while preserving evaluated endpoint
+  //! values. Returns false without editing if the input is not finite.
+  //! The caller groups this with subsequent handle edits in one undo block.
+  static bool convertToBezier(TDoubleParam *curve,
+                              const std::set<int> &segments,
+                              bool enableUndo = true);
+  //! Compute locally clamped slopes at selected keys; endpoints and extrema
+  //! are flat. Adjacent segments become SpeedInOut; timing is untouched.
+  static void setAutoBezier(TDoubleParam *curve, const std::set<int> &keys,
+                            bool enableUndo = true);
+  static void setFlatTangents(TDoubleParam *curve, const std::set<int> &keys,
+                              bool enableUndo = true);
+  static const EasePreset *getEasePresets(int &count);
+  static void setEasePreset(TDoubleParam *curve, const std::set<int> &segments,
+                            const EasePreset &preset, bool enableUndo = true);
+
+private:
+  static void setTangents(TDoubleParam *curve, const std::set<int> &keys,
+                          bool flat, bool enableUndo);
 };
 
 #endif
