@@ -12,7 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Publish scoped testing branch
-        run: python3 .github/ot-dev/trail-settings-workspace/publish.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/ot-dev/trail-settings-workspace/publish.py').resolve()
+          text = p.read_text()
+          old = 'run("git", "rm", ".github/workflows/trail_settings_tests.yml")'
+          assert old in text
+          text = text.replace(old, 'run("git", "rm", "-f", ".github/workflows/trail_settings_tests.yml")')
+          exec(compile(text, str(p), 'exec'), {'__name__': '__main__', '__file__': str(p)})
+          PY
       - uses: actions/upload-artifact@v6
         if: always()
         with:
