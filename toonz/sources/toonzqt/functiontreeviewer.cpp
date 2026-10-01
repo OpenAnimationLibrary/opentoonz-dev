@@ -765,10 +765,8 @@ bool FunctionTreeModel::Channel::isCurrent() const {
 void FunctionTreeModel::Channel::setIsCurrent(bool current) {
   Channel *oldCurrent = m_model->m_currentChannel;
   if (current) {
-    // this channel must become the current
-    if (oldCurrent == this) return;  // already it is: nothing to do
-    m_model->m_currentChannel = this;
-
+    // Synchronize the owner even when this curve was already current: the
+    // Xsheet selection may have moved to another column in the meantime.
     // change the current fx if the FxChannelGroup is clicked
     FxChannelGroup *fxGroup = dynamic_cast<FxChannelGroup *>(m_group);
     if (fxGroup && m_model->getFxHandle()) {
@@ -783,6 +781,9 @@ void FunctionTreeModel::Channel::setIsCurrent(bool current) {
             stageObjectGroup->getStageObject()->getId());
       }
     }
+
+    if (oldCurrent == this) return;
+    m_model->m_currentChannel = this;
 
     // the current channel must be active
     if (!m_isActive) {
@@ -800,8 +801,9 @@ void FunctionTreeModel::Channel::setIsCurrent(bool current) {
     // this channel is not the current anymore
     if (oldCurrent != this) return;  // it was not: nothing to do
     m_model->m_currentChannel = 0;
-    // refresh the channel
+    // refresh the channel and the toolbar/segment editor
     m_model->emitDataChanged(this);
+    m_model->emitCurveSelected(nullptr);
   }
 }
 
@@ -1302,6 +1304,13 @@ void FunctionTreeModel::applyShowFilters() {
     }
     if (!m_searchFilter.isEmpty()) setExpandedItem(root->createIndex(), true);
   }
+}
+
+//-----------------------------------------------------------------------------
+
+TreeModel::Item *FunctionTreeModel::columnScopeOf(TreeModel::Item *item) {
+  while (item && item->getDepth() > 2) item = item->getParent();
+  return item && item->getDepth() == 2 ? item : nullptr;
 }
 
 //-----------------------------------------------------------------------------
