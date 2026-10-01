@@ -3,29 +3,26 @@ on:
   push:
     branches: [automation/trail-settings-workspace-20261001]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  snapshot:
+  prepare:
     if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - name: Prepare pinned source snapshots for the Settings adaptation
+      - name: Install syntax-check and formatting dependencies
         run: |
-          set -euo pipefail
-          git fetch --depth=1 origin d850472cffdc7c502ba3dfd2ea6fd6293016b81f
-          git fetch --depth=1 https://github.com/opentoonz/opentoonz.git 868d795e7d80687af7afad7866ffc4e1997dca30 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754
-          mkdir -p snapshots/base snapshots/upstream
-          git archive d850472cffdc7c502ba3dfd2ea6fd6293016b81f toonz/sources .github doc CONTRIBUTING.md | tar -x -C snapshots/base
-          git archive 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 toonz/sources toonz/tests doc/trail_cycle_validation.md | tar -x -C snapshots/upstream
-          git diff 868d795e7d80687af7afad7866ffc4e1997dca30 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 > snapshots/trail-7085.diff
-          git show -s --format=fuller 2dc7a2ab5a4eda2912698a56c6b33cd9d0403754 > snapshots/upstream-author.txt
-          tar -czf trail-settings-sources.tar.gz snapshots
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14 qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev libmypaint-dev libfreetype6-dev
+      - name: Apply, format, validate and publish the isolated feature branch
+        run: python3 .github/ot-dev/trail-settings-workspace/prepare.py
       - uses: actions/upload-artifact@v6
+        if: always()
         with:
-          name: trail-settings-sources
-          path: trail-settings-sources.tar.gz
-          retention-days: 1
+          name: trail-settings-preflight
+          path: |
+            /tmp/trail-settings-formatted.patch
+            /tmp/trail-settings-head.txt
+          if-no-files-found: ignore
+          retention-days: 3
