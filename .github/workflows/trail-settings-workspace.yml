@@ -13,8 +13,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install syntax-check and formatting dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format-14 qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev
+          sudo apt-get -qq update > /tmp/trail-deps.log 2>&1
+          sudo apt-get -qq install -y clang-format-14 qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev >> /tmp/trail-deps.log 2>&1 || { tail -100 /tmp/trail-deps.log; exit 1; }
       - name: Apply, format, validate and publish the isolated feature branch
         run: python3 .github/ot-dev/trail-settings-workspace/prepare.py
       - uses: actions/upload-artifact@v6

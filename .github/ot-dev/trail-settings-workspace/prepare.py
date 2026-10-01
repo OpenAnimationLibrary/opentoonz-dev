@@ -1,4 +1,4 @@
-"""Apply the reviewed Settings adaptation on its pinned base, never on main."""
+"""Apply the Settings adaptation on its pinned base, never on main."""
 import base64
 import gzip
 import hashlib
@@ -24,15 +24,18 @@ def run(*args):
 def out(*args):
     return subprocess.check_output(args, text=True)
 
-# Do not overwrite an independently created branch or repeat a successful push.
 exists = subprocess.run(["git", "ls-remote", "--exit-code", "origin", "refs/heads/" + BRANCH])
 assert exists.returncode == 2, "Target branch already exists or cannot be checked"
 run("git", "fetch", "--depth=1", "origin", BASE)
 run("git", "checkout", "-b", BRANCH, BASE)
 run("git", "apply", "--index", "--whitespace=error", "/tmp/trail-settings.patch")
+# Syntax preflight identified the test's use of a forward-declared TStroke.
+test = root / "toonz/tests/trail_settings/trailstyle_test.cpp"
+text = test.read_text()
+assert '#include "tstroke.h"' not in text
+test.write_text(text.replace('#include "tvectorimage.h"', '#include "tvectorimage.h"\n#include "tstroke.h"', 1))
 paths = out("git", "diff", "--name-only", "HEAD").splitlines()
 cpp = [p for p in paths if p.endswith((".h", ".cpp"))]
-# Limit formatting to changed ranges. All files use the project source style.
 for attempt in range(6):
     updated = False
     for name in cpp:
@@ -70,7 +73,11 @@ flags = ["g++", "-std=c++17", "-fsyntax-only", "-fPIC", "-DNDEBUG", "-DLINUX", "
          "-I" + str(root / "toonz/sources/tnztools"), *qt]
 for name in paths:
     if name.endswith(".cpp"):
-        run(*flags, name)
+        print("Syntax:", name, flush=True)
+        subprocess.run([*flags, name], check=True)
+# The GitHub connector will publish the test workflow separately. The Actions
+# token is used only for source changes, with no workflow-write permission.
+run("git", "rm", ".github/workflows/trail_settings_tests.yml")
 run("git", "config", "user.name", "Rodney")
 run("git", "config", "user.email", "rodney.baker@gmail.com")
 message = """Add Trail Cycle to Style Editor Settings
