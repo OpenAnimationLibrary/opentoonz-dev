@@ -55,6 +55,7 @@ class QAction;
 class QScrollArea;
 class QSplitter;
 class QVBoxLayout;
+class QLineEdit;
 
 namespace DVGui {
 class ValueField;
@@ -175,6 +176,7 @@ private:
   // Widgets
 
   FunctionTreeView *m_treeView;  //!< Tree view on the left side of the viewer.
+  QLineEdit *m_searchField;
   FunctionToolbar *m_toolbar;    //!< Central area's toolbar
   FunctionPanel *m_functionGraph;     //!< The function graph view widget.
   FunctionSheet *m_numericalColumns;  //!< The numerical columns view widget.
@@ -186,6 +188,7 @@ private:
   FunctionSelection *m_selection;
 
 private:
+  bool eventFilter(QObject *watched, QEvent *event) override;
   void showEvent(QShowEvent *) override;
   void hideEvent(QHideEvent *) override;
 
