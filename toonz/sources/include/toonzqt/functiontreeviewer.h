@@ -116,8 +116,8 @@ to
     void setShowFilter(ShowFilter showFilter);
     ShowFilter getShowFilter() const { return m_showFilter; }
 
-    void applyShowFilter();  // call this method when a channel changes
-                             // its animation status
+    bool applyShowFilter();  // Returns whether any channel passes the filters.
+    bool nameMatchesSearch(const QString &search) const;
     QVariant data(int role) const override;
 
     // used in FunctionTreeView::onActivated
@@ -217,6 +217,8 @@ private:
   TFx *m_currentFx;           //!< (\p not \p owned) Current fx.
 
   bool m_paramsChanged;
+  QString m_searchFilter;
+  bool m_animatedOnly = false;
 
   TFxHandle *m_fxHandle;
   TObjectHandle *m_objectHandle;
@@ -244,6 +246,12 @@ public:
   void resetAll();
 
   void applyShowFilters();
+  void setSearchFilter(const QString &search);
+  const QString &getSearchFilter() const { return m_searchFilter; }
+  void setAnimatedOnly(bool animatedOnly);
+  bool isAnimatedOnly() const { return m_animatedOnly; }
+  ChannelGroup *getStageObjectChannelGroup(TStageObject *obj) const;
+  ChannelGroup *getFxChannelGroup(TFx *fx) const;
 
   void setCurrentStageObject(TStageObject *obj) { m_currentStageObject = obj; }
   TStageObject *getCurrentStageObject() const { return m_currentStageObject; }
@@ -401,6 +409,7 @@ public:
 
   void setXsheetHandle(TXsheetHandle *xshHandle) { m_xshHandle = xshHandle; }
   TXsheetHandle *getXsheetHandle() { return m_xshHandle; }
+  void scrollToItem(TreeModel::Item *item, bool expandItem = false);
 
 protected:
   void onClick(TreeModel::Item *item, const QPoint &itemPos,
