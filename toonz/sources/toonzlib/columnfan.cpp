@@ -22,6 +22,7 @@ ColumnFan::ColumnFan()
 //-----------------------------------------------------------------------------
 
 void ColumnFan::setDimensions(int unfolded, int cameraColumn) {
+  if (m_unfolded == unfolded && m_cameraColumnDim == cameraColumn) return;
   m_unfolded        = unfolded;
   m_cameraColumnDim = cameraColumn;
   // folded always 9

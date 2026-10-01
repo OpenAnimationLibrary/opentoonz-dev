@@ -244,7 +244,7 @@ XsheetViewer::XsheetViewer(QWidget *parent, Qt::WindowFlags flags)
     , m_orientation(nullptr)
     , m_xsheetLayout("Classic")
     , m_frameZoomFactor(100) {
-  m_xsheetLayout = Preferences::instance()->getLoadedXsheetLayout();
+  m_xsheetLayout = Orientations::xsheetLayout();
 
   setFocusPolicy(Qt::StrongFocus);
 
@@ -1080,6 +1080,7 @@ bool XsheetViewer::isScrubHighlighted(int row, int col) {
 //-----------------------------------------------------------------------------
 
 void XsheetViewer::showEvent(QShowEvent *) {
+  if (m_xsheetLayout == "Adjustable") refreshContentSize(0, 0);
   m_frameScroller.registerFrameScroller();
   if (m_isCurrentFrameSwitched) onCurrentFrameSwitched();
   if (m_isCurrentColumnSwitched) onCurrentColumnSwitched();
@@ -1491,6 +1492,9 @@ void XsheetViewer::onPreferenceChanged(const QString &prefName) {
     refreshContentSize(0, 0);
   } else if (prefName == "XsheetCamera") {
     refreshContentSize(0, 0);
+  } else if (prefName == "XsheetColumnWidth") {
+    refreshContentSize(0, 0);
+    updateAllAree();
   }
 }
 

@@ -59,6 +59,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QMenu>
+#include <QInputDialog>
 #include <QToolTip>
 #include <QTimer>
 #include <QLabel>
@@ -2934,6 +2935,21 @@ void ColumnArea::contextMenuEvent(QContextMenuEvent *event) {
 
   QMenu menu(this);
   CommandManager *cmdManager = CommandManager::instance();
+
+  if (o->isVerticalTimeline() && m_viewer->getXsheetLayout() == "Adjustable") {
+    menu.addAction(tr("Column Width..."), this, [this, o]() {
+      bool ok;
+      int width =
+          QInputDialog::getInt(this, tr("Column Width"), tr("Width (pixels):"),
+                               o->cellWidth(), 50, 200, 1, &ok);
+      if (!ok || width == o->cellWidth()) return;
+      Preferences::instance()->setValue(xsheetColumnWidth, width);
+      Orientations::setXsheetColumnWidth(width);
+      TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+          "XsheetColumnWidth");
+    });
+    menu.addSeparator();
+  }
 
   //---- Unified
   if (((isCamera && !o->isVerticalTimeline()) || !xsh->isColumnEmpty(col)) &&
