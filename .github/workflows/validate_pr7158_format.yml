@@ -1,0 +1,141 @@
+name: Validate PR 7158 formatting
+
+on:
+  push:
+    branches:
+      - ci/validate-pr7158-format-20261001
+    paths:
+      - .github/workflows/validate_pr7158_format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: 0e3f291ae89e7cf17d93eba7443327ebb6dad71b
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install the upstream formatter version
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14
+          clang-format-14 --version
+      - name: Reproduce, format, validate, and prepare a correction commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: 0e3f291ae89e7cf17d93eba7443327ebb6dad71b
+          BASE_SHA: 84251b0e0beb5962002b0ceade0445f1c731a5a9
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+          import urllib.request
+
+          repo = 'OpenAnimationLibrary/opentoonz-dev'
+          branch = 'stage/fix-pasting-cells-empty-columns'
+          expected = os.environ['EXPECTED_HEAD']
+          base = os.environ['BASE_SHA']
+          filename = 'toonz/sources/toonz/cellselection.cpp'
+          path = pathlib.Path(filename)
+          original = path.read_text(encoding='utf-8')
+
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True)
+
+          def changed_ranges():
+              diff = git('diff', '--unified=0', '--no-color', base, '--', filename)
+              ranges = []
+              for match in re.finditer(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@', diff, re.M):
+                  start = int(match.group(1))
+                  count = int(match.group(2) or 1)
+                  if count > 0:
+                      ranges.append('--lines={}:{}'.format(start, start + count - 1))
+              if not ranges:
+                  raise RuntimeError('No changed lines found')
+              return ranges
+
+          before_ranges = changed_ranges()
+          print('REPRODUCING ORIGINAL FAILURE:', before_ranges, flush=True)
+          before = subprocess.run(['clang-format-14', '--dry-run', '--Werror', '-style=file', *before_ranges, filename])
+          if before.returncode != 1:
+              raise RuntimeError('Expected the reported formatting failure')
+
+          subprocess.run(['clang-format-14', '-i', '-style=file', *before_ranges, filename], check=True)
+          corrected = path.read_text(encoding='utf-8')
+          if corrected == original:
+              raise RuntimeError('Formatter made no correction')
+          if re.sub(r'\s+', '', corrected) != re.sub(r'\s+', '', original):
+              raise RuntimeError('Non-whitespace change detected')
+          changed_lines = [i for i, (a, b) in enumerate(zip(original.splitlines(), corrected.splitlines()), 1) if a != b]
+          if len(original.splitlines()) != len(corrected.splitlines()) or changed_lines != [103, 1852]:
+              raise RuntimeError('Unexpected correction scope: {}'.format(changed_lines))
+
+          upstream = git('show', '{}:{}'.format(base, filename))
+          marker = 'void TCellSelection::doPaste() {'
+          divider = '\n//-----------------------------------------------------------------------------'
+          corrected_start = corrected.index(marker)
+          upstream_start = upstream.index(marker)
+          corrected_end = corrected.index(divider, corrected_start)
+          upstream_end = upstream.index(divider, upstream_start)
+          if corrected[:corrected_start] != upstream[:upstream_start]:
+              raise RuntimeError('Changes remain before doPaste()')
+          if corrected[corrected_end:] != upstream[upstream_end:]:
+              raise RuntimeError('Changes remain after doPaste()')
+
+          after_ranges = changed_ranges()
+          print('CHECKING COMPLETE PR CHANGED-LINE RANGES:', after_ranges, flush=True)
+          subprocess.run(['clang-format-14', '--dry-run', '--Werror', '-style=file', *after_ranges, filename], check=True)
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          subprocess.run(['git', 'diff', '--ignore-all-space', '--exit-code', expected, '--', filename], check=True)
+          print('WHITESPACE-ONLY CORRECTION:', flush=True)
+          print(git('diff', '--', filename), flush=True)
+          print('VALIDATION PASSED: clang-format-14, diff whitespace check, and unchanged non-whitespace content.', flush=True)
+
+          def api(method, route, data=None):
+              payload = None if data is None else json.dumps(data).encode('utf-8')
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + repo + '/' + route,
+                  data=payload,
+                  method=method,
+                  headers={
+                      'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                      'Accept': 'application/vnd.github+json',
+                      'Content-Type': 'application/json',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+
+          current = api('GET', 'git/ref/heads/' + branch)['object']['sha']
+          if current != expected:
+              raise RuntimeError('Staging branch changed during validation; refusing to prepare a stale commit')
+          base_tree = git('rev-parse', expected + '^{tree}').strip()
+          tree = api('POST', 'git/trees', {
+              'base_tree': base_tree,
+              'tree': [{'path': filename, 'mode': '100644', 'type': 'blob', 'content': corrected}],
+          })
+          commit = api('POST', 'git/commits', {
+              'message': 'Apply verified clang-format-14 correction to cell paste routing\n\nRestore the unrelated copyCellsWithoutUndo declaration and format doPaste using the upstream configuration. Verify all PR changed-line ranges with clang-format-14 --dry-run --Werror. Whitespace only.',
+              'tree': tree['sha'],
+              'parents': [expected],
+          })
+          print('FORMATTED_COMMIT_SHA=' + commit['sha'], flush=True)
+          print('No branch refs were changed; the validated commit is ready for review.', flush=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write('## PR 7158 formatter validation passed\n\n')
+              summary.write('clang-format-14 dry-run passed for all changed PR lines.\n\n')
+              summary.write('Only whitespace at lines 103 and 1852 was corrected.\n\n')
+              summary.write('Prepared commit: `' + commit['sha'] + '`\n\n')
+              summary.write('No staging refs changed; no workflow changes in the prepared commit.\n')
+          PY
