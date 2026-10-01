@@ -244,6 +244,9 @@ enum PreferencesItemId {
   // Tape Tool confirmation (stored only; no Preferences popup control)
   tapeToolFillRiskPolicy,
 
+  // Xsheet hover preview (appended to preserve existing preference IDs)
+  xsheetHoverFramePreviewEnabled,
+
   PreferencesItemCount
 };
 

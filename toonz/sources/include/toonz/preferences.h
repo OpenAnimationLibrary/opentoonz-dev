@@ -396,6 +396,9 @@ public:
   bool isXsheetAutopanEnabled() const {
     return getBoolValue(xsheetAutopanEnabled);
   }  //!< Returns whether xsheet pans during playback.
+  bool isXsheetHoverFramePreviewEnabled() const {
+    return getBoolValue(xsheetHoverFramePreviewEnabled);
+  }
   int isAlwaysDragFrameCell() const {
     return getBoolValue(alwaysDragFrameCell);
   }

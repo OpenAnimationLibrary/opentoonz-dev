@@ -591,6 +591,8 @@ void Preferences::definePreferenceItems() {
   define(xsheetStep, "xsheetStep", QMetaType::Int, 10, 0,
          std::numeric_limits<int>::max());
   define(xsheetAutopanEnabled, "xsheetAutopanEnabled", QMetaType::Bool, true);
+  define(xsheetHoverFramePreviewEnabled, "xsheetHoverFramePreviewEnabled",
+         QMetaType::Bool, true);
   define(alwaysDragFrameCell, "alwaysDragFrameCell", QMetaType::Bool, false);
   define(DragCellsBehaviour, "DragCellsBehaviour", QMetaType::Int,
          1);  // Cells and Column Data
