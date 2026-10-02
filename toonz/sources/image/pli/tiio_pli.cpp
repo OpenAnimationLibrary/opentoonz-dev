@@ -1,6 +1,7 @@
 
 
 #include "tiio_pli.h"
+#include <cmath>
 //#include "tstrokeoutline.h"
 #include "tsystem.h"
 #include "pli_io.h"
@@ -104,17 +105,32 @@ public:
   }
 
   void readTrailCycle(TColorStyle *style) {
-    if (!TrailStyles::isTrail(style) || m_count + 1 >= int(m_stream->size()))
-      return;
-    const TStyleParam &marker = (*m_stream)[m_count];
-    const TStyleParam &value  = (*m_stream)[m_count + 1];
-    if (marker.m_type != TStyleParam::SP_STRING ||
-        marker.m_string != "trail-cycle-v1" ||
-        value.m_type != TStyleParam::SP_INT)
-      return;
-    const double mode = value.m_numericVal;
-    if (mode >= 0 && mode <= 3 && mode == int(mode))
-      TrailStyles::setMode(style, TrailCycle::modeFromValue(int(mode)));
+    if (!TrailStyles::isTrail(style)) return;
+    // Both extensions are independently optional and confined to this typed
+    // style record. Unknown/truncated suffixes are left alone.
+    while (m_count + 1 < int(m_stream->size())) {
+      const TStyleParam &marker = (*m_stream)[m_count];
+      const TStyleParam &value  = (*m_stream)[m_count + 1];
+      if (marker.m_type != TStyleParam::SP_STRING) return;
+      const bool cycle  = marker.m_string == "trail-cycle-v1";
+      const bool offset = marker.m_string == "trail-frame-offset-v1";
+      if (!cycle && !offset) return;
+      if (cycle) {
+        if (value.m_type != TStyleParam::SP_INT) return;
+        const double number = value.m_numericVal;
+        if (std::isfinite(number) && number >= 0 && number <= 3 &&
+            number == int(number))
+          TrailStyles::setMode(style, TrailCycle::modeFromValue(int(number)));
+      } else {
+        if (value.m_type != TStyleParam::SP_STRING) return;
+        // PLI numeric style parameters have only a 16-bit integer part.
+        // A tagged decimal string preserves the full source-frame ID range.
+        bool ok         = false;
+        const int frame = QString::fromStdString(value.m_string).toInt(&ok);
+        if (ok && frame >= 0) TrailStyles::setFrameOffset(style, frame);
+      }
+      m_count += 2;
+    }
   }
 
   VersionNumber versionNumber() const override { return m_version; }
@@ -126,6 +142,9 @@ void saveStyleWithTrailCycle(const TColorStyle *style,
   const auto mode = TrailStyles::getMode(style);
   if (mode != TrailCycle::Mode::Off)
     stream << std::string("trail-cycle-v1") << int(mode);
+  const int offset = TrailStyles::getFrameOffset(style);
+  if (offset > 0)
+    stream << std::string("trail-frame-offset-v1") << std::to_string(offset);
 }
 
 //---------------------------------------------------------------------------
@@ -783,9 +802,11 @@ TPalette *readPalette(GroupTag *paletteTag, int majorVersion,
       if (frame > -1) {
         TColorStyle *oldStyle = palette->getStyle(id);
         const auto trailMode  = TrailStyles::getMode(oldStyle);
+        const int trailOffset = TrailStyles::getFrameOffset(oldStyle);
         oldStyle->copy(*style);
         palette->setKeyframe(id, frame);
         TrailStyles::setMode(oldStyle, trailMode);
+        TrailStyles::setFrameOffset(oldStyle, trailOffset);
       } else
         palette->setStyle(id, style);
     } else {

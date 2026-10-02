@@ -49,6 +49,48 @@ Sequence position belongs to the drawing session, never to a renderable style:
 painting does not mutate palette settings; previews/icons/rendering do not consume
 steps. Undo/redo of a stroke restores its recorded metadata, not the tool cursor.
 
+## Frame Offset
+
+**Frame Offset** is directly below Trail Cycle in Settings. It is a saved,
+non-animated drawing default, not a live modifier of existing strokes.
+
+- **0 (default):** keep the previous automatic start/shared-cursor behavior.
+- **Positive value:** select that exact numeric source drawing ID, not its ordinal
+  position in the level. For a source containing drawings 10, 30 and 70, enter 30
+  to start with drawing 30. Entering 2 or 20 does not select any drawing.
+- **Forward / Backward:** start a new cycle at the selected drawing, then advance
+  through the existing source drawings and wrap normally. Changing to a different
+  valid selection restarts on the next committed gesture, not on previews or
+  canceled gestures.
+- **Repeat:** a valid selection always holds the specified source drawing.
+- **Off:** a valid selection supplies the start of each new stroke without
+  advancing or replacing the shared cycle cursor.
+
+A missing drawing number is ignored: an established cycle continues normally,
+and a fresh cycle uses its ordinary first/last-frame default. The entered number
+is retained so it can become valid after a source reload. It is not clamped or
+wrapped to a different drawing. The integer field accepts large source IDs without
+using frame count as a range; drawing 30a is not silently treated as drawing 30.
+Use 0 for automatic behavior. Letter-suffixed IDs cannot be explicitly selected
+with this integer control, but remain in the normal cycle order.
+
+This applies equally to vector, raster and converted Toonz Raster Trail sources.
+Single-frame sources still stamp without advancing the shared cursor. Frame Range
+ignores both cycle and offset, and ordinary brushes/motion paths are unchanged.
+Auto/Apply, style undo, copy/clone and palette scrubbing retain the stored offset;
+only the actual realized sequence is written to a completed stroke.
+
+Persistence adds an optional `trailFrameOffset` attribute to TPL style/keyframe
+records and an independent `trail-frame-offset-v1` typed pair to bounded PLI style
+records. Absent metadata defaults to 0; older readers can drop the new default on
+resave. Existing payloads/IDs, cycle-v1 metadata and stroke outline fields remain
+unchanged. Rebuild native modules against matching Trail style headers.
+
+Manual checks: choose a sparse source, try a valid/missing/large value, exercise
+all cycle modes, change the field with Auto off then Apply, undo a style edit,
+scrub animated Distance/Rotation, and save/reopen a TPL and PLI. Verify earlier
+stamps remain unchanged and Frame Range does not consume the offset.
+
 ## Click to stamp
 
 With a loaded Trail style and Frame Range off, a stationary Brush click now
@@ -224,3 +266,9 @@ The test checks real PNG/TIF/TIFF/BMP/JPG/JPEG sequences (including uppercase
 PNG/TIF), a real three-frame TLV/TPL pair with a blank frame, missing palette
 handling, filters and filename resolution, raw indexed-color conversion,
 antialiasing/opacity, source palette animation isolation, and RGBA normalization.
+
+Frame Offset PLI metadata uses a tagged decimal string rather than a numeric
+style parameter: PLI's numeric style encoding has a 16-bit integer part. The
+string is parsed with range checking, preserving source IDs above 32767 without
+changing the legacy style encoding. Regression cases include 32767, 32768, 65536
+and INT_MAX, with Cycle Off as well as all active modes.

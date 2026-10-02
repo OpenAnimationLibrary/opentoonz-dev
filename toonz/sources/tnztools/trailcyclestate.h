@@ -25,16 +25,27 @@ struct Selection {
   int offset     = 0;
   int step       = 1;
   bool active    = false;
+  // Selection can affect an Off/single-frame stroke without replacing the
+  // cursor.
+  bool updatesCursor = false;
+  int startOffset    = -1;
 };
 
 class State {
 public:
-  Selection begin(Mode mode, const StyleKey &style, int frameCount) const {
+  // startOffset is resolved from an existing source drawing, never a raw frame
+  // number. -1 (automatic/missing) must not disturb an existing cycle.
+  Selection begin(Mode mode, const StyleKey &style, int frameCount,
+                  int startOffset = -1) const {
     Selection selection;
-    if (mode == Mode::Off || frameCount < 2) return selection;
+    const bool explicitStart = startOffset >= 0 && startOffset < frameCount;
+    if (frameCount < 1 ||
+        ((mode == Mode::Off || frameCount < 2) && !explicitStart))
+      return selection;
     selection.style      = style;
     selection.frameCount = frameCount;
     selection.active     = true;
+    selection.updatesCursor = mode != Mode::Off && frameCount > 1;
     switch (mode) {
     case Mode::Off:
       break;
@@ -48,18 +59,26 @@ public:
       selection.step = 0;
       break;
     }
-    if (m_last.active && m_last.style == style &&
-        m_last.frameCount == frameCount) {
+    const bool sameCycle = m_last.active && m_last.style == style &&
+                           m_last.frameCount == frameCount;
+    selection.startOffset =
+        explicitStart ? startOffset : (sameCycle ? m_last.startOffset : -1);
+    if (!sameCycle || mode == Mode::Off ||
+        (explicitStart &&
+         (mode == Mode::Repeat || startOffset != m_last.startOffset))) {
+      selection.offset = explicitStart
+                             ? startOffset
+                             : (selection.step < 0 ? frameCount - 1 : 0);
+    } else {
       selection.offset = (m_last.offset + selection.step) % frameCount;
       if (selection.offset < 0) selection.offset += frameCount;
-    } else {
-      selection.offset = selection.step < 0 ? frameCount - 1 : 0;
     }
     return selection;
   }
 
   void commit(const Selection &selection, bool strokeCommitted) {
-    if (selection.active && strokeCommitted) m_last = selection;
+    if (selection.active && selection.updatesCursor && strokeCommitted)
+      m_last = selection;
   }
 
 private:

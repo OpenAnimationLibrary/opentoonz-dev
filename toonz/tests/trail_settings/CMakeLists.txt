@@ -42,7 +42,7 @@ if(TNZCORE_LIBRARY)
   test_big_endian(IS_BIG_ENDIAN)
   set(PLI_SOURCES "${TOONZ_SOURCES}/image/pli/pli_io.cpp"
       "${TOONZ_SOURCES}/image/pli/tiio_pli.cpp" "${TOONZ_SOURCES}/image/pli/tags.cpp")
-  foreach(name IN ITEMS pli trailstyle)
+  foreach(name IN ITEMS pli trailstyle trailoffset)
     add_executable(${name}_test ${name}_test.cpp ${PLI_SOURCES})
     target_include_directories(${name}_test SYSTEM PRIVATE "${TOONZ_SOURCES}/include")
     target_include_directories(${name}_test PRIVATE "${TOONZ_SOURCES}")

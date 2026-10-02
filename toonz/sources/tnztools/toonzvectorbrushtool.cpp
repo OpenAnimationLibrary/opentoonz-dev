@@ -885,7 +885,10 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
                                      m_styleId, cs->getBrushIdName()};
       const auto mode  = m_frameRange.getIndex() ? TrailCycle::Mode::Off
                                                  : TrailStyles::getMode(cs);
-      m_trailSelection = m_trailState.begin(mode, key, trailFrameCount);
+      const int startOffset =
+          m_frameRange.getIndex() ? -1 : TrailStyles::startFrameIndex(cs);
+      m_trailSelection =
+          m_trailState.begin(mode, key, trailFrameCount, startOffset);
     } else {
       m_styleId      = 1;
       m_currentColor = TPixel32::Black;
@@ -1107,7 +1110,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     }
     TUndoManager::manager()->endBlock();
 
-    if (m_trailSelection.active && strokeCommitted) {
+    if (m_trailSelection.updatesCursor && strokeCommitted) {
       m_trailPalette = m_trailGesturePalette;
       m_trailState.commit(m_trailSelection, true);
     }

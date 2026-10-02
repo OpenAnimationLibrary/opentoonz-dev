@@ -1,5 +1,6 @@
 
 #include <cstring>
+#include <limits>
 #include <QStringList>
 #include <QDir>
 
@@ -94,6 +95,16 @@ TRaster32P makeTexture(const TRaster32P &ras) {
 }
 
 //-----------------------------------------------------------------------------
+
+int findPatternSourceFrameIndex(const TLevelP &level, int frame) {
+  if (!level || frame <= 0) return -1;
+  const TFrameId fid(frame);
+  int index = 0;
+  for (auto it = level->begin(); it != level->end(); ++it, ++index) {
+    if (it->first == fid) return it->second ? index : -1;
+  }
+  return -1;
+}
 
 TLevel::Iterator getPatternFrameIterator(const TLevelP &level,
                                          const TStroke *stroke);
@@ -1004,6 +1015,7 @@ TColorStyle &TRasterImagePatternStrokeStyle::copy(const TColorStyle &other) {
   if (!trail) return *this;
   TColorStyle::copy(other);
   m_trailCycle = trail->m_trailCycle;
+  m_trailFrameOffset = trail->m_trailFrameOffset;
   return *this;
 }
 
@@ -1025,8 +1037,10 @@ void TRasterImagePatternStrokeStyle::getParamRange(int index,
 
 int TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
                                                   int index) const {
-  assert(index == TrailStyles::cycleParam);
-  return int(m_trailCycle);
+  assert(index == TrailStyles::cycleParam ||
+         index == TrailStyles::frameOffsetParam);
+  return index == TrailStyles::frameOffsetParam ? m_trailFrameOffset
+                                                : int(m_trailCycle);
 }
 
 //-----------------------------------------------------------------------------
@@ -1034,6 +1048,8 @@ int TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
 void TRasterImagePatternStrokeStyle::setParamValue(int index, int value) {
   if (index == TrailStyles::cycleParam)
     m_trailCycle = TrailCycle::modeFromValue(value);
+  else if (index == TrailStyles::frameOffsetParam)
+    setTrailFrameOffset(value);
   else
     setParamValue(index, double(value));
 }
@@ -1101,15 +1117,31 @@ void TRasterImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
-int TRasterImagePatternStrokeStyle::getParamCount() const { return 3; }
+int TRasterImagePatternStrokeStyle::getTrailStartFrameIndex() const {
+  return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
+}
+
+//-----------------------------------------------------------------------------
+
+void TRasterImagePatternStrokeStyle::getParamRange(int index, int &min,
+                                                   int &max) const {
+  assert(index == TrailStyles::frameOffsetParam);
+  min = 0;
+  max = (std::numeric_limits<int>::max)();
+}
+
+//-----------------------------------------------------------------------------
+
+int TRasterImagePatternStrokeStyle::getParamCount() const { return 4; }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle::ParamType TRasterImagePatternStrokeStyle::getParamType(
     int index) const {
   assert(0 <= index && index < getParamCount());
-  return index == TrailStyles::cycleParam ? TColorStyle::ENUM
-                                          : TColorStyle::DOUBLE;
+  if (index == TrailStyles::cycleParam) return TColorStyle::ENUM;
+  if (index == TrailStyles::frameOffsetParam) return TColorStyle::INT;
+  return TColorStyle::DOUBLE;
 }
 
 //-----------------------------------------------------------------------------
@@ -1119,6 +1151,9 @@ QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
   if (index == TrailStyles::cycleParam)
     return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
                                        "Trail Cycle");
+  if (index == TrailStyles::frameOffsetParam)
+    return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Frame Offset");
   return (index == 0) ? QCoreApplication::translate(
                             "TRasterImagePatternStrokeStyle", "Distance")
                       : QCoreApplication::translate(
@@ -1565,6 +1600,7 @@ TColorStyle &TVectorImagePatternStrokeStyle::copy(const TColorStyle &other) {
   if (!trail) return *this;
   TColorStyle::copy(other);
   m_trailCycle = trail->m_trailCycle;
+  m_trailFrameOffset = trail->m_trailFrameOffset;
   return *this;
 }
 
@@ -1586,8 +1622,10 @@ void TVectorImagePatternStrokeStyle::getParamRange(int index,
 
 int TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
                                                   int index) const {
-  assert(index == TrailStyles::cycleParam);
-  return int(m_trailCycle);
+  assert(index == TrailStyles::cycleParam ||
+         index == TrailStyles::frameOffsetParam);
+  return index == TrailStyles::frameOffsetParam ? m_trailFrameOffset
+                                                : int(m_trailCycle);
 }
 
 //-----------------------------------------------------------------------------
@@ -1595,6 +1633,8 @@ int TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::int_tag,
 void TVectorImagePatternStrokeStyle::setParamValue(int index, int value) {
   if (index == TrailStyles::cycleParam)
     m_trailCycle = TrailCycle::modeFromValue(value);
+  else if (index == TrailStyles::frameOffsetParam)
+    setTrailFrameOffset(value);
   else
     setParamValue(index, double(value));
 }
@@ -1675,15 +1715,31 @@ void TVectorImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
-int TVectorImagePatternStrokeStyle::getParamCount() const { return 3; }
+int TVectorImagePatternStrokeStyle::getTrailStartFrameIndex() const {
+  return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
+}
+
+//-----------------------------------------------------------------------------
+
+void TVectorImagePatternStrokeStyle::getParamRange(int index, int &min,
+                                                   int &max) const {
+  assert(index == TrailStyles::frameOffsetParam);
+  min = 0;
+  max = (std::numeric_limits<int>::max)();
+}
+
+//-----------------------------------------------------------------------------
+
+int TVectorImagePatternStrokeStyle::getParamCount() const { return 4; }
 
 //-----------------------------------------------------------------------------
 
 TColorStyle::ParamType TVectorImagePatternStrokeStyle::getParamType(
     int index) const {
   assert(0 <= index && index < getParamCount());
-  return index == TrailStyles::cycleParam ? TColorStyle::ENUM
-                                          : TColorStyle::DOUBLE;
+  if (index == TrailStyles::cycleParam) return TColorStyle::ENUM;
+  if (index == TrailStyles::frameOffsetParam) return TColorStyle::INT;
+  return TColorStyle::DOUBLE;
 }
 
 //-----------------------------------------------------------------------------
@@ -1693,6 +1749,9 @@ QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
   if (index == TrailStyles::cycleParam)
     return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
                                        "Trail Cycle");
+  if (index == TrailStyles::frameOffsetParam)
+    return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Frame Offset");
   return (index == 0) ? QCoreApplication::translate(
                             "TVectorImagePatternStrokeStyle", "Distance")
                       : QCoreApplication::translate(

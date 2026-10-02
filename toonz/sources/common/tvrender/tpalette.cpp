@@ -655,6 +655,9 @@ void TPalette::saveData(TOStream &os) {
       const auto trailMode = TrailStyles::getMode(style.getPointer());
       if (trailMode != TrailCycle::Mode::Off)
         attr["trailCycle"] = std::to_string(int(trailMode));
+      const int trailOffset = TrailStyles::getFrameOffset(style.getPointer());
+      if (trailOffset > 0)
+        attr["trailFrameOffset"] = std::to_string(trailOffset);
       os.openChild("style", attr);
       {
         StyleWriter w(os, i);
@@ -711,6 +714,9 @@ void TPalette::saveData(TOStream &os) {
             const auto trailMode = TrailStyles::getMode(cs);
             if (trailMode != TrailCycle::Mode::Off)
               attributes["trailCycle"] = std::to_string(int(trailMode));
+            const int trailOffset = TrailStyles::getFrameOffset(cs);
+            if (trailOffset > 0)
+              attributes["trailFrameOffset"] = std::to_string(trailOffset);
 
             /*os.openChild("keycolor", attributes);                       // Up
             to Toonz 7.0, animations saved os << cs->getMainColor(); // the main
@@ -777,6 +783,9 @@ void TPalette::loadData(TIStream &is) {
           int trailMode   = 0;
           if (is.getTagParam("trailCycle", trailMode))
             TrailStyles::setMode(cs, TrailCycle::modeFromValue(trailMode));
+          int trailOffset = 0;
+          if (is.getTagParam("trailFrameOffset", trailOffset))
+            TrailStyles::setFrameOffset(cs, trailOffset);
 
           std::string pickedPosStr;
           if (is.getTagParam("pickedpos", pickedPosStr))
@@ -862,6 +871,9 @@ void TPalette::loadData(TIStream &is) {
               int trailMode = 0;
               if (is.getTagParam("trailCycle", trailMode))
                 TrailStyles::setMode(cs, TrailCycle::modeFromValue(trailMode));
+              int trailOffset = 0;
+              if (is.getTagParam("trailFrameOffset", trailOffset))
+                TrailStyles::setFrameOffset(cs, trailOffset);
             } else
               throw TException("palette, expected <keyframe> tag");
 
@@ -1073,6 +1085,7 @@ void TPalette::setFrame(int frame) {
 
     // Trail Cycle is a drawing default, not an animated appearance parameter.
     const auto trailMode = TrailStyles::getMode(cs);
+    const int trailOffset = TrailStyles::getFrameOffset(cs);
 
     // Build the keyframes interval containing frame
     StyleAnimation::iterator j0, j1;
@@ -1095,6 +1108,7 @@ void TPalette::setFrame(int frame) {
       }
     }
     TrailStyles::setMode(cs, trailMode);
+    TrailStyles::setFrameOffset(cs, trailOffset);
   }
 }
 

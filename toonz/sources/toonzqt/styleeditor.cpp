@@ -2637,6 +2637,23 @@ void SettingsPage::setStyle(const TColorStyleP &editedStyle) {
         m_editedStyle->getParamRange(p, min, max);
 
         intField->setRange(min, max);
+        if (p == TrailStyles::frameOffsetParam &&
+            TrailStyles::isTrail(m_editedStyle.getPointer())) {
+          intField->setObjectName("trailFrameOffset");
+          // Drawing IDs can be sparse or start well above the frame count.
+          // Keep direct numeric entry; a count-limited slider would be
+          // misleading.
+          intField->enableSlider(false);
+          intField->enableRoller(true);
+          const QString help =
+              tr("Source drawing number: 0 keeps the automatic start or "
+                 "current cycle. "
+                 "A positive number starts at that drawing; Repeat holds it. "
+                 "Nonexistent drawing numbers are ignored, not wrapped. "
+                 "Affects new strokes only; Frame Range ignores this setting.");
+          intField->setToolTip(help);
+          label->setToolTip(help);
+        }
 
         ret = QObject::connect(intField, SIGNAL(valueChanged(bool)), this,
                                SLOT(onValueChanged(bool))) &&
