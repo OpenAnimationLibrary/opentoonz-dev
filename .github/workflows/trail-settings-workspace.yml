@@ -5,29 +5,24 @@ on:
 permissions:
   contents: write
 jobs:
-  publish:
+  click-stamp:
     if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-      - name: Publish scoped testing branch
+      - name: Install C++ syntax dependencies
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('.github/ot-dev/trail-settings-workspace/publish.py').resolve()
-          text = p.read_text()
-          old = 'run("git", "rm", ".github/workflows/trail_settings_tests.yml")'
-          assert old in text
-          text = text.replace(old, 'run("git", "rm", "-f", ".github/workflows/trail_settings_tests.yml")')
-          exec(compile(text, str(p), 'exec'), {'__name__': '__main__', '__file__': str(p)})
-          PY
+          sudo apt-get -qq update > /tmp/trail-deps.log 2>&1
+          sudo apt-get -qq install -y clang-format-14 qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev >> /tmp/trail-deps.log 2>&1 || { tail -80 /tmp/trail-deps.log; exit 1; }
+      - name: Apply, test and publish click-stamping follow-up
+        run: python3 .github/ot-dev/trail-settings-workspace/click_stamp.py
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: trail-settings-preflight
+          name: trail-click-preflight
           path: |
-            /tmp/trail-settings-formatted.patch
-            /tmp/trail-settings-head.txt
+            /tmp/trail-click-formatted.patch
+            /tmp/trail-click-head.txt
           if-no-files-found: ignore
           retention-days: 3

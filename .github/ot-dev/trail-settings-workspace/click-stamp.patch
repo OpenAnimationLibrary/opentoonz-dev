@@ -1,0 +1,400 @@
+diff --git a/doc/trail_style_settings.md b/doc/trail_style_settings.md
+index c900b98..c3f6841 100644
+--- a/doc/trail_style_settings.md
++++ b/doc/trail_style_settings.md
+@@ -49,6 +49,29 @@ Sequence position belongs to the drawing session, never to a renderable style:
+ painting does not mutate palette settings; previews/icons/rendering do not consume
+ steps. Undo/redo of a stroke restores its recorded metadata, not the tool cursor.
+ 
++## Click to stamp
++
++With a loaded Trail style and Frame Range off, a stationary Brush click now
++creates one stamp without a drag. This also works with Cycle Off and single-frame
++sources. The click uses the current brush thickness and style Rotation; a
++stationary tablet tap retains its peak sampled stroke thickness rather than a
++zero-pressure release. Zero-width strokes are not enlarged into visible marks.
++
++At gesture completion, only point-like Trail strokes are given a real, open
++carrier: two straight quadratic chunks, one stage unit long, starting at the
++click and pointing along +X. Both renderers have a minimum stamp interval of two
++stage units, so this supplies exactly one placement even with negative Distance.
++The carrier has enough extent to survive PLI coordinate quantization. Normal
++drags (including tiny ones), motion paths, Frame Range, and ordinary brush dots
++are unchanged. Self-snapping must not close the synthesized carrier. Assistant
++replicas pass through the same completion and undo path and still share one cycle
++selection. There is no new toolbar or Settings toggle.
++
++Single vector stamps bypass the thin-line preview approximation, whose short
++line strip would otherwise have no vertices. Long Trail strokes retain that
++optimization. This also restores previously invisible one-placement vector Trails
++at small display sizes; it does not change Raster Trail sizing or cropping.
++
+ ## Persistence and compatibility
+ 
+ The mode is an enum on both Trail style classes. Copy/clone preserve it. It is a
+@@ -81,7 +104,7 @@ not freezing resource pixels or all live style appearance settings.
+ 
+ ## Automated checks
+ 
+-Dependency-light, genuine compiled gesture-state test:
++Dependency-light, compiled gesture-state and click-carrier geometry tests:
+ 
+ ```sh
+ cmake -S toonz/tests/trail_settings -B build/trail-settings
+@@ -89,7 +112,7 @@ cmake --build build/trail-settings
+ ctest --test-dir build/trail-settings --output-on-failure
+ ```
+ 
+-The focused PR workflow runs that test. It is not application or OpenGL coverage.
++The focused PR workflow runs those tests. They are not application or OpenGL coverage.
+ The existing OT-Dev Windows/macOS PR workflows remain unchanged.
+ 
+ After building matching `tnzcore`, enable actual palette/PLI tests, for example:
+@@ -113,6 +136,12 @@ payloads, signed-magnitude limits and stroke copy/split/transform retention.
+ 
+ - [ ] Build the new PR on Windows/macOS; perform Linux rendering checks.
+ - [ ] Both raster-source and vector-source Trail Settings show all four modes.
++- [ ] Click without dragging stamps once with raster/vector Trails, including Off
++      and single-frame sources. Test several Size, Rotation and Distance values.
++- [ ] Tablet tap/release, snapping, zoom and assistant replicas preserve placement
++      and advance the cycle once per gesture. A click makes one undoable gesture.
++- [ ] Save/reopen click stamps; verify nonzero carrier length and the same frame.
++- [ ] Ordinary dots, short drags, loops and Frame Range retain existing behavior.
+ - [ ] Auto off: unapplied changes do not affect drawing; Apply changes new strokes.
+ - [ ] Auto on and style undo/redo work; two palette slots keep independent modes.
+ - [ ] Mode changes do not resequence old strokes, including after save/reopen.
+diff --git a/toonz/sources/common/tvrender/tsimplecolorstyles.cpp b/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
+index 6aeb4c3..ad0d6cc 100644
+--- a/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
++++ b/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
+@@ -1787,7 +1787,9 @@ void TVectorImagePatternStrokeStyle::drawStroke(
+   tglMultMatrix(rd.m_aff);
+   double pixelSize2 = tglGetPixelSize2();
+   glPopMatrix();
+-  if (averageThick * averageThick < 4 * pixelSize2) {
++  // A single stamp has no useful line-strip approximation: short carriers
++  // produce zero vertices in that path. Draw the source at its actual size.
++  if (transformations.size() > 1 && averageThick * averageThick < 4 * pixelSize2) {
+     CHECK_GL_ERROR
+ 
+     glPushMatrix();
+diff --git a/toonz/sources/tnztools/toonzvectorbrushtool.cpp b/toonz/sources/tnztools/toonzvectorbrushtool.cpp
+index 2d4e6c1..e3bf54d 100644
+--- a/toonz/sources/tnztools/toonzvectorbrushtool.cpp
++++ b/toonz/sources/tnztools/toonzvectorbrushtool.cpp
+@@ -1,6 +1,7 @@
+ 
+ 
+ #include "toonzvectorbrushtool.h"
++#include "trailstamp.h"
+ 
+ // TnzTools includes
+ #include "tools/toolhandle.h"
+@@ -836,6 +837,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
+     m_styleId = 0;
+     m_tracks.clear();
+     m_trailSelection      = TrailCycle::Selection();
++    m_trailCanStamp       = false;
+     m_trailGesturePalette = TPaletteP();
+ 
+     TTool::Application *app = TTool::getApplication();
+@@ -875,6 +877,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
+       else if (TRasterImagePatternStrokeStyle *trailStyle =
+                    dynamic_cast<TRasterImagePatternStrokeStyle *>(cs))
+         trailFrameCount = trailStyle->getLevelFrameCount();
++      m_trailCanStamp = trailFrameCount > 0;
+       TVectorImageP trailImage = getImage(true);
+       if (!trailImage || !trailImage->getPalette()) return;
+       m_trailGesturePalette = trailImage->getPalette();
+@@ -903,6 +906,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
+     inline ~Cleanup() {
+       owner.m_tracks.clear();
+       owner.m_trailSelection      = TrailCycle::Selection();
++      owner.m_trailCanStamp       = false;
+       owner.m_trailGesturePalette = TPaletteP();
+       owner.invalidate();
+     }
+@@ -965,6 +969,21 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
+     track.filterPoints();
+     double error = 30.0/(1 + 0.5 * m_accuracy.getValue())*m_pixelSize;
+     TStroke *stroke = track.makeStroke(error);
++
++    // Promote only newly drawn point-like Trails, not ordinary brush dots,
++    // motion paths, Frame Range endpoints, or any nonzero-length drag.
++    if (m_trailCanStamp && !m_frameRange.getIndex() &&
++        stroke->getLength() == 0.0) {
++      std::vector<TThickPoint> points;
++      stroke->getControlPoints(points);
++      std::array<TThickPoint, 5> carrier;
++      if (TrailStamp::makeClickCarrier(points, carrier)) {
++        stroke->reshape(carrier.data(), int(carrier.size()));
++        // Snap can flag a stationary click as self-snapped. The carrier must
++        // remain open; closing it would remove its directional extent.
++        track.setLoop(false);
++      }
++    }
+     
+     stroke->setStyle(m_styleId);
+     
+diff --git a/toonz/sources/tnztools/toonzvectorbrushtool.h b/toonz/sources/tnztools/toonzvectorbrushtool.h
+index d94742f..4309e44 100644
+--- a/toonz/sources/tnztools/toonzvectorbrushtool.h
++++ b/toonz/sources/tnztools/toonzvectorbrushtool.h
+@@ -246,6 +246,7 @@ protected:
+   int m_styleId;
+   TrailCycle::State m_trailState;
+   TrailCycle::Selection m_trailSelection;
++  bool m_trailCanStamp = false;
+   TPaletteP m_trailPalette;
+   TPaletteP m_trailGesturePalette;
+   double m_minThick, m_maxThick;
+diff --git a/toonz/sources/tnztools/trailstamp.h b/toonz/sources/tnztools/trailstamp.h
+new file mode 100644
+index 0000000..b927cb3
+--- /dev/null
++++ b/toonz/sources/tnztools/trailstamp.h
+@@ -0,0 +1,38 @@
++#pragma once
++
++#include "tgeometry.h"
++
++#include <array>
++#include <cmath>
++#include <vector>
++
++namespace TrailStamp {
++
++// A click has no tangent or arc length. Give it two straight quadratic chunks
++// pointing along +X, so the style's Rotation alone determines stamp orientation.
++// One stage unit survives PLI coordinate quantization and is below the minimum
++// stamp spacing (2 units) in both Trail renderers, even with negative Distance.
++// Keep the first point at the click: that is where the renderer places stamp 0.
++inline bool makeClickCarrier(const std::vector<TThickPoint> &points,
++                             std::array<TThickPoint, 5> &carrier) {
++  if (points.empty()) return false;
++  const TThickPoint &first = points.front();
++  double thickness        = 0.0;
++  for (const TThickPoint &point : points) {
++    // Test every position, not just the endpoints: a loop is not a click.
++    // Do not capture small intentional drags with a screen-space threshold.
++    if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
++        !std::isfinite(point.thick) || point.x != first.x || point.y != first.y)
++      return false;
++    // A stationary tablet tap may end with zero pressure. Retain its peak
++    // thickness instead of making the release sample the stamp's size.
++    thickness = std::max(thickness, point.thick);
++  }
++  if (thickness <= 0.0 || first.x + 0.25 == first.x) return false;
++
++  for (size_t i = 0; i < carrier.size(); ++i)
++    carrier[i] = TThickPoint(first.x + 0.25 * i, first.y, thickness);
++  return true;
++}
++
++}  // namespace TrailStamp
+diff --git a/toonz/tests/trail_settings/CMakeLists.txt b/toonz/tests/trail_settings/CMakeLists.txt
+index c081476..38c683b 100644
+--- a/toonz/tests/trail_settings/CMakeLists.txt
++++ b/toonz/tests/trail_settings/CMakeLists.txt
+@@ -18,6 +18,21 @@ else()
+ endif()
+ add_test(NAME trailcyclestate COMMAND trailcyclestate_test)
+ 
++add_executable(trailstamp_test trailstamp_test.cpp)
++target_include_directories(trailstamp_test PRIVATE "${TOONZ_SOURCES}")
++target_include_directories(trailstamp_test SYSTEM PRIVATE "${TOONZ_SOURCES}/include")
++if(MSVC)
++  target_compile_options(trailstamp_test PRIVATE /W4 /WX)
++else()
++  target_compile_options(trailstamp_test PRIVATE -Wall -Wextra -Werror)
++endif()
++if(APPLE)
++  target_compile_definitions(trailstamp_test PRIVATE MACOSX)
++elseif(UNIX)
++  target_compile_definitions(trailstamp_test PRIVATE LINUX)
++endif()
++add_test(NAME trailstamp COMMAND trailstamp_test)
++
+ set(TNZCORE_LIBRARY "" CACHE FILEPATH "tnzcore built from this checkout and build configuration")
+ if(TNZCORE_LIBRARY)
+   find_package(Qt5 REQUIRED COMPONENTS Core Gui OpenGL Multimedia Network)
+diff --git a/toonz/tests/trail_settings/trailstamp_test.cpp b/toonz/tests/trail_settings/trailstamp_test.cpp
+new file mode 100644
+index 0000000..37343ea
+--- /dev/null
++++ b/toonz/tests/trail_settings/trailstamp_test.cpp
+@@ -0,0 +1,72 @@
++#include "tnztools/trailstamp.h"
++
++#include <limits>
++#include <stdexcept>
++
++namespace {
++void require(bool condition, const char *message) {
++  if (!condition) throw std::runtime_error(message);
++}
++
++void checkClickCarriers() {
++  for (double x : {-10000.0, -0.125, 0.0, 12.75, 10000.0}) {
++    for (double radius : {0.001, 0.5, 2.5, 500.0}) {
++      std::array<TThickPoint, 5> carrier;
++      require(TrailStamp::makeClickCarrier({{x, -8.0, radius}}, carrier),
++              "Stationary click was not promoted");
++      require(carrier.front().x == x && carrier.front().y == -8.0,
++              "Stamp moved away from the click");
++      require(carrier.back().x - carrier.front().x == 1.0,
++              "Carrier is degenerate or can emit multiple stamps");
++      for (size_t i = 0; i < carrier.size(); ++i) {
++        require(carrier[i].x == x + 0.25 * i && carrier[i].y == -8.0 &&
++                    carrier[i].thick == radius,
++                "Carrier changed the brush thickness or direction");
++        // Current PLI coordinate deltas use 1/16384 stage units. Even the
++        // older 1/1000 grid retains every quarter-unit control point step.
++        if (i)
++          require(int((carrier[i].x - carrier[i - 1].x) * 1000.0) > 0,
++                  "Carrier collapsed under coordinate quantization");
++      }
++      for (double distance : {-50.0, 0.0, 50.0}) {
++        const double spacing = std::max(2.0, 2.0 * radius + distance);
++        require(carrier.back().x - carrier.front().x < spacing,
++                "Carrier reaches a second stamp");
++      }
++    }
++  }
++}
++
++void checkTapPressure() {
++  std::array<TThickPoint, 5> carrier;
++  require(TrailStamp::makeClickCarrier(
++              {{4, 7, 0}, {4, 7, 3}, {4, 7, 8}, {4, 7, 0}}, carrier),
++          "Zero-pressure release erased a tap");
++  for (const auto &point : carrier)
++    require(point.thick == 8.0, "Tap did not preserve peak thickness");
++}
++
++void checkNonClicks() {
++  std::array<TThickPoint, 5> carrier;
++  const std::vector<std::vector<TThickPoint>> cases = {
++      {},
++      {{0, 0, 0}},
++      {{0, 0, -1}},
++      {{0, 0, 5}, {1e-9, 0, 5}},
++      {{0, 0, 5}, {0, 1e-9, 5}},
++      {{0, 0, 5}, {10, 0, 5}, {0, 0, 5}},
++      {{std::numeric_limits<double>::max(), 0, 5}},
++      {{std::numeric_limits<double>::infinity(), 0, 5}},
++      {{0, std::numeric_limits<double>::quiet_NaN(), 5}},
++      {{0, 0, std::numeric_limits<double>::quiet_NaN()}}};
++  for (const auto &points : cases)
++    require(!TrailStamp::makeClickCarrier(points, carrier),
++            "Empty, invisible, invalid, or moving stroke became a stamp");
++}
++}  // namespace
++
++int main() {
++  checkClickCarriers();
++  checkTapPressure();
++  checkNonClicks();
++}
+diff --git a/toonz/tests/trail_settings/trailstyle_test.cpp b/toonz/tests/trail_settings/trailstyle_test.cpp
+index ca4f5ec..0eedee6 100644
+--- a/toonz/tests/trail_settings/trailstyle_test.cpp
++++ b/toonz/tests/trail_settings/trailstyle_test.cpp
+@@ -1,4 +1,5 @@
+ #include "tsimplecolorstyles.h"
++#include "tnztools/trailstamp.h"
+ #include "tpalette.h"
+ #include "tvectorimage.h"
+ #include "tstroke.h"
+@@ -7,6 +8,7 @@
+ #include "image/pli/tiio_pli.h"
+ 
+ #include <QCoreApplication>
++#include <QDir>
+ #include <QTemporaryDir>
+ #include <fstream>
+ #include <regex>
+@@ -53,6 +55,52 @@ void checkParametersAndCopies() {
+           "Changing the drawing default changed a committed stroke");
+ }
+ 
++void checkClickStroke(const QString &root) {
++  std::array<TThickPoint, 5> carrier;
++  require(TrailStamp::makeClickCarrier({{4.0, 7.0, 6.0}}, carrier),
++          "Cannot create click carrier");
++  TStroke stroke;
++  stroke.reshape(carrier.data(), int(carrier.size()));
++  require(stroke.getChunkCount() == 2 && stroke.getLength() == 1.0,
++          "Click did not produce a real nonzero-length stroke");
++  require(stroke.getThickPoint(0) == carrier.front(),
++          "Click stroke changed its first stamp's center or thickness");
++
++  require(QDir().mkpath(root + "/custom styles"), "Cannot create Trail fixture");
++  TVectorImageP source = new TVectorImage;
++  TPaletteP sourcePalette = new TPalette;
++  source->setPalette(sourcePalette.getPointer());
++  auto *sourceStroke = new TStroke(
++      std::vector<TThickPoint>{{-4, 0, 4}, {0, 0, 4}, {4, 0, 4}});
++  sourceStroke->setStyle(1);
++  source->addStroke(sourceStroke, false);
++  {
++    TLevelWriterPli writer(TFilePath(root + "/custom styles/click.pli"), nullptr);
++    writer.getFrameWriter(TFrameId(1))->save(source);
++  }
++  TLevelReader::define("pli", TLevelReaderPli::create);
++  TVectorImagePatternStrokeStyle::setRootDir(TFilePath(root));
++  TVectorImagePatternStrokeStyle style("click");
++  require(style.getLevelFrameCount() == 1, "Single-frame Trail did not load");
++  for (double distance : {-50.0, 0.0, 50.0}) {
++    style.setParamValue(0, distance);
++    for (int step : {-1, 0, 1}) {
++      stroke.outlineOptions().m_patternFrameStep = step;
++      for (double rotation : {-90.0, 0.0, 90.0}) {
++        style.setParamValue(1, rotation);
++        std::vector<TAffine> transforms;
++        style.computeTransformations(transforms, &stroke);
++        require(transforms.size() == 1,
++                "Click must supply exactly one real Trail transformation");
++        const TPointD center = transforms.front() * TPointD();
++        require(std::abs(center.x - 4.0) < 1e-6 &&
++                    std::abs(center.y - 7.0) < 1e-6,
++                "Distance or Rotation moved the stamp away from its click");
++      }
++    }
++  }
++}
++
+ TPaletteP makePalette() {
+   TPaletteP palette = new TPalette;
+   palette->setStyle(1, new TRasterImagePatternStrokeStyle);
+@@ -125,6 +173,12 @@ void checkPli(const TFilePath &path, const TPaletteP &palette) {
+         new TStroke(std::vector<TThickPoint>{{0, double(i * 10), 2},
+                                              {20, double(i * 10), 2},
+                                              {40, double(i * 10), 2}});
++    if (i == 2) {
++      std::array<TThickPoint, 5> carrier;
++      require(TrailStamp::makeClickCarrier({{0, 20, 2}}, carrier),
++              "Could not prepare click round-trip fixture");
++      stroke->reshape(carrier.data(), int(carrier.size()));
++    }
+     stroke->setStyle(i == 1 ? 2 : 1);
+     if (i == 0) {
+       stroke->outlineOptions().m_patternFrameOffset = 2;
+@@ -149,6 +203,9 @@ void checkPli(const TFilePath &path, const TPaletteP &palette) {
+           "PLI palette round trip lost the style modes");
+   TVectorImageP result = reader.getFrameReader(TFrameId(1))->load();
+   require(result && result->getStrokeCount() == 3, "PLI lost strokes");
++  require(result->getStroke(2)->getLength() > 0.0 &&
++              result->getStroke(2)->getLength() < 2.0,
++          "Saved click carrier collapsed or grew to multiple stamps");
+   const int offsets[] = {2, -1, 0};
+   const int steps[]   = {0, -1, 1};
+   for (int i = 0; i < 3; ++i) {
+@@ -167,6 +224,7 @@ int main(int argc, char **argv) {
+   TEnv::setArgPathValue(TEnv::getRootVarName(), directory.path().toStdString());
+   checkParametersAndCopies<TRasterImagePatternStrokeStyle>();
+   checkParametersAndCopies<TVectorImagePatternStrokeStyle>();
++  checkClickStroke(directory.path());
+   TPaletteP palette = makePalette();
+   checkAnimation(palette);
+   checkTpl(TFilePath(directory.path() + "/trail.tpl"), palette);
