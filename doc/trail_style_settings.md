@@ -72,6 +72,48 @@ line strip would otherwise have no vertices. Long Trail strokes retain that
 optimization. This also restores previously invisible one-placement vector Trails
 at small display sizes; it does not change Raster Trail sizing or cropping.
 
+## Raster and Toonz Raster sources
+
+The Trail chooser uses the same source-format list as the raster Trail loader:
+PLI, TLV, PNG, TIF/TIFF, BMP, JPG/JPEG, TGA, SGI, RGB, NOL, EXR and the existing
+PIC/PICT/PCT entries (subject to the application's installed readers). Filters
+match uppercase extensions as well, including on Windows. A numbered sequence,
+for example `stamp.0001.png`, `stamp.0002.png`, appears as one Trail entry.
+
+Toonz Raster sources use the original TLV with its companion TPL palette in the
+`library/custom styles` directory. Keep the matching `stamp.tlv` and `stamp.tpl`
+together. The TPL is not itself listed as a stamp. Missing palettes and invalid
+style references do not get baked as guessed colors. A palette change is picked
+up when the source is reloaded; this is not a live link to another open palette.
+
+TLV conversion uses the source's ink, paint, tone/antialiasing and style opacity.
+Animated source palettes are evaluated at the source drawing number minus one
+without scrubbing the shared source palette. Blank frames and the full source
+canvas are preserved, so drawn content does not jump because of per-frame crops.
+The converted pixels are premultiplied and the Trail draw path applies alpha
+once. Existing full-color Trail sizing and blending are unchanged.
+
+Grayscale, 16-bit and floating-point rasters are normalized to RGBA for both
+thumbnail generation and Trail loading. This is still the legacy 8-bit,
+maximum-256-per-axis raster Trail texture path, not a new HDR/high-resolution
+stamp renderer. Unsupported or invalid images are skipped without assertions.
+
+As before, Trail resources are stored by basename. Give different source levels
+unique basenames; do not install unrelated `stamp.png` and `stamp.tlv` sources
+under the same name. Palette sidecars, backups and directories are excluded
+when resolving a raster Trail source. No existing resource names are migrated.
+
+These are sources for drawing onto **vector levels**. Direct stamping into
+Raster/Toonz Raster destination levels and Frame Range stamping are not added.
+
+Acceptance: copy a colored multi-frame TLV/TPL pair (including a blank drawing)
+into the library; reopen the Trail page; verify its thumbnail, each cycle mode,
+click stamping, save/reopen, alpha over light/dark backgrounds and Preview.
+Repeat with PNG, TIF/TIFF, BMP/JPG, upper-case extensions, grayscale TIFF and
+16-bit inputs. Check that sequence frames form one chooser entry and legacy
+PLI and PNG Trails remain usable. Existing 32-bit raster source pixels and
+source canvas sizing are not rewritten by this addition.
+
 ## Persistence and compatibility
 
 The mode is an enum on both Trail style classes. Copy/clone preserve it. It is a
@@ -163,3 +205,22 @@ source review, implementation, tests and documentation. User direction: adapt
 Settings tab; preserve completed strokes and test the application in OT-Dev.
 This work is experimental and does not constitute human review or upstream
 merge approval. Original implementation credit remains with doangelshavewings.
+
+### Source conversion and real-format regression
+
+With a matching `tnzcore`, PNG/TIFF development libraries and OpenToonz's LZO
+helper executables, opt in to the real-format test:
+
+```sh
+cmake -S toonz/tests/trail_settings -B build/trail-source-tests \
+  -DTNZCORE_LIBRARY=/absolute/path/to/libtnzcore.so \
+  -DBUILD_TRAIL_SOURCE_TESTS=ON \
+  -DTRAIL_LZO_BIN_DIR=/absolute/path/to/helper/bin
+cmake --build build/trail-source-tests
+ctest --test-dir build/trail-source-tests --output-on-failure -R trailsource
+```
+
+The test checks real PNG/TIF/TIFF/BMP/JPG/JPEG sequences (including uppercase
+PNG/TIF), a real three-frame TLV/TPL pair with a blank frame, missing palette
+handling, filters and filename resolution, raw indexed-color conversion,
+antialiasing/opacity, source palette animation isolation, and RGBA normalization.

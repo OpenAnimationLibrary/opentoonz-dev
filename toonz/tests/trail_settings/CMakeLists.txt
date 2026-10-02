@@ -63,3 +63,43 @@ if(TNZCORE_LIBRARY)
     add_test(NAME ${name} COMMAND ${name}_test)
   endforeach()
 endif()
+
+
+# Optional real PNG/TIFF/TLV IO tests, alongside the existing core-backed tests.
+# TLV IO invokes lzocompress/lzodecompress from the test executable's directory.
+option(BUILD_TRAIL_SOURCE_TESTS "Test real raster and Toonz Raster Trail sources" OFF)
+set(TRAIL_LZO_BIN_DIR "" CACHE PATH "Directory containing matching LZO helper executables")
+if(BUILD_TRAIL_SOURCE_TESTS)
+  if(NOT TNZCORE_LIBRARY)
+    message(FATAL_ERROR "BUILD_TRAIL_SOURCE_TESTS requires matching TNZCORE_LIBRARY")
+  endif()
+  find_package(PNG REQUIRED)
+  find_package(TIFF REQUIRED)
+  add_executable(trailsource_test trailsource_test.cpp
+      "${TOONZ_SOURCES}/image/png/tiio_png.cpp"
+      "${TOONZ_SOURCES}/image/tif/tiio_tif.cpp"
+      "${TOONZ_SOURCES}/image/tzl/tiio_tzl.cpp")
+  target_include_directories(trailsource_test SYSTEM PRIVATE "${TOONZ_SOURCES}/include")
+  target_include_directories(trailsource_test PRIVATE "${TOONZ_SOURCES}")
+  target_link_libraries(trailsource_test PRIVATE "${TNZCORE_LIBRARY}" Qt5::Core Qt5::Gui
+      PNG::PNG TIFF::TIFF)
+  if(IS_BIG_ENDIAN)
+    target_compile_definitions(trailsource_test PRIVATE TNZ_LITTLE_ENDIAN=0)
+  else()
+    target_compile_definitions(trailsource_test PRIVATE TNZ_LITTLE_ENDIAN=1)
+  endif()
+  if(APPLE)
+    target_compile_definitions(trailsource_test PRIVATE MACOSX i386 GL_SILENCE_DEPRECATION)
+  elseif(UNIX)
+    target_compile_definitions(trailsource_test PRIVATE LINUX)
+  endif()
+  if(TRAIL_LZO_BIN_DIR)
+    foreach(helper IN ITEMS lzocompress lzodecompress)
+      add_custom_command(TARGET trailsource_test POST_BUILD
+          COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+          "${TRAIL_LZO_BIN_DIR}/${helper}${CMAKE_EXECUTABLE_SUFFIX}"
+          "$<TARGET_FILE_DIR:trailsource_test>/${helper}${CMAKE_EXECUTABLE_SUFFIX}")
+    endforeach()
+  endif()
+  add_test(NAME trailsource COMMAND trailsource_test)
+endif()

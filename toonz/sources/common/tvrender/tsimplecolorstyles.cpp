@@ -1,6 +1,7 @@
 
 #include <cstring>
 #include <QStringList>
+#include <QDir>
 
 // TnzCore includes
 #include "tsystem.h"
@@ -18,6 +19,8 @@
 #include "tofflinegl.h"
 #include "drawutil.h"
 #include "trop.h"
+#include "tropcm.h"
+#include "ttoonzimage.h"
 #include "tstencilcontrol.h"
 #include "tpalette.h"
 #include "tpixelutils.h"
@@ -1165,9 +1168,94 @@ void TRasterImagePatternStrokeStyle::setParamValue(int index, double value) {
 
 //-----------------------------------------------------------------------------
 
-//
-// carico il pattern 'patternName' dalla directory dei custom styles
-//
+QString TrailStyles::sourceFilters() {
+  return QStringLiteral(
+      "*.pli *.tlv *.png *.tif *.tiff *.tga *.sgi *.rgb "
+      "*.pct *.pic *.pict *.exr *.bmp *.jpg *.jpeg *.nol");
+}
+
+//-----------------------------------------------------------------------------
+
+TFilePath TrailStyles::findSource(const TFilePath &root,
+                                  const std::string &name) {
+  // Keep the historical basename identity and ordering, but do not let a
+  // palette sidecar, backup, or directory shadow an actual image source.
+  TFilePathSet paths;
+  TSystem::readDirectory(paths, root, true, true);
+  const QStringList filters = sourceFilters().split(' ');
+  for (const TFilePath &path : paths) {
+    if (path.getName() == name &&
+        QDir::match(filters, QString::fromStdWString(path.getLevelNameW())))
+      return path;
+  }
+  return TFilePath();
+}
+
+//-----------------------------------------------------------------------------
+
+TRaster32P TrailStyles::rasterSource(const TImageP &image,
+                                     TPalette *levelPalette, int sourceFrame) {
+  if (TRasterImageP ri = image) {
+    TRasterP input = ri->getRaster();
+    if (!input) return TRaster32P();
+    if (TRaster32P rgba = input) return rgba;  // Leave existing RGBA untouched.
+    if (TRasterGR16P gray = input) {
+      // The generic converter has no GR16 -> RGBA path.
+      TRaster32P rgba(input->getSize());
+      gray->lock();
+      rgba->lock();
+      for (int y = 0; y < gray->getLy(); ++y) {
+        const TPixelGR16 *source = gray->pixels(y);
+        TPixel32 *target         = rgba->pixels(y);
+        for (int x = 0; x < gray->getLx(); ++x) {
+          const int value = (int(source[x].value) + 128) / 257;
+          target[x]       = TPixel32(value, value, value, 255);
+        }
+      }
+      rgba->setLinear(input->isLinear());
+      rgba->unlock();
+      gray->unlock();
+      return rgba;
+    }
+    if (!TRaster64P(input) && !TRasterFP(input) && !TRasterGR8P(input))
+      return TRaster32P();
+    TRaster32P rgba(input->getSize());
+    TRop::convert(rgba, input);
+    return rgba;
+  }
+
+  TToonzImageP ti = image;
+  if (!ti || !ti->getRaster()) return TRaster32P();
+  TPaletteP palette = ti->getPalette() ? ti->getPalette() : levelPalette;
+  if (!palette || palette->getStyleCount() == 0) return TRaster32P();
+  if (sourceFrame >= 0 && palette->isAnimated()) {
+    palette = palette->clone();
+    palette->setFrame(sourceFrame);  // Never scrub the caller's palette.
+  }
+
+  TRasterCM32P input = ti->getRaster();
+  const int count    = palette->getStyleCount();
+  // A damaged/mismatched sidecar must not index past the conversion tables.
+  input->lock();
+  for (int y = 0; y < input->getLy(); ++y) {
+    const TPixelCM32 *row = input->pixels(y);
+    for (int x = 0; x < input->getLx(); ++x) {
+      if ((row[x].getTone() < TPixelCM32::getMaxTone() &&
+           row[x].getInk() >= count) ||
+          (row[x].getTone() > 0 && row[x].getPaint() >= count)) {
+        input->unlock();
+        return TRaster32P();
+      }
+    }
+  }
+  input->unlock();
+  TRaster32P rgba(input->getSize());
+  TRop::convert(rgba, input, palette);
+  return rgba;
+}
+
+//-----------------------------------------------------------------------------
+
 void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   struct locals {
     static TAffine getAffine(const TDimension &srcSize,
@@ -1184,6 +1272,7 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
   // button l'eventuale livello
   m_level = TLevelP();
+  m_toonzRasterSource = false;
 
   // aggiorno il nome
   m_name = patternName;
@@ -1191,23 +1280,15 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
   // getRootDir() e' nulla se non si e' chiamata la setRoot(..)
   assert(!getRootDir().isEmpty());
 
-  // leggo tutti i livelli contenuti
-  TFilePathSet fps;
-  TSystem::readDirectory(fps, getRootDir());
-
-  // prendo il primo livello il cui nome sia patternName
-  // (puo' essere un pli, ma anche un png, ecc.)
-  TFilePath fp;
-  TFilePathSet::iterator fpIt;
-  for (fpIt = fps.begin(); fpIt != fps.end(); ++fpIt) {
-    if (fpIt->getName() == patternName) {
-      fp = *fpIt;
-      break;
-    }
-  }
+  const TFilePath fp = TrailStyles::findSource(getRootDir(), patternName);
 
   // se non ho trovato nulla esco
   if (fp == TFilePath() || !TSystem::doesExistFileOrLevel(fp)) return;
+  // The TLV reader synthesizes fallback colors when its TPL is missing. Do not
+  // bake those diagnostic colors into a Trail or silently guess a palette.
+  if (fp.getType() == "tlv" &&
+      !TFileStatus(fp.withNoFrame().withType("tpl")).doesExist())
+    return;
 
   // Leggo i frames del livello e ne ricavo delle textures
   // che memorizzo in m_level come TRasterImage
@@ -1218,14 +1299,15 @@ void TRasterImagePatternStrokeStyle::loadLevel(const std::string &patternName) {
 
   for (frameIt = level->begin(); frameIt != level->end(); ++frameIt) {
     TImageP img = lr->getFrameReader(frameIt->first)->load();
-    if (TRasterImageP ri = img) {
-      // se il frame e' raster...
-      TRaster32P ras = ri->getRaster();
+    if (TRasterImageP(img) || TToonzImageP(img)) {
+      TRaster32P ras = TrailStyles::rasterSource(
+          img, level->getPalette(), frameIt->first.getNumber() - 1);
       if (!ras) continue;
       // aggiusta le dimensioni
       ras = makeTexture(ras);
       if (!ras) continue;
       m_level->setFrame(frameIt->first, new TRasterImage(ras));
+      m_toonzRasterSource = bool(TToonzImageP(img));
     } else if (TVectorImageP vi = img) {
       // se il frame e' vettoriale
       // lo rasterizzo creando una texture 256x256 (N.B. le dimensioni
@@ -1309,7 +1391,10 @@ void TRasterImagePatternStrokeStyle::drawStroke(
   glEnable(GL_TEXTURE_2D);
   glEnable(GL_BLEND);
 
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  // TRop's indexed-color conversion is premultiplied. Apply its alpha once;
+  // retain the legacy blend mode for pre-existing full-color Trail sources.
+  glBlendFunc(m_toonzRasterSource ? GL_ONE : GL_SRC_ALPHA,
+              GL_ONE_MINUS_SRC_ALPHA);
 
   GLuint texId;
   glGenTextures(1, &texId);

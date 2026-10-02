@@ -2153,6 +2153,17 @@ void StyleChooserPage::setRootPath(const TFilePath &rootPath) {
 //    CustomStyleChooser  implementation
 //*****************************************************************************
 
+CustomStyleChooserPage::CustomStyleChooserPage(StyleEditor *styleEditor,
+                                               QWidget *parent)
+    : StyleChooserPage(styleEditor, parent) {
+  static CustomStyleManager theManager(
+      "RasterImagePatternStrokeStyle:", "VectorImagePatternStrokeStyle:",
+      TFilePath("custom styles"), TrailStyles::sourceFilters(), m_chipSize);
+  m_manager = &theManager;
+}
+
+//-----------------------------------------------------------------------------
+
 int CustomStyleChooserPage::drawChip(QPainter &p, QRect rect, int index) {
   assert(0 <= index && index < getChipCount());
   auto &data = m_manager->getData(index);

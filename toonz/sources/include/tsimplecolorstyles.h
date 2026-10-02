@@ -252,6 +252,7 @@ protected:
   std::string m_name;
   double m_space, m_rotation;
   TrailCycle::Mode m_trailCycle = TrailCycle::Mode::Off;
+  bool m_toonzRasterSource      = false;
 
 public:
   TRasterImagePatternStrokeStyle();
@@ -420,6 +421,13 @@ private:
 
 // Shared access for the Settings page, palette persistence and the Brush.
 namespace TrailStyles {
+
+// Used by both the Trail chooser and its source loader. Raster conversion keeps
+// the full canvas and returns premultiplied pixels for Toonz Raster images.
+DVAPI QString sourceFilters();
+DVAPI TFilePath findSource(const TFilePath &root, const std::string &name);
+DVAPI TRaster32P rasterSource(const TImageP &image, TPalette *levelPalette,
+                              int sourceFrame = -1);
 
 constexpr int cycleParam = 2;
 
