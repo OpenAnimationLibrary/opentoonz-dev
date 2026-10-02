@@ -136,9 +136,10 @@ void checkFilters() {
 
 void checkRasterFiles(const QString &folder) {
   // Real readers and sequence discovery, not mocked extensions.
+  int sourceIndex = 0;
   for (const QString &extension :
        {"png", "PNG", "tif", "tiff", "TIF", "bmp", "jpg", "jpeg"}) {
-    const QString name = "source_" + extension;
+    const QString name = QString("source_%1_").arg(sourceIndex++) + extension;
     for (int i = 1; i <= 2; ++i) {
       TFilePath path(folder + "/" + name +
                      QString(".%1.").arg(i, 4, 10, QChar('0')) + extension);

@@ -64,8 +64,8 @@ if(TNZCORE_LIBRARY)
   endforeach()
 endif()
 
-
 # Optional real PNG/TIFF/TLV IO tests, alongside the existing core-backed tests.
+# Use OpenToonz's patched TIFF, not stock TIFF. See README.md for library hints.
 # TLV IO invokes lzocompress/lzodecompress from the test executable's directory.
 option(BUILD_TRAIL_SOURCE_TESTS "Test real raster and Toonz Raster Trail sources" OFF)
 set(TRAIL_LZO_BIN_DIR "" CACHE PATH "Directory containing matching LZO helper executables")
@@ -74,6 +74,7 @@ if(BUILD_TRAIL_SOURCE_TESTS)
     message(FATAL_ERROR "BUILD_TRAIL_SOURCE_TESTS requires matching TNZCORE_LIBRARY")
   endif()
   find_package(PNG REQUIRED)
+  find_package(JPEG REQUIRED)
   find_package(TIFF REQUIRED)
   add_executable(trailsource_test trailsource_test.cpp
       "${TOONZ_SOURCES}/image/png/tiio_png.cpp"
@@ -82,14 +83,19 @@ if(BUILD_TRAIL_SOURCE_TESTS)
   target_include_directories(trailsource_test SYSTEM PRIVATE "${TOONZ_SOURCES}/include")
   target_include_directories(trailsource_test PRIVATE "${TOONZ_SOURCES}")
   target_link_libraries(trailsource_test PRIVATE "${TNZCORE_LIBRARY}" Qt5::Core Qt5::Gui
-      PNG::PNG TIFF::TIFF)
+      PNG::PNG JPEG::JPEG TIFF::TIFF)
   if(IS_BIG_ENDIAN)
     target_compile_definitions(trailsource_test PRIVATE TNZ_LITTLE_ENDIAN=0)
   else()
     target_compile_definitions(trailsource_test PRIVATE TNZ_LITTLE_ENDIAN=1)
   endif()
-  if(APPLE)
+  if(WIN32)
+    target_compile_definitions(trailsource_test PRIVATE NOMINMAX _USE_MATH_DEFINES)
+  elseif(APPLE)
     target_compile_definitions(trailsource_test PRIVATE MACOSX i386 GL_SILENCE_DEPRECATION)
+    add_custom_command(TARGET trailsource_test POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E create_symlink "${TNZCORE_LIBRARY}"
+        "$<TARGET_FILE_DIR:trailsource_test>/libtnzcore.dylib")
   elseif(UNIX)
     target_compile_definitions(trailsource_test PRIVATE LINUX)
   endif()
@@ -102,4 +108,5 @@ if(BUILD_TRAIL_SOURCE_TESTS)
     endforeach()
   endif()
   add_test(NAME trailsource COMMAND trailsource_test)
+  set_tests_properties(trailsource PROPERTIES TIMEOUT 120)
 endif()

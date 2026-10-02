@@ -4,10 +4,14 @@ on:
     branches: [main]
     paths:
       - 'toonz/sources/include/trailcycle.h'
+      - 'toonz/sources/include/tsimplecolorstyles.h'
+      - 'toonz/sources/include/toonzqt/styleeditor.h'
       - 'toonz/sources/tnztools/trailcyclestate.h'
       - 'toonz/sources/tnztools/trailstamp.h'
       - 'toonz/sources/tnztools/toonzvectorbrushtool.*'
       - 'toonz/sources/common/tvrender/tsimplecolorstyles.cpp'
+      - 'toonz/sources/toonzlib/stylemanager.cpp'
+      - 'toonz/sources/toonzqt/styleeditor.cpp'
       - 'toonz/tests/trail_settings/**'
       - '.github/workflows/trail_settings_tests.yml'
   workflow_dispatch:
@@ -23,3 +27,4 @@ jobs:
           cmake -S toonz/tests/trail_settings -B build/trail-settings
           cmake --build build/trail-settings
           ctest --test-dir build/trail-settings --output-on-failure
+# The core-backed real-format suite is opt-in; see the test directory README.
