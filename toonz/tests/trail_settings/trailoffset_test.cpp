@@ -27,7 +27,7 @@ template <class Style>
 void checkParameter() {
   Style style;
   require(
-      style.getParamCount() == 4 &&
+      style.getParamCount() == 5 &&
           style.getParamType(TrailStyles::frameOffsetParam) == TColorStyle::INT,
       "Frame Offset is not immediately after Trail Cycle");
   require(style.getTrailFrameOffset() == 0, "Old styles need automatic offset");

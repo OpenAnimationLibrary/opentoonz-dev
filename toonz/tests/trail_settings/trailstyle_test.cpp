@@ -24,11 +24,12 @@ void require(bool condition, const char *message) {
 template <class Style>
 void checkParametersAndCopies() {
   Style first;
-  require(first.getParamCount() == 4, "Trail settings missing");
+  require(first.getParamCount() == 5, "Trail settings missing");
   require(first.getParamType(0) == TColorStyle::DOUBLE &&
               first.getParamType(1) == TColorStyle::DOUBLE &&
               first.getParamType(2) == TColorStyle::ENUM &&
-              first.getParamType(3) == TColorStyle::INT,
+              first.getParamType(3) == TColorStyle::INT &&
+              first.getParamType(4) == TColorStyle::DOUBLE,
           "Existing parameter indices changed");
   require(first.getTrailCycleMode() == Mode::Off, "Legacy default changed");
   first.setParamValue(0,

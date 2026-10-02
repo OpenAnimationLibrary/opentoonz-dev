@@ -658,6 +658,11 @@ void TPalette::saveData(TOStream &os) {
       const int trailOffset = TrailStyles::getFrameOffset(style.getPointer());
       if (trailOffset > 0)
         attr["trailFrameOffset"] = std::to_string(trailOffset);
+      const double trailSize =
+          TrailStyles::getSizeMultiplier(style.getPointer());
+      if (trailSize != 1.0)
+        attr["trailSizeMultiplier"] =
+            QString::number(trailSize, 'g', 17).toStdString();
       os.openChild("style", attr);
       {
         StyleWriter w(os, i);
@@ -717,6 +722,10 @@ void TPalette::saveData(TOStream &os) {
             const int trailOffset = TrailStyles::getFrameOffset(cs);
             if (trailOffset > 0)
               attributes["trailFrameOffset"] = std::to_string(trailOffset);
+            const double trailSize = TrailStyles::getSizeMultiplier(cs);
+            if (trailSize != 1.0)
+              attributes["trailSizeMultiplier"] =
+                  QString::number(trailSize, 'g', 17).toStdString();
 
             /*os.openChild("keycolor", attributes);                       // Up
             to Toonz 7.0, animations saved os << cs->getMainColor(); // the main
@@ -786,6 +795,13 @@ void TPalette::loadData(TIStream &is) {
           int trailOffset = 0;
           if (is.getTagParam("trailFrameOffset", trailOffset))
             TrailStyles::setFrameOffset(cs, trailOffset);
+          std::string trailSize;
+          if (is.getTagParam("trailSizeMultiplier", trailSize)) {
+            bool ok = false;
+            const double multiplier =
+                QString::fromStdString(trailSize).toDouble(&ok);
+            if (ok) TrailStyles::setSizeMultiplier(cs, multiplier);
+          }
 
           std::string pickedPosStr;
           if (is.getTagParam("pickedpos", pickedPosStr))
@@ -874,6 +890,13 @@ void TPalette::loadData(TIStream &is) {
               int trailOffset = 0;
               if (is.getTagParam("trailFrameOffset", trailOffset))
                 TrailStyles::setFrameOffset(cs, trailOffset);
+              std::string trailSize;
+              if (is.getTagParam("trailSizeMultiplier", trailSize)) {
+                bool ok = false;
+                const double multiplier =
+                    QString::fromStdString(trailSize).toDouble(&ok);
+                if (ok) TrailStyles::setSizeMultiplier(cs, multiplier);
+              }
             } else
               throw TException("palette, expected <keyframe> tag");
 

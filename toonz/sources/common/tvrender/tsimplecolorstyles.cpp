@@ -32,6 +32,7 @@
 #include "tregion.h"
 
 #include "tsimplecolorstyles.h"
+#include "trailscale.h"
 
 #ifndef _WIN32
 #define CALLBACK
@@ -95,6 +96,13 @@ TRaster32P makeTexture(const TRaster32P &ras) {
 }
 
 //-----------------------------------------------------------------------------
+
+double maximumPatternThickness(const TStroke *stroke) {
+  double thickness = 0.0;
+  for (int i = 0; i < stroke->getControlPointCount(); ++i)
+    thickness = (std::max)(thickness, stroke->getControlPoint(i).thick);
+  return thickness;
+}
 
 int findPatternSourceFrameIndex(const TLevelP &level, int frame) {
   if (!level || frame <= 0) return -1;
@@ -1117,6 +1125,17 @@ void TRasterImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
+void TRasterImagePatternStrokeStyle::setTrailSizeMultiplier(double multiplier) {
+  multiplier = TrailScale::normalized(multiplier);
+  if (m_trailSizeMultiplier == multiplier) return;
+  m_trailSizeMultiplier = multiplier;
+  updateVersionNumber();  // Rebuild cached placements and update drawing
+                          // bounds.
+  invalidateIcon();
+}
+
+//-----------------------------------------------------------------------------
+
 int TRasterImagePatternStrokeStyle::getTrailStartFrameIndex() const {
   return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
 }
@@ -1132,7 +1151,7 @@ void TRasterImagePatternStrokeStyle::getParamRange(int index, int &min,
 
 //-----------------------------------------------------------------------------
 
-int TRasterImagePatternStrokeStyle::getParamCount() const { return 4; }
+int TRasterImagePatternStrokeStyle::getParamCount() const { return 5; }
 
 //-----------------------------------------------------------------------------
 
@@ -1148,6 +1167,9 @@ TColorStyle::ParamType TRasterImagePatternStrokeStyle::getParamType(
 
 QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam)
+    return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                       "Size Multiplier");
   if (index == TrailStyles::cycleParam)
     return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
                                        "Trail Cycle");
@@ -1165,6 +1187,11 @@ QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
 void TRasterImagePatternStrokeStyle::getParamRange(int index, double &min,
                                                    double &max) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) {
+    min = TrailScale::minimum;
+    max = TrailScale::maximum;
+    return;
+  }
 
   if (index == 0) {
     min = -50;
@@ -1180,6 +1207,7 @@ void TRasterImagePatternStrokeStyle::getParamRange(int index, double &min,
 double TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
                                                      int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) return m_trailSizeMultiplier;
   return (index == 0) ? m_space : m_rotation;
 }
 
@@ -1187,6 +1215,10 @@ double TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
 
 void TRasterImagePatternStrokeStyle::setParamValue(int index, double value) {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) {
+    setTrailSizeMultiplier(value);
+    return;
+  }
 
   if (index == 0) {
     if (m_space != value) {
@@ -1400,7 +1432,7 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
     double ang    = rad2degree(atan(v)) + m_rotation;
 
     int ly    = std::max(1.0, images[index].ly);
-    double sc = p.thick / ly;
+    double sc = TrailScale::apply(p.thick / ly, m_trailSizeMultiplier);
     transformations.push_back(TTranslation(p) * TRotation(ang) * TScale(sc));
     double ds = std::max(2.0, sc * images[index].lx * 2 + m_space);
     s += ds;
@@ -1567,7 +1599,28 @@ void TRasterImagePatternStrokeStyle::getObsoleteTagIds(
 TRectD TRasterImagePatternStrokeStyle::getStrokeBBox(
     const TStroke *stroke) const {
   TRectD rect = TColorStyle::getStrokeBBox(stroke);
-  return rect.enlarge(std::max(rect.getLx() * 0.25, rect.getLy() * 0.25));
+  double padding = std::max(rect.getLx() * 0.25, rect.getLy() * 0.25);
+  if (!m_level || m_level->getFrameCount() == 0) return rect.enlarge(padding);
+
+  // Legacy raster placement uses the first valid frame's height for every
+  // stamp. The quad uses +/-width and +/-height, including transparent padding.
+  double referenceHeight = 0.0;
+  double sourceRadius    = 0.0;
+  for (auto it = m_level->begin(); it != m_level->end(); ++it) {
+    TRasterImageP image = it->second;
+    if (!image || !image->getRaster()) continue;
+    const TDimension size = image->getRaster()->getSize();
+    if (referenceHeight == 0.0) referenceHeight = (std::max)(1, size.ly);
+    sourceRadius =
+        (std::max)(sourceRadius, TrailScale::radius(size.lx, size.ly, 1.0));
+  }
+  if (referenceHeight > 0.0) {
+    const double scale =
+        TrailScale::apply(maximumPatternThickness(stroke) / referenceHeight,
+                          m_trailSizeMultiplier);
+    padding = (std::max)(padding, sourceRadius * scale);
+  }
+  return rect.enlarge(padding);
 }
 
 //*************************************************************************************
@@ -1715,6 +1768,17 @@ void TVectorImagePatternStrokeStyle::makeIcon(const TDimension &size) {
 
 //-----------------------------------------------------------------------------
 
+void TVectorImagePatternStrokeStyle::setTrailSizeMultiplier(double multiplier) {
+  multiplier = TrailScale::normalized(multiplier);
+  if (m_trailSizeMultiplier == multiplier) return;
+  m_trailSizeMultiplier = multiplier;
+  updateVersionNumber();  // Rebuild cached placements and update drawing
+                          // bounds.
+  invalidateIcon();
+}
+
+//-----------------------------------------------------------------------------
+
 int TVectorImagePatternStrokeStyle::getTrailStartFrameIndex() const {
   return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
 }
@@ -1730,7 +1794,7 @@ void TVectorImagePatternStrokeStyle::getParamRange(int index, int &min,
 
 //-----------------------------------------------------------------------------
 
-int TVectorImagePatternStrokeStyle::getParamCount() const { return 4; }
+int TVectorImagePatternStrokeStyle::getParamCount() const { return 5; }
 
 //-----------------------------------------------------------------------------
 
@@ -1746,6 +1810,9 @@ TColorStyle::ParamType TVectorImagePatternStrokeStyle::getParamType(
 
 QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam)
+    return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                       "Size Multiplier");
   if (index == TrailStyles::cycleParam)
     return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
                                        "Trail Cycle");
@@ -1763,6 +1830,11 @@ QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
 void TVectorImagePatternStrokeStyle::getParamRange(int index, double &min,
                                                    double &max) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) {
+    min = TrailScale::minimum;
+    max = TrailScale::maximum;
+    return;
+  }
 
   if (index == 0) {
     min = -50;
@@ -1778,6 +1850,7 @@ void TVectorImagePatternStrokeStyle::getParamRange(int index, double &min,
 double TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
                                                      int index) const {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) return m_trailSizeMultiplier;
   return index == 0 ? m_space : m_rotation;
 }
 
@@ -1785,6 +1858,10 @@ double TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
 
 void TVectorImagePatternStrokeStyle::setParamValue(int index, double value) {
   assert(0 <= index && index < getParamCount());
+  if (index == TrailStyles::sizeMultiplierParam) {
+    setTrailSizeMultiplier(value);
+    return;
+  }
 
   if (index == 0) {
     if (m_space != value) {
@@ -1890,6 +1967,7 @@ void TVectorImagePatternStrokeStyle::computeTransformations(
     if (ry * ry < 1e-5) ry = p.thick;
     double sc = p.thick / ry;
     if (sc < 0.0001) sc = 0.0001;
+    sc = TrailScale::apply(sc, m_trailSizeMultiplier);
     TAffine aff =
         TTranslation(p) * TRotation(ang) * TScale(sc) * TTranslation(-center);
     transformations.push_back(aff);
@@ -1926,7 +2004,8 @@ void TVectorImagePatternStrokeStyle::drawStroke(
     thickSum += stroke->getControlPoint(cp).thick;
     count++;
   }
-  double averageThick = thickSum / (double)count;
+  double averageThick =
+      TrailScale::apply(thickSum / (double)count, m_trailSizeMultiplier);
   glPushMatrix();
   tglMultMatrix(rd.m_aff);
   double pixelSize2 = tglGetPixelSize2();
@@ -2127,7 +2206,25 @@ void TVectorImagePatternStrokeStyle::getObsoleteTagIds(
 TRectD TVectorImagePatternStrokeStyle::getStrokeBBox(
     const TStroke *stroke) const {
   TRectD rect = TColorStyle::getStrokeBBox(stroke);
-  return rect.enlarge(std::max(rect.getLx() * 0.25, rect.getLy() * 0.25));
+  double padding = std::max(rect.getLx() * 0.25, rect.getLy() * 0.25);
+  if (!m_level || m_level->getFrameCount() == 0) return rect.enlarge(padding);
+
+  const double thickness = maximumPatternThickness(stroke);
+  for (auto it = m_level->begin(); it != m_level->end(); ++it) {
+    TVectorImageP image = it->second;
+    if (!image) continue;
+    const TRectD source = image->getBBox();
+    if (source.isEmpty()) continue;
+    const double halfHeight = source.getLy() * 0.5;
+    // Match the renderer's nearly-flat source fallback and minimum scale.
+    double scale = halfHeight * halfHeight < 1e-5
+                       ? 1.0
+                       : (std::max)(0.0001, thickness / halfHeight);
+    scale        = TrailScale::apply(scale, m_trailSizeMultiplier);
+    padding      = (std::max)(
+        padding, TrailScale::radius(source.getLx() * 0.5, halfHeight, scale));
+  }
+  return rect.enlarge(padding);
 }
 
 //*************************************************************************************

@@ -253,6 +253,7 @@ protected:
   double m_space, m_rotation;
   TrailCycle::Mode m_trailCycle = TrailCycle::Mode::Off;
   int m_trailFrameOffset        = 0;
+  double m_trailSizeMultiplier  = 1.0;
   bool m_toonzRasterSource      = false;
 
 public:
@@ -312,6 +313,9 @@ public:
   // Missing drawings (including gaps and letter-only variants) return -1.
   int getTrailStartFrameIndex() const;
 
+  double getTrailSizeMultiplier() const { return m_trailSizeMultiplier; }
+  void setTrailSizeMultiplier(double multiplier);
+
   int getParamCount() const override;
   TColorStyle::ParamType getParamType(int index) const override;
   void getParamRange(int index, int &min, int &max) const override;
@@ -353,6 +357,7 @@ protected:
   double m_space, m_rotation;
   TrailCycle::Mode m_trailCycle = TrailCycle::Mode::Off;
   int m_trailFrameOffset        = 0;
+  double m_trailSizeMultiplier  = 1.0;
 
 public:
   TVectorImagePatternStrokeStyle();
@@ -411,6 +416,9 @@ public:
   // Missing drawings (including gaps and letter-only variants) return -1.
   int getTrailStartFrameIndex() const;
 
+  double getTrailSizeMultiplier() const { return m_trailSizeMultiplier; }
+  void setTrailSizeMultiplier(double multiplier);
+
   int getParamCount() const override;
   TColorStyle::ParamType getParamType(int index) const override;
   void getParamRange(int index, int &min, int &max) const override;
@@ -451,8 +459,9 @@ DVAPI TFilePath findSource(const TFilePath &root, const std::string &name);
 DVAPI TRaster32P rasterSource(const TImageP &image, TPalette *levelPalette,
                               int sourceFrame = -1);
 
-constexpr int cycleParam = 2;
-constexpr int frameOffsetParam = 3;
+constexpr int cycleParam          = 2;
+constexpr int frameOffsetParam    = 3;
+constexpr int sizeMultiplierParam = 4;
 
 inline bool isTrail(const TColorStyle *style) {
   return dynamic_cast<const TRasterImagePatternStrokeStyle *>(style) ||
@@ -487,6 +496,21 @@ inline void setFrameOffset(TColorStyle *style, int frame) {
     trail->setTrailFrameOffset(frame);
   else if (auto *trail = dynamic_cast<TVectorImagePatternStrokeStyle *>(style))
     trail->setTrailFrameOffset(frame);
+}
+
+inline double getSizeMultiplier(const TColorStyle *style) {
+  if (auto *trail = dynamic_cast<const TRasterImagePatternStrokeStyle *>(style))
+    return trail->getTrailSizeMultiplier();
+  if (auto *trail = dynamic_cast<const TVectorImagePatternStrokeStyle *>(style))
+    return trail->getTrailSizeMultiplier();
+  return 1.0;
+}
+
+inline void setSizeMultiplier(TColorStyle *style, double multiplier) {
+  if (auto *trail = dynamic_cast<TRasterImagePatternStrokeStyle *>(style))
+    trail->setTrailSizeMultiplier(multiplier);
+  else if (auto *trail = dynamic_cast<TVectorImagePatternStrokeStyle *>(style))
+    trail->setTrailSizeMultiplier(multiplier);
 }
 
 inline int startFrameIndex(const TColorStyle *style) {

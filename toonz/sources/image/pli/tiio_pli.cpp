@@ -106,7 +106,7 @@ public:
 
   void readTrailCycle(TColorStyle *style) {
     if (!TrailStyles::isTrail(style)) return;
-    // Both extensions are independently optional and confined to this typed
+    // Extensions are independently optional and confined to this typed
     // style record. Unknown/truncated suffixes are left alone.
     while (m_count + 1 < int(m_stream->size())) {
       const TStyleParam &marker = (*m_stream)[m_count];
@@ -114,20 +114,27 @@ public:
       if (marker.m_type != TStyleParam::SP_STRING) return;
       const bool cycle  = marker.m_string == "trail-cycle-v1";
       const bool offset = marker.m_string == "trail-frame-offset-v1";
-      if (!cycle && !offset) return;
+      const bool size   = marker.m_string == "trail-size-multiplier-v1";
+      if (!cycle && !offset && !size) return;
       if (cycle) {
         if (value.m_type != TStyleParam::SP_INT) return;
         const double number = value.m_numericVal;
         if (std::isfinite(number) && number >= 0 && number <= 3 &&
             number == int(number))
           TrailStyles::setMode(style, TrailCycle::modeFromValue(int(number)));
-      } else {
+      } else if (offset) {
         if (value.m_type != TStyleParam::SP_STRING) return;
         // PLI numeric style parameters have only a 16-bit integer part.
         // A tagged decimal string preserves the full source-frame ID range.
         bool ok         = false;
         const int frame = QString::fromStdString(value.m_string).toInt(&ok);
         if (ok && frame >= 0) TrailStyles::setFrameOffset(style, frame);
+      } else {
+        if (value.m_type != TStyleParam::SP_STRING) return;
+        bool ok = false;
+        const double multiplier =
+            QString::fromStdString(value.m_string).toDouble(&ok);
+        if (ok) TrailStyles::setSizeMultiplier(style, multiplier);
       }
       m_count += 2;
     }
@@ -145,6 +152,10 @@ void saveStyleWithTrailCycle(const TColorStyle *style,
   const int offset = TrailStyles::getFrameOffset(style);
   if (offset > 0)
     stream << std::string("trail-frame-offset-v1") << std::to_string(offset);
+  const double multiplier = TrailStyles::getSizeMultiplier(style);
+  if (multiplier != 1.0)
+    stream << std::string("trail-size-multiplier-v1")
+           << QString::number(multiplier, 'g', 17).toStdString();
 }
 
 //---------------------------------------------------------------------------
