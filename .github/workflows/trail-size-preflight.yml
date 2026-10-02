@@ -1,0 +1,26 @@
+name: Trail Size Multiplier Preflight
+on:
+  push:
+    branches: [automation/trail-size-publish-20261002]
+permissions:
+  contents: write
+jobs:
+  size:
+    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get -qq update > /tmp/trail-size-deps.log 2>&1
+          sudo apt-get -qq install -y clang-format-14 ninja-build qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev liblz4-dev libjpeg-dev zlib1g-dev >> /tmp/trail-size-deps.log 2>&1 || { tail -80 /tmp/trail-size-deps.log; exit 1; }
+      - name: Validate and publish Size Multiplier on PR 221
+        run: python3 .github/ot-dev/trail-size/prepare.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: trail-size-preflight
+          path: /tmp/trail-size-report
+          if-no-files-found: ignore
+          retention-days: 3

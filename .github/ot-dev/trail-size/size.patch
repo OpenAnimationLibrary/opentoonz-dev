@@ -1,0 +1,430 @@
+diff --git a/toonz/sources/common/tvrender/tpalette.cpp b/toonz/sources/common/tvrender/tpalette.cpp
+--- a/toonz/sources/common/tvrender/tpalette.cpp
++++ b/toonz/sources/common/tvrender/tpalette.cpp
+@@ -658,6 +658,10 @@ void TPalette::saveData(TOStream &os) {
+       const int trailOffset = TrailStyles::getFrameOffset(style.getPointer());
+       if (trailOffset > 0)
+         attr["trailFrameOffset"] = std::to_string(trailOffset);
++      const double trailSize = TrailStyles::getSizeMultiplier(style.getPointer());
++      if (trailSize != 1.0)
++        attr["trailSizeMultiplier"] =
++            QString::number(trailSize, 'g', 17).toStdString();
+       os.openChild("style", attr);
+       {
+         StyleWriter w(os, i);
+@@ -717,6 +721,10 @@ void TPalette::saveData(TOStream &os) {
+             const int trailOffset = TrailStyles::getFrameOffset(cs);
+             if (trailOffset > 0)
+               attributes["trailFrameOffset"] = std::to_string(trailOffset);
++            const double trailSize = TrailStyles::getSizeMultiplier(cs);
++            if (trailSize != 1.0)
++              attributes["trailSizeMultiplier"] =
++                  QString::number(trailSize, 'g', 17).toStdString();
+ 
+             /*os.openChild("keycolor", attributes);                       // Up
+             to Toonz 7.0, animations saved os << cs->getMainColor(); // the main
+@@ -786,6 +794,12 @@ void TPalette::loadData(TIStream &is) {
+           int trailOffset = 0;
+           if (is.getTagParam("trailFrameOffset", trailOffset))
+             TrailStyles::setFrameOffset(cs, trailOffset);
++          std::string trailSize;
++          if (is.getTagParam("trailSizeMultiplier", trailSize)) {
++            bool ok = false;
++            const double multiplier = QString::fromStdString(trailSize).toDouble(&ok);
++            if (ok) TrailStyles::setSizeMultiplier(cs, multiplier);
++          }
+ 
+           std::string pickedPosStr;
+           if (is.getTagParam("pickedpos", pickedPosStr))
+@@ -874,6 +888,12 @@ void TPalette::loadData(TIStream &is) {
+               int trailOffset = 0;
+               if (is.getTagParam("trailFrameOffset", trailOffset))
+                 TrailStyles::setFrameOffset(cs, trailOffset);
++              std::string trailSize;
++              if (is.getTagParam("trailSizeMultiplier", trailSize)) {
++                bool ok = false;
++                const double multiplier = QString::fromStdString(trailSize).toDouble(&ok);
++                if (ok) TrailStyles::setSizeMultiplier(cs, multiplier);
++              }
+             } else
+               throw TException("palette, expected <keyframe> tag");
+ 
+ diff --git a/toonz/sources/common/tvrender/tsimplecolorstyles.cpp b/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
+--- a/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
++++ b/toonz/sources/common/tvrender/tsimplecolorstyles.cpp
+@@ -32,6 +32,7 @@
+ #include "tregion.h"
+ 
+ #include "tsimplecolorstyles.h"
++#include "trailscale.h"
+ 
+ #ifndef _WIN32
+ #define CALLBACK
+@@ -96,6 +97,13 @@ TRaster32P makeTexture(const TRaster32P &ras) {
+ 
+ //-----------------------------------------------------------------------------
+ 
++double maximumPatternThickness(const TStroke *stroke) {
++  double thickness = 0.0;
++  for (int i = 0; i < stroke->getControlPointCount(); ++i)
++    thickness = (std::max)(thickness, stroke->getControlPoint(i).thick);
++  return thickness;
++}
++
+ int findPatternSourceFrameIndex(const TLevelP &level, int frame) {
+   if (!level || frame <= 0) return -1;
+   const TFrameId fid(frame);
+@@ -1117,6 +1125,16 @@ void TRasterImagePatternStrokeStyle::makeIcon(const TDimension &size) {
+ 
+ //-----------------------------------------------------------------------------
+ 
++void TRasterImagePatternStrokeStyle::setTrailSizeMultiplier(double multiplier) {
++  multiplier = TrailScale::normalized(multiplier);
++  if (m_trailSizeMultiplier == multiplier) return;
++  m_trailSizeMultiplier = multiplier;
++  updateVersionNumber();  // Rebuild cached placements and update drawing bounds.
++  invalidateIcon();
++}
++
++//-----------------------------------------------------------------------------
++
+ int TRasterImagePatternStrokeStyle::getTrailStartFrameIndex() const {
+   return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
+ }
+@@ -1132,7 +1150,7 @@ void TRasterImagePatternStrokeStyle::getParamRange(int index, int &min,
+ 
+ //-----------------------------------------------------------------------------
+ 
+-int TRasterImagePatternStrokeStyle::getParamCount() const { return 4; }
++int TRasterImagePatternStrokeStyle::getParamCount() const { return 5; }
+ 
+ //-----------------------------------------------------------------------------
+ 
+@@ -1148,6 +1166,9 @@ TColorStyle::ParamType TRasterImagePatternStrokeStyle::getParamType(
+ 
+ QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam)
++    return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
++                                       "Size Multiplier");
+   if (index == TrailStyles::cycleParam)
+     return QCoreApplication::translate("TRasterImagePatternStrokeStyle",
+                                        "Trail Cycle");
+@@ -1165,6 +1186,11 @@ QString TRasterImagePatternStrokeStyle::getParamNames(int index) const {
+ void TRasterImagePatternStrokeStyle::getParamRange(int index, double &min,
+                                                    double &max) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam) {
++    min = TrailScale::minimum;
++    max = TrailScale::maximum;
++    return;
++  }
+ 
+   if (index == 0) {
+     min = -50;
+@@ -1180,6 +1206,8 @@ void TRasterImagePatternStrokeStyle::getParamRange(int index, double &min,
+ double TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
+                                                      int index) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam)
++    return m_trailSizeMultiplier;
+   return (index == 0) ? m_space : m_rotation;
+ }
+ 
+@@ -1187,6 +1215,10 @@ double TRasterImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
+ 
+ void TRasterImagePatternStrokeStyle::setParamValue(int index, double value) {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam) {
++    setTrailSizeMultiplier(value);
++    return;
++  }
+ 
+   if (index == 0) {
+     if (m_space != value) {
+@@ -1400,7 +1432,7 @@ void TRasterImagePatternStrokeStyle::computeTransformations(
+     double ang    = rad2degree(atan(v)) + m_rotation;
+ 
+     int ly    = std::max(1.0, images[index].ly);
+-    double sc = p.thick / ly;
++    double sc = TrailScale::apply(p.thick / ly, m_trailSizeMultiplier);
+     transformations.push_back(TTranslation(p) * TRotation(ang) * TScale(sc));
+     double ds = std::max(2.0, sc * images[index].lx * 2 + m_space);
+     s += ds;
+@@ -1567,7 +1599,28 @@ void TRasterImagePatternStrokeStyle::getObsoleteTagIds(
+ TRectD TRasterImagePatternStrokeStyle::getStrokeBBox(
+     const TStroke *stroke) const {
+   TRectD rect = TColorStyle::getStrokeBBox(stroke);
+-  return rect.enlarge(std::max(rect.getLx() * 0.25, rect.getLy() * 0.25));
++  double padding = std::max(rect.getLx() * 0.25, rect.getLy() * 0.25);
++  if (!m_level || m_level->getFrameCount() == 0) return rect.enlarge(padding);
++
++  // Legacy raster placement uses the first valid frame's height for every
++  // stamp. The quad uses +/-width and +/-height, including transparent padding.
++  double referenceHeight = 0.0;
++  double sourceRadius    = 0.0;
++  for (auto it = m_level->begin(); it != m_level->end(); ++it) {
++    TRasterImageP image = it->second;
++    if (!image || !image->getRaster()) continue;
++    const TDimension size = image->getRaster()->getSize();
++    if (referenceHeight == 0.0) referenceHeight = (std::max)(1, size.ly);
++    sourceRadius = (std::max)(
++        sourceRadius, TrailScale::radius(size.lx, size.ly, 1.0));
++  }
++  if (referenceHeight > 0.0) {
++    const double scale = TrailScale::apply(
++        maximumPatternThickness(stroke) / referenceHeight,
++        m_trailSizeMultiplier);
++    padding = (std::max)(padding, sourceRadius * scale);
++  }
++  return rect.enlarge(padding);
+ }
+ 
+ //*************************************************************************************
+@@ -1715,6 +1768,16 @@ void TVectorImagePatternStrokeStyle::makeIcon(const TDimension &size) {
+ 
+ //-----------------------------------------------------------------------------
+ 
++void TVectorImagePatternStrokeStyle::setTrailSizeMultiplier(double multiplier) {
++  multiplier = TrailScale::normalized(multiplier);
++  if (m_trailSizeMultiplier == multiplier) return;
++  m_trailSizeMultiplier = multiplier;
++  updateVersionNumber();  // Rebuild cached placements and update drawing bounds.
++  invalidateIcon();
++}
++
++//-----------------------------------------------------------------------------
++
+ int TVectorImagePatternStrokeStyle::getTrailStartFrameIndex() const {
+   return findPatternSourceFrameIndex(m_level, m_trailFrameOffset);
+ }
+@@ -1730,7 +1793,7 @@ void TVectorImagePatternStrokeStyle::getParamRange(int index, int &min,
+ 
+ //-----------------------------------------------------------------------------
+ 
+-int TVectorImagePatternStrokeStyle::getParamCount() const { return 4; }
++int TVectorImagePatternStrokeStyle::getParamCount() const { return 5; }
+ 
+ //-----------------------------------------------------------------------------
+ 
+@@ -1746,6 +1809,9 @@ TColorStyle::ParamType TVectorImagePatternStrokeStyle::getParamType(
+ 
+ QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam)
++    return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
++                                       "Size Multiplier");
+   if (index == TrailStyles::cycleParam)
+     return QCoreApplication::translate("TVectorImagePatternStrokeStyle",
+                                        "Trail Cycle");
+@@ -1763,6 +1829,11 @@ QString TVectorImagePatternStrokeStyle::getParamNames(int index) const {
+ void TVectorImagePatternStrokeStyle::getParamRange(int index, double &min,
+                                                    double &max) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam) {
++    min = TrailScale::minimum;
++    max = TrailScale::maximum;
++    return;
++  }
+ 
+   if (index == 0) {
+     min = -50;
+@@ -1778,6 +1849,8 @@ void TVectorImagePatternStrokeStyle::getParamRange(int index, double &min,
+ double TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
+                                                      int index) const {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam)
++    return m_trailSizeMultiplier;
+   return index == 0 ? m_space : m_rotation;
+ }
+ 
+@@ -1785,6 +1858,10 @@ double TVectorImagePatternStrokeStyle::getParamValue(TColorStyle::double_tag,
+ 
+ void TVectorImagePatternStrokeStyle::setParamValue(int index, double value) {
+   assert(0 <= index && index < getParamCount());
++  if (index == TrailStyles::sizeMultiplierParam) {
++    setTrailSizeMultiplier(value);
++    return;
++  }
+ 
+   if (index == 0) {
+     if (m_space != value) {
+@@ -1890,6 +1967,7 @@ void TVectorImagePatternStrokeStyle::computeTransformations(
+     if (ry * ry < 1e-5) ry = p.thick;
+     double sc = p.thick / ry;
+     if (sc < 0.0001) sc = 0.0001;
++    sc = TrailScale::apply(sc, m_trailSizeMultiplier);
+     TAffine aff =
+         TTranslation(p) * TRotation(ang) * TScale(sc) * TTranslation(-center);
+     transformations.push_back(aff);
+@@ -1926,7 +2004,8 @@ void TVectorImagePatternStrokeStyle::drawStroke(
+     thickSum += stroke->getControlPoint(cp).thick;
+     count++;
+   }
+-  double averageThick = thickSum / (double)count;
++  double averageThick =
++      TrailScale::apply(thickSum / (double)count, m_trailSizeMultiplier);
+   glPushMatrix();
+   tglMultMatrix(rd.m_aff);
+   double pixelSize2 = tglGetPixelSize2();
+@@ -2127,7 +2206,25 @@ void TVectorImagePatternStrokeStyle::getObsoleteTagIds(
+ TRectD TVectorImagePatternStrokeStyle::getStrokeBBox(
+     const TStroke *stroke) const {
+   TRectD rect = TColorStyle::getStrokeBBox(stroke);
+-  return rect.enlarge(std::max(rect.getLx() * 0.25, rect.getLy() * 0.25));
++  double padding = std::max(rect.getLx() * 0.25, rect.getLy() * 0.25);
++  if (!m_level || m_level->getFrameCount() == 0) return rect.enlarge(padding);
++
++  const double thickness = maximumPatternThickness(stroke);
++  for (auto it = m_level->begin(); it != m_level->end(); ++it) {
++    TVectorImageP image = it->second;
++    if (!image) continue;
++    const TRectD source = image->getBBox();
++    if (source.isEmpty()) continue;
++    const double halfHeight = source.getLy() * 0.5;
++    // Match the renderer's nearly-flat source fallback and minimum scale.
++    double scale = halfHeight * halfHeight < 1e-5
++                       ? 1.0
++                       : (std::max)(0.0001, thickness / halfHeight);
++    scale = TrailScale::apply(scale, m_trailSizeMultiplier);
++    padding = (std::max)(padding, TrailScale::radius(
++        source.getLx() * 0.5, halfHeight, scale));
++  }
++  return rect.enlarge(padding);
+ }
+ 
+ //*************************************************************************************
+diff --git a/toonz/sources/common/tvrender/tstrokeprop.cpp b/toonz/sources/common/tvrender/tstrokeprop.cpp
+--- a/toonz/sources/common/tvrender/tstrokeprop.cpp
++++ b/toonz/sources/common/tvrender/tstrokeprop.cpp
+@@ -113,7 +113,8 @@ void TRasterImagePatternStrokeProp::draw(
+                                     serbve che non sia const*/
+ {
+   if (rd.m_clippingRect != TRect() && !rd.m_is3dView &&
+-      !convert(rd.m_aff * m_stroke->getBBox()).overlaps(rd.m_clippingRect))
++      !convert(rd.m_aff * m_colorStyle->getStrokeBBox(m_stroke))
++           .overlaps(rd.m_clippingRect))
+     return;
+ 
+   if (m_strokeChanged ||
+@@ -167,7 +168,8 @@ void TVectorImagePatternStrokeProp::draw(
+                                     serbve che non sia const*/
+ {
+   if (rd.m_clippingRect != TRect() && !rd.m_is3dView &&
+-      !convert(rd.m_aff * m_stroke->getBBox()).overlaps(rd.m_clippingRect))
++      !convert(rd.m_aff * m_colorStyle->getStrokeBBox(m_stroke))
++           .overlaps(rd.m_clippingRect))
+     return;
+ 
+   if (m_strokeChanged ||
+diff --git a/toonz/sources/image/pli/tiio_pli.cpp b/toonz/sources/image/pli/tiio_pli.cpp
+--- a/toonz/sources/image/pli/tiio_pli.cpp
++++ b/toonz/sources/image/pli/tiio_pli.cpp
+@@ -106,7 +106,7 @@ public:
+ 
+   void readTrailCycle(TColorStyle *style) {
+     if (!TrailStyles::isTrail(style)) return;
+-    // Both extensions are independently optional and confined to this typed
++    // Extensions are independently optional and confined to this typed
+     // style record. Unknown/truncated suffixes are left alone.
+     while (m_count + 1 < int(m_stream->size())) {
+       const TStyleParam &marker = (*m_stream)[m_count];
+@@ -114,20 +114,27 @@ public:
+       if (marker.m_type != TStyleParam::SP_STRING) return;
+       const bool cycle  = marker.m_string == "trail-cycle-v1";
+       const bool offset = marker.m_string == "trail-frame-offset-v1";
+-      if (!cycle && !offset) return;
++      const bool size   = marker.m_string == "trail-size-multiplier-v1";
++      if (!cycle && !offset && !size) return;
+       if (cycle) {
+         if (value.m_type != TStyleParam::SP_INT) return;
+         const double number = value.m_numericVal;
+         if (std::isfinite(number) && number >= 0 && number <= 3 &&
+             number == int(number))
+           TrailStyles::setMode(style, TrailCycle::modeFromValue(int(number)));
+-      } else {
++      } else if (offset) {
+         if (value.m_type != TStyleParam::SP_STRING) return;
+         // PLI numeric style parameters have only a 16-bit integer part.
+         // A tagged decimal string preserves the full source-frame ID range.
+         bool ok         = false;
+         const int frame = QString::fromStdString(value.m_string).toInt(&ok);
+         if (ok && frame >= 0) TrailStyles::setFrameOffset(style, frame);
++      } else {
++        if (value.m_type != TStyleParam::SP_STRING) return;
++        bool ok = false;
++        const double multiplier =
++            QString::fromStdString(value.m_string).toDouble(&ok);
++        if (ok) TrailStyles::setSizeMultiplier(style, multiplier);
+       }
+       m_count += 2;
+     }
+@@ -145,6 +152,10 @@ void saveStyleWithTrailCycle(const TColorStyle *style,
+   const int offset = TrailStyles::getFrameOffset(style);
+   if (offset > 0)
+     stream << std::string("trail-frame-offset-v1") << std::to_string(offset);
++  const double multiplier = TrailStyles::getSizeMultiplier(style);
++  if (multiplier != 1.0)
++    stream << std::string("trail-size-multiplier-v1")
++           << QString::number(multiplier, 'g', 17).toStdString();
+ }
+ 
+ //---------------------------------------------------------------------------
+diff --git a/toonz/tests/trail_settings/CMakeLists.txt b/toonz/tests/trail_settings/CMakeLists.txt
+--- a/toonz/tests/trail_settings/CMakeLists.txt
++++ b/toonz/tests/trail_settings/CMakeLists.txt
+@@ -35,6 +35,15 @@ elseif(UNIX)
+ endif()
+ add_test(NAME trailstamp COMMAND trailstamp_test)
+ 
++add_executable(trailscalemath_test trailscalemath_test.cpp)
++target_include_directories(trailscalemath_test PRIVATE "${TOONZ_SOURCES}/include")
++if(MSVC)
++  target_compile_options(trailscalemath_test PRIVATE /W4 /WX)
++else()
++  target_compile_options(trailscalemath_test PRIVATE -Wall -Wextra -Werror)
++endif()
++add_test(NAME trailscalemath COMMAND trailscalemath_test)
++
+ set(TNZCORE_LIBRARY "" CACHE FILEPATH "tnzcore built from this checkout and build configuration")
+ if(TNZCORE_LIBRARY)
+   find_package(Qt5 REQUIRED COMPONENTS Core Gui OpenGL Multimedia Network)
+@@ -42,7 +51,7 @@ if(TNZCORE_LIBRARY)
+   test_big_endian(IS_BIG_ENDIAN)
+   set(PLI_SOURCES "${TOONZ_SOURCES}/image/pli/pli_io.cpp"
+       "${TOONZ_SOURCES}/image/pli/tiio_pli.cpp" "${TOONZ_SOURCES}/image/pli/tags.cpp")
+-  foreach(name IN ITEMS pli trailstyle trailoffset)
++  foreach(name IN ITEMS pli trailstyle trailoffset trailscale)
+     add_executable(${name}_test ${name}_test.cpp ${PLI_SOURCES})
+     target_include_directories(${name}_test SYSTEM PRIVATE "${TOONZ_SOURCES}/include")
+     target_include_directories(${name}_test PRIVATE "${TOONZ_SOURCES}")
+diff --git a/toonz/tests/trail_settings/trailoffset_test.cpp b/toonz/tests/trail_settings/trailoffset_test.cpp
+--- a/toonz/tests/trail_settings/trailoffset_test.cpp
++++ b/toonz/tests/trail_settings/trailoffset_test.cpp
+@@ -27,7 +27,7 @@ template <class Style>
+ void checkParameter() {
+   Style style;
+   require(
+-      style.getParamCount() == 4 &&
++      style.getParamCount() == 5 &&
+           style.getParamType(TrailStyles::frameOffsetParam) == TColorStyle::INT,
+       "Frame Offset is not immediately after Trail Cycle");
+   require(style.getTrailFrameOffset() == 0, "Old styles need automatic offset");
+diff --git a/toonz/tests/trail_settings/trailstyle_test.cpp b/toonz/tests/trail_settings/trailstyle_test.cpp
+--- a/toonz/tests/trail_settings/trailstyle_test.cpp
++++ b/toonz/tests/trail_settings/trailstyle_test.cpp
+@@ -24,11 +24,12 @@ void require(bool condition, const char *message) {
+ template <class Style>
+ void checkParametersAndCopies() {
+   Style first;
+-  require(first.getParamCount() == 4, "Trail settings missing");
++  require(first.getParamCount() == 5, "Trail settings missing");
+   require(first.getParamType(0) == TColorStyle::DOUBLE &&
+               first.getParamType(1) == TColorStyle::DOUBLE &&
+               first.getParamType(2) == TColorStyle::ENUM &&
+-              first.getParamType(3) == TColorStyle::INT,
++              first.getParamType(3) == TColorStyle::INT &&
++              first.getParamType(4) == TColorStyle::DOUBLE,
+           "Existing parameter indices changed");
+   require(first.getTrailCycleMode() == Mode::Off, "Legacy default changed");
+   first.setParamValue(0,
