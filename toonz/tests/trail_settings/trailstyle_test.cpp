@@ -1,4 +1,5 @@
 #include "tsimplecolorstyles.h"
+#include "tnztools/trailstamp.h"
 #include "tpalette.h"
 #include "tvectorimage.h"
 #include "tstroke.h"
@@ -7,6 +8,7 @@
 #include "image/pli/tiio_pli.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QTemporaryDir>
 #include <fstream>
 #include <regex>
@@ -51,6 +53,54 @@ void checkParametersAndCopies() {
   require(stroke.outlineOptions().m_patternFrameOffset == 2 &&
               stroke.outlineOptions().m_patternFrameStep == -1,
           "Changing the drawing default changed a committed stroke");
+}
+
+void checkClickStroke(const QString &root) {
+  std::array<TThickPoint, 5> carrier;
+  require(TrailStamp::makeClickCarrier({{4.0, 7.0, 6.0}}, carrier),
+          "Cannot create click carrier");
+  TStroke stroke;
+  stroke.reshape(carrier.data(), int(carrier.size()));
+  require(stroke.getChunkCount() == 2 && stroke.getLength() == 1.0,
+          "Click did not produce a real nonzero-length stroke");
+  require(stroke.getThickPoint(0) == carrier.front(),
+          "Click stroke changed its first stamp's center or thickness");
+
+  require(QDir().mkpath(root + "/custom styles"),
+          "Cannot create Trail fixture");
+  TVectorImageP source    = new TVectorImage;
+  TPaletteP sourcePalette = new TPalette;
+  source->setPalette(sourcePalette.getPointer());
+  auto *sourceStroke =
+      new TStroke(std::vector<TThickPoint>{{-4, 0, 4}, {0, 0, 4}, {4, 0, 4}});
+  sourceStroke->setStyle(1);
+  source->addStroke(sourceStroke, false);
+  {
+    TLevelWriterPli writer(TFilePath(root + "/custom styles/click.pli"),
+                           nullptr);
+    writer.getFrameWriter(TFrameId(1))->save(source);
+  }
+  TLevelReader::define("pli", TLevelReaderPli::create);
+  TVectorImagePatternStrokeStyle::setRootDir(TFilePath(root));
+  TVectorImagePatternStrokeStyle style("click");
+  require(style.getLevelFrameCount() == 1, "Single-frame Trail did not load");
+  for (double distance : {-50.0, 0.0, 50.0}) {
+    style.setParamValue(0, distance);
+    for (int step : {-1, 0, 1}) {
+      stroke.outlineOptions().m_patternFrameStep = step;
+      for (double rotation : {-90.0, 0.0, 90.0}) {
+        style.setParamValue(1, rotation);
+        std::vector<TAffine> transforms;
+        style.computeTransformations(transforms, &stroke);
+        require(transforms.size() == 1,
+                "Click must supply exactly one real Trail transformation");
+        const TPointD center = transforms.front() * TPointD();
+        require(
+            std::abs(center.x - 4.0) < 1e-6 && std::abs(center.y - 7.0) < 1e-6,
+            "Distance or Rotation moved the stamp away from its click");
+      }
+    }
+  }
 }
 
 TPaletteP makePalette() {
@@ -125,6 +175,12 @@ void checkPli(const TFilePath &path, const TPaletteP &palette) {
         new TStroke(std::vector<TThickPoint>{{0, double(i * 10), 2},
                                              {20, double(i * 10), 2},
                                              {40, double(i * 10), 2}});
+    if (i == 2) {
+      std::array<TThickPoint, 5> carrier;
+      require(TrailStamp::makeClickCarrier({{0, 20, 2}}, carrier),
+              "Could not prepare click round-trip fixture");
+      stroke->reshape(carrier.data(), int(carrier.size()));
+    }
     stroke->setStyle(i == 1 ? 2 : 1);
     if (i == 0) {
       stroke->outlineOptions().m_patternFrameOffset = 2;
@@ -149,6 +205,9 @@ void checkPli(const TFilePath &path, const TPaletteP &palette) {
           "PLI palette round trip lost the style modes");
   TVectorImageP result = reader.getFrameReader(TFrameId(1))->load();
   require(result && result->getStrokeCount() == 3, "PLI lost strokes");
+  require(result->getStroke(2)->getLength() > 0.0 &&
+              result->getStroke(2)->getLength() < 2.0,
+          "Saved click carrier collapsed or grew to multiple stamps");
   const int offsets[] = {2, -1, 0};
   const int steps[]   = {0, -1, 1};
   for (int i = 0; i < 3; ++i) {
@@ -167,6 +226,7 @@ int main(int argc, char **argv) {
   TEnv::setArgPathValue(TEnv::getRootVarName(), directory.path().toStdString());
   checkParametersAndCopies<TRasterImagePatternStrokeStyle>();
   checkParametersAndCopies<TVectorImagePatternStrokeStyle>();
+  checkClickStroke(directory.path());
   TPaletteP palette = makePalette();
   checkAnimation(palette);
   checkTpl(TFilePath(directory.path() + "/trail.tpl"), palette);

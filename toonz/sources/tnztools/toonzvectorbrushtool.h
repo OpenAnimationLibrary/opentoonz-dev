@@ -246,6 +246,7 @@ protected:
   int m_styleId;
   TrailCycle::State m_trailState;
   TrailCycle::Selection m_trailSelection;
+  bool m_trailCanStamp = false;
   TPaletteP m_trailPalette;
   TPaletteP m_trailGesturePalette;
   double m_minThick, m_maxThick;

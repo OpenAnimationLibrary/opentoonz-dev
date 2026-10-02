@@ -49,6 +49,29 @@ Sequence position belongs to the drawing session, never to a renderable style:
 painting does not mutate palette settings; previews/icons/rendering do not consume
 steps. Undo/redo of a stroke restores its recorded metadata, not the tool cursor.
 
+## Click to stamp
+
+With a loaded Trail style and Frame Range off, a stationary Brush click now
+creates one stamp without a drag. This also works with Cycle Off and single-frame
+sources. The click uses the current brush thickness and style Rotation; a
+stationary tablet tap retains its peak sampled stroke thickness rather than a
+zero-pressure release. Zero-width strokes are not enlarged into visible marks.
+
+At gesture completion, only point-like Trail strokes are given a real, open
+carrier: two straight quadratic chunks, one stage unit long, starting at the
+click and pointing along +X. Both renderers have a minimum stamp interval of two
+stage units, so this supplies exactly one placement even with negative Distance.
+The carrier has enough extent to survive PLI coordinate quantization. Normal
+drags (including tiny ones), motion paths, Frame Range, and ordinary brush dots
+are unchanged. Self-snapping must not close the synthesized carrier. Assistant
+replicas pass through the same completion and undo path and still share one cycle
+selection. There is no new toolbar or Settings toggle.
+
+Single vector stamps bypass the thin-line preview approximation, whose short
+line strip would otherwise have no vertices. Long Trail strokes retain that
+optimization. This also restores previously invisible one-placement vector Trails
+at small display sizes; it does not change Raster Trail sizing or cropping.
+
 ## Persistence and compatibility
 
 The mode is an enum on both Trail style classes. Copy/clone preserve it. It is a
@@ -81,7 +104,7 @@ not freezing resource pixels or all live style appearance settings.
 
 ## Automated checks
 
-Dependency-light, genuine compiled gesture-state test:
+Dependency-light, compiled gesture-state and click-carrier geometry tests:
 
 ```sh
 cmake -S toonz/tests/trail_settings -B build/trail-settings
@@ -89,7 +112,7 @@ cmake --build build/trail-settings
 ctest --test-dir build/trail-settings --output-on-failure
 ```
 
-The focused PR workflow runs that test. It is not application or OpenGL coverage.
+The focused PR workflow runs those tests. They are not application or OpenGL coverage.
 The existing OT-Dev Windows/macOS PR workflows remain unchanged.
 
 After building matching `tnzcore`, enable actual palette/PLI tests, for example:
@@ -113,6 +136,12 @@ payloads, signed-magnitude limits and stroke copy/split/transform retention.
 
 - [ ] Build the new PR on Windows/macOS; perform Linux rendering checks.
 - [ ] Both raster-source and vector-source Trail Settings show all four modes.
+- [ ] Click without dragging stamps once with raster/vector Trails, including Off
+      and single-frame sources. Test several Size, Rotation and Distance values.
+- [ ] Tablet tap/release, snapping, zoom and assistant replicas preserve placement
+      and advance the cycle once per gesture. A click makes one undoable gesture.
+- [ ] Save/reopen click stamps; verify nonzero carrier length and the same frame.
+- [ ] Ordinary dots, short drags, loops and Frame Range retain existing behavior.
 - [ ] Auto off: unapplied changes do not affect drawing; Apply changes new strokes.
 - [ ] Auto on and style undo/redo work; two palette slots keep independent modes.
 - [ ] Mode changes do not resequence old strokes, including after save/reopen.

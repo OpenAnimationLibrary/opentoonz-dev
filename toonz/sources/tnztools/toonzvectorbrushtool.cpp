@@ -1,6 +1,7 @@
 
 
 #include "toonzvectorbrushtool.h"
+#include "trailstamp.h"
 
 // TnzTools includes
 #include "tools/toolhandle.h"
@@ -836,6 +837,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     m_styleId = 0;
     m_tracks.clear();
     m_trailSelection      = TrailCycle::Selection();
+    m_trailCanStamp       = false;
     m_trailGesturePalette = TPaletteP();
 
     TTool::Application *app = TTool::getApplication();
@@ -875,6 +877,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       else if (TRasterImagePatternStrokeStyle *trailStyle =
                    dynamic_cast<TRasterImagePatternStrokeStyle *>(cs))
         trailFrameCount = trailStyle->getLevelFrameCount();
+      m_trailCanStamp          = trailFrameCount > 0;
       TVectorImageP trailImage = getImage(true);
       if (!trailImage || !trailImage->getPalette()) return;
       m_trailGesturePalette = trailImage->getPalette();
@@ -903,6 +906,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     inline ~Cleanup() {
       owner.m_tracks.clear();
       owner.m_trailSelection      = TrailCycle::Selection();
+      owner.m_trailCanStamp       = false;
       owner.m_trailGesturePalette = TPaletteP();
       owner.invalidate();
     }
@@ -965,7 +969,22 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
     track.filterPoints();
     double error = 30.0/(1 + 0.5 * m_accuracy.getValue())*m_pixelSize;
     TStroke *stroke = track.makeStroke(error);
-    
+
+    // Promote only newly drawn point-like Trails, not ordinary brush dots,
+    // motion paths, Frame Range endpoints, or any nonzero-length drag.
+    if (m_trailCanStamp && !m_frameRange.getIndex() &&
+        stroke->getLength() == 0.0) {
+      std::vector<TThickPoint> points;
+      stroke->getControlPoints(points);
+      std::array<TThickPoint, 5> carrier;
+      if (TrailStamp::makeClickCarrier(points, carrier)) {
+        stroke->reshape(carrier.data(), int(carrier.size()));
+        // Snap can flag a stationary click as self-snapped. The carrier must
+        // remain open; closing it would remove its directional extent.
+        track.setLoop(false);
+      }
+    }
+
     stroke->setStyle(m_styleId);
     
     TStroke::OutlineOptions &options = stroke->outlineOptions();

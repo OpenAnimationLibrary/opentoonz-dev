@@ -1787,7 +1787,10 @@ void TVectorImagePatternStrokeStyle::drawStroke(
   tglMultMatrix(rd.m_aff);
   double pixelSize2 = tglGetPixelSize2();
   glPopMatrix();
-  if (averageThick * averageThick < 4 * pixelSize2) {
+  // A single stamp has no useful line-strip approximation: short carriers
+  // produce zero vertices in that path. Draw the source at its actual size.
+  if (transformations.size() > 1 &&
+      averageThick * averageThick < 4 * pixelSize2) {
     CHECK_GL_ERROR
 
     glPushMatrix();
