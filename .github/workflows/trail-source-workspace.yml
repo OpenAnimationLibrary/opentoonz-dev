@@ -1,0 +1,26 @@
+name: Trail Source Preflight
+on:
+  push:
+    branches: [automation/trail-sources-20261002]
+permissions:
+  contents: write
+jobs:
+  sources:
+    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install source-test dependencies
+        run: |
+          sudo apt-get -qq update > /tmp/trail-source-deps.log 2>&1
+          sudo apt-get -qq install -y clang-format-14 ninja-build qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev liblz4-dev libjpeg-dev libpng-dev libtiff-dev liblzo2-dev >> /tmp/trail-source-deps.log 2>&1 || { tail -100 /tmp/trail-source-deps.log; exit 1; }
+      - name: Apply, validate and publish source support on PR 221
+        run: python3 .github/ot-dev/trail-source-workspace/prepare.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: trail-source-preflight
+          path: /tmp/trail-source-report
+          if-no-files-found: ignore
+          retention-days: 3
