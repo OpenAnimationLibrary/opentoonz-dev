@@ -1,0 +1,26 @@
+name: Trail Frame Offset Preflight
+on:
+  push:
+    branches: [automation/trail-frame-offset-20261002]
+permissions:
+  contents: write
+jobs:
+  offset:
+    if: github.repository == 'OpenAnimationLibrary/opentoonz-dev'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get -qq update > /tmp/trail-offset-deps.log 2>&1
+          sudo apt-get -qq install -y clang-format-14 ninja-build qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev liblz4-dev libjpeg-dev zlib1g-dev >> /tmp/trail-offset-deps.log 2>&1 || { tail -80 /tmp/trail-offset-deps.log; exit 1; }
+      - name: Validate and publish Frame Offset on PR 221
+        run: python3 .github/ot-dev/trail-frame-offset/prepare.py
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: trail-frame-offset-preflight
+          path: /tmp/trail-offset-report
+          if-no-files-found: ignore
+          retention-days: 3
