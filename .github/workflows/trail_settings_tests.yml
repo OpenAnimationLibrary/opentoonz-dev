@@ -5,6 +5,9 @@ on:
     paths:
       - 'toonz/sources/include/trailcycle.h'
       - 'toonz/sources/tnztools/trailcyclestate.h'
+      - 'toonz/sources/tnztools/trailstamp.h'
+      - 'toonz/sources/tnztools/toonzvectorbrushtool.*'
+      - 'toonz/sources/common/tvrender/tsimplecolorstyles.cpp'
       - 'toonz/tests/trail_settings/**'
       - '.github/workflows/trail_settings_tests.yml'
   workflow_dispatch:
@@ -15,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
-      - name: Compile and test gesture state
+      - name: Compile and test gesture state and click carriers
         run: |
           cmake -S toonz/tests/trail_settings -B build/trail-settings
           cmake --build build/trail-settings
