@@ -16,7 +16,17 @@ jobs:
           sudo apt-get -qq update > /tmp/trail-offset-deps.log 2>&1
           sudo apt-get -qq install -y clang-format-14 ninja-build qtbase5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5svg5-dev libboost-dev libglew-dev libglu1-mesa-dev freeglut3-dev libmypaint-dev libfreetype6-dev liblz4-dev libjpeg-dev zlib1g-dev >> /tmp/trail-offset-deps.log 2>&1 || { tail -80 /tmp/trail-offset-deps.log; exit 1; }
       - name: Validate and publish Frame Offset on PR 221
-        run: python3 .github/ot-dev/trail-frame-offset/prepare.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/ot-dev/trail-frame-offset/prepare.py').resolve()
+          text = p.read_text()
+          followup = p.with_name('followup.py').read_text()
+          anchor = "paths = out('git', 'diff', '--name-only', 'HEAD').splitlines()"
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, 'exec(' + repr(followup) + ')\n' + anchor)
+          exec(compile(text, str(p), 'exec'), {'__name__': '__main__', '__file__': str(p)})
+          PY
       - uses: actions/upload-artifact@v6
         if: always()
         with:
