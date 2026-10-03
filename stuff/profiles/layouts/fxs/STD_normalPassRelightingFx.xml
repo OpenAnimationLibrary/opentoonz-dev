@@ -1,0 +1,29 @@
+<fxlayout>
+  <page name="Lighting">
+    <label>"Relight a connected Source with the Normal input. Source is optional; without it, the FX shades a white surface so the normal map can be inspected on its own."</label>
+    <separator label="Directional Light"/>
+    <control>lightColor</control>
+    <control>lightIntensity</control>
+    <control>lightAzimuth</control>
+    <control>lightElevation</control>
+    <separator label="Surface Response"/>
+    <control>ambient</control>
+    <control>diffuse</control>
+    <control>specular</control>
+    <control>shininess</control>
+  </page>
+  <page name="Normal Input">
+    <label>"The Normal port accepts any raster source. Use Unsigned RGB for PNG/TIFF normal maps and Signed XYZ for float OpenEXR normal passes. Normal pixels are treated as raw data, not color."</label>
+    <control>normalEncoding</control>
+    <control>normalStrength</control>
+    <separator label="View-Space Convention"/>
+    <label>"Normals use camera/view space: +X points right, +Y points up, and +Z points toward the viewer. Use the flip controls to match the exporter or normal-map convention."</label>
+    <control>flipX</control>
+    <control>flipY</control>
+    <control>flipZ</control>
+  </page>
+  <page name="Output">
+    <label>"Relit Source preserves Source alpha and shades white when Source is disconnected. Lighting Only shows the computed illumination; Normal Preview shows the decoded normal directions."</label>
+    <control>outputMode</control>
+  </page>
+</fxlayout>

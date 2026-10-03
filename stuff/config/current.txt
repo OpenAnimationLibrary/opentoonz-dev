@@ -30,6 +30,21 @@
   <item>"STD_openExrAovFx.slot4Layer" "Slot 4 Layer" </item>
   <item>"STD_openExrAovFx.slot4Gain" "Slot 4 Gain" </item>
   <item>"STD_openExrAovFx.slot4Operation" "Slot 4 Operation" </item>
+  <item>"STD_normalPassRelightingFx" "Normal Pass Relighting" </item>
+  <item>"STD_normalPassRelightingFx.normalEncoding" "Normal Encoding" </item>
+  <item>"STD_normalPassRelightingFx.flipX" "Flip X (Red)" </item>
+  <item>"STD_normalPassRelightingFx.flipY" "Flip Y (Green)" </item>
+  <item>"STD_normalPassRelightingFx.flipZ" "Flip Z (Blue)" </item>
+  <item>"STD_normalPassRelightingFx.normalStrength" "Normal Strength (%)" </item>
+  <item>"STD_normalPassRelightingFx.lightAzimuth" "Light Azimuth" </item>
+  <item>"STD_normalPassRelightingFx.lightElevation" "Light Elevation" </item>
+  <item>"STD_normalPassRelightingFx.lightColor" "Light Color" </item>
+  <item>"STD_normalPassRelightingFx.lightIntensity" "Light Intensity (%)" </item>
+  <item>"STD_normalPassRelightingFx.ambient" "Ambient (%)" </item>
+  <item>"STD_normalPassRelightingFx.diffuse" "Diffuse (%)" </item>
+  <item>"STD_normalPassRelightingFx.specular" "Specular (%)" </item>
+  <item>"STD_normalPassRelightingFx.shininess" "Shininess" </item>
+  <item>"STD_normalPassRelightingFx.outputMode" "Output" </item>
   <item>"STD_glbModelFx" "GLB Model" </item>
   <item>"STD_glbModelFx.modelFile" "GLB File" </item>
   <item>"STD_glbModelFx.positionX" "Position X" </item>

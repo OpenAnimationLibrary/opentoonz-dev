@@ -139,6 +139,7 @@ set(SOURCES
     motionblurfx.cpp
     multitonefx.cpp
     noisefx.cpp
+    normalpassrelightingfx.cpp
     nothingfx.cpp
     openexraovfx.cpp
     palettefilterfx.cpp
@@ -371,4 +372,11 @@ if(BUILD_EXR_AOV_FX_TESTS)
     add_executable(openexraovfx_test tests/openexraovfx_test.cpp)
     target_link_libraries(openexraovfx_test OpenEXR::OpenEXR Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
     add_test(NAME openexraovfx COMMAND openexraovfx_test)
+endif()
+
+# Optional format-independent regression target for normal-pass relighting.
+if(BUILD_NORMAL_RELIGHT_FX_TESTS)
+    add_executable(normalpassrelightingfx_test tests/normalpassrelightingfx_test.cpp)
+    target_link_libraries(normalpassrelightingfx_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+    add_test(NAME normalpassrelightingfx COMMAND normalpassrelightingfx_test)
 endif()
