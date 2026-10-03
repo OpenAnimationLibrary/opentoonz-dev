@@ -512,6 +512,7 @@ void Preferences::definePreferenceItems() {
   // Import / Export
   define(ffmpegPath, "ffmpegPath", QMetaType::QString, "");
   define(pdfRendererPath, "pdfRendererPath", QMetaType::QString, "");
+  define(otlutPath, "otlutPath", QMetaType::QString, "");
   define(ffmpegTimeout, "ffmpegTimeout", QMetaType::Int, 600, 1,
          std::numeric_limits<int>::max());
   define(fastRenderPath, "fastRenderPath", QMetaType::QString, "desktop");
