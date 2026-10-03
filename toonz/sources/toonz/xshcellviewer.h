@@ -156,6 +156,11 @@ public:
   }
   void hideRenameField() { m_renameCell->hide(); }
 
+  /*! Creates the right-click menu that appears when clicking on a cell,
+      distinguishing between the two cases: full cell, empty cell. */
+  void createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell, int row,
+                      int col);
+
 protected:
   void paintEvent(QPaintEvent *) override;
 
@@ -169,10 +174,6 @@ protected:
   void dropEvent(QDropEvent *event) override;
   bool event(QEvent *event) override;
 
-  /*! Creates the right-click menu that appears when clicking on a cell,
-      distinguishing between the two cases: full cell, empty cell. */
-  void createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell, int row,
-                      int col);
   //! Creates the right-click menu that appears when clicking on a key frame
   void createKeyMenu(QMenu &menu);
   //! Creates the right-click menu that appears when clicking on the line

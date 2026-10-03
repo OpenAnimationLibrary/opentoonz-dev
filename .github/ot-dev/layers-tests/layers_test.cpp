@@ -31,6 +31,7 @@
 #include <QFile>
 #include <QLineEdit>
 #include <QMenu>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -290,6 +291,29 @@ void panelAndUndoTests() {
   CHECK(panel.headerItem()->text(0) == "Layers");
   CHECK(panel.topLevelItem(0)->sizeHint(0).height() == 28);
   CHECK(panel.iconSize() == QSize(32, 24));
+  QSignalSpy activated(&panel, &DrawingLayers::exposureActivated);
+  QSignalSpy menuRequested(&panel, &DrawingLayers::exposureMenuRequested);
+  auto layerItem = panel.topLevelItem(0)->child(0);
+  app.frame.setFrame(12);
+  events();
+  QTest::mouseClick(panel.viewport(), Qt::LeftButton, Qt::NoModifier,
+                    panel.visualItemRect(layerItem).center());
+  CHECK(app.frame.isEditingScene());
+  CHECK(app.frame.getFrame() == 0);
+  CHECK(app.column.getColumnIndex() == 0);
+  CHECK(!activated.isEmpty());
+  CHECK(activated.last().at(0).toInt() == 0);
+  CHECK(activated.last().at(1).toInt() == 0);
+  CHECK(activated.last().at(2).toBool());
+  CHECK(!app.scene.getDirtyFlag());
+  // Thumbnail rendering remains outside this non-GPU harness.
+  auto timer = panel.findChild<QTimer *>("LayersHoverTimer");
+  CHECK(timer && timer->isSingleShot() && timer->interval() == 600);
+  auto popup = panel.findChild<QWidget *>("LayersHoverPreview");
+  CHECK(popup && !popup->isVisible());
+  QEvent leave(QEvent::Leave);
+  QApplication::sendEvent(panel.viewport(), &leave);
+  CHECK(!timer->isActive() && !popup->isVisible());
   auto frame = expand(panel);
   auto outer = frame->child(1);
   CHECK(outer);
@@ -338,6 +362,9 @@ void panelAndUndoTests() {
                               panel.viewport()->mapToGlobal(point));
   QApplication::sendEvent(panel.viewport(), &menuEvent);
   events();
+  CHECK(!menuRequested.isEmpty());
+  CHECK(menuRequested.last().at(1).toInt() == 0);
+  CHECK(menuRequested.last().at(2).toInt() == 0);
   commitEditor(panel, "Renamed");
   CHECK(image->getGroupName(1, 1) == L"Renamed");
   outer = expand(panel)->child(1);

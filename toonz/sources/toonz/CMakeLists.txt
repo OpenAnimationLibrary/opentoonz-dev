@@ -380,6 +380,7 @@ set(SOURCES
     mergecmapped.cpp
     comboviewerpane.cpp
     drawinglayers.cpp
+    drawinglayersxsheet.cpp
     historypane.cpp
     cleanupsettingspane.cpp
     audiorecordingpopup.cpp
