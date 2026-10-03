@@ -1,0 +1,1306 @@
+#include "drawinglayers.h"
+
+#include "toonz/tapplication.h"
+#include "toonz/tcolumnhandle.h"
+#include "toonz/tframehandle.h"
+#include "toonz/tobjecthandle.h"
+#include "toonz/tscenehandle.h"
+#include "toonz/tstageobject.h"
+#include "toonz/txshcell.h"
+#include "toonz/txshcolumn.h"
+#include "toonz/txsheet.h"
+#include "toonz/txsheethandle.h"
+#include "toonz/txshlevelhandle.h"
+#include "toonz/txshleveltypes.h"
+#include "toonz/txshsimplelevel.h"
+#include "toonz/preferences.h"
+#include "toonzqt/gutil.h"
+#include "toonzqt/icongenerator.h"
+#include "toonzqt/tselectionhandle.h"
+#include "tools/toolhandle.h"
+#include "tools/tool.h"
+#include "tools/strokeselection.h"
+#include "tstroke.h"
+#include "tundo.h"
+
+#include <QApplication>
+#include <QHeaderView>
+#include <QKeyEvent>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPointer>
+#include <QScrollBar>
+#include <QSignalBlocker>
+#include <QStyledItemDelegate>
+#include <QTimer>
+#include <QToolTip>
+#include <QMutexLocker>
+#include <QContextMenuEvent>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPersistentModelIndex>
+#include <QCursor>
+#include <QFrame>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QScreen>
+#include <QSlider>
+#include <QScopedValueRollback>
+#include <QVBoxLayout>
+#include <QWheelEvent>
+
+#include <limits>
+#include <vector>
+
+namespace {
+
+enum Section { Name, View, Render, Lock };
+enum Role {
+  StateRole = Qt::UserRole,
+  ColumnRole,
+  RowRole,
+  KindRole,
+  GroupNameRole
+};
+enum Kind { Column, Level, Drawing, Group, Stroke };
+
+class LayerItem final : public QTreeWidgetItem {
+public:
+  TXshColumn *column;
+  QPointer<TXshLevel> level;
+  int firstRow;
+  Kind kind;
+  TFrameId fid;
+  TVectorImageP image;
+  std::vector<int> structure;
+  int firstStroke = -1, lastStroke = -1, depth = 0;
+
+  LayerItem(TXshColumn *column, TXshLevel *level = nullptr, int row = -1)
+      : column(column)
+      , level(level)
+      , firstRow(row)
+      , kind(level ? Level : Column) {
+    setData(Name, KindRole, kind);
+    setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+    setSizeHint(Name, QSize(0, level ? 40 : 28));
+  }
+
+  LayerItem(LayerItem *parent, Kind type)
+      : LayerItem(parent->column, parent->level, parent->firstRow) {
+    kind = type;
+    setData(Name, KindRole, kind);
+    setData(Name, ColumnRole, parent->data(Name, ColumnRole));
+    setData(Name, RowRole, parent->data(Name, RowRole));
+    fid = parent->fid;
+    setSizeHint(Name, QSize(0, 24));
+  }
+};
+
+// These are transient locators, not persistent group identities. Check the
+// complete structure before using an index after a model/tool notification.
+std::vector<int> vectorStructure(const TVectorImageP &image) {
+  std::vector<int> result;
+  result.reserve(3 * image->getStrokeCount());
+  for (UINT s = 0; s < image->getStrokeCount(); ++s) {
+    result.push_back(image->getStroke(s)->getId());
+    result.push_back(image->getGroupDepth(s));
+    result.push_back(s ? image->getCommonGroupDepth(s - 1, s) : 0);
+  }
+  return result;
+}
+
+LayerItem *drawingParent(LayerItem *item) {
+  while (item && item->kind != Drawing)
+    item = static_cast<LayerItem *>(item->parent());
+  return item;
+}
+
+struct ExpandedLevel {
+  bool drawingExpanded = false;
+  TFrameId fid;
+  TVectorImageP image;
+  std::vector<int> structure;
+  QSet<QPair<int, int>> groups;
+};
+
+class RenameVectorGroupUndo final : public TUndo {
+  TApplication *m_app;
+  TXshSimpleLevelP m_level;
+  TFrameId m_fid;
+  int m_stroke, m_depth;
+  std::wstring m_before, m_after;
+
+  void apply(const std::wstring &name) const {
+    TVectorImageP image = m_level->getFrame(m_fid, true);
+    if (!image) return;
+    {
+      QMutexLocker lock(image->getMutex());
+      if (!image->setGroupName(m_stroke, m_depth, name)) return;
+    }
+    m_level->touchFrame(m_fid);
+    m_app->getCurrentScene()->setDirtyFlag(true);
+    m_app->getCurrentLevel()->notifyLevelChange();
+  }
+
+public:
+  RenameVectorGroupUndo(TApplication *app, TXshSimpleLevel *level,
+                        const TFrameId &fid, int stroke, int depth,
+                        const std::wstring &before, const std::wstring &after)
+      : m_app(app)
+      , m_level(level)
+      , m_fid(fid)
+      , m_stroke(stroke)
+      , m_depth(depth)
+      , m_before(before)
+      , m_after(after) {}
+  void undo() const override { apply(m_before); }
+  void redo() const override { apply(m_after); }
+  int getSize() const override {
+    return sizeof(*this) + (m_before.size() + m_after.size()) * sizeof(wchar_t);
+  }
+  QString getHistoryString() override {
+    return DrawingLayers::tr("Rename Vector Group");
+  }
+};
+
+QString levelType(TXshLevel *level) {
+  switch (level->getType()) {
+  case PLI_XSHLEVEL:
+    return DrawingLayers::tr("Vector Level");
+  case TZP_XSHLEVEL:
+    return DrawingLayers::tr("Toonz Raster Level");
+  case OVL_XSHLEVEL:
+  case TZI_XSHLEVEL:
+    return DrawingLayers::tr("Raster Level");
+  case CHILD_XSHLEVEL:
+    return DrawingLayers::tr("Sub-Xsheet");
+  case SND_XSHLEVEL:
+    return DrawingLayers::tr("Sound Level");
+  case SND_TXT_XSHLEVEL:
+    return DrawingLayers::tr("Note Level");
+  case PLT_XSHLEVEL:
+    return DrawingLayers::tr("Palette Level");
+  case ZERARYFX_XSHLEVEL:
+    return DrawingLayers::tr("FX Level");
+  case MESH_XSHLEVEL:
+    return DrawingLayers::tr("Mesh Level");
+  default:
+    return DrawingLayers::tr("Level");
+  }
+}
+
+class LayersDelegate final : public QStyledItemDelegate {
+  TApplication *m_app;
+
+public:
+  LayersDelegate(TApplication *app, QObject *parent)
+      : QStyledItemDelegate(parent), m_app(app) {}
+
+  QRect thumbnailRect(const QStyleOptionViewItem &option,
+                      const QModelIndex &index) const {
+    QStyleOptionViewItem opt(option);
+    initStyleOption(&opt, index);
+    opt.decorationSize    = QSize(32, 24);
+    const QWidget *widget = opt.widget;
+    QStyle *style         = widget ? widget->style() : QApplication::style();
+    return style->subElementRect(QStyle::SE_ItemViewItemDecoration, &opt,
+                                 widget);
+  }
+
+  void setEditorData(QWidget *editor, const QModelIndex &index) const override {
+    if (index.data(KindRole).toInt() == Group) {
+      auto line = qobject_cast<QLineEdit *>(editor);
+      if (line) {
+        line->setMaxLength(256);
+        line->setPlaceholderText(DrawingLayers::tr("Group name"));
+        line->setText(index.data(GroupNameRole).toString());
+        line->selectAll();
+        return;
+      }
+    }
+    QStyledItemDelegate::setEditorData(editor, index);
+  }
+
+  void paint(QPainter *painter, const QStyleOptionViewItem &option,
+             const QModelIndex &index) const override {
+    QStyleOptionViewItem opt(option);
+    initStyleOption(&opt, index);
+    if (index.column() == Name) {
+      opt.decorationSize =
+          index.data(KindRole).toInt() == Level ? QSize(32, 24) : QSize(16, 16);
+      if (index.data(KindRole).toInt() == Level) {
+        TXsheet *xsheet = m_app->getCurrentXsheet()->getXsheet();
+        if (xsheet) {
+          const TXshCell &cell = xsheet->getCell(
+              index.data(RowRole).toInt(), index.data(ColumnRole).toInt());
+          if (!cell.isEmpty() && cell.m_level->getSimpleLevel()) {
+            QPixmap thumbnail = IconGenerator::instance()->getIcon(
+                cell.m_level.getPointer(), cell.m_frameId, false);
+            if (!thumbnail.isNull()) opt.icon = QIcon(thumbnail);
+          }
+        }
+      }
+      const QWidget *widget = opt.widget;
+      QStyle *style         = widget ? widget->style() : QApplication::style();
+      style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+      return;
+    }
+
+    QStyledItemDelegate::paint(painter, opt, index);
+    QVariant state = index.data(StateRole);
+    if (!state.isValid()) return;
+    painter->save();
+    QColor color = opt.palette.color((opt.state & QStyle::State_Selected)
+                                         ? QPalette::HighlightedText
+                                         : QPalette::Text);
+    if (!state.toBool()) painter->setOpacity(0.35);
+    QRect rect = QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter,
+                                     QSize(18, 18), opt.rect);
+    if (index.column() == View) {
+      painter->setRenderHint(QPainter::Antialiasing);
+      painter->setPen(QPen(color, 1.5));
+      painter->setBrush(Qt::NoBrush);
+      QPainterPath eye;
+      eye.moveTo(rect.left(), rect.center().y());
+      eye.quadTo(rect.center().x(), rect.top() - 3, rect.right(),
+                 rect.center().y());
+      eye.quadTo(rect.center().x(), rect.bottom() + 3, rect.left(),
+                 rect.center().y());
+      painter->drawPath(eye);
+      painter->drawEllipse(QPointF(rect.center()), 3, 3);
+    } else {
+      createQIcon(index.column() == Render ? "render" : "lock")
+          .paint(painter, rect, Qt::AlignCenter, QIcon::Normal,
+                 state.toBool() ? QIcon::On : QIcon::Off);
+    }
+    painter->restore();
+  }
+};
+
+}  // namespace
+
+DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
+    : QTreeWidget(parent)
+    , m_app(app)
+    , m_xsheet(nullptr)
+    , m_rebuildTimer(new QTimer(this))
+    , m_hoverTimer(new QTimer(this))
+    , m_hoverHideTimer(new QTimer(this))
+    , m_hoverPreview(new QFrame(this, Qt::ToolTip))
+    , m_previewImage(new QLabel(m_hoverPreview))
+    , m_previewScrubber(new QSlider(Qt::Horizontal, m_hoverPreview))
+    , m_previewCaption(new QLabel(m_hoverPreview)) {
+  setObjectName("DrawingLayers");
+  setMouseTracking(true);
+  viewport()->setMouseTracking(true);
+  m_hoverTimer->setObjectName("LayersHoverTimer");
+  m_hoverTimer->setSingleShot(true);
+  m_hoverTimer->setInterval(600);
+  m_hoverHideTimer->setSingleShot(true);
+  m_hoverHideTimer->setInterval(250);
+  m_hoverPreview->setObjectName("LayersHoverPreview");
+  m_hoverPreview->setAttribute(Qt::WA_ShowWithoutActivating);
+  m_hoverPreview->setFocusPolicy(Qt::NoFocus);
+  m_hoverPreview->setMouseTracking(true);
+  m_hoverPreview->installEventFilter(this);
+  static_cast<QFrame *>(m_hoverPreview)->setFrameStyle(QFrame::StyledPanel);
+  m_previewImage->setObjectName("LayersHoverPreviewImage");
+  m_previewImage->setAlignment(Qt::AlignCenter);
+  m_previewImage->setMouseTracking(true);
+  m_previewImage->installEventFilter(this);
+  m_previewScrubber->setObjectName("LayersHoverScrubber");
+  m_previewScrubber->setFocusPolicy(Qt::NoFocus);
+  m_previewScrubber->setTracking(true);
+  m_previewScrubber->setRange(0, 0);
+  m_previewScrubber->setMouseTracking(true);
+  m_previewScrubber->installEventFilter(this);
+  m_previewCaption->setAlignment(Qt::AlignCenter);
+  m_previewCaption->setTextFormat(Qt::PlainText);
+  m_previewCaption->setWordWrap(true);
+  auto previewLayout = new QVBoxLayout(m_hoverPreview);
+  previewLayout->setContentsMargins(8, 8, 8, 8);
+  previewLayout->addWidget(m_previewImage);
+  previewLayout->addWidget(m_previewScrubber);
+  previewLayout->addWidget(m_previewCaption);
+  connect(m_hoverTimer, &QTimer::timeout, this,
+          &DrawingLayers::showHoverPreview);
+  connect(m_hoverHideTimer, &QTimer::timeout, this, [this] {
+    const QPoint global = QCursor::pos();
+    bool overPreview =
+        m_hoverPreview->isVisible() &&
+        m_hoverPreview->frameGeometry().contains(global);
+    bool overThumbnail =
+        m_hoverIndex.isValid() &&
+        thumbnailAt(viewport()->mapFromGlobal(global)) == m_hoverIndex;
+    if (!overPreview && !overThumbnail) hideHoverPreview();
+  });
+  connect(m_previewScrubber, &QSlider::valueChanged, this,
+          &DrawingLayers::renderHoverPreview);
+  connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
+          &DrawingLayers::hideHoverPreview);
+  connect(horizontalScrollBar(), &QScrollBar::valueChanged, this,
+          &DrawingLayers::hideHoverPreview);
+  connect(this, &QTreeWidget::itemCollapsed, this,
+          &DrawingLayers::hideHoverPreview);
+  connect(qApp, &QGuiApplication::applicationStateChanged, this,
+          [this](Qt::ApplicationState state) {
+            if (state != Qt::ApplicationActive) hideHoverPreview();
+          });
+  setAccessibleName(tr("Layers"));
+  setColumnCount(4);
+  setHeaderLabels({tr("Layers"), QString(), QString(), QString()});
+  headerItem()->setIcon(View, createQIcon("viewer"));
+  headerItem()->setIcon(Render, createQIcon("render"));
+  headerItem()->setIcon(Lock, createQIcon("lock"));
+  headerItem()->setToolTip(Name,
+                           tr("Columns in reverse Xsheet order. Expand a "
+                              "column to see its levels. Expand a vector "
+                              "drawing to inspect its groups and strokes."));
+  headerItem()->setToolTip(View, tr("Visible in the Viewer"));
+  headerItem()->setToolTip(Render, tr("Visible in Preview and Render"));
+  headerItem()->setToolTip(Lock, tr("Lock Column"));
+  header()->setStretchLastSection(false);
+  header()->setSectionResizeMode(Name, QHeaderView::Stretch);
+  for (int section = View; section <= Lock; ++section) {
+    header()->setSectionResizeMode(section, QHeaderView::Fixed);
+    setColumnWidth(section, 30);
+  }
+  setIconSize(QSize(32, 24));
+  setIndentation(14);
+  setUniformRowHeights(false);
+  setRootIsDecorated(true);
+  setAllColumnsShowFocus(true);
+  setSelectionMode(QAbstractItemView::SingleSelection);
+  setSelectionBehavior(QAbstractItemView::SelectRows);
+  setEditTriggers(QAbstractItemView::NoEditTriggers);
+  setExpandsOnDoubleClick(false);
+  setItemDelegate(new LayersDelegate(app, this));
+  m_rebuildTimer->setSingleShot(true);
+  connect(m_rebuildTimer, &QTimer::timeout, this, &DrawingLayers::rebuild);
+  connect(this, &QTreeWidget::itemClicked, this, &DrawingLayers::activateItem);
+  connect(this, &QTreeWidget::itemExpanded, this, &DrawingLayers::expandItem);
+  connect(this, &QTreeWidget::itemChanged, this, &DrawingLayers::renameGroup);
+}
+
+void DrawingLayers::showEvent(QShowEvent *event) {
+  QTreeWidget::showEvent(event);
+  connect(m_app->getCurrentXsheet(), &TXsheetHandle::xsheetChanged, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentXsheet(), &TXsheetHandle::xsheetSwitched, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentScene(), &TSceneHandle::sceneSwitched, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentScene(), &TSceneHandle::sceneChanged, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentScene(), &TSceneHandle::castChanged, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentLevel(), &TXshLevelHandle::xshLevelTitleChanged,
+          this, &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentLevel(), &TXshLevelHandle::xshLevelViewChanged, this,
+          &DrawingLayers::scheduleRebuild);
+  connect(m_app->getCurrentLevel(), &TXshLevelHandle::xshLevelSwitched, this,
+          &DrawingLayers::refreshCurrent);
+  connect(m_app->getCurrentColumn(), &TColumnHandle::columnIndexSwitched, this,
+          &DrawingLayers::refreshCurrent);
+  connect(m_app->getCurrentFrame(), &TFrameHandle::frameSwitched, this,
+          &DrawingLayers::refreshCurrent);
+  connect(IconGenerator::instance(), &IconGenerator::iconGenerated, viewport(),
+          QOverload<>::of(&QWidget::update));
+  connect(IconGenerator::instance(), &IconGenerator::iconGenerated, this,
+          [this] {
+            if (m_hoverPreview->isVisible() && m_hoverExposureIndex >= 0)
+              renderHoverPreview(m_hoverExposureIndex);
+          });
+  rebuild();
+}
+
+void DrawingLayers::hideEvent(QHideEvent *event) {
+  hideHoverPreview();
+  disconnect(IconGenerator::instance(), nullptr, this, nullptr);
+  disconnect(m_app->getCurrentXsheet(), nullptr, this, nullptr);
+  disconnect(m_app->getCurrentScene(), nullptr, this, nullptr);
+  disconnect(m_app->getCurrentLevel(), nullptr, this, nullptr);
+  disconnect(m_app->getCurrentColumn(), nullptr, this, nullptr);
+  disconnect(m_app->getCurrentFrame(), nullptr, this, nullptr);
+  disconnect(IconGenerator::instance(), nullptr, viewport(), nullptr);
+  m_rebuildTimer->stop();
+  QTreeWidget::hideEvent(event);
+}
+
+void DrawingLayers::scheduleRebuild() {
+  hideHoverPreview();
+  if (isVisible()) m_rebuildTimer->start();
+}
+
+void DrawingLayers::rebuild() {
+  hideHoverPreview();
+  m_rebuildTimer->stop();
+  QSignalBlocker blocker(this);
+  TXsheet *xsheet = m_app->getCurrentXsheet()->getXsheet();
+  QMap<TXshColumn *, bool> expanded;
+  QMap<QPair<TXshColumn *, TXshLevel *>, ExpandedLevel> expandedLevels;
+  if (xsheet == m_xsheet)
+    for (int i = 0; i < topLevelItemCount(); ++i) {
+      auto item              = static_cast<LayerItem *>(topLevelItem(i));
+      expanded[item->column] = item->isExpanded();
+      for (int j = 0; j < item->childCount(); ++j) {
+        auto level = static_cast<LayerItem *>(item->child(j));
+        if (!level->isExpanded()) continue;
+        ExpandedLevel &state = expandedLevels[{item->column, level->level}];
+        if (!level->childCount()) continue;
+        auto drawing          = static_cast<LayerItem *>(level->child(0));
+        state.drawingExpanded = drawing->isExpanded();
+        state.fid             = drawing->fid;
+        state.image           = drawing->image;
+        state.structure       = drawing->structure;
+        QList<QTreeWidgetItem *> pending;
+        for (int k = 0; k < drawing->childCount(); ++k)
+          pending.append(drawing->child(k));
+        while (!pending.isEmpty()) {
+          auto child = static_cast<LayerItem *>(pending.takeLast());
+          if (child->kind != Group || !child->isExpanded()) continue;
+          state.groups.insert({child->firstStroke, child->depth});
+          for (int k = 0; k < child->childCount(); ++k)
+            pending.append(child->child(k));
+        }
+      }
+    }
+  int scroll = verticalScrollBar()->value();
+  clear();
+  m_xsheet = xsheet;
+  if (!xsheet) return;
+
+  for (int c = xsheet->getColumnCount() - 1; c >= 0; --c) {
+    TXshColumn *column = xsheet->getColumn(c);
+    if (!column) continue;
+    auto group = new LayerItem(column);
+    group->setData(Name, ColumnRole, c);
+    TStageObject *object = xsheet->getStageObject(TStageObjectId::ColumnId(c));
+    QString name         = object->hasSpecifiedName()
+                               ? QString::fromStdString(object->getName())
+                               : tr("Col %1").arg(c + 1);
+    group->setText(Name, name);
+    group->setIcon(Name, createQIcon("folder"));
+    group->setToolTip(Name, tr("Xsheet column %1").arg(c + 1));
+    addTopLevelItem(group);
+
+    QSet<TXshLevel *> levels;
+    TXshCellColumn *cells = column->getCellColumn();
+    int first = 0, last = -1;
+    if (cells) cells->getRange(first, last);
+    for (int row = first; row <= last; ++row) {
+      const TXshCell &cell = cells->getCell(row);
+      TXshLevel *level     = cell.m_level.getPointer();
+      if (!level || levels.contains(level)) continue;
+      levels.insert(level);
+      auto item = new LayerItem(column, level, row);
+      item->setData(Name, ColumnRole, c);
+      item->setData(Name, RowRole, row);
+      item->setIcon(
+          Name, createQIcon(level->getChildLevel() ? "folder" : "level_strip"));
+      group->addChild(item);
+      if (level->getType() == PLI_XSHLEVEL) {
+        item->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+        item->setExpanded(expandedLevels.contains({column, level}));
+      }
+    }
+    group->setExpanded(expanded.value(column, true));
+  }
+  refreshCurrent();
+  for (int i = 0; i < topLevelItemCount(); ++i) {
+    auto column = static_cast<LayerItem *>(topLevelItem(i));
+    for (int j = 0; j < column->childCount(); ++j) {
+      auto level = static_cast<LayerItem *>(column->child(j));
+      auto it    = expandedLevels.constFind({column->column, level->level});
+      if (it == expandedLevels.cend() || !level->childCount() ||
+          !it->drawingExpanded)
+        continue;
+      auto drawing = static_cast<LayerItem *>(level->child(0));
+      drawing->setExpanded(true);
+      expandItem(drawing);
+      if (drawing->fid != it->fid || drawing->image != it->image ||
+          drawing->structure != it->structure)
+        continue;
+      QList<QTreeWidgetItem *> pending;
+      for (int k = 0; k < drawing->childCount(); ++k)
+        pending.append(drawing->child(k));
+      while (!pending.isEmpty()) {
+        auto child = static_cast<LayerItem *>(pending.takeLast());
+        if (child->kind != Group ||
+            !it->groups.contains({child->firstStroke, child->depth}))
+          continue;
+        child->setExpanded(true);
+        expandItem(child);
+        for (int k = 0; k < child->childCount(); ++k)
+          pending.append(child->child(k));
+      }
+    }
+  }
+  verticalScrollBar()->setValue(scroll);
+}
+
+void DrawingLayers::refreshCurrent() {
+  if (m_activating) return;
+  hideHoverPreview();
+  if (m_rebuildTimer->isActive() ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet() || !m_xsheet)
+    return;
+  QSignalBlocker blocker(this);
+  int frame                 = m_app->getCurrentFrame()->getFrame();
+  bool editingScene         = m_app->getCurrentFrame()->isEditingScene();
+  int currentColumn         = m_app->getCurrentColumn()->getColumnIndex();
+  QTreeWidgetItem *selected = nullptr;
+  for (int i = 0; i < topLevelItemCount(); ++i) {
+    auto group         = static_cast<LayerItem *>(topLevelItem(i));
+    int c              = group->data(Name, ColumnRole).toInt();
+    TXshColumn *column = m_xsheet->getColumn(c);
+    if (column != group->column) continue;
+    bool hasVisibility = !column->isEmpty() && !column->getPaletteColumn() &&
+                         !column->getSoundTextColumn();
+    group->setData(
+        View, StateRole,
+        hasVisibility ? QVariant(column->isCamstandVisible()) : QVariant());
+    group->setData(
+        Render, StateRole,
+        hasVisibility ? QVariant(column->isPreviewVisible()) : QVariant());
+    group->setData(Lock, StateRole, column->isLocked());
+    for (int section = View; section <= Lock; ++section) {
+      QString status =
+          group->data(section, StateRole).toBool() ? tr("On") : tr("Off");
+      QString text = headerItem()->toolTip(section) + ": " + status;
+      group->setToolTip(section, text);
+      group->setData(section, Qt::AccessibleTextRole, text);
+    }
+    if (editingScene && c == currentColumn) selected = group;
+    const TXshCell &current = m_xsheet->getCell(frame, c);
+    for (int j = 0; j < group->childCount(); ++j) {
+      auto item        = static_cast<LayerItem *>(group->child(j));
+      TXshLevel *level = item->level.data();
+      if (!level) continue;
+      bool active = editingScene && current.m_level.getPointer() == level;
+      item->setData(Name, RowRole, active ? frame : item->firstRow);
+      QString detail = levelType(level);
+      if (active)
+        detail += tr(" - Drawing %1")
+                      .arg(QString::fromStdString(current.m_frameId.expand()));
+      item->setText(Name,
+                    QString::fromStdWString(level->getName()) + "\n" + detail);
+      item->setToolTip(Name,
+                       tr("%1\nFirst exposed at frame %2. Click to select "
+                          "the nearest exposure.")
+                           .arg(levelType(level))
+                           .arg(item->firstRow + 1));
+      QFont font = item->font(Name);
+      font.setBold(active);
+      item->setFont(Name, font);
+      item->setForeground(
+          Name, active ? QBrush()
+                       : palette().brush(QPalette::Disabled, QPalette::Text));
+      if (active && c == currentColumn && group->isExpanded()) selected = item;
+      refreshDrawing(item);
+    }
+  }
+  setCurrentItem(selected);
+  viewport()->update();
+}
+
+void DrawingLayers::refreshDrawing(QTreeWidgetItem *treeItem) {
+  auto levelItem = static_cast<LayerItem *>(treeItem);
+  if (!levelItem->level || levelItem->level->getType() != PLI_XSHLEVEL ||
+      (!levelItem->isExpanded() && !levelItem->childCount()))
+    return;
+  int c                = levelItem->data(Name, ColumnRole).toInt();
+  int row              = levelItem->data(Name, RowRole).toInt();
+  const TXshCell &cell = m_xsheet->getCell(row, c);
+  if (cell.m_level.getPointer() != levelItem->level) return;
+  TFrameId fid = cell.m_frameId;
+  if (m_app->getCurrentFrame()->isEditingLevel() &&
+      m_app->getCurrentLevel()->getLevel() == levelItem->level)
+    fid = m_app->getCurrentFrame()->getFid();
+
+  auto drawing  = levelItem->childCount()
+                      ? static_cast<LayerItem *>(levelItem->child(0))
+                      : nullptr;
+  bool expanded = drawing && drawing->isExpanded();
+  if (drawing && drawing->fid != fid) {
+    delete drawing;
+    drawing = nullptr;
+  }
+  if (!drawing) {
+    drawing      = new LayerItem(levelItem, Drawing);
+    drawing->fid = fid;
+    drawing->setText(
+        Name, tr("Drawing %1").arg(QString::fromStdString(fid.expand())));
+    drawing->setToolTip(Name, tr("Groups belong to this drawing, not the whole "
+                                 "level. Expanding only inspects the drawing; "
+                                 "it does not enter a group for editing."));
+    drawing->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+    levelItem->addChild(drawing);
+    drawing->setExpanded(expanded);
+  }
+  drawing->setData(Name, RowRole, row);
+  if (expanded && levelItem->isExpanded()) expandItem(drawing);
+}
+
+void DrawingLayers::expandItem(QTreeWidgetItem *treeItem) {
+  hideHoverPreview();
+  if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item = static_cast<LayerItem *>(treeItem);
+  if (item->kind == Level) {
+    refreshDrawing(item);
+    return;
+  }
+  if ((item->kind != Drawing && item->kind != Group) || item->childCount())
+    return;
+  auto drawing = drawingParent(item);
+  TXshSimpleLevel *level =
+      drawing->level ? drawing->level->getSimpleLevel() : nullptr;
+  if (!level) return;
+  TVectorImageP image = level->getFrame(drawing->fid, false);
+  if (!image) {
+    item->setToolTip(Name, tr("This drawing could not be loaded."));
+    return;
+  }
+  QMutexLocker locker(image->getMutex());
+  if (drawing->image && (drawing->image != image ||
+                         drawing->structure != vectorStructure(image))) {
+    scheduleRebuild();
+    return;
+  }
+  if (!drawing->image) {
+    drawing->image       = image;
+    drawing->structure   = vectorStructure(image);
+    drawing->firstStroke = 0;
+    drawing->lastStroke  = int(image->getStrokeCount()) - 1;
+  }
+
+  QList<QTreeWidgetItem *> children;
+  for (int s = item->firstStroke; s <= item->lastStroke;) {
+    int last     = s;
+    bool grouped = image->getGroupDepth(s) > item->depth;
+    if (grouped)
+      while (last < item->lastStroke &&
+             image->getCommonGroupDepth(s, last + 1) > item->depth)
+        ++last;
+    auto child         = new LayerItem(item, grouped ? Group : Stroke);
+    child->firstStroke = s;
+    child->lastStroke  = last;
+    child->depth       = item->depth + (grouped ? 1 : 0);
+    if (grouped) {
+      QString name =
+          QString::fromStdWString(image->getGroupName(s, child->depth));
+      child->setData(Name, GroupNameRole, name);
+      child->setText(Name, name.isEmpty()
+                               ? tr("Group (%1 strokes)").arg(last - s + 1)
+                               : name);
+      child->setFlags(child->flags() | Qt::ItemIsEditable);
+      child->setIcon(Name, createQIcon("folder"));
+      child->setChildIndicatorPolicy(QTreeWidgetItem::ShowIndicator);
+      child->setToolTip(Name, tr("Vector group containing strokes %1–%2. "
+                                 "Click to select it at the current editing "
+                                 "depth. Enter its parent groups in the Viewer "
+                                 "to select deeper content. Double-click or "
+                                 "right-click to rename the group.")
+                                  .arg(s + 1)
+                                  .arg(last + 1));
+    } else {
+      TStroke *stroke = image->getStroke(s);
+      child->setText(
+          Name, tr("Stroke %1 · Style %2").arg(s + 1).arg(stroke->getStyle()));
+      child->setToolTip(Name, tr("%1\n%2 control points. Click to select this "
+                                 "stroke after entering its group in the "
+                                 "Viewer.")
+                                  .arg(stroke->isSelfLoop() ? tr("Closed path")
+                                                            : tr("Open path"))
+                                  .arg(stroke->getControlPointCount()));
+    }
+    children.prepend(child);
+    s = last + 1;
+  }
+  item->addChildren(children);
+  item->setChildIndicatorPolicy(
+      QTreeWidgetItem::DontShowIndicatorWhenChildless);
+  if (item->kind == Drawing && children.isEmpty())
+    item->setToolTip(Name, tr("This vector drawing has no strokes."));
+}
+
+void DrawingLayers::selectVectorItem(QTreeWidgetItem *treeItem) {
+  auto item    = static_cast<LayerItem *>(treeItem);
+  auto drawing = drawingParent(item);
+  if (!drawing || !drawing->level || !drawing->image) return;
+  int c                = drawing->data(Name, ColumnRole).toInt();
+  TFrameHandle *frame  = m_app->getCurrentFrame();
+  const TXshCell &cell = m_xsheet->getCell(frame->getFrame(), c);
+  bool active          = frame->isEditingScene()
+                             ? m_app->getCurrentColumn()->getColumnIndex() == c &&
+                          cell.m_level.getPointer() == drawing->level &&
+                          cell.m_frameId == drawing->fid
+                             : m_app->getCurrentLevel()->getLevel() == drawing->level &&
+                          frame->getFid() == drawing->fid;
+  auto explain         = [this, item](const QString &text) {
+    QToolTip::showText(viewport()->mapToGlobal(visualItemRect(item).center()),
+                               text, this);
+  };
+  if (!active) {
+    explain(tr("Select this drawing in the Xsheet or Filmstrip first."));
+    return;
+  }
+  if (frame->isEditingScene() && m_xsheet->getColumn(c)->isLocked()) {
+    explain(tr("Unlock this column to select its vector content."));
+    return;
+  }
+  auto selection = dynamic_cast<StrokeSelection *>(
+      m_app->getCurrentSelection()->getSelection());
+  // Navigation can clear the current selection without changing the active
+  // tool. In that case recover its real selection, not a new panel-owned one.
+  if (!selection && !m_app->getCurrentSelection()->getSelection()) {
+    ToolHandle *handle = m_app->getCurrentTool();
+    TTool *tool        = handle ? handle->getTool() : nullptr;
+    if (tool) selection = dynamic_cast<StrokeSelection *>(tool->getSelection());
+  }
+  if (!selection) {
+    explain(
+        tr("Activate the Vector Selection tool to select groups or strokes."));
+    return;
+  }
+  TXshSimpleLevel *level = drawing->level->getSimpleLevel();
+  if (!level) return;
+  TVectorImageP image = level->getFrame(drawing->fid, false);
+  if (!image) return;
+  QMutexLocker locker(image->getMutex());
+  if (image != drawing->image || drawing->structure != vectorStructure(image)) {
+    scheduleRebuild();
+    return;
+  }
+  int s             = item->firstStroke;
+  int expectedDepth = image->isInsideGroup() + (item->kind == Group ? 1 : 0);
+  // selectable() distinguishes subgroup selection. It is false for a direct
+  // stroke in the entered group, which the native tool selects individually.
+  if (item->depth != expectedDepth || !image->isEnteredGroupStroke(s) ||
+      (item->kind == Group && !image->selectable(s))) {
+    explain(
+        tr("Use Enter Group or Exit Group in the Viewer to edit at this "
+           "depth. Expanding this tree does not change the editing depth."));
+    return;
+  }
+  // Keep the real tool-owned selection: an independent StrokeSelection would
+  // not update the Viewer's bounds, commands or transform handles.
+  selection->selectNone();
+  selection->setImage(image);
+  for (; s <= item->lastStroke; ++s) selection->select(s, true);
+  locker.unlock();
+  m_app->getCurrentSelection()->setSelection(selection);
+  selection->notifyView();
+  m_app->getCurrentSelection()->notifySelectionChanged();
+}
+
+void DrawingLayers::activateItem(QTreeWidgetItem *treeItem, int section) {
+  // A double-click is followed by a normal release/click notification. Once
+  // the inline group-name editor is open, that trailing click must not run
+  // exposure synchronization and retarget the view out from under the editor.
+  if (state() == QAbstractItemView::EditingState) return;
+  if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item          = static_cast<LayerItem *>(treeItem);
+  int c              = item->data(Name, ColumnRole).toInt();
+  TXshColumn *column = m_xsheet->getColumn(c);
+  if (!column || column != item->column) return;
+  if (item->kind == Group || item->kind == Stroke) {
+    QPersistentModelIndex index(indexFromItem(item));
+    if (!activateExposure(item, false) || !index.isValid()) return;
+    selectVectorItem(itemFromIndex(index));
+    if (index.isValid()) setCurrentItem(itemFromIndex(index));
+    return;
+  }
+  if (item->parent()) section = Name;
+  if (section != Name) {
+    if (!item->data(section, StateRole).isValid()) return;
+    bool on = !item->data(section, StateRole).toBool();
+    if (section == Lock)
+      column->lock(on);
+    else {
+      if (section == View ||
+          Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled())
+        column->setCamstandVisible(on);
+      if (section == Render ||
+          Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled())
+        column->setPreviewVisible(on);
+      if (column->getSoundColumn())
+        m_app->getCurrentXsheet()->notifyXsheetSoundChanged();
+    }
+    ToolHandle *handle = m_app->getCurrentTool();
+    TTool *tool        = handle ? handle->getTool() : nullptr;
+    if (tool && tool->getViewer()) tool->getViewer()->invalidateToolStatus();
+    m_app->getCurrentScene()->notifySceneChanged();
+    m_app->getCurrentXsheet()->notifyXsheetChanged();
+    return;
+  }
+
+  activateExposure(treeItem, true);
+}
+
+bool DrawingLayers::activateExposure(QTreeWidgetItem *treeItem,
+                                     bool makeCurrent) {
+  hideHoverPreview();
+  if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return false;
+  auto item          = static_cast<LayerItem *>(treeItem);
+  int c              = item->data(Name, ColumnRole).toInt();
+  TXshColumn *column = m_xsheet->getColumn(c);
+  if (!column || column != item->column) return false;
+
+  int frame = qMax(0, m_app->getCurrentFrame()->getFrame());
+  // Copy the target before notifying handles: those notifications can rebuild
+  // drawing children. A drawing/group/stroke must match the exact drawing,
+  // not merely another exposure of the same level.
+  if (item->kind != Column) {
+    auto drawing          = drawingParent(item);
+    TXshLevel *level      = item->level.data();
+    TXshCellColumn *cells = column->getCellColumn();
+    if (!level || !cells) return false;
+    TFrameId fid = drawing ? drawing->fid : TFrameId();
+    int first, last;
+    cells->getRange(first, last);
+    int nearest     = -1;
+    qint64 distance = std::numeric_limits<qint64>::max();
+    for (int row = first; row <= last; ++row) {
+      const TXshCell &cell = cells->getCell(row);
+      if (cell.m_level.getPointer() != level ||
+          (drawing && cell.m_frameId != fid))
+        continue;
+      qint64 delta = qAbs(qint64(row) - frame);
+      if (delta < distance) {
+        nearest  = row;
+        distance = delta;
+      }
+      if (delta == 0) break;
+    }
+    if (nearest < 0) return false;
+    frame = nearest;
+  }
+  {
+    QScopedValueRollback<bool> guard(m_activating, true);
+    m_app->getCurrentSelection()->setSelection(nullptr);
+    m_app->getCurrentColumn()->setColumnIndex(c);
+    m_app->getCurrentFrame()->setFrame(frame);
+    m_app->getCurrentObject()->setObjectId(TStageObjectId::ColumnId(c));
+  }
+  refreshCurrent();
+  emit exposureActivated(frame, c, makeCurrent);
+  return true;
+}
+
+void DrawingLayers::beginRename(QTreeWidgetItem *treeItem) {
+  if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item = static_cast<LayerItem *>(treeItem);
+  if (item->kind != Group) return;
+  auto drawing = drawingParent(item);
+  auto level   = drawing->level ? drawing->level->getSimpleLevel() : nullptr;
+  auto column  = m_xsheet->getColumn(item->data(Name, ColumnRole).toInt());
+  if (!level || column != item->column) return;
+  if (column->isLocked() || level->isReadOnly() ||
+      level->isFrameReadOnly(drawing->fid)) {
+    QToolTip::showText(viewport()->mapToGlobal(visualItemRect(item).center()),
+                       tr("This drawing is locked or read-only."), this);
+    return;
+  }
+  editItem(item, Name);
+}
+
+void DrawingLayers::renameGroup(QTreeWidgetItem *treeItem, int section) {
+  if (section != Name || !treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return;
+  auto item = static_cast<LayerItem *>(treeItem);
+  if (item->kind != Group) return;
+  auto drawing = drawingParent(item);
+  auto level   = drawing->level ? drawing->level->getSimpleLevel() : nullptr;
+  auto column  = m_xsheet->getColumn(item->data(Name, ColumnRole).toInt());
+  scheduleRebuild();
+  if (!level || column != item->column || column->isLocked() ||
+      level->isReadOnly() || level->isFrameReadOnly(drawing->fid))
+    return;
+  TVectorImageP image = level->getFrame(drawing->fid, false);
+  if (!image) return;
+  QMutexLocker lock(image->getMutex());
+  if (image != drawing->image || drawing->structure != vectorStructure(image))
+    return;
+  std::wstring before = image->getGroupName(item->firstStroke, item->depth);
+  std::wstring after  = item->text(Name).trimmed().toStdWString();
+  if (before == after) return;
+  auto undo =
+      new RenameVectorGroupUndo(m_app, level, drawing->fid, item->firstStroke,
+                                item->depth, before, after);
+  lock.unlock();
+  undo->redo();
+  TUndoManager::manager()->add(undo);
+}
+
+void DrawingLayers::mouseDoubleClickEvent(QMouseEvent *event) {
+  hideHoverPreview();
+  QPersistentModelIndex target = indexAt(event->pos());
+  bool renameGroup =
+      event->button() == Qt::LeftButton && target.isValid() &&
+      target.column() == Name && target.data(KindRole).toInt() == Group;
+
+  // Let the view complete its normal double-click bookkeeping first. Group
+  // rename is then started from the event's persistent target instead of the
+  // current item, because a preceding click may synchronize the Xsheet and
+  // temporarily move the tree's current item.
+  QTreeWidget::mouseDoubleClickEvent(event);
+
+  if (!renameGroup || !target.isValid()) return;
+  QTreeWidgetItem *item = itemFromIndex(target);
+  if (!item) return;
+  setCurrentItem(item);
+  beginRename(item);
+  event->accept();
+}
+
+void DrawingLayers::contextMenuEvent(QContextMenuEvent *event) {
+  hideHoverPreview();
+  QTreeWidgetItem *item = itemAt(event->pos());
+  if (event->reason() == QContextMenuEvent::Keyboard) item = currentItem();
+  if (!item) return;
+  QPersistentModelIndex index(indexFromItem(item));
+  bool group = static_cast<LayerItem *>(item)->kind == Group;
+  if (!activateExposure(item, true) || !index.isValid()) return;
+  setCurrentItem(itemFromIndex(index));
+  QMenu menu(this);
+  QAction *rename = nullptr;
+  if (group) {
+    rename = menu.addAction(tr("Rename Group..."));
+    menu.addSeparator();
+  }
+  emit exposureMenuRequested(&menu, m_app->getCurrentFrame()->getFrame(),
+                             m_app->getCurrentColumn()->getColumnIndex());
+  // Any scene/structure change while a menu is open invalidates its target.
+  connect(model(), &QAbstractItemModel::modelAboutToBeReset, &menu,
+          &QMenu::close);
+  connect(m_app->getCurrentFrame(), &TFrameHandle::frameSwitched, &menu,
+          &QMenu::close);
+  connect(m_app->getCurrentColumn(), &TColumnHandle::columnIndexSwitched, &menu,
+          &QMenu::close);
+  connect(m_app->getCurrentXsheet(), &TXsheetHandle::xsheetChanged, &menu,
+          &QMenu::close);
+  connect(m_app->getCurrentXsheet(), &TXsheetHandle::xsheetSwitched, &menu,
+          &QMenu::close);
+  connect(m_app->getCurrentScene(), &TSceneHandle::sceneSwitched, &menu,
+          &QMenu::close);
+  if (!menu.isEmpty()) {
+    QPoint position = event->reason() == QContextMenuEvent::Keyboard
+                          ? viewport()->mapToGlobal(
+                                visualItemRect(itemFromIndex(index)).center())
+                          : event->globalPos();
+    QAction *chosen = menu.exec(position);
+    if (rename && chosen == rename && index.isValid())
+      beginRename(itemFromIndex(index));
+  }
+  event->accept();
+}
+
+void DrawingLayers::keyPressEvent(QKeyEvent *event) {
+  hideHoverPreview();
+  if (event->key() == Qt::Key_F2) {
+    beginRename(currentItem());
+    event->accept();
+    return;
+  }
+  if (event->key() == Qt::Key_Space || event->key() == Qt::Key_Return ||
+      event->key() == Qt::Key_Enter) {
+    activateItem(currentItem(), currentColumn());
+    event->accept();
+    return;
+  }
+  QTreeWidgetItem *before = currentItem();
+  QTreeWidget::keyPressEvent(event);
+  if (currentItem() != before &&
+      (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down ||
+       event->key() == Qt::Key_Home || event->key() == Qt::Key_End ||
+       event->key() == Qt::Key_PageUp || event->key() == Qt::Key_PageDown))
+    activateItem(currentItem(), Name);
+}
+
+void DrawingLayers::paintEvent(QPaintEvent *event) {
+  QTreeWidget::paintEvent(event);
+  if (topLevelItemCount() == 0) {
+    QPainter painter(viewport());
+    painter.setPen(palette().color(QPalette::Text));
+    painter.drawText(
+        viewport()->rect().adjusted(16, 16, -16, -16),
+        Qt::AlignCenter | Qt::TextWordWrap,
+        tr("Expose a level in the Xsheet to see its layers here."));
+  }
+}
+
+QModelIndex DrawingLayers::thumbnailAt(const QPoint &position) const {
+  if (!isVisible() || m_rebuildTimer->isActive() || !m_xsheet ||
+      m_xsheet != m_app->getCurrentXsheet()->getXsheet())
+    return QModelIndex();
+  QModelIndex index = indexAt(position);
+  if (!index.isValid() || index.column() != Name ||
+      index.data(KindRole).toInt() != Level)
+    return QModelIndex();
+  auto item  = static_cast<LayerItem *>(itemFromIndex(index));
+  int column = index.data(ColumnRole).toInt();
+  int row    = index.data(RowRole).toInt();
+  if (m_xsheet->getColumn(column) != item->column || !item->level)
+    return QModelIndex();
+  const TXshCell &cell = m_xsheet->getCell(row, column);
+  if (cell.isEmpty() || cell.m_level.getPointer() != item->level ||
+      !cell.m_level->getSimpleLevel())
+    return QModelIndex();
+  QStyleOptionViewItem option = viewOptions();
+  option.rect                 = visualRect(index);
+  auto delegate               = static_cast<LayersDelegate *>(itemDelegate());
+  return delegate->thumbnailRect(option, index).contains(position)
+             ? index
+             : QModelIndex();
+}
+
+bool DrawingLayers::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == m_hoverPreview || watched == m_previewImage ||
+      watched == m_previewScrubber) {
+    if (event->type() == QEvent::Enter) {
+      m_hoverHideTimer->stop();
+    } else if (event->type() == QEvent::Leave) {
+      scheduleHoverHide();
+    }
+  }
+
+  if (watched == m_previewImage && !m_hoverRows.isEmpty()) {
+    if (event->type() == QEvent::MouseMove ||
+        event->type() == QEvent::MouseButtonPress) {
+      auto mouse = static_cast<QMouseEvent *>(event);
+      int width  = qMax(1, m_previewImage->width() - 1);
+      int count  = m_hoverRows.size();
+      int index  = qRound(qBound(0, mouse->pos().x(), width) *
+                         (count - 1.0) / width);
+      m_previewScrubber->setValue(index);
+    } else if (event->type() == QEvent::Wheel && m_hoverRows.size() > 1) {
+      auto wheel = static_cast<QWheelEvent *>(event);
+      int step   = wheel->angleDelta().y() < 0 ? 1 : -1;
+      m_previewScrubber->setValue(
+          qBound(0, m_previewScrubber->value() + step,
+                 m_previewScrubber->maximum()));
+      event->accept();
+      return true;
+    }
+  }
+
+  return QTreeWidget::eventFilter(watched, event);
+}
+
+bool DrawingLayers::viewportEvent(QEvent *event) {
+  switch (event->type()) {
+  case QEvent::MouseMove: {
+    auto mouse        = static_cast<QMouseEvent *>(event);
+    QModelIndex index = mouse->buttons() == Qt::NoButton
+                            ? thumbnailAt(mouse->pos())
+                            : QModelIndex();
+    if (!index.isValid()) {
+      if (m_hoverPreview->isVisible())
+        scheduleHoverHide();
+      else
+        hideHoverPreview();
+    } else {
+      m_hoverHideTimer->stop();
+      if (m_hoverIndex != index ||
+          (!m_hoverPreview->isVisible() &&
+           (mouse->pos() - m_hoverPosition).manhattanLength() >
+               QApplication::startDragDistance())) {
+        hideHoverPreview();
+        m_hoverIndex    = index;
+        m_hoverPosition = mouse->pos();
+        m_hoverTimer->start();
+      }
+    }
+    break;
+  }
+  case QEvent::ToolTip:
+    if (thumbnailAt(viewport()->mapFromGlobal(QCursor::pos())).isValid()) {
+      event->accept();
+      return true;
+    }
+    break;
+  case QEvent::Leave:
+    if (m_hoverPreview->isVisible())
+      scheduleHoverHide();
+    else
+      hideHoverPreview();
+    break;
+  case QEvent::MouseButtonPress:
+  case QEvent::MouseButtonDblClick:
+  case QEvent::Wheel:
+  case QEvent::Resize:
+  case QEvent::Hide:
+    hideHoverPreview();
+    break;
+  default:
+    break;
+  }
+  return QTreeWidget::viewportEvent(event);
+}
+
+void DrawingLayers::hideHoverPreview() {
+  if (m_hoverTimer) m_hoverTimer->stop();
+  if (m_hoverHideTimer) m_hoverHideTimer->stop();
+  if (m_hoverPreview) m_hoverPreview->hide();
+  if (m_previewImage) m_previewImage->clear();
+  if (m_previewScrubber) {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setRange(0, 0);
+    m_previewScrubber->setValue(0);
+  }
+  m_hoverRows.clear();
+  m_hoverExposureIndex = -1;
+  m_hoverIndex         = QPersistentModelIndex();
+}
+
+void DrawingLayers::scheduleHoverHide() {
+  if (!m_hoverPreview->isVisible()) {
+    hideHoverPreview();
+    return;
+  }
+  m_hoverHideTimer->start();
+}
+
+void DrawingLayers::renderHoverPreview(int exposureIndex) {
+  if (!m_hoverIndex.isValid() || exposureIndex < 0 ||
+      exposureIndex >= m_hoverRows.size() || !m_xsheet)
+    return;
+
+  auto item       = static_cast<LayerItem *>(itemFromIndex(m_hoverIndex));
+  const int row   = m_hoverRows[exposureIndex];
+  const int column = m_hoverIndex.data(ColumnRole).toInt();
+  const TXshCell cell = m_xsheet->getCell(row, column);
+  if (!item || !item->level || cell.m_level.getPointer() != item->level) {
+    hideHoverPreview();
+    return;
+  }
+
+  QScreen *screen =
+      QGuiApplication::screenAt(viewport()->mapToGlobal(m_hoverPosition));
+  if (!screen) screen = QGuiApplication::primaryScreen();
+  if (!screen) return;
+  const qreal ratio = screen->devicePixelRatio();
+  const QSize size  = m_previewImage->size();
+  const TDimension pixels(qRound(size.width() * ratio),
+                          qRound(size.height() * ratio));
+
+  // Request the actual drawing at the scrubbed exposure. Responsive icons are
+  // cached independently, so scrubbing does not alter Filmstrip thumbnail size.
+  QPixmap preview = IconGenerator::instance()->getResponsiveIcon(
+      cell.m_level.getPointer(), cell.m_frameId, pixels);
+  m_previewImage->clear();
+  if (preview.isNull()) {
+    m_previewImage->setText(tr("Loading preview..."));
+  } else {
+    preview.setDevicePixelRatio(ratio);
+    m_previewImage->setPixmap(preview);
+  }
+
+  m_hoverExposureIndex = exposureIndex;
+  {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setValue(exposureIndex);
+  }
+  m_previewCaption->setText(
+      tr("%1 — Drawing %2\nXsheet frame %3, column %4 — exposure %5/%6\n"
+         "Move across preview or drag slider to scrub")
+          .arg(QString::fromStdWString(cell.m_level->getName()),
+               QString::fromStdString(cell.m_frameId.expand()))
+          .arg(row + 1)
+          .arg(column + 1)
+          .arg(exposureIndex + 1)
+          .arg(m_hoverRows.size()));
+  m_hoverPreview->adjustSize();
+}
+
+void DrawingLayers::showHoverPreview() {
+  const QPoint global   = QCursor::pos();
+  const QPoint position = viewport()->mapFromGlobal(global);
+  bool overThumbnail =
+      m_hoverIndex.isValid() && thumbnailAt(position) == m_hoverIndex;
+  bool overPreview =
+      m_hoverPreview->isVisible() &&
+      m_hoverPreview->frameGeometry().contains(global);
+  if (!m_hoverIndex.isValid() || (!overThumbnail && !overPreview) ||
+      QApplication::mouseButtons() != Qt::NoButton ||
+      m_app->getCurrentFrame()->isPlaying()) {
+    hideHoverPreview();
+    return;
+  }
+
+  auto item        = static_cast<LayerItem *>(itemFromIndex(m_hoverIndex));
+  const int column = m_hoverIndex.data(ColumnRole).toInt();
+  TXshColumn *columnObject = m_xsheet ? m_xsheet->getColumn(column) : nullptr;
+  TXshCellColumn *cells    = columnObject ? columnObject->getCellColumn() : nullptr;
+  if (!item || !item->level || columnObject != item->column || !cells) {
+    hideHoverPreview();
+    return;
+  }
+
+  m_hoverRows.clear();
+  int first = 0, last = -1;
+  cells->getRange(first, last);
+  for (int row = first; row <= last; ++row) {
+    const TXshCell &cell = cells->getCell(row);
+    if (cell.m_level.getPointer() == item->level) m_hoverRows.append(row);
+  }
+  if (m_hoverRows.isEmpty()) {
+    hideHoverPreview();
+    return;
+  }
+
+  const QPoint anchor = viewport()->mapToGlobal(m_hoverPosition);
+  QScreen *screen     = QGuiApplication::screenAt(anchor);
+  if (!screen) screen = QGuiApplication::primaryScreen();
+  if (!screen) return;
+  const QRect available = screen->availableGeometry();
+  const QSize size(qMax(32, qMin(320, available.width() - 24)),
+                   qMax(24, qMin(240, available.height() - 128)));
+  m_previewImage->setFixedSize(size);
+  m_previewCaption->setFixedWidth(size.width());
+  m_previewScrubber->setFixedWidth(size.width());
+  m_previewScrubber->setVisible(m_hoverRows.size() > 1);
+  {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setRange(0, qMax(0, m_hoverRows.size() - 1));
+  }
+
+  int targetRow = m_hoverIndex.data(RowRole).toInt();
+  int startIndex = 0;
+  qint64 distance = std::numeric_limits<qint64>::max();
+  for (int i = 0; i < m_hoverRows.size(); ++i) {
+    qint64 delta = qAbs(qint64(m_hoverRows[i]) - targetRow);
+    if (delta < distance) {
+      startIndex = i;
+      distance   = delta;
+    }
+  }
+  renderHoverPreview(startIndex);
+
+  QPoint topLeft = anchor + QPoint(20, 20);
+  if (topLeft.x() + m_hoverPreview->width() > available.right() + 1)
+    topLeft.setX(anchor.x() - m_hoverPreview->width() - 12);
+  if (topLeft.y() + m_hoverPreview->height() > available.bottom() + 1)
+    topLeft.setY(anchor.y() - m_hoverPreview->height() - 12);
+  topLeft.setX(
+      qMax(available.left(),
+           qMin(topLeft.x(), available.right() + 1 - m_hoverPreview->width())));
+  topLeft.setY(qMax(
+      available.top(),
+      qMin(topLeft.y(), available.bottom() + 1 - m_hoverPreview->height())));
+  QToolTip::hideText();
+  m_hoverPreview->move(topLeft);
+  m_hoverPreview->show();
+}
