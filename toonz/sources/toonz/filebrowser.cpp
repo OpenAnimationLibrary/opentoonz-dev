@@ -75,6 +75,7 @@
 #include <QSplitter>
 #include <QFileSystemWatcher>
 #include <QFileDialog>
+#include <QDialogButtonBox>
 #include <QProcess>
 
 // tcg includes
@@ -1021,7 +1022,7 @@ void FileBrowser::createLutFromImagePair() {
   const TFilePath selectedPath = files[0];
   if (!TFileType::isFullColor(TFileType::getInfo(selectedPath))) return;
 
-  TFilePath sourcePath = selectedPath;
+  TFilePath initialSourcePath = selectedPath;
   if (selectedPath.isLevelName()) {
     try {
       TLevelReaderP reader(selectedPath);
@@ -1030,7 +1031,7 @@ void FileBrowser::createLutFromImagePair() {
         DVGui::warning(tr("The selected raster level contains no frames."));
         return;
       }
-      sourcePath = selectedPath.withFrame(level->begin()->first);
+      initialSourcePath = selectedPath.withFrame(level->begin()->first);
     } catch (...) {
       DVGui::warning(
           tr("Could not resolve a frame from the selected raster level."));
@@ -1038,22 +1039,13 @@ void FileBrowser::createLutFromImagePair() {
     }
   }
 
-  if (!QFileInfo(sourcePath.getQString()).isFile()) {
+  if (!QFileInfo(initialSourcePath.getQString()).isFile()) {
     DVGui::warning(tr("The selected raster image could not be found on disk."));
     return;
   }
 
-  // Make the before/after pair explicit. The right-clicked image is used as
-  // the initial source suggestion, but the user confirms the source first and
-  // then independently selects the graded target image.
-  const QString confirmedSourcePath = QFileDialog::getOpenFileName(
-      this, tr("Select Source / Original Image"), sourcePath.getQString(),
-      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
-         "*.pic *.pnm);;All Files (*)"));
-  if (confirmedSourcePath.isEmpty()) return;
-
-  sourcePath = TFilePath(confirmedSourcePath.toStdWString());
-
+  // Verify OTLUT before asking for the pair so a missing executable cannot
+  // interrupt the source/target selection sequence.
   if (!ThirdParty::checkOtlut()) {
     const QString detected = ThirdParty::autodetectOtlut();
     if (!detected.isEmpty()) ThirdParty::setOtlutDir(detected);
@@ -1066,21 +1058,82 @@ void FileBrowser::createLutFromImagePair() {
     return;
   }
 
-  const QString targetPath = QFileDialog::getOpenFileName(
-      this, tr("Select Target / Graded Image"),
-      sourcePath.getParentDir().getQString(),
-      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
-         "*.pic *.pnm);;All Files (*)"));
-  if (targetPath.isEmpty()) return;
+  QDialog pairDialog(this);
+  pairDialog.setWindowTitle(tr("Create 3D LUT from Images"));
 
-  const QFileInfo sourceInfo(sourcePath.getQString());
+  auto *pairLayout = new QGridLayout(&pairDialog);
+  auto *sourceEdit = new QLineEdit(initialSourcePath.getQString(), &pairDialog);
+  auto *targetEdit = new QLineEdit(&pairDialog);
+  auto *sourceBrowse = new QPushButton(tr("Browse..."), &pairDialog);
+  auto *targetBrowse = new QPushButton(tr("Browse..."), &pairDialog);
+  auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok |
+                                           QDialogButtonBox::Cancel,
+                                       &pairDialog);
+
+  sourceEdit->setMinimumWidth(420);
+  targetEdit->setMinimumWidth(420);
+
+  pairLayout->addWidget(new QLabel(tr("Source / Original Image:"), &pairDialog),
+                        0, 0);
+  pairLayout->addWidget(sourceEdit, 0, 1);
+  pairLayout->addWidget(sourceBrowse, 0, 2);
+  pairLayout->addWidget(new QLabel(tr("Target / Graded Image:"), &pairDialog),
+                        1, 0);
+  pairLayout->addWidget(targetEdit, 1, 1);
+  pairLayout->addWidget(targetBrowse, 1, 2);
+  pairLayout->addWidget(buttons, 2, 0, 1, 3);
+
+  const QString rasterFilter =
+      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
+         "*.pic *.pnm);;All Files (*)");
+
+  connect(sourceBrowse, &QPushButton::clicked, &pairDialog, [&]() {
+    const QString path = QFileDialog::getOpenFileName(
+        &pairDialog, tr("Select Source / Original Image"), sourceEdit->text(),
+        rasterFilter);
+    if (!path.isEmpty()) sourceEdit->setText(path);
+  });
+
+  connect(targetBrowse, &QPushButton::clicked, &pairDialog, [&]() {
+    QString initialDir = targetEdit->text();
+    if (initialDir.isEmpty())
+      initialDir = QFileInfo(sourceEdit->text()).absolutePath();
+    const QString path = QFileDialog::getOpenFileName(
+        &pairDialog, tr("Select Target / Graded Image"), initialDir,
+        rasterFilter);
+    if (!path.isEmpty()) targetEdit->setText(path);
+  });
+
+  connect(buttons, &QDialogButtonBox::accepted, &pairDialog, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &pairDialog, &QDialog::reject);
+
+  if (pairDialog.exec() != QDialog::Accepted) return;
+
+  const QString sourcePathString = sourceEdit->text().trimmed();
+  const QString targetPath = targetEdit->text().trimmed();
+
+  if (sourcePathString.isEmpty() || targetPath.isEmpty()) {
+    DVGui::warning(
+        tr("Both a source/original image and a target/graded image are "
+           "required."));
+    return;
+  }
+
+  const QFileInfo sourceInfo(sourcePathString);
   const QFileInfo targetInfo(targetPath);
+  if (!sourceInfo.isFile() || !targetInfo.isFile()) {
+    DVGui::warning(tr("Both source and target images must exist on disk."));
+    return;
+  }
+
   if (sourceInfo.canonicalFilePath() == targetInfo.canonicalFilePath()) {
     DVGui::warning(
         tr("Source and target must be different images. Select the original "
-           "image first, then its graded version."));
+           "image and its graded version."));
     return;
   }
+
+  const TFilePath sourcePath(sourcePathString.toStdWString());
 
   TFilePath lutDir = TEnv::getStuffDir() + "library" + "luts";
   try {
@@ -1091,8 +1144,7 @@ void FileBrowser::createLutFromImagePair() {
     return;
   }
 
-  const QString baseName =
-      QFileInfo(sourcePath.getQString()).completeBaseName();
+  const QString baseName = sourceInfo.completeBaseName();
   TFilePath outputPath =
       lutDir + TFilePath((baseName + ".cube").toStdWString());
   int suffix = 2;
@@ -1104,9 +1156,8 @@ void FileBrowser::createLutFromImagePair() {
   }
 
   QStringList arguments;
-  arguments << "--source" << sourcePath.getQString() << "--target"
-            << targetPath << "--output" << outputPath.getQString() << "--size"
-            << "33";
+  arguments << "--source" << sourcePathString << "--target" << targetPath
+            << "--output" << outputPath.getQString() << "--size" << "33";
 
   QProcess process;
   ThirdParty::runOtlut(process, arguments);
@@ -1137,7 +1188,7 @@ void FileBrowser::createLutFromImagePair() {
       QString::fromUtf8(process.readAllStandardOutput()).trimmed();
   QString successMessage =
       tr("3D LUT created successfully:\n%1\n\nSource:\n%2\n\nTarget:\n%3")
-          .arg(outputPath.getQString(), sourcePath.getQString(), targetPath);
+          .arg(outputPath.getQString(), sourcePathString, targetPath);
   if (!processOutput.isEmpty())
     successMessage += tr("\n\nOTLUT report:\n") + processOutput;
   DVGui::info(successMessage);
