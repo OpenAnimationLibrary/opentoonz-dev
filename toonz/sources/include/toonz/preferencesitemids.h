@@ -83,6 +83,7 @@ enum PreferencesItemId {
   // Import / Export
   ffmpegPath,
   pdfRendererPath,
+  otlutPath,
   ffmpegTimeout,
   fastRenderPath,
   ffmpegMultiThread,
