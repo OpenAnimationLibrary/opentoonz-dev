@@ -1,0 +1,44 @@
+name: Prepare Layers 155 update
+on:
+  push:
+    branches: [maintenance/layers-155-update-20261002]
+    paths:
+      - .github/ot-dev/apply-layers-update.py
+      - .github/workflows/prepare-layers-155.yml
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/drawing-layers-panel
+          fetch-depth: 0
+      - name: Prepare source update without changing the PR branch
+        env:
+          PREPARATION_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git show "$PREPARATION_SHA:.github/ot-dev/apply-layers-update.py" > "$RUNNER_TEMP/apply-layers-update.py"
+          if ! git merge --no-edit origin/main; then
+            echo 'MERGE_CONFLICTS_BEGIN'
+            git diff --name-only --diff-filter=U
+            git diff --cc
+            echo 'MERGE_CONFLICTS_END'
+            exit 1
+          fi
+          python3 "$RUNNER_TEMP/apply-layers-update.py"
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y clang-format-14
+          clang-format-14 -i toonz/sources/toonz/drawinglayers.cpp toonz/sources/toonz/drawinglayers.h toonz/sources/toonz/drawinglayersxsheet.cpp toonz/sources/toonz/xshcellviewer.h .github/ot-dev/layers-tests/layers_test.cpp
+          git diff --check
+          git add toonz/sources/toonz/drawinglayers.cpp toonz/sources/toonz/drawinglayers.h toonz/sources/toonz/drawinglayersxsheet.cpp toonz/sources/toonz/xshcellviewer.h toonz/sources/toonz/CMakeLists.txt .github/ot-dev/layers-tests/layers_test.cpp doc/layers-preview-and-exposure-menu.md
+          git commit -m 'Add Layers hover previews and native exposure selection and menus'
+          git push origin HEAD:refs/heads/maintenance/layers-155-result-20261002
+          echo "LAYERS_RESULT_SHA=$(git rev-parse HEAD)"
+          git show --stat --oneline HEAD
