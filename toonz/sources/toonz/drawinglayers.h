@@ -41,6 +41,7 @@ protected:
   void showEvent(QShowEvent *event) override;
   void hideEvent(QHideEvent *event) override;
   void paintEvent(QPaintEvent *event) override;
+  void mouseDoubleClickEvent(QMouseEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
   void contextMenuEvent(QContextMenuEvent *event) override;
 
