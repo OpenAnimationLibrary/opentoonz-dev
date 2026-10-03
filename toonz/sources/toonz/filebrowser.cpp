@@ -1043,6 +1043,17 @@ void FileBrowser::createLutFromImagePair() {
     return;
   }
 
+  // Make the before/after pair explicit. The right-clicked image is used as
+  // the initial source suggestion, but the user confirms the source first and
+  // then independently selects the graded target image.
+  const QString confirmedSourcePath = QFileDialog::getOpenFileName(
+      this, tr("Select Source / Original Image"), sourcePath.getQString(),
+      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
+         "*.pic *.pnm);;All Files (*)"));
+  if (confirmedSourcePath.isEmpty()) return;
+
+  sourcePath = TFilePath(confirmedSourcePath.toStdWString());
+
   if (!ThirdParty::checkOtlut()) {
     const QString detected = ThirdParty::autodetectOtlut();
     if (!detected.isEmpty()) ThirdParty::setOtlutDir(detected);
@@ -1056,11 +1067,20 @@ void FileBrowser::createLutFromImagePair() {
   }
 
   const QString targetPath = QFileDialog::getOpenFileName(
-      this, tr("Select Graded / Target Image"),
+      this, tr("Select Target / Graded Image"),
       sourcePath.getParentDir().getQString(),
       tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
          "*.pic *.pnm);;All Files (*)"));
   if (targetPath.isEmpty()) return;
+
+  const QFileInfo sourceInfo(sourcePath.getQString());
+  const QFileInfo targetInfo(targetPath);
+  if (sourceInfo.canonicalFilePath() == targetInfo.canonicalFilePath()) {
+    DVGui::warning(
+        tr("Source and target must be different images. Select the original "
+           "image first, then its graded version."));
+    return;
+  }
 
   TFilePath lutDir = TEnv::getStuffDir() + "library" + "luts";
   try {
@@ -1113,8 +1133,14 @@ void FileBrowser::createLutFromImagePair() {
     return;
   }
 
-  DVGui::info(tr("3D LUT created successfully:\n") +
-              outputPath.getQString());
+  const QString processOutput =
+      QString::fromUtf8(process.readAllStandardOutput()).trimmed();
+  QString successMessage =
+      tr("3D LUT created successfully:\n%1\n\nSource:\n%2\n\nTarget:\n%3")
+          .arg(outputPath.getQString(), sourcePath.getQString(), targetPath);
+  if (!processOutput.isEmpty())
+    successMessage += tr("\n\nOTLUT report:\n") + processOutput;
+  DVGui::info(successMessage);
 }
 
 //-----------------------------------------------------------------------------
