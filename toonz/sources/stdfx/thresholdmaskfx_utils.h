@@ -49,6 +49,29 @@ inline float applyInvert(float matte, bool invert) {
   return invert ? 1.0f - matte : matte;
 }
 
+enum ConfidenceCombineMode {
+  ConfidencePrimary = 0,
+  ConfidenceSecondary,
+  ConfidenceIntersect,
+  ConfidenceUnion
+};
+
+inline float combineConfidence(float primary, float secondary, int mode) {
+  primary   = clamp01(primary);
+  secondary = clamp01(secondary);
+  switch (mode) {
+  case ConfidenceSecondary:
+    return secondary;
+  case ConfidenceIntersect:
+    return primary * secondary;
+  case ConfidenceUnion:
+    return std::max(primary, secondary);
+  case ConfidencePrimary:
+  default:
+    return primary;
+  }
+}
+
 inline void boxBlur(std::vector<float> &values, int width, int height,
                     int radius) {
   if (radius <= 0 || width <= 0 || height <= 0 || values.empty()) return;

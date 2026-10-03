@@ -17,6 +17,7 @@ int main() {
   using ThresholdMaskFxUtils::IntRect;
   using ThresholdMaskFxUtils::applyInvert;
   using ThresholdMaskFxUtils::boxBlur;
+  using ThresholdMaskFxUtils::combineConfidence;
   using ThresholdMaskFxUtils::clipOutsideRect;
   using ThresholdMaskFxUtils::eraseDisk;
   using ThresholdMaskFxUtils::keepConnectedComponent;
@@ -29,6 +30,18 @@ int main() {
   assert(near(smoothThreshold(0.75f, 0.5f, 0.5f), 1.0f));
   assert(near(applyInvert(0.2f, false), 0.2f));
   assert(near(applyInvert(0.2f, true), 0.8f));
+  assert(near(combineConfidence(0.8f, 0.5f,
+                                ThresholdMaskFxUtils::ConfidencePrimary),
+              0.8f));
+  assert(near(combineConfidence(0.8f, 0.5f,
+                                ThresholdMaskFxUtils::ConfidenceSecondary),
+              0.5f));
+  assert(near(combineConfidence(0.8f, 0.5f,
+                                ThresholdMaskFxUtils::ConfidenceIntersect),
+              0.4f));
+  assert(near(combineConfidence(0.8f, 0.5f,
+                                ThresholdMaskFxUtils::ConfidenceUnion),
+              0.8f));
 
   std::vector<float> constant(25, 0.4f);
   boxBlur(constant, 5, 5, 1);
@@ -62,6 +75,6 @@ int main() {
   assert(carved[2 * 5 + 2] == 0.0f);
   assert(carved[0] == 1.0f);
 
-  std::cout << "thresholdmaskfx stage 3 tests passed\n";
+  std::cout << "thresholdmaskfx stage 4 tests passed\n";
   return 0;
 }
