@@ -1,0 +1,46 @@
+name: Publish OT-Dev OTLUT alpha
+
+on:
+  push:
+    branches:
+      - release/otdev-alpha-2026-10-02
+    paths:
+      - '.github/workflows/publish_otlut_alpha.yml'
+      - 'release-notes/otdev-alpha-2026-10-02.md'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for tested main Windows package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run watch 37097239552 --repo OpenAnimationLibrary/opentoonz-dev --exit-status
+
+      - name: Download Windows package artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          gh run download 37097239552 --repo OpenAnimationLibrary/opentoonz-dev --name "Opentoonz-Windows-58973443fa3f11464b6c42f1cb9b6b700814ea81" --dir package
+
+      - name: Create release archive
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path 'package/*' -DestinationPath 'dist/OpenToonz-OTDev-Alpha-2026-10-02-Windows.zip' -Force
+
+      - name: Publish alpha prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "otdev-alpha-2026-10-02" "dist/OpenToonz-OTDev-Alpha-2026-10-02-Windows.zip" --repo OpenAnimationLibrary/opentoonz-dev --target "58973443fa3f11464b6c42f1cb9b6b700814ea81" --title "OT-Dev Alpha - 2026-10-02" --notes-file "release-notes/otdev-alpha-2026-10-02.md" --prerelease
