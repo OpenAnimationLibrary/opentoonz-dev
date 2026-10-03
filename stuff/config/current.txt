@@ -275,6 +275,18 @@
   <item>"STD_thresholdMaskFx.invert" "Invert" </item>
   <item>"STD_thresholdMaskFx.output" "Output" </item>
   <item>"STD_thresholdMaskFx.maskInputMode" "Mask Input" </item>
+  <item>"STD_thresholdMaskFx.edgeFeather" "Edge Feather" </item>
+  <item>"STD_thresholdMaskFx.unpremultiplyMask" "Unpremultiply Mask" </item>
+  <item>"STD_thresholdMaskFx.regionMode" "Region Mode" </item>
+  <item>"STD_thresholdMaskFx.positivePoint" "Positive Point" </item>
+  <item>"STD_thresholdMaskFx.seedSearchRadius" "Seed Search Radius" </item>
+  <item>"STD_thresholdMaskFx.connectivity" "Connectivity" </item>
+  <item>"STD_thresholdMaskFx.usePromptBox" "Use Prompt Box" </item>
+  <item>"STD_thresholdMaskFx.boxMin" "Box Min" </item>
+  <item>"STD_thresholdMaskFx.boxMax" "Box Max" </item>
+  <item>"STD_thresholdMaskFx.useNegativePoint" "Use Negative Point" </item>
+  <item>"STD_thresholdMaskFx.negativePoint" "Negative Point" </item>
+  <item>"STD_thresholdMaskFx.negativeRadius" "Negative Radius" </item>
 
   <item>"STD_gammaFx"			"Gamma"		</item>
   <item>"STD_gammaFx.value"		"Value"		</item>
