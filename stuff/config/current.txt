@@ -274,6 +274,7 @@
   <item>"STD_thresholdMaskFx.channel" "Channel" </item>
   <item>"STD_thresholdMaskFx.invert" "Invert" </item>
   <item>"STD_thresholdMaskFx.output" "Output" </item>
+  <item>"STD_thresholdMaskFx.maskInputMode" "Mask Input" </item>
 
   <item>"STD_gammaFx"			"Gamma"		</item>
   <item>"STD_gammaFx.value"		"Value"		</item>
