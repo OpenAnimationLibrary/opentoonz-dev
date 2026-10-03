@@ -1348,6 +1348,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       // Import / Export
       {ffmpegPath, tr("FFmpeg Path:")},
       {pdfRendererPath, tr("PDF Converter Path:")},
+      {otlutPath, tr("OTLUT Path:")},
       {ffmpegTimeout, tr("FFmpeg Timeout:")},
       {fastRenderPath, tr("Fast Render Path:")},
       {ffmpegMultiThread,
@@ -2122,6 +2123,12 @@ QWidget* PreferencesPopup::createCodecPage() {
               "raster level. Poppler is not bundled with OpenToonz."),
            lay);
   insertUI(pdfRendererPath, lay);
+
+  putLabel(tr("OpenToonz can use OTLUT to create 3D LUT files from paired raster images.\n") +
+               tr("OpenToonz first looks for otlut next to the OpenToonz executable.\n") +
+               tr("If it is not found there, specify the folder containing OTLUT below."),
+           lay);
+  insertUI(otlutPath, lay);
 
   putLabel(tr("Number of seconds to wait for FFmpeg to complete processing the "
               "output:"),
