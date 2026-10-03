@@ -226,7 +226,7 @@ class ThresholdMaskFx final : public TStandardRasterFx {
 
 public:
   ThresholdMaskFx()
-      : m_threshold(0.5)
+      : m_threshold(0.0)
       , m_softness(0.0)
       , m_edgeFeather(0.0)
       , m_channel(new TIntEnumParam(ChannelAlpha, "Alpha"))
