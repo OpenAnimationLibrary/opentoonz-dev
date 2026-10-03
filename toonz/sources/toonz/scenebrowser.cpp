@@ -32,6 +32,7 @@
 #include "toonz/namebuilder.h"
 #include "toonz/toonzimageutils.h"
 #include "toonz/preferences.h"
+#include "thirdparty.h"
 
 // TnzBase includes
 #include "tenv.h"
@@ -75,6 +76,8 @@
 #include <QTreeWidgetItem>
 #include <QSplitter>
 #include <QFileSystemWatcher>
+#include <QFileDialog>
+#include <QProcess>
 
 // tcg includes
 #include "tcg/boost/range_utility.h"
@@ -936,6 +939,90 @@ void SceneBrowser::renameItem(int index, const QString &newName) {
 
 //-----------------------------------------------------------------------------
 
+void SceneBrowser::createLutFromImagePair() {
+  FileSelection *fs =
+      dynamic_cast<FileSelection *>(m_itemViewer->getPanel()->getSelection());
+  if (!fs) return;
+
+  std::vector<TFilePath> files;
+  fs->getSelectedFiles(files);
+  if (files.size() != 1) return;
+
+  const TFilePath sourcePath = files[0];
+  if (!TFileType::isFullColor(TFileType::getInfo(sourcePath)) ||
+      !QFileInfo(sourcePath.getQString()).isFile())
+    return;
+
+  if (!ThirdParty::checkOtlut()) {
+    const QString detected = ThirdParty::autodetectOtlut();
+    if (!detected.isEmpty()) ThirdParty::setOtlutDir(detected);
+  }
+
+  if (!ThirdParty::checkOtlut()) {
+    DVGui::warning(
+        tr("OTLUT was not found. Place otlut next to OpenToonz or set the "
+           "OTLUT Path in Preferences > Import/Export."));
+    return;
+  }
+
+  const QString targetPath = QFileDialog::getOpenFileName(
+      this, tr("Select Graded / Target Image"), sourcePath.getParentDir().getQString(),
+      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr *.pic *.pnm);;"
+         "All Files (*)"));
+  if (targetPath.isEmpty()) return;
+
+  TFilePath lutDir = TEnv::getStuffDir() + "library" + "luts";
+  try {
+    if (!TFileStatus(lutDir).doesExist()) TSystem::mkDir(lutDir);
+  } catch (...) {
+    DVGui::error(tr("Could not create the LUT library folder: ") +
+                 lutDir.getQString());
+    return;
+  }
+
+  const QString baseName = QFileInfo(sourcePath.getQString()).completeBaseName();
+  TFilePath outputPath = lutDir + TFilePath((baseName + ".cube").toStdWString());
+  int suffix = 2;
+  while (TSystem::doesExistFileOrLevel(outputPath)) {
+    outputPath =
+        lutDir + TFilePath((baseName + "_" + QString::number(suffix++) + ".cube")
+                               .toStdWString());
+  }
+
+  QStringList arguments;
+  arguments << "--source" << sourcePath.getQString()
+            << "--target" << targetPath
+            << "--output" << outputPath.getQString()
+            << "--size" << "33";
+
+  QProcess process;
+  ThirdParty::runOtlut(process, arguments);
+
+  if (!process.waitForStarted(5000)) {
+    DVGui::error(tr("Could not start OTLUT."));
+    return;
+  }
+
+  if (!process.waitForFinished(120000)) {
+    process.kill();
+    process.waitForFinished();
+    DVGui::error(tr("OTLUT timed out while creating the LUT."));
+    return;
+  }
+
+  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+    QString errorText = QString::fromUtf8(process.readAllStandardError()).trimmed();
+    if (errorText.isEmpty())
+      errorText = tr("OTLUT exited with code %1.").arg(process.exitCode());
+    DVGui::error(tr("OTLUT could not create the LUT.\n") + errorText);
+    return;
+  }
+
+  DVGui::info(tr("3D LUT created successfully:\n") + outputPath.getQString());
+}
+
+//-----------------------------------------------------------------------------
+
 bool SceneBrowser::renameFile(TFilePath &fp, QString newName) {
   if (isSpaceString(newName)) return true;
 
@@ -1040,6 +1127,18 @@ QMenu *SceneBrowser::getContextMenu(QWidget *parent, int index) {
   TFilePath clickedFile;
   if (0 <= index && index < (int)m_items.size())
     clickedFile = m_items[index].m_path;
+
+  if (files.size() == 1) {
+    const TFileType::Type selectedType = TFileType::getInfo(files[0]);
+    const QFileInfo sourceInfo(files[0].getQString());
+    if (TFileType::isFullColor(selectedType) && sourceInfo.isFile()) {
+      QAction *lutAction = new QAction(tr("Create 3D LUT from Image Pair..."), menu);
+      connect(lutAction, &QAction::triggered, this,
+              &SceneBrowser::createLutFromImagePair);
+      menu->addAction(lutAction);
+      menu->addSeparator();
+    }
+  }
 
   if (areResources) {
     QString title;
