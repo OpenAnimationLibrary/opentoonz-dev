@@ -28,7 +28,7 @@ inline float smoothThreshold(float value, float threshold, float softness) {
   threshold = clamp01(threshold);
   softness  = clamp01(softness);
 
-  if (softness <= 0.0f) return value >= threshold ? 1.0f : 0.0f;
+  if (softness <= 0.0f) return value > threshold ? 1.0f : 0.0f;
 
   const float halfWidth = softness * 0.5f;
   const float low       = threshold - halfWidth;
@@ -38,7 +38,7 @@ inline float smoothThreshold(float value, float threshold, float softness) {
   if (value >= high) return 1.0f;
 
   const float width = high - low;
-  if (width <= 0.0f) return value >= threshold ? 1.0f : 0.0f;
+  if (width <= 0.0f) return value > threshold ? 1.0f : 0.0f;
 
   const float t = clamp01((value - low) / width);
   return t * t * (3.0f - 2.0f * t);
