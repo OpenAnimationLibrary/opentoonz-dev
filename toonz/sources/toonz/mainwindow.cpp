@@ -2593,7 +2593,7 @@ void MainWindow::defineActions() {
                         "duplicate_drawing");
   createMenuCellsAction(MI_Autorenumber, QT_TR_NOOP("&Autorenumber"), "",
                         "renumber");
-  createMenuCellsAction(MI_CloneLevel, QT_TR_NOOP("&Clone Cells"), "",
+  createMenuCellsAction(MI_CloneLevel, QT_TR_NOOP("&Clone"), "",
                         "clone_cells");
   createMenuCellsAction(MI_DrawingSubForward,
                         QT_TR_NOOP("Drawing Substitution Forward"), "W");

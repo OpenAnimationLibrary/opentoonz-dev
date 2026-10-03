@@ -42,6 +42,7 @@
 #include "tpalette.h"
 
 // Qt includes
+#include <QApplication>
 #include <QLabel>
 #include <QPushButton>
 #include <QMainWindow>
@@ -1376,6 +1377,7 @@ class CloneLevelUndo final : public TUndo {
 
 private:
   TCellSelection::Range m_range;
+  bool m_cloneEntireLevels;
 
   mutable InsertedLevelsMap m_insertedLevels;
   mutable InsertedColumnsSet m_insertedColumns;
@@ -1385,8 +1387,11 @@ public:
   mutable bool m_ok;
 
 public:
-  CloneLevelUndo(const TCellSelection::Range &range)
-      : m_range(range), m_clonedLevels(false), m_ok(false) {}
+  CloneLevelUndo(const TCellSelection::Range &range, bool cloneEntireLevels)
+      : m_range(range)
+      , m_cloneEntireLevels(cloneEntireLevels)
+      , m_clonedLevels(false)
+      , m_ok(false) {}
 
   void redo() const override;
   void undo() const override;
@@ -1564,12 +1569,11 @@ bool CloneLevelUndo::chooseOverwrite(OverwriteDialog *dialog,
   ToonzScene *scene = TApp::instance()->getCurrentScene()->getScene();
   ExistsFunc exists(scene);
 
-  OverwriteDialog::Resolution acceptedRes = OverwriteDialog::ALL_RESOLUTIONS;
+  // A clone must always own its own drawings. Reusing an existing level would
+  // silently link the new cells to that level instead.
+  OverwriteDialog::Resolution acceptedRes = OverwriteDialog::RENAME;
 
   TXshLevel *xl = scene->getLevelSet()->getLevel(*scene, dstPath);
-  if (xl)
-    acceptedRes =
-        OverwriteDialog::Resolution(acceptedRes & ~OverwriteDialog::OVERWRITE);
 
   // Apply user's decision
   switch (dialog->execute(dstPath, exists, acceptedRes,
@@ -1610,6 +1614,14 @@ void CloneLevelUndo::cloneLevels() const {
   LevelsMap levels;
   getSelectedFrames(*xsh, m_range.m_r0, m_range.m_c0, m_range.m_r1,
                     m_range.m_c1, levels);
+
+  if (m_cloneEntireLevels) {
+    for (auto &level : levels) {
+      std::vector<TFrameId> fids;
+      level.first->getFids(fids);
+      level.second.insert(fids.begin(), fids.end());
+    }
+  }
 
   if (!levels.empty()) {
     bool askCloneName = (levels.size() == 1);
@@ -1763,7 +1775,10 @@ void CloneLevelUndo::undo() const {
 //-----------------------------------------------------------------------------
 
 void TCellSelection::cloneLevel() {
-  std::unique_ptr<CloneLevelUndo> undo(new CloneLevelUndo(m_range));
+  const bool cloneEntireLevels =
+      QApplication::keyboardModifiers() & Qt::ShiftModifier;
+  std::unique_ptr<CloneLevelUndo> undo(
+      new CloneLevelUndo(m_range, cloneEntireLevels));
 
   if (undo->redo(), undo->m_ok) TUndoManager::manager()->add(undo.release());
 }
