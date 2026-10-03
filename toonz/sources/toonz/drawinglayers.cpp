@@ -350,10 +350,6 @@ DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
   connect(m_rebuildTimer, &QTimer::timeout, this, &DrawingLayers::rebuild);
   connect(this, &QTreeWidget::itemClicked, this, &DrawingLayers::activateItem);
   connect(this, &QTreeWidget::itemExpanded, this, &DrawingLayers::expandItem);
-  connect(this, &QTreeWidget::itemDoubleClicked, this,
-          [this](QTreeWidgetItem *item, int section) {
-            if (section == Name) beginRename(item);
-          });
   connect(this, &QTreeWidget::itemChanged, this, &DrawingLayers::renameGroup);
 }
 
@@ -912,6 +908,27 @@ void DrawingLayers::renameGroup(QTreeWidgetItem *treeItem, int section) {
   lock.unlock();
   undo->redo();
   TUndoManager::manager()->add(undo);
+}
+
+void DrawingLayers::mouseDoubleClickEvent(QMouseEvent *event) {
+  hideHoverPreview();
+  QPersistentModelIndex target = indexAt(event->pos());
+  bool renameGroup =
+      event->button() == Qt::LeftButton && target.isValid() &&
+      target.column() == Name && target.data(KindRole).toInt() == Group;
+
+  // Let the view complete its normal double-click bookkeeping first. Group
+  // rename is then started from the event's persistent target instead of the
+  // current item, because a preceding click may synchronize the Xsheet and
+  // temporarily move the tree's current item.
+  QTreeWidget::mouseDoubleClickEvent(event);
+
+  if (!renameGroup || !target.isValid()) return;
+  QTreeWidgetItem *item = itemFromIndex(target);
+  if (!item) return;
+  setCurrentItem(item);
+  beginRename(item);
+  event->accept();
 }
 
 void DrawingLayers::contextMenuEvent(QContextMenuEvent *event) {
