@@ -1,4 +1,4 @@
-
+#include "toonzqt/lutgenerator.h"
 
 #include "toonzqt/paletteviewergui.h"
 
@@ -1244,6 +1244,13 @@ void PageViewer::contextMenuEvent(QContextMenuEvent *event) {
     QIcon newPageIco = createQIcon("newpage");
     QAction *newPage = menu.addAction(newPageIco, tr("New Page"));
     connect(newPage, SIGNAL(triggered()), SLOT(addNewPage()));
+  }
+
+  if (m_page) {
+    menu.addSeparator();
+    QAction *lut = menu.addAction(tr("Create 3D LUT from Palette Keys..."));
+    connect(lut, &QAction::triggered, this,
+            [this] { openPaletteLutDialog(m_page->getPalette(), this); });
   }
 
   menu.exec(event->globalPos());

@@ -76,6 +76,7 @@ set(MOC_HEADERS
 )
 
 set(HEADERS
+    ../include/toonzqt/lutgenerator.h
     ${MOC_HEADERS}
     ../include/tools/cursormanager.h
     docklayout.h
@@ -108,6 +109,7 @@ set(HEADERS
 )
 
 set(SOURCES
+    lutgenerator.cpp
     ../tnztools/cursormanager.cpp
     checkbox.cpp
     colorfield.cpp
@@ -258,5 +260,7 @@ elseif(BUILD_ENV_UNIXLIKE)
         )
     endif()
 endif()
+
+target_link_libraries(toonzqt otlut_core)
 
 target_link_libraries(toonzqt Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::OpenGL Qt5::Svg ${EXTRA_LIBS} ${GL_LIB})
