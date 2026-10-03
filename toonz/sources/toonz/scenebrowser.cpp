@@ -948,10 +948,32 @@ void SceneBrowser::createLutFromImagePair() {
   fs->getSelectedFiles(files);
   if (files.size() != 1) return;
 
-  const TFilePath sourcePath = files[0];
-  if (!TFileType::isFullColor(TFileType::getInfo(sourcePath)) ||
-      !QFileInfo(sourcePath.getQString()).isFile())
+  const TFilePath selectedPath = files[0];
+  if (!TFileType::isFullColor(TFileType::getInfo(selectedPath))) return;
+
+  // Scene Browser represents numbered raster sequences by a level path
+  // (for example image..png), which is not itself a literal filesystem file.
+  // Resolve such a selection to its first real frame before passing it to OTLUT.
+  TFilePath sourcePath = selectedPath;
+  if (selectedPath.isLevelName()) {
+    try {
+      TLevelReaderP reader(selectedPath);
+      TLevelP level = reader->loadInfo();
+      if (!level || level->getFrameCount() == 0) {
+        DVGui::warning(tr("The selected raster level contains no frames."));
+        return;
+      }
+      sourcePath = selectedPath.withFrame(level->begin()->first);
+    } catch (...) {
+      DVGui::warning(tr("Could not resolve a frame from the selected raster level."));
+      return;
+    }
+  }
+
+  if (!QFileInfo(sourcePath.getQString()).isFile()) {
+    DVGui::warning(tr("The selected raster image could not be found on disk."));
     return;
+  }
 
   if (!ThirdParty::checkOtlut()) {
     const QString detected = ThirdParty::autodetectOtlut();
@@ -1130,8 +1152,7 @@ QMenu *SceneBrowser::getContextMenu(QWidget *parent, int index) {
 
   if (files.size() == 1) {
     const TFileType::Type selectedType = TFileType::getInfo(files[0]);
-    const QFileInfo sourceInfo(files[0].getQString());
-    if (TFileType::isFullColor(selectedType) && sourceInfo.isFile()) {
+    if (TFileType::isFullColor(selectedType)) {
       QAction *lutAction = new QAction(tr("Create 3D LUT from Image Pair..."), menu);
       connect(lutAction, &QAction::triggered, this,
               &SceneBrowser::createLutFromImagePair);
