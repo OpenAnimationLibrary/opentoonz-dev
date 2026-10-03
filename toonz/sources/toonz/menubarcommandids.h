@@ -48,6 +48,7 @@
 #define MI_OutputSettings "MI_OutputSettings"
 #define MI_PreviewSettings "MI_PreviewSettings"
 #define MI_Render "MI_Render"
+#define MI_SaveAndRender "MI_SaveAndRender"
 #define MI_FastRender "MI_FastRender"
 #define MI_Preview "MI_Preview"
 #define MI_SoundTrack "MI_SoundTrack"
@@ -136,6 +137,7 @@
 #define MI_DeleteInk "MI_DeleteInk"
 #define MI_InsertSceneFrame "MI_InsertSceneFrame"
 #define MI_RemoveSceneFrame "MI_RemoveSceneFrame"
+#define MI_RemoveSelectedSceneFrames "MI_RemoveSelectedSceneFrames"
 
 #define MI_InsertGlobalKeyframe "MI_InsertGlobalKeyframe"
 #define MI_RemoveGlobalKeyframe "MI_RemoveGlobalKeyframe"
@@ -476,6 +478,7 @@
 
 #define MI_OpenOnlineManual "MI_OpenOnlineManual"
 #define MI_OpenWhatsNew "MI_OpenWhatsNew"
+#define MI_Quicklink "MI_Quicklink"
 #define MI_OpenCommunityForum "MI_OpenCommunityForum"
 #define MI_OpenReportABug "MI_OpenReportABug"
 
@@ -499,7 +502,9 @@
 #define MI_ExportXDTS "MI_ExportXDTS"
 #define MI_ExportSXF "MI_ExportSXF"
 #define MI_ExportOCA "MI_ExportOCA"
+#define MI_ExportAnimatedSVG "MI_ExportAnimatedSVG"
 #define MI_ImportOCA "MI_ImportOCA"
+#define MI_ExportPDF "MI_ExportPDF"
 #define MI_ExportTvpJson "MI_ExportTvpJson"
 #define MI_ExportXsheetPDF "MI_ExportXsheetPDF"
 #define MI_ExportCameraTrack "MI_ExportCameraTrack"

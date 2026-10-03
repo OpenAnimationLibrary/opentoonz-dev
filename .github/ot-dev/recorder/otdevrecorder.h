@@ -25,13 +25,15 @@ public:
   static int rememberedChoice(const QString &path, const QString &buildId);
   static bool saveChoice(const QString &path, const QString &buildId,
                          int choice);
-  static QImage capture(QMainWindow *window, const QSize &size);
+  static QImage capture(QMainWindow *window, const QSize &size,
+                        bool includeCursor = true);
   static QStringList encoderArguments(const QSize &size, const QString &output);
 
 private:
   void begin();
   void tick();
   void finishClip();
+  bool publishClip();
   void fail(const QString &message);
   void updateStatus(const QString &text);
   bool captureAllowed() const;

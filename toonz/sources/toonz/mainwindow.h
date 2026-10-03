@@ -119,6 +119,7 @@ public:
   void onAbout();
   void onOpenOnlineManual();
   void onOpenWhatsNew();
+  void onOpenQuicklink();
   void onOpenCommunityForum();
   void onOpenReportABug();
 #ifdef ENABLE_CRASH_REPORTER_TEST

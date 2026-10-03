@@ -10,9 +10,11 @@
 // QT includes
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QFileInfo>
 #include <QTimer>
 #include <QRegularExpression>
 #include <QDir>
+#include <QStandardPaths>
 
 namespace ThirdParty {
 
@@ -23,6 +25,11 @@ void initialize() {
   if (!ThirdParty::checkFFmpeg()) {
     QString path = ThirdParty::autodetectFFmpeg();
     if (!path.isEmpty()) ThirdParty::setFFmpegDir(path);
+  }
+
+  if (!ThirdParty::checkPdfRenderer()) {
+    QString path = ThirdParty::autodetectPdfRenderer();
+    if (!path.isEmpty()) ThirdParty::setPdfRendererDir(path);
   }
 
   // Auto detect Rhubarb
@@ -193,6 +200,50 @@ void runFFprobe(QProcess &process, const QStringList &arguments) {
     dir = QCoreApplication::applicationDirPath() + "/" + dir;
 
   process.start(dir + FFPROBE_EXE, arguments);
+}
+
+#ifdef _WIN32
+#define PDFTOPPM_EXE "/pdftoppm.exe"
+#else
+#define PDFTOPPM_EXE "/pdftoppm"
+#endif
+
+bool findPdfRenderer(const QString &path) {
+  QString dir = path;
+  if (dir.isEmpty() || dir.at(0) == '.')
+    dir = QCoreApplication::applicationDirPath() + "/" + dir;
+  return TSystem::doesExistFileOrLevel(TFilePath(dir + PDFTOPPM_EXE));
+}
+
+bool checkPdfRenderer() {
+  return findPdfRenderer(Preferences::instance()->getPdfRendererPath());
+}
+
+QString autodetectPdfRenderer() {
+  const QString configured = Preferences::instance()->getPdfRendererPath();
+  if (findPdfRenderer(configured)) return configured;
+  for (const QString &dir :
+       {QString("."), QString("./poppler"), QString("./poppler/bin")})
+    if (findPdfRenderer(dir)) return dir;
+  const QString executable = QStandardPaths::findExecutable(
+#ifdef _WIN32
+      "pdftoppm.exe"
+#else
+      "pdftoppm"
+#endif
+  );
+  return executable.isEmpty() ? QString() : QFileInfo(executable).dir().path();
+}
+
+void setPdfRendererDir(const QString &dir) {
+  Preferences::instance()->setValue(pdfRendererPath, dir);
+}
+
+void runPdfRenderer(QProcess &process, const QStringList &arguments) {
+  QString dir = Preferences::instance()->getPdfRendererPath();
+  if (dir.isEmpty() || dir.at(0) == '.')
+    dir = QCoreApplication::applicationDirPath() + "/" + dir;
+  process.start(dir + PDFTOPPM_EXE, arguments);
 }
 
 //-----------------------------------------------------------------------------

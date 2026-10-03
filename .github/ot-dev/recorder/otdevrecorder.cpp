@@ -3,9 +3,11 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QCursor>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
@@ -33,6 +35,7 @@ namespace {
 const QSize frameSize(1920, 1080);
 constexpr int frameRate      = 12;
 constexpr int clipFrames     = frameRate * 60 * 10;
+constexpr int finishTimeout  = 15000;
 constexpr qint64 diskReserve = 1024LL * 1024 * 1024;
 
 bool excluded(QWidget *widget) {
@@ -67,6 +70,98 @@ QImage widgetImage(QWidget *widget) {
   }
   return image;
 }
+
+#ifdef Q_OS_WIN
+void paintCursor(QPainter &painter, const QImage &frame,
+                 const QList<QWidget *> &windows) {
+  CURSORINFO cursor = {};
+  cursor.cbSize     = sizeof(cursor);
+  if (!GetCursorInfo(&cursor) || !(cursor.flags & CURSOR_SHOWING)) return;
+
+  // Native hit testing reads only window metadata. A cursor over another
+  // application, a native dialog, or a window frame is not part of the video.
+  HWND under            = WindowFromPoint(cursor.ptScreenPos);
+  auto *widget          = QWidget::find(WId(GetAncestor(under, GA_ROOT)));
+  const QPoint position = QCursor::pos();  // Same logical coordinates as Qt UI.
+  if (!widget || !windows.contains(widget) ||
+      !widget->rect().contains(widget->mapFromGlobal(position)))
+    return;
+
+  ICONINFO icon = {};
+  if (!GetIconInfo(cursor.hCursor, &icon)) return;
+  BITMAP bitmap    = {};
+  const bool valid = GetObject(icon.hbmColor ? icon.hbmColor : icon.hbmMask,
+                               sizeof(bitmap), &bitmap) != 0;
+  // Monochrome cursors store the AND and XOR masks one above the other.
+  const int height = icon.hbmColor ? bitmap.bmHeight : bitmap.bmHeight / 2;
+  if (icon.hbmColor) DeleteObject(icon.hbmColor);
+  if (icon.hbmMask) DeleteObject(icon.hbmMask);
+  if (!valid || bitmap.bmWidth <= 0 || height <= 0 || bitmap.bmWidth > 1024 ||
+      height > 1024)
+    return;
+
+  // Cursor bitmap/hotspot sizes are native pixels. Convert through the hovered
+  // window's DPI and the existing UI-to-video transform (including letterbox).
+  const QTransform transform = painter.transform();
+  const qreal sx             = transform.m11() / widget->devicePixelRatioF();
+  const qreal sy             = transform.m22() / widget->devicePixelRatioF();
+  const QPoint topLeft       = (transform.map(QPointF(position)) -
+                          QPointF(icon.xHotspot * sx, icon.yHotspot * sy))
+                             .toPoint();
+  const QSize size(qMax(1, qRound(bitmap.bmWidth * sx)),
+                   qMax(1, qRound(height * sy)));
+  const QRect area = QRect(topLeft, size).intersected(frame.rect());
+  if (area.isEmpty()) return;
+
+  // Draw only into a memory bitmap seeded with our own composed frame. This
+  // preserves alpha AND/XOR cursor shapes (e.g. I-beams) without screen reads.
+  HDC dc = CreateCompatibleDC(nullptr);
+  if (!dc) return;
+  BITMAPINFO dib              = {};
+  dib.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+  dib.bmiHeader.biWidth       = area.width();
+  dib.bmiHeader.biHeight      = -area.height();
+  dib.bmiHeader.biPlanes      = 1;
+  dib.bmiHeader.biBitCount    = 32;
+  dib.bmiHeader.biCompression = BI_RGB;
+  void *pixels                = nullptr;
+  HBITMAP image =
+      CreateDIBSection(dc, &dib, DIB_RGB_COLORS, &pixels, nullptr, 0);
+  if (image) {
+    HGDIOBJ previous = SelectObject(dc, image);
+    if (previous && previous != HGDI_ERROR) {
+      QImage patch(static_cast<uchar *>(pixels), area.width(), area.height(),
+                   QImage::Format_RGB32);
+      patch.fill(Qt::black);
+      {
+        QPainter background(&patch);
+        background.drawImage(-area.topLeft(), frame);
+      }
+      if (DrawIconEx(dc, topLeft.x() - area.x(), topLeft.y() - area.y(),
+                     cursor.hCursor, size.width(), size.height(), 0, nullptr,
+                     DI_NORMAL)) {
+        GdiFlush();
+        // GDI may clear alpha bytes; the recorded canvas is always opaque.
+        for (int y = 0; y < patch.height(); ++y) {
+          auto *row = reinterpret_cast<QRgb *>(patch.scanLine(y));
+          for (int x = 0; x < patch.width(); ++x) row[x] |= 0xff000000;
+        }
+        QRegion clients;
+        for (auto *window : windows)
+          clients += QRect(window->mapToGlobal(QPoint()), window->size());
+        painter.save();
+        painter.resetTransform();
+        painter.setClipRegion(transform.map(clients));
+        painter.drawImage(area.topLeft(), patch);
+        painter.restore();
+      }
+      SelectObject(dc, previous);
+    }
+    DeleteObject(image);
+  }
+  DeleteDC(dc);
+}
+#endif
 }  // namespace
 
 int OtDevRecorder::rememberedChoice(const QString &path,
@@ -92,6 +187,9 @@ bool OtDevRecorder::saveChoice(const QString &path, const QString &buildId,
 
 QStringList OtDevRecorder::encoderArguments(const QSize &size,
                                             const QString &output) {
+  // The minimal FFmpeg build disables external x86 assembly. Its default
+  // scaler can still select an incompatible MMX filter layout, corrupting
+  // chroma. Accurate rounding keeps the conversion consistent.
   return {"-hide_banner",
           "-loglevel",
           "error",
@@ -108,20 +206,39 @@ QStringList OtDevRecorder::encoderArguments(const QSize &size,
           "-i",
           "pipe:0",
           "-an",
+          "-sws_flags",
+          "bicubic+accurate_rnd",
           "-c:v",
-          "mpeg4",
-          "-q:v",
-          "3",
+          "libx264",
+          "-preset",
+          "ultrafast",
+          "-tune",
+          "zerolatency",
+          "-crf",
+          "18",
+          "-profile:v",
+          "baseline",
+          "-level:v",
+          "4.0",
+          "-maxrate",
+          "20M",
+          "-bufsize",
+          "20M",
+          "-threads",
+          "2",
           "-pix_fmt",
           "yuv420p",
           "-g",
           "24",
+          "-flush_packets",
+          "1",
           "-movflags",
-          "+frag_keyframe+empty_moov+default_base_moof",
+          "+hybrid_fragmented+frag_keyframe+empty_moov+default_base_moof",
           output};
 }
 
-QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size) {
+QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size,
+                              bool includeCursor) {
   QList<QWidget *> windows{window};
   QRect bounds(window->mapToGlobal(QPoint()), window->size());
   QWidget *active = QApplication::activeWindow();
@@ -165,6 +282,11 @@ QImage OtDevRecorder::capture(QMainWindow *window, const QSize &size) {
   for (auto *widget : windows)
     painter.drawImage(QRect(widget->mapToGlobal(QPoint()), widget->size()),
                       widgetImage(widget));
+#ifdef Q_OS_WIN
+  if (includeCursor) paintCursor(painter, frame, windows);
+#else
+  Q_UNUSED(includeCursor);
+#endif
   return frame;
 }
 
@@ -245,6 +367,12 @@ OtDevRecorder::OtDevRecorder(QMainWindow *window,
                    .arg(m_encoderError, m_outputFile));
           return;
         }
+        if (!publishClip()) {
+          fail(tr("Unable to finish the recording filename. The video remains "
+                  "at: %1")
+                   .arg(m_outputFile));
+          return;
+        }
         updateStatus(m_enabled ? tr("Recording armed") : tr("Recording off"));
       });
   connect(qApp, &QCoreApplication::aboutToQuit, this, &OtDevRecorder::stop);
@@ -254,12 +382,33 @@ OtDevRecorder::~OtDevRecorder() {
   m_timer.stop();
   m_finishTimer.stop();
   m_encoder.disconnect(this);
+  const bool pending = m_finishing || m_encoder.state() != QProcess::NotRunning;
   m_encoder.closeWriteChannel();
+  // aboutToQuit stops capture, but the event loop may already have ended.
+  // Let EOF finalize the MP4 before destroying QProcess, then publish it here
+  // if the asynchronous finished handler did not run.
   if (m_encoder.state() != QProcess::NotRunning &&
-      !m_encoder.waitForFinished(2000)) {
+      !m_encoder.waitForFinished(finishTimeout)) {
     m_encoder.kill();
     m_encoder.waitForFinished(1000);
   }
+  if (pending && m_encoder.state() == QProcess::NotRunning &&
+      m_encoder.exitStatus() == QProcess::NormalExit &&
+      m_encoder.exitCode() == 0)
+    publishClip();
+}
+
+bool OtDevRecorder::publishClip() {
+  // Only successfully finalized files receive the normal playback filename.
+  // Preserve interrupted/failed working files for recovery; never overwrite.
+  if (!m_outputFile.endsWith(".recording.mp4")) return true;
+  const QString completed =
+      m_outputFile.left(m_outputFile.size() -
+                        QString(".recording.mp4").size()) +
+      ".mp4";
+  if (!QFile::rename(m_outputFile, completed)) return false;
+  m_outputFile = completed;
+  return true;
 }
 
 void OtDevRecorder::updateStatus(const QString &text) {
@@ -436,7 +585,7 @@ void OtDevRecorder::tick() {
                       QDateTime::currentDateTimeUtc().toString(
                           "yyyyMMdd-hhmmss-zzz") +
                       "-" + QUuid::createUuid().toString(QUuid::WithoutBraces) +
-                      ".mp4");
+                      ".recording.mp4");
     m_encoderError.clear();
     m_encoder.start(m_encoderPath, encoderArguments(frameSize, m_outputFile));
     return;
@@ -469,8 +618,8 @@ void OtDevRecorder::finishClip() {
   if (m_encoder.state() == QProcess::NotRunning || m_finishing) return;
   m_finishing = true;
   m_encoder.closeWriteChannel();
-  m_finishTimer.start(5000);
-  updateStatus(tr("Finishing recording..."));
+  m_finishTimer.start(finishTimeout);
+  updateStatus(tr("Preparing recording for playback..."));
 }
 
 void OtDevRecorder::stop() {

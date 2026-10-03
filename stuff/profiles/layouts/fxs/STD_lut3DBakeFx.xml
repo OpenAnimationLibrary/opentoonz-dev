@@ -1,0 +1,5 @@
+<fxlayout>
+  <page name="3D LUT Bake">
+    <control>lutFile</control>
+  </page>
+</fxlayout>

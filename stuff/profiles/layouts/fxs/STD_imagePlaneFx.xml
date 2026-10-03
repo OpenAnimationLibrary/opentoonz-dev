@@ -1,0 +1,5 @@
+<fxlayout>
+  <page name="Image Plane">
+    <label>"Place the Source image on a camera-facing 3D plane. Transparent input pixels remain transparent. Connect a 3D Transformer to rotate or move the plane."</label>
+  </page>
+</fxlayout>

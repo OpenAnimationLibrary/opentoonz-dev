@@ -52,7 +52,6 @@ set(MOC_HEADERS
     drawinglayers.h
     historypane.h
     imageviewer.h
-    insertfxpopup.h
     layerfooterpanel.h
     layerheaderpanel.h
     levelcreatepopup.h
@@ -173,6 +172,7 @@ set(HEADERS
     cellselection.h
     columncommand.h
     columnselection.h
+    customhelplink.h
     curveio.h
     drawingdata.h
     exportlevelcommand.h
@@ -227,6 +227,7 @@ set(SOURCES
     loadfolderpopup.cpp
     main.cpp
     mainwindow.cpp
+    customhelplink.cpp
     matchline.cpp
     menubar.cpp
     menubarpopup.cpp
@@ -282,7 +283,6 @@ set(SOURCES
     formatsettingspopups.cpp
     fxparameditorpopup.cpp
     histogrampopup.cpp
-    insertfxpopup.cpp
     layerfooterpanel.cpp
     layerheaderpanel.cpp
     levelcreatepopup.cpp
@@ -394,6 +394,10 @@ set(SOURCES
     xdtsio.cpp
     sxfio.cpp
     ocaio.cpp
+    exportpdf.cpp
+    importpdf.cpp
+    importpdf.h
+    animatedsvgexport.cpp
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
     tooloptionsshortcutinvoker.cpp
