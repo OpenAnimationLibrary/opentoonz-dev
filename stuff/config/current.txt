@@ -268,6 +268,13 @@
   <item>"STD_freeDistortFx.top_left_b"	"Top Left  X"		</item>
   <item>"STD_freeDistortFx.deactivate"	" Deactivate"	</item>
 
+  <item>"STD_thresholdMaskFx" "Threshold Mask" </item>
+  <item>"STD_thresholdMaskFx.threshold" "Threshold" </item>
+  <item>"STD_thresholdMaskFx.softness" "Softness" </item>
+  <item>"STD_thresholdMaskFx.channel" "Channel" </item>
+  <item>"STD_thresholdMaskFx.invert" "Invert" </item>
+  <item>"STD_thresholdMaskFx.output" "Output" </item>
+
   <item>"STD_gammaFx"			"Gamma"		</item>
   <item>"STD_gammaFx.value"		"Value"		</item>
 
