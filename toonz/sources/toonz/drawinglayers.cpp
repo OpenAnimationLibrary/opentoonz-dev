@@ -769,6 +769,10 @@ void DrawingLayers::selectVectorItem(QTreeWidgetItem *treeItem) {
 }
 
 void DrawingLayers::activateItem(QTreeWidgetItem *treeItem, int section) {
+  // A double-click is followed by a normal release/click notification. Once
+  // the inline group-name editor is open, that trailing click must not run
+  // exposure synchronization and retarget the view out from under the editor.
+  if (state() == QAbstractItemView::EditingState) return;
   if (!treeItem || m_rebuildTimer->isActive() || !m_xsheet ||
       m_xsheet != m_app->getCurrentXsheet()->getXsheet())
     return;
