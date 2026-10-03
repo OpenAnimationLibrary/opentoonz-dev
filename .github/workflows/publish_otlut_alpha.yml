@@ -18,19 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for tested main Windows package
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run watch 37097239552 --repo OpenAnimationLibrary/opentoonz-dev --exit-status
-
-      - name: Download Windows package artifact
+      - name: Download tested Windows package artifact
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           New-Item -ItemType Directory -Force -Path package | Out-Null
-          gh run download 37097239552 --repo OpenAnimationLibrary/opentoonz-dev --name "Opentoonz-Windows-58973443fa3f11464b6c42f1cb9b6b700814ea81" --dir package
+          gh run download 37094575166 --repo OpenAnimationLibrary/opentoonz-dev --name "Opentoonz-Windows-ceee9774a3057ce38946a43d0b8c373251adcbae" --dir package
 
       - name: Create release archive
         shell: pwsh
