@@ -321,7 +321,10 @@ void panelAndUndoTests() {
   panel.scrollToItem(outer);
   events();
   QPoint point = panel.visualItemRect(outer).center();
-  QTest::mouseClick(panel.viewport(), Qt::LeftButton, Qt::NoModifier, point);
+  // QTest::mouseDClick already sends both clicks in a double-click sequence.
+  // Do not prefix it with mouseClick: after layer-click synchronization was
+  // added that becomes a synthetic triple click and can reopen/retarget the
+  // inline editor rather than testing the user's real double-click gesture.
   QTest::mouseDClick(panel.viewport(), Qt::LeftButton, Qt::NoModifier, point);
   events();
   CHECK(editor(panel) && editor(panel)->text().isEmpty());
