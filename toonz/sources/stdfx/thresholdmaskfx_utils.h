@@ -2,9 +2,23 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <queue>
 #include <vector>
 
 namespace ThresholdMaskFxUtils {
+
+struct IntRect {
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = -1;
+  int y1 = -1;
+
+  bool valid() const { return x0 <= x1 && y0 <= y1; }
+  bool contains(int x, int y) const {
+    return valid() && x >= x0 && x <= x1 && y >= y0 && y <= y1;
+  }
+};
 
 inline float clamp01(float value) {
   return std::max(0.0f, std::min(1.0f, value));
@@ -69,6 +83,106 @@ inline void boxBlur(std::vector<float> &values, int width, int height,
       sum += temp[addY * width + x] - temp[removeY * width + x];
     }
   }
+}
+
+inline void clipOutsideRect(std::vector<float> &values, int width, int height,
+                            const IntRect &rect) {
+  if (!rect.valid()) return;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      if (!rect.contains(x, y)) values[y * width + x] = 0.0f;
+    }
+  }
+}
+
+inline void eraseDisk(std::vector<float> &values, int width, int height,
+                      int centerX, int centerY, int radius) {
+  if (radius < 0 || width <= 0 || height <= 0) return;
+  const int r2 = radius * radius;
+  const int x0 = std::max(0, centerX - radius);
+  const int x1 = std::min(width - 1, centerX + radius);
+  const int y0 = std::max(0, centerY - radius);
+  const int y1 = std::min(height - 1, centerY + radius);
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      const int dx = x - centerX;
+      const int dy = y - centerY;
+      if (dx * dx + dy * dy <= r2) values[y * width + x] = 0.0f;
+    }
+  }
+}
+
+inline bool findNearestActive(const std::vector<float> &values, int width,
+                              int height, int seedX, int seedY,
+                              int searchRadius, int &foundX, int &foundY) {
+  if (width <= 0 || height <= 0 || values.empty()) return false;
+  searchRadius = std::max(0, searchRadius);
+
+  float bestDistance2 = -1.0f;
+  const int x0 = std::max(0, seedX - searchRadius);
+  const int x1 = std::min(width - 1, seedX + searchRadius);
+  const int y0 = std::max(0, seedY - searchRadius);
+  const int y1 = std::min(height - 1, seedY + searchRadius);
+
+  for (int y = y0; y <= y1; ++y) {
+    for (int x = x0; x <= x1; ++x) {
+      if (values[y * width + x] <= 1e-6f) continue;
+      const float dx = static_cast<float>(x - seedX);
+      const float dy = static_cast<float>(y - seedY);
+      const float distance2 = dx * dx + dy * dy;
+      if (distance2 > searchRadius * searchRadius) continue;
+      if (bestDistance2 < 0.0f || distance2 < bestDistance2) {
+        bestDistance2 = distance2;
+        foundX        = x;
+        foundY        = y;
+      }
+    }
+  }
+  return bestDistance2 >= 0.0f;
+}
+
+inline bool keepConnectedComponent(std::vector<float> &values, int width,
+                                   int height, int seedX, int seedY,
+                                   int searchRadius, bool eightConnected) {
+  int startX = 0;
+  int startY = 0;
+  if (!findNearestActive(values, width, height, seedX, seedY, searchRadius,
+                         startX, startY)) {
+    std::fill(values.begin(), values.end(), 0.0f);
+    return false;
+  }
+
+  std::vector<uint8_t> keep(values.size(), 0);
+  std::queue<int> pending;
+  const int start = startY * width + startX;
+  keep[start]     = 1;
+  pending.push(start);
+
+  const int dx[8] = {1, -1, 0, 0, 1, 1, -1, -1};
+  const int dy[8] = {0, 0, 1, -1, 1, -1, 1, -1};
+  const int neighborCount = eightConnected ? 8 : 4;
+
+  while (!pending.empty()) {
+    const int index = pending.front();
+    pending.pop();
+    const int x = index % width;
+    const int y = index / width;
+
+    for (int i = 0; i < neighborCount; ++i) {
+      const int nx = x + dx[i];
+      const int ny = y + dy[i];
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const int n = ny * width + nx;
+      if (keep[n] || values[n] <= 1e-6f) continue;
+      keep[n] = 1;
+      pending.push(n);
+    }
+  }
+
+  for (size_t i = 0; i < values.size(); ++i) {
+    if (!keep[i]) values[i] = 0.0f;
+  }
+  return true;
 }
 
 }  // namespace ThresholdMaskFxUtils

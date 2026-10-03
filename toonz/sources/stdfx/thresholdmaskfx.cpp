@@ -17,6 +17,22 @@ enum ChannelMode {
   ChannelBlue
 };
 enum OutputMode { OutputMaskedSource = 0, OutputMatte };
+enum RegionMode { RegionAllPixels = 0, RegionPrompted };
+enum ConnectivityMode { ConnectivityFour = 0, ConnectivityEight };
+
+struct PromptSettings {
+  bool enabled          = false;
+  int seedX             = 0;
+  int seedY             = 0;
+  int searchRadius      = 0;
+  bool eightConnected   = true;
+  bool useBox           = false;
+  ThresholdMaskFxUtils::IntRect box;
+  bool useNegativePoint = false;
+  int negativeX         = 0;
+  int negativeY         = 0;
+  int negativeRadius    = 0;
+};
 
 template <typename PIXEL>
 float normalizedChannel(const PIXEL &pix, int channel, bool unpremultiply) {
@@ -53,7 +69,7 @@ float normalizedChannel(const PIXEL &pix, int channel, bool unpremultiply) {
 template <typename PIXEL>
 PIXEL makeMattePixel(float matte) {
   const float maxChannel = static_cast<float>(PIXEL::maxChannelValue);
-  const auto value = static_cast<typename PIXEL::Channel>(
+  const auto value       = static_cast<typename PIXEL::Channel>(
       std::lround(ThresholdMaskFxUtils::clamp01(matte) * maxChannel));
   return PIXEL(value, value, value, value);
 }
@@ -83,10 +99,10 @@ void applyMatteToPixel<TPixelF>(TPixelF &pix, float matte) {
 }
 
 template <typename PIXEL>
-void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask,
-                   int cropOffset, float threshold, float softness, int channel,
+void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask, int cropX,
+                   int cropY, float threshold, float softness, int channel,
                    bool invert, bool unpremultiply, int featherRadius,
-                   int outputMode) {
+                   int outputMode, const PromptSettings &prompt) {
   const int maskLx = mask->getLx();
   const int maskLy = mask->getLy();
   std::vector<float> matte(maskLx * maskLy, 0.0f);
@@ -96,13 +112,25 @@ void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask,
     const PIXEL *maskPix = mask->pixels(y);
     for (int x = 0; x < maskLx; ++x) {
       const float value = normalizedChannel(maskPix[x], channel, unpremultiply);
-      float result = ThresholdMaskFxUtils::smoothThreshold(value, threshold,
-                                                           softness);
+      float result =
+          ThresholdMaskFxUtils::smoothThreshold(value, threshold, softness);
       matte[y * maskLx + x] =
           ThresholdMaskFxUtils::applyInvert(result, invert);
     }
   }
   mask->unlock();
+
+  if (prompt.enabled) {
+    if (prompt.useBox)
+      ThresholdMaskFxUtils::clipOutsideRect(matte, maskLx, maskLy, prompt.box);
+    if (prompt.useNegativePoint)
+      ThresholdMaskFxUtils::eraseDisk(
+          matte, maskLx, maskLy, prompt.negativeX, prompt.negativeY,
+          prompt.negativeRadius);
+    ThresholdMaskFxUtils::keepConnectedComponent(
+        matte, maskLx, maskLy, prompt.seedX, prompt.seedY, prompt.searchRadius,
+        prompt.eightConnected);
+  }
 
   ThresholdMaskFxUtils::boxBlur(matte, maskLx, maskLy, featherRadius);
 
@@ -110,11 +138,14 @@ void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask,
   const int sourceLx = source->getLx();
   const int sourceLy = source->getLy();
   for (int y = 0; y < sourceLy; ++y) {
-    PIXEL *srcPix = source->pixels(y);
-    const int matteY = y + cropOffset;
+    PIXEL *srcPix   = source->pixels(y);
+    const int maskY = y + cropY;
     for (int x = 0; x < sourceLx; ++x) {
-      const int matteX = x + cropOffset;
-      const float value = matte[matteY * maskLx + matteX];
+      const int maskX = x + cropX;
+      float value     = 0.0f;
+      if (maskX >= 0 && maskX < maskLx && maskY >= 0 && maskY < maskLy)
+        value = matte[maskY * maskLx + maskX];
+
       if (outputMode == OutputMatte)
         srcPix[x] = makeMattePixel<PIXEL>(value);
       else
@@ -122,6 +153,24 @@ void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask,
     }
   }
   source->unlock();
+}
+
+bool isFiniteRect(const TRectD &rect) {
+  return rect != TConsts::infiniteRectD && std::isfinite(rect.x0) &&
+         std::isfinite(rect.y0) && std::isfinite(rect.x1) &&
+         std::isfinite(rect.y1);
+}
+
+TPointD toRenderPoint(const TPointD &point, const TRenderSettings &ri) {
+  TPointD scaled(point.x / ri.m_shrinkX, point.y / ri.m_shrinkY);
+  return ri.m_affine * scaled;
+}
+
+int scaledLength(double value, const TRenderSettings &ri) {
+  const double shrink = 0.5 * (ri.m_shrinkX + ri.m_shrinkY);
+  if (shrink <= 0.0) return 0;
+  return tceil(std::abs(value) * std::sqrt(std::abs(ri.m_affine.det())) /
+               shrink);
 }
 
 }  // namespace
@@ -140,6 +189,17 @@ class ThresholdMaskFx final : public TStandardRasterFx {
   TBoolParamP m_unpremultiplyMask;
   TIntEnumParamP m_output;
 
+  TIntEnumParamP m_regionMode;
+  TPointParamP m_positivePoint;
+  TDoubleParamP m_seedSearchRadius;
+  TIntEnumParamP m_connectivity;
+  TBoolParamP m_usePromptBox;
+  TPointParamP m_boxMin;
+  TPointParamP m_boxMax;
+  TBoolParamP m_useNegativePoint;
+  TPointParamP m_negativePoint;
+  TDoubleParamP m_negativeRadius;
+
 public:
   ThresholdMaskFx()
       : m_threshold(0.5)
@@ -148,7 +208,17 @@ public:
       , m_channel(new TIntEnumParam(ChannelAlpha, "Alpha"))
       , m_invert(false)
       , m_unpremultiplyMask(true)
-      , m_output(new TIntEnumParam(OutputMaskedSource, "Masked Source")) {
+      , m_output(new TIntEnumParam(OutputMaskedSource, "Masked Source"))
+      , m_regionMode(new TIntEnumParam(RegionAllPixels, "All Pixels"))
+      , m_positivePoint(TPointD(0.0, 0.0))
+      , m_seedSearchRadius(12.0)
+      , m_connectivity(new TIntEnumParam(ConnectivityEight, "8-connected"))
+      , m_usePromptBox(false)
+      , m_boxMin(TPointD(-100.0, -100.0))
+      , m_boxMax(TPointD(100.0, 100.0))
+      , m_useNegativePoint(false)
+      , m_negativePoint(TPointD(0.0, 0.0))
+      , m_negativeRadius(3.0) {
     addInputPort("Source", m_source);
     addInputPort("Mask", m_mask);
 
@@ -160,6 +230,17 @@ public:
     bindParam(this, "unpremultiplyMask", m_unpremultiplyMask);
     bindParam(this, "output", m_output);
 
+    bindParam(this, "regionMode", m_regionMode);
+    bindParam(this, "positivePoint", m_positivePoint);
+    bindParam(this, "seedSearchRadius", m_seedSearchRadius);
+    bindParam(this, "connectivity", m_connectivity);
+    bindParam(this, "usePromptBox", m_usePromptBox);
+    bindParam(this, "boxMin", m_boxMin);
+    bindParam(this, "boxMax", m_boxMax);
+    bindParam(this, "useNegativePoint", m_useNegativePoint);
+    bindParam(this, "negativePoint", m_negativePoint);
+    bindParam(this, "negativeRadius", m_negativeRadius);
+
     m_threshold->setValueRange(0.0, 1.0);
     m_softness->setValueRange(0.0, 1.0);
     m_edgeFeather->setValueRange(0.0, 20.0);
@@ -169,8 +250,14 @@ public:
     m_channel->addItem(ChannelRed, "Red");
     m_channel->addItem(ChannelGreen, "Green");
     m_channel->addItem(ChannelBlue, "Blue");
-
     m_output->addItem(OutputMatte, "Matte");
+
+    m_regionMode->addItem(RegionPrompted, "Prompted Region");
+    m_connectivity->addItem(ConnectivityFour, "4-connected");
+    m_seedSearchRadius->setValueRange(0.0, 100.0);
+    m_seedSearchRadius->setMeasureName("fxLength");
+    m_negativeRadius->setValueRange(0.0, 100.0);
+    m_negativeRadius->setMeasureName("fxLength");
 
     enableComputeInFloat(true);
   }
@@ -185,8 +272,13 @@ public:
   }
 
   bool canHandle(const TRenderSettings &info, double frame) override {
-    if (m_edgeFeather->getValue(frame) == 0.0) return true;
-    return isAlmostIsotropic(info.m_affine);
+    const bool hasSpatialRadius =
+        m_edgeFeather->getValue(frame) != 0.0 ||
+        (m_regionMode->getValue() == RegionPrompted &&
+         (m_seedSearchRadius->getValue(frame) != 0.0 ||
+          (m_useNegativePoint->getValue() &&
+           m_negativeRadius->getValue(frame) != 0.0)));
+    return !hasSpatialRadius || isAlmostIsotropic(info.m_affine);
   }
 
   void doCompute(TTile &tile, double frame,
@@ -198,20 +290,93 @@ public:
 
     m_source->compute(tile, frame, ri);
 
-    const double shrink = 0.5 * (ri.m_shrinkX + ri.m_shrinkY);
-    const double feather =
-        std::abs(m_edgeFeather->getValue(frame) *
-                 std::sqrt(std::abs(ri.m_affine.det())) / shrink);
-    const int featherRadius = tceil(feather);
+    const int featherRadius = scaledLength(m_edgeFeather->getValue(frame), ri);
+    const bool prompted     = m_regionMode->getValue() == RegionPrompted;
 
-    const TPointD maskPos =
-        tile.m_pos - TPointD(featherRadius, featherRadius);
-    const TDimension maskSize(tile.getRaster()->getLx() + featherRadius * 2,
-                              tile.getRaster()->getLy() + featherRadius * 2);
+    TPointD maskPos;
+    TDimension maskSize;
+    int cropX = 0;
+    int cropY = 0;
+
+    if (prompted) {
+      TRectD maskBBox;
+      if (!m_mask->getBBox(frame, maskBBox, ri) || maskBBox.isEmpty()) {
+        tile.getRaster()->clear();
+        return;
+      }
+      if (!isFiniteRect(maskBBox)) {
+        if (!ri.m_cameraBox.isEmpty() && isFiniteRect(ri.m_cameraBox))
+          maskBBox = ri.m_cameraBox;
+        else
+          throw TException(
+              "Threshold Mask: Prompted Region requires finite mask bounds");
+      }
+
+      const double x0 = std::floor(maskBBox.x0) - featherRadius;
+      const double y0 = std::floor(maskBBox.y0) - featherRadius;
+      const double x1 = std::ceil(maskBBox.x1) + featherRadius;
+      const double y1 = std::ceil(maskBBox.y1) + featherRadius;
+      const int lx    = std::max(1, static_cast<int>(x1 - x0));
+      const int ly    = std::max(1, static_cast<int>(y1 - y0));
+      const long long pixels = static_cast<long long>(lx) * ly;
+      if (pixels > 64LL * 1024LL * 1024LL)
+        throw TException("Threshold Mask: prompted mask exceeds 64M pixels");
+
+      maskPos  = TPointD(x0, y0);
+      maskSize = TDimension(lx, ly);
+      cropX    = static_cast<int>(std::lround(tile.m_pos.x - maskPos.x));
+      cropY    = static_cast<int>(std::lround(tile.m_pos.y - maskPos.y));
+    } else {
+      maskPos =
+          tile.m_pos - TPointD(featherRadius, featherRadius);
+      maskSize = TDimension(tile.getRaster()->getLx() + featherRadius * 2,
+                            tile.getRaster()->getLy() + featherRadius * 2);
+      cropX = featherRadius;
+      cropY = featherRadius;
+    }
 
     TTile maskTile;
     m_mask->allocateAndCompute(maskTile, maskPos, maskSize, tile.getRaster(),
                                frame, ri);
+
+    PromptSettings prompt;
+    if (prompted) {
+      prompt.enabled        = true;
+      prompt.eightConnected = m_connectivity->getValue() == ConnectivityEight;
+      prompt.searchRadius =
+          scaledLength(m_seedSearchRadius->getValue(frame), ri);
+
+      const TPointD positive =
+          toRenderPoint(m_positivePoint->getValue(frame), ri);
+      prompt.seedX = static_cast<int>(std::lround(positive.x - maskPos.x));
+      prompt.seedY = static_cast<int>(std::lround(positive.y - maskPos.y));
+
+      prompt.useBox = m_usePromptBox->getValue();
+      if (prompt.useBox) {
+        const TPointD p0 = toRenderPoint(m_boxMin->getValue(frame), ri);
+        const TPointD p1 = toRenderPoint(m_boxMax->getValue(frame), ri);
+        prompt.box.x0 = static_cast<int>(
+            std::floor(std::min(p0.x, p1.x) - maskPos.x));
+        prompt.box.y0 = static_cast<int>(
+            std::floor(std::min(p0.y, p1.y) - maskPos.y));
+        prompt.box.x1 = static_cast<int>(
+            std::ceil(std::max(p0.x, p1.x) - maskPos.x));
+        prompt.box.y1 = static_cast<int>(
+            std::ceil(std::max(p0.y, p1.y) - maskPos.y));
+      }
+
+      prompt.useNegativePoint = m_useNegativePoint->getValue();
+      if (prompt.useNegativePoint) {
+        const TPointD negative =
+            toRenderPoint(m_negativePoint->getValue(frame), ri);
+        prompt.negativeX =
+            static_cast<int>(std::lround(negative.x - maskPos.x));
+        prompt.negativeY =
+            static_cast<int>(std::lround(negative.y - maskPos.y));
+        prompt.negativeRadius =
+            scaledLength(m_negativeRadius->getValue(frame), ri);
+      }
+    }
 
     const float threshold = static_cast<float>(m_threshold->getValue(frame));
     const float softness  = static_cast<float>(m_softness->getValue(frame));
@@ -223,21 +388,21 @@ public:
     if (TRaster32P source = tile.getRaster()) {
       TRaster32P mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixel32>(source, mask, featherRadius, threshold, softness,
+      processRaster<TPixel32>(source, mask, cropX, cropY, threshold, softness,
                               channel, invert, unpremultiply, featherRadius,
-                              outputMode);
+                              outputMode, prompt);
     } else if (TRaster64P source = tile.getRaster()) {
       TRaster64P mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixel64>(source, mask, featherRadius, threshold, softness,
+      processRaster<TPixel64>(source, mask, cropX, cropY, threshold, softness,
                               channel, invert, unpremultiply, featherRadius,
-                              outputMode);
+                              outputMode, prompt);
     } else if (TRasterFP source = tile.getRaster()) {
       TRasterFP mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixelF>(source, mask, featherRadius, threshold, softness,
+      processRaster<TPixelF>(source, mask, cropX, cropY, threshold, softness,
                              channel, invert, unpremultiply, featherRadius,
-                             outputMode);
+                             outputMode, prompt);
     } else {
       throw TException("Threshold Mask: unsupported raster type");
     }
