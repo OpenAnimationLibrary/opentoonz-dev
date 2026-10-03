@@ -11,6 +11,7 @@
 #include "filebrowsermodel.h"
 #include "expressionreferencemanager.h"
 #include "thirdparty.h"
+#include "configtransfer.h"
 
 // TnzTools includes
 #include "tools/tool.h"
@@ -149,7 +150,6 @@ DV_IMPORT_API void initColorFx();
     crearla in caso contrario) verifica inoltre che stuffDir esista.
 */
 static void initToonzEnv(QHash<QString, QString> &argPathValues) {
-  StudioPalette::enable(true);
   TEnv::setRootVarName(rootVarName);
   TEnv::setSystemVarPrefix(systemVarPrefix);
 
@@ -161,6 +161,23 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
               .arg(i.key()));
     ++i;
   }
+
+  TFilePath stuffDir = TEnv::getStuffDir();
+  if (stuffDir == TFilePath())
+    fatalError("Undefined or empty: \"" + toQString(TEnv::getRootVarPath()) +
+               "\"");
+  else if (!TFileStatus(stuffDir).isDirectory())
+    fatalError("Folder \"" + toQString(stuffDir) +
+               "\" not found or not readable");
+
+  // Apply the transaction before registered environment variables and
+  // Preferences are read for this process.
+  QString restoreError;
+  if (!ConfigTransfer::applyPending(restoreError))
+    DVGui::warning(QObject::tr("Configuration restore could not be applied: %1")
+                       .arg(restoreError));
+
+  StudioPalette::enable(true);
 
   QCoreApplication::setOrganizationName("OpenToonz");
   QCoreApplication::setOrganizationDomain("");
@@ -175,14 +192,6 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
   /*-- ENGLISH: Confirm TOONZROOT Path
         Check if the xxxroot is defined and corresponds to an existing folder
   --*/
-
-  TFilePath stuffDir = TEnv::getStuffDir();
-  if (stuffDir == TFilePath())
-    fatalError("Undefined or empty: \"" + toQString(TEnv::getRootVarPath()) +
-               "\"");
-  else if (!TFileStatus(stuffDir).isDirectory())
-    fatalError("Folder \"" + toQString(stuffDir) +
-               "\" not found or not readable");
 
   // Setup third party
   ThirdParty::initialize();

@@ -115,6 +115,22 @@ public:
     return true;
   }
 
+  bool addData(const QString &archiveName, const QByteArray &data) {
+    Entry entry;
+    entry.name = archiveName.toUtf8();
+    if (entry.name.size() > std::numeric_limits<quint16>::max() ||
+        quint64(data.size()) > std::numeric_limits<quint32>::max()) {
+      m_error = QStringLiteral("A ZIP entry is too large.");
+      return false;
+    }
+    if (!beginEntry(entry)) return false;
+    entry.crc  = updateCrc32(0, data);
+    entry.size = quint32(data.size());
+    if (!writeBytes(data) || !finishEntry(entry)) return false;
+    m_entries.append(entry);
+    return true;
+  }
+
   bool addFile(const QString &archiveName, const QString &sourceFile) {
     QFile input(sourceFile);
     if (!input.open(QIODevice::ReadOnly)) {

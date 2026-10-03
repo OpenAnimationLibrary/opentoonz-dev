@@ -375,9 +375,11 @@ void Room::load(const TFilePath &fp, RoomLoadParams &params) {
       paneObjectName          = name.toString();
       std::string paneStrName = paneObjectName.toStdString();
       pane = TPanelFactory::createPanel(this, paneObjectName);
-      if (SaveLoadQSettings *persistent =
-              dynamic_cast<SaveLoadQSettings *>(pane->widget()))
-        persistent->load(*m_settings);
+      if (pane) {
+        if (SaveLoadQSettings *persistent =
+                dynamic_cast<SaveLoadQSettings *>(pane->widget()))
+          persistent->load(*m_settings);
+      }
     }
 
     if (!pane) {
@@ -411,7 +413,8 @@ void Room::load(const TFilePath &fp, RoomLoadParams &params) {
     // Restore flipbook pool indices
     if (paneObjectName == "FlipBook") {
       int index = m_settings->value("index").toInt();
-      dynamic_cast<FlipBook *>(pane->widget())->setPoolIndex(index);
+      if (FlipBook *flip = dynamic_cast<FlipBook *>(pane->widget()))
+        flip->setPoolIndex(index);
     }
 
     m_settings->endGroup();
