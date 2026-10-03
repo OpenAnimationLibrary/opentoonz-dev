@@ -1318,17 +1318,6 @@ QMenu *FileBrowser::getContextMenu(QWidget *parent, int index) {
   if (0 <= index && index < (int)m_items.size())
     clickedFile = m_items[index].m_path;
 
-  if (files.size() == 1) {
-    const TFileType::Type selectedType = TFileType::getInfo(files[0]);
-    if (TFileType::isFullColor(selectedType)) {
-      QAction *lutAction =
-          menu->addAction(tr("Create 3D LUT from Image Pair..."));
-      connect(lutAction, &QAction::triggered, this,
-              &FileBrowser::createLutFromImagePair);
-      menu->addSeparator();
-    }
-  }
-
   if (areResources) {
     QString title;
     if (clickedFile != TFilePath() && clickedFile.getType() == "tnz")
@@ -1590,6 +1579,17 @@ QMenu *FileBrowser::getContextMenu(QWidget *parent, int index) {
   if (!Preferences::instance()->isWatchFileSystemEnabled()) {
     menu->addSeparator();
     menu->addAction(cm->getAction(MI_RefreshTree));
+  }
+
+  // OTLUT is a specialized operation, so keep it at the bottom of the
+  // context menu after the common file/browser actions.
+  if (files.size() == 1 &&
+      TFileType::isFullColor(TFileType::getInfo(files[0]))) {
+    menu->addSeparator();
+    QAction *lutAction =
+        menu->addAction(tr("Create 3D LUT from Image Pair..."));
+    connect(lutAction, &QAction::triggered, this,
+            &FileBrowser::createLutFromImagePair);
   }
 
   return menu.release();
