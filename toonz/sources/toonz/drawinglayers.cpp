@@ -44,8 +44,10 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QScreen>
+#include <QSlider>
 #include <QScopedValueRollback>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include <limits>
 #include <vector>
@@ -283,8 +285,10 @@ DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
     , m_xsheet(nullptr)
     , m_rebuildTimer(new QTimer(this))
     , m_hoverTimer(new QTimer(this))
+    , m_hoverHideTimer(new QTimer(this))
     , m_hoverPreview(new QFrame(this, Qt::ToolTip))
     , m_previewImage(new QLabel(m_hoverPreview))
+    , m_previewScrubber(new QSlider(Qt::Horizontal, m_hoverPreview))
     , m_previewCaption(new QLabel(m_hoverPreview)) {
   setObjectName("DrawingLayers");
   setMouseTracking(true);
@@ -292,21 +296,46 @@ DrawingLayers::DrawingLayers(TApplication *app, QWidget *parent)
   m_hoverTimer->setObjectName("LayersHoverTimer");
   m_hoverTimer->setSingleShot(true);
   m_hoverTimer->setInterval(600);
+  m_hoverHideTimer->setSingleShot(true);
+  m_hoverHideTimer->setInterval(250);
   m_hoverPreview->setObjectName("LayersHoverPreview");
   m_hoverPreview->setAttribute(Qt::WA_ShowWithoutActivating);
-  m_hoverPreview->setAttribute(Qt::WA_TransparentForMouseEvents);
   m_hoverPreview->setFocusPolicy(Qt::NoFocus);
+  m_hoverPreview->setMouseTracking(true);
+  m_hoverPreview->installEventFilter(this);
   static_cast<QFrame *>(m_hoverPreview)->setFrameStyle(QFrame::StyledPanel);
+  m_previewImage->setObjectName("LayersHoverPreviewImage");
   m_previewImage->setAlignment(Qt::AlignCenter);
+  m_previewImage->setMouseTracking(true);
+  m_previewImage->installEventFilter(this);
+  m_previewScrubber->setObjectName("LayersHoverScrubber");
+  m_previewScrubber->setFocusPolicy(Qt::NoFocus);
+  m_previewScrubber->setTracking(true);
+  m_previewScrubber->setRange(0, 0);
+  m_previewScrubber->setMouseTracking(true);
+  m_previewScrubber->installEventFilter(this);
   m_previewCaption->setAlignment(Qt::AlignCenter);
   m_previewCaption->setTextFormat(Qt::PlainText);
   m_previewCaption->setWordWrap(true);
   auto previewLayout = new QVBoxLayout(m_hoverPreview);
   previewLayout->setContentsMargins(8, 8, 8, 8);
   previewLayout->addWidget(m_previewImage);
+  previewLayout->addWidget(m_previewScrubber);
   previewLayout->addWidget(m_previewCaption);
   connect(m_hoverTimer, &QTimer::timeout, this,
           &DrawingLayers::showHoverPreview);
+  connect(m_hoverHideTimer, &QTimer::timeout, this, [this] {
+    const QPoint global = QCursor::pos();
+    bool overPreview =
+        m_hoverPreview->isVisible() &&
+        m_hoverPreview->frameGeometry().contains(global);
+    bool overThumbnail =
+        m_hoverIndex.isValid() &&
+        thumbnailAt(viewport()->mapFromGlobal(global)) == m_hoverIndex;
+    if (!overPreview && !overThumbnail) hideHoverPreview();
+  });
+  connect(m_previewScrubber, &QSlider::valueChanged, this,
+          &DrawingLayers::renderHoverPreview);
   connect(verticalScrollBar(), &QScrollBar::valueChanged, this,
           &DrawingLayers::hideHoverPreview);
   connect(horizontalScrollBar(), &QScrollBar::valueChanged, this,
@@ -381,7 +410,8 @@ void DrawingLayers::showEvent(QShowEvent *event) {
           QOverload<>::of(&QWidget::update));
   connect(IconGenerator::instance(), &IconGenerator::iconGenerated, this,
           [this] {
-            if (m_hoverPreview->isVisible()) showHoverPreview();
+            if (m_hoverPreview->isVisible() && m_hoverExposureIndex >= 0)
+              renderHoverPreview(m_hoverExposureIndex);
           });
   rebuild();
 }
@@ -1036,6 +1066,39 @@ QModelIndex DrawingLayers::thumbnailAt(const QPoint &position) const {
              : QModelIndex();
 }
 
+bool DrawingLayers::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == m_hoverPreview || watched == m_previewImage ||
+      watched == m_previewScrubber) {
+    if (event->type() == QEvent::Enter) {
+      m_hoverHideTimer->stop();
+    } else if (event->type() == QEvent::Leave) {
+      scheduleHoverHide();
+    }
+  }
+
+  if (watched == m_previewImage && !m_hoverRows.isEmpty()) {
+    if (event->type() == QEvent::MouseMove ||
+        event->type() == QEvent::MouseButtonPress) {
+      auto mouse = static_cast<QMouseEvent *>(event);
+      int width  = qMax(1, m_previewImage->width() - 1);
+      int count  = m_hoverRows.size();
+      int index  = qRound(qBound(0, mouse->pos().x(), width) *
+                         (count - 1.0) / width);
+      m_previewScrubber->setValue(index);
+    } else if (event->type() == QEvent::Wheel && m_hoverRows.size() > 1) {
+      auto wheel = static_cast<QWheelEvent *>(event);
+      int step   = wheel->angleDelta().y() < 0 ? 1 : -1;
+      m_previewScrubber->setValue(
+          qBound(0, m_previewScrubber->value() + step,
+                 m_previewScrubber->maximum()));
+      event->accept();
+      return true;
+    }
+  }
+
+  return QTreeWidget::eventFilter(watched, event);
+}
+
 bool DrawingLayers::viewportEvent(QEvent *event) {
   switch (event->type()) {
   case QEvent::MouseMove: {
@@ -1044,14 +1107,21 @@ bool DrawingLayers::viewportEvent(QEvent *event) {
                             ? thumbnailAt(mouse->pos())
                             : QModelIndex();
     if (!index.isValid()) {
-      hideHoverPreview();
-    } else if (m_hoverIndex != index ||
-               (mouse->pos() - m_hoverPosition).manhattanLength() >
-                   QApplication::startDragDistance()) {
-      hideHoverPreview();
-      m_hoverIndex    = index;
-      m_hoverPosition = mouse->pos();
-      m_hoverTimer->start();
+      if (m_hoverPreview->isVisible())
+        scheduleHoverHide();
+      else
+        hideHoverPreview();
+    } else {
+      m_hoverHideTimer->stop();
+      if (m_hoverIndex != index ||
+          (!m_hoverPreview->isVisible() &&
+           (mouse->pos() - m_hoverPosition).manhattanLength() >
+               QApplication::startDragDistance())) {
+        hideHoverPreview();
+        m_hoverIndex    = index;
+        m_hoverPosition = mouse->pos();
+        m_hoverTimer->start();
+      }
     }
     break;
   }
@@ -1062,6 +1132,11 @@ bool DrawingLayers::viewportEvent(QEvent *event) {
     }
     break;
   case QEvent::Leave:
+    if (m_hoverPreview->isVisible())
+      scheduleHoverHide();
+    else
+      hideHoverPreview();
+    break;
   case QEvent::MouseButtonPress:
   case QEvent::MouseButtonDblClick:
   case QEvent::Wheel:
@@ -1077,50 +1152,143 @@ bool DrawingLayers::viewportEvent(QEvent *event) {
 
 void DrawingLayers::hideHoverPreview() {
   if (m_hoverTimer) m_hoverTimer->stop();
+  if (m_hoverHideTimer) m_hoverHideTimer->stop();
   if (m_hoverPreview) m_hoverPreview->hide();
-  m_hoverIndex = QPersistentModelIndex();
+  if (m_previewImage) m_previewImage->clear();
+  if (m_previewScrubber) {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setRange(0, 0);
+    m_previewScrubber->setValue(0);
+  }
+  m_hoverRows.clear();
+  m_hoverExposureIndex = -1;
+  m_hoverIndex         = QPersistentModelIndex();
 }
 
-void DrawingLayers::showHoverPreview() {
-  const QPoint position = viewport()->mapFromGlobal(QCursor::pos());
-  if (!m_hoverIndex.isValid() || thumbnailAt(position) != m_hoverIndex ||
-      QApplication::mouseButtons() != Qt::NoButton ||
-      m_app->getCurrentFrame()->isPlaying()) {
+void DrawingLayers::scheduleHoverHide() {
+  if (!m_hoverPreview->isVisible()) {
     hideHoverPreview();
     return;
   }
-  const int row       = m_hoverIndex.data(RowRole).toInt();
-  const int column    = m_hoverIndex.data(ColumnRole).toInt();
+  m_hoverHideTimer->start();
+}
+
+void DrawingLayers::renderHoverPreview(int exposureIndex) {
+  if (!m_hoverIndex.isValid() || exposureIndex < 0 ||
+      exposureIndex >= m_hoverRows.size() || !m_xsheet)
+    return;
+
+  auto item       = static_cast<LayerItem *>(itemFromIndex(m_hoverIndex));
+  const int row   = m_hoverRows[exposureIndex];
+  const int column = m_hoverIndex.data(ColumnRole).toInt();
   const TXshCell cell = m_xsheet->getCell(row, column);
-  const QPoint anchor = viewport()->mapToGlobal(m_hoverPosition);
-  QScreen *screen     = QGuiApplication::screenAt(anchor);
+  if (!item || !item->level || cell.m_level.getPointer() != item->level) {
+    hideHoverPreview();
+    return;
+  }
+
+  QScreen *screen =
+      QGuiApplication::screenAt(viewport()->mapToGlobal(m_hoverPosition));
   if (!screen) screen = QGuiApplication::primaryScreen();
   if (!screen) return;
-  const QRect available = screen->availableGeometry();
-  const QSize size(qMax(32, qMin(320, available.width() - 24)),
-                   qMax(24, qMin(240, available.height() - 96)));
   const qreal ratio = screen->devicePixelRatio();
+  const QSize size  = m_previewImage->size();
   const TDimension pixels(qRound(size.width() * ratio),
                           qRound(size.height() * ratio));
-  // Responsive icons are cached at this size and generated asynchronously.
-  // Do not resize the Filmstrip's global icon size or scale its tiny icon.
+
+  // Request the actual drawing at the scrubbed exposure. Responsive icons are
+  // cached independently, so scrubbing does not alter Filmstrip thumbnail size.
   QPixmap preview = IconGenerator::instance()->getResponsiveIcon(
       cell.m_level.getPointer(), cell.m_frameId, pixels);
-  m_previewImage->setFixedSize(size);
+  m_previewImage->clear();
   if (preview.isNull()) {
     m_previewImage->setText(tr("Loading preview..."));
   } else {
     preview.setDevicePixelRatio(ratio);
     m_previewImage->setPixmap(preview);
   }
-  m_previewCaption->setFixedWidth(size.width());
+
+  m_hoverExposureIndex = exposureIndex;
+  {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setValue(exposureIndex);
+  }
   m_previewCaption->setText(
-      tr("%1 — Drawing %2\nXsheet frame %3, column %4")
+      tr("%1 — Drawing %2\nXsheet frame %3, column %4 — exposure %5/%6\n"
+         "Move across preview or drag slider to scrub")
           .arg(QString::fromStdWString(cell.m_level->getName()),
                QString::fromStdString(cell.m_frameId.expand()))
           .arg(row + 1)
-          .arg(column + 1));
+          .arg(column + 1)
+          .arg(exposureIndex + 1)
+          .arg(m_hoverRows.size()));
   m_hoverPreview->adjustSize();
+}
+
+void DrawingLayers::showHoverPreview() {
+  const QPoint global   = QCursor::pos();
+  const QPoint position = viewport()->mapFromGlobal(global);
+  bool overThumbnail =
+      m_hoverIndex.isValid() && thumbnailAt(position) == m_hoverIndex;
+  bool overPreview =
+      m_hoverPreview->isVisible() &&
+      m_hoverPreview->frameGeometry().contains(global);
+  if (!m_hoverIndex.isValid() || (!overThumbnail && !overPreview) ||
+      QApplication::mouseButtons() != Qt::NoButton ||
+      m_app->getCurrentFrame()->isPlaying()) {
+    hideHoverPreview();
+    return;
+  }
+
+  auto item        = static_cast<LayerItem *>(itemFromIndex(m_hoverIndex));
+  const int column = m_hoverIndex.data(ColumnRole).toInt();
+  TXshColumn *columnObject = m_xsheet ? m_xsheet->getColumn(column) : nullptr;
+  TXshCellColumn *cells    = columnObject ? columnObject->getCellColumn() : nullptr;
+  if (!item || !item->level || columnObject != item->column || !cells) {
+    hideHoverPreview();
+    return;
+  }
+
+  m_hoverRows.clear();
+  int first = 0, last = -1;
+  cells->getRange(first, last);
+  for (int row = first; row <= last; ++row) {
+    const TXshCell &cell = cells->getCell(row);
+    if (cell.m_level.getPointer() == item->level) m_hoverRows.append(row);
+  }
+  if (m_hoverRows.isEmpty()) {
+    hideHoverPreview();
+    return;
+  }
+
+  const QPoint anchor = viewport()->mapToGlobal(m_hoverPosition);
+  QScreen *screen     = QGuiApplication::screenAt(anchor);
+  if (!screen) screen = QGuiApplication::primaryScreen();
+  if (!screen) return;
+  const QRect available = screen->availableGeometry();
+  const QSize size(qMax(32, qMin(320, available.width() - 24)),
+                   qMax(24, qMin(240, available.height() - 128)));
+  m_previewImage->setFixedSize(size);
+  m_previewCaption->setFixedWidth(size.width());
+  m_previewScrubber->setFixedWidth(size.width());
+  m_previewScrubber->setVisible(m_hoverRows.size() > 1);
+  {
+    QSignalBlocker blocker(m_previewScrubber);
+    m_previewScrubber->setRange(0, qMax(0, m_hoverRows.size() - 1));
+  }
+
+  int targetRow = m_hoverIndex.data(RowRole).toInt();
+  int startIndex = 0;
+  qint64 distance = std::numeric_limits<qint64>::max();
+  for (int i = 0; i < m_hoverRows.size(); ++i) {
+    qint64 delta = qAbs(qint64(m_hoverRows[i]) - targetRow);
+    if (delta < distance) {
+      startIndex = i;
+      distance   = delta;
+    }
+  }
+  renderHoverPreview(startIndex);
+
   QPoint topLeft = anchor + QPoint(20, 20);
   if (topLeft.x() + m_hoverPreview->width() > available.right() + 1)
     topLeft.setX(anchor.x() - m_hoverPreview->width() - 12);
