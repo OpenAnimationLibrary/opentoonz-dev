@@ -10,6 +10,8 @@
 #include "toutputproperties.h"
 #include "tconvert.h"
 
+#include <cmath>
+
 //-----------------------------------------------------------------------------
 
 DEFINE_CLASS_CODE(TXshSoundLevel, 53)
@@ -36,7 +38,7 @@ TXshSoundLevel::~TXshSoundLevel() {}
 
 TXshSoundLevel *TXshSoundLevel::clone() const {
   TXshSoundLevel *sound = new TXshSoundLevel();
-  sound->setSoundTrack(m_soundTrack->clone());
+  if (m_soundTrack) sound->setSoundTrack(m_soundTrack->clone());
   sound->m_duration        = m_duration;
   sound->m_path            = m_path;
   sound->m_samplePerFrame  = m_samplePerFrame;
@@ -76,18 +78,19 @@ void TXshSoundLevel::loadSoundTrack() {
 //-----------------------------------------------------------------------------
 
 void TXshSoundLevel::loadSoundTrack(const TFilePath &fileName) {
-  try {
-    TSoundTrackP st;
-    TFilePath path(fileName);
-    bool ret = TSoundTrackReader::load(path, st);
-    if (ret) {
-      m_duration = st->getDuration();
-      setName(fileName.getWideName());
-      setSoundTrack(st);
-    }
-  } catch (TException &) {
-    return;
-  }
+  m_soundTrack = TSoundTrackP();
+  m_duration   = 0;
+  computeValues();
+  TSoundTrackP st;
+  if (!TSoundTrackReader::load(fileName, st) || !st ||
+      st->getSampleRate() == 0 || st->getChannelCount() == 0 ||
+      st->getSampleCount() <= 0 || !std::isfinite(st->getDuration()) ||
+      st->getDuration() <= 0)
+    throw TException(fileName.getWideString() + L": invalid or empty audio file");
+
+  m_duration = st->getDuration();
+  setName(fileName.getWideName());
+  setSoundTrack(st);
 }
 
 //-----------------------------------------------------------------------------
@@ -152,7 +155,8 @@ void TXshSoundLevel::computeValuesFor(const Orientation *o) {
 
   if (frameHeight == 0) frameHeight = 1;
   values.clear();
-  if (!m_soundTrack) {
+  if (!m_soundTrack || !std::isfinite(m_fps) || m_fps <= 0 ||
+      m_soundTrack->getSampleRate() <= 0) {
     m_frameSoundCount = 0;
     m_samplePerFrame  = 0;
     return;
