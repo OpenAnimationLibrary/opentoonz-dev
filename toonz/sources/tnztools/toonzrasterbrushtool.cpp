@@ -1,6 +1,9 @@
 
 
 #include "toonzrasterbrushtool.h"
+#include "rasterautofill.h"
+#include "toonz/autoclose.h"
+#include "toonz/fill.h"
 
 // Standard library
 #include <algorithm>
@@ -69,6 +72,10 @@ TEnv::DoubleVar RasterBrushModifierSize("RasterBrushModifierSize", 0);
 TEnv::StringVar RasterBrushPreset("RasterBrushPreset", "<custom>");
 TEnv::IntVar BrushLockAlpha("InknpaintBrushLockAlpha", 0);
 TEnv::IntVar RasterBrushAssistants("RasterBrushAssistants", 1);
+TEnv::IntVar RasterBrushAutoFill("RasterBrushAutoFill", 0);
+TEnv::IntVar RasterBrushAutoClose("RasterBrushAutoClose", 0);
+TEnv::IntVar RasterBrushCloseDistance("RasterBrushCloseDistance", 20);
+TEnv::IntVar RasterBrushFillStyle("RasterBrushFillStyle", 0);
 
 //-------------------------------------------------------------------
 #define CUSTOM_WSTR L"<custom>"
@@ -747,6 +754,12 @@ ToonzRasterBrushTool::ToonzRasterBrushTool(std::string name, int targetType)
     , m_preset("Preset:")
     , m_drawOrder("Draw Order:")
     , m_pencil("Pencil", false)
+    , m_autoFill("Auto Fill", RasterBrushAutoFill != 0)
+    , m_autoClose("Auto Close", RasterBrushAutoClose != 0)
+    , m_closeDistance("Close Distance:", 1, 100,
+                      std::max(1, std::min(100, (int)RasterBrushCloseDistance)))
+    , m_fillStyle("Fill Style (0 = Current):", 0, 4095,
+                  std::max(0, std::min(4095, (int)RasterBrushFillStyle)))
     , m_pressure("Pressure", true)
     , m_modifierSize("ModifierSize", -3, 3, 0, true)
     , m_modifierLockAlpha("Lock Alpha", false)
@@ -770,6 +783,10 @@ ToonzRasterBrushTool::ToonzRasterBrushTool(std::string name, int targetType)
   m_prop[0].bind(m_drawOrder);
   m_prop[0].bind(m_modifierLockAlpha);
   m_prop[0].bind(m_pencil);
+  m_prop[0].bind(m_autoClose);
+  m_prop[0].bind(m_closeDistance);
+  m_prop[0].bind(m_autoFill);
+  m_prop[0].bind(m_fillStyle);
   m_prop[0].bind(m_assistants);
   m_pencil.setId("PencilMode");
 
@@ -1004,6 +1021,10 @@ void ToonzRasterBrushTool::updateTranslation() {
   m_preset.setQStringName(tr("Preset:"));
   m_preset.setItemUIName(CUSTOM_WSTR, tr("<custom>"));
   m_pencil.setQStringName(tr("Pencil"));
+  m_autoClose.setQStringName(tr("Auto Close"));
+  m_closeDistance.setQStringName(tr("Close Distance:"));
+  m_autoFill.setQStringName(tr("Auto Fill"));
+  m_fillStyle.setQStringName(tr("Fill Style (0 = Current):"));
   m_pressure.setQStringName(tr("Pressure"));
   m_modifierLockAlpha.setQStringName(tr("Lock Alpha"));
   m_assistants.setQStringName(tr("Assistants"));
@@ -1177,6 +1198,153 @@ void ToonzRasterBrushTool::mouseMove(const TPointD &pos, const TMouseEvent &e) {
 
 //--------------------------------------------------------------------------------------------------
 
+// Optional post-stroke processing. Reconstruct the pre-stroke raster from the
+// existing undo tiles, not a second full-canvas snapshot on every pen-down.
+bool ToonzRasterBrushTool::applyRasterAutoFill() {
+  TToonzImageP image = m_painting.autoImage;
+  if (!image || !m_painting.tileSaver || !m_painting.tileSet ||
+      m_painting.tileSet->getTileCount() == 0 ||
+      m_painting.affectedRect.isEmpty())
+    return true;
+  TRasterCM32P raster = image->getRaster();
+  if (!raster) return false;
+  TRect bounds = m_painting.affectedRect;
+  if (m_painting.autoFill) bounds += image->getSavebox();
+  bounds =
+      bounds.enlarge(m_painting.autoClose ? m_painting.closeDistance + 2 : 2) *
+      raster->getBounds();
+  if (bounds.isEmpty()) return true;
+  const int width = bounds.getLx(), height = bounds.getLy();
+  RasterAutoFill::pixelCount(width,
+                             height);  // check index overflow before allocation
+  const TPoint offset = bounds.getP00();
+  TRasterCM32P work   = raster->extract(bounds)->clone();
+  TRasterCM32P before = work->clone();
+  for (int i = 0; i < m_painting.tileSet->getTileCount(); ++i) {
+    const TTileSetCM32::Tile *tile = m_painting.tileSet->getTile(i);
+    const TRect overlap            = bounds * tile->m_rasterBounds;
+    if (overlap.isEmpty()) continue;
+    TRasterCM32P old;
+    tile->getRaster(old);
+    if (!old) return false;
+    before->extract(overlap - offset)
+        ->copy(old->extract(overlap - tile->m_rasterBounds.getP00()));
+  }
+  struct Lock {
+    TRasterCM32P raster;
+    explicit Lock(const TRasterCM32P &r) : raster(r) { raster->lock(); }
+    ~Lock() { raster->unlock(); }
+  } lockRaster(raster), lockWork(work), lockBefore(before);
+  auto beforeAt = [&](int x, int y) { return before->pixels(y)[x]; };
+  auto workAt   = [&](int x, int y) { return work->pixels(y)[x]; };
+
+  if (m_painting.autoClose) {
+    for (const auto &ends : m_painting.autoEnds) {
+      RasterAutoFill::StrokeEnd end;
+      end.first       = RasterAutoFill::Point(tround(ends.first.x) - offset.x,
+                                              tround(ends.first.y) - offset.y);
+      end.last        = RasterAutoFill::Point(tround(ends.second.x) - offset.x,
+                                              tround(ends.second.y) - offset.y);
+      end.firstRadius = ends.first.thick;
+      end.lastRadius  = ends.second.thick;
+      const auto closure = RasterAutoFill::findClosure(
+          width, height, beforeAt, workAt, end, m_painting.styleId,
+          m_painting.closeDistance);
+      if (!closure.found || !closure.hasGap) continue;
+      const TPoint from(closure.from.x, closure.from.y);
+      const TPoint to(closure.to.x, closure.to.y);
+      const TRect bridgeBounds =
+          TRect(std::min(from.x, to.x), std::min(from.y, to.y),
+                std::max(from.x, to.x), std::max(from.y, to.y))
+              .enlarge(2) *
+          work->getBounds();
+      TRasterCM32P saved = work->extract(bridgeBounds)->clone();
+      Lock lockSaved(saved);
+      // Reuse Tape's raster bridge renderer, but supply only our selected
+      // nearest same-style segment. No global gap search or forced self-loop.
+      TAutocloser closer(work, m_painting.closeDistance, 60.0,
+                         m_painting.styleId, 255);
+      closer.draw(
+          std::vector<TAutocloser::Segment>(1, TAutocloser::Segment(from, to)));
+      for (int y = bridgeBounds.y0; y <= bridgeBounds.y1; ++y) {
+        TPixelCM32 *row       = work->pixels(y);
+        const TPixelCM32 *old = saved->pixels(y - bridgeBounds.y0);
+        for (int x = bridgeBounds.x0; x <= bridgeBounds.x1; ++x) {
+          const TPixelCM32 &pixel = old[x - bridgeBounds.x0];
+          // Do not reshape existing ink, overwrite another style, or clear
+          // underlying paint when inserting the missing bridge pixels.
+          if (RasterAutoFill::visibleInk(pixel))
+            row[x] = pixel;
+          else
+            row[x].setPaint(pixel.getPaint());
+        }
+      }
+    }
+  }
+
+  bool fillSafe = true;
+  if (m_painting.autoFill) {
+    const auto regions =
+        RasterAutoFill::newlyEnclosed(width, height, beforeAt, workAt);
+    if (!regions.seeds.empty()) {
+      TPalette *palette = image->getPalette();
+      const int style   = m_painting.fillStyle;
+      if (!palette || style <= 0 || style > TPixelCM32::getMaxPaint() ||
+          style >= palette->getStyleCount() || !palette->getStyle(style)) {
+        fillSafe = false;
+      } else {
+        TRasterCM32P painted = work->clone();
+        Lock lockPainted(painted);
+        FillParameters params;
+        params.m_styleId            = style;
+        params.m_fillType           = L"Areas";
+        params.m_emptyOnly          = true;
+        params.m_minFillDepth       = 0;
+        params.m_maxFillDepth       = 15;
+        params.m_defRegionWithPaint = true;
+        // No auto-paint ink conversion: this operation writes paint only.
+        params.m_palette = nullptr;
+        for (const auto &seed : regions.seeds) {
+          params.m_p = TPoint(seed.x, seed.y);
+          ::fill(painted, params);
+        }
+        auto paintedAt = [&](int x, int y) { return painted->pixels(y)[x]; };
+        fillSafe       = RasterAutoFill::fillStayedInside(
+                  width, height, workAt, paintedAt, regions.interior);
+        if (fillSafe) {
+          for (int y = 0; y < height; ++y) {
+            TPixelCM32 *row         = work->pixels(y);
+            const TPixelCM32 *paint = painted->pixels(y);
+            for (int x = 0; x < width; ++x)
+              if (row[x].getPaint() == 0) row[x].setPaint(paint[x].getPaint());
+          }
+        }
+      }
+    }
+  }
+
+  // All computation takes place on scratch rasters. Save only changed rows
+  // before applying them; the brush's existing undo and redo includes both
+  // the closing bridge and paint, with no second undo record or stroke replay.
+  for (int y = 0; y < height; ++y) {
+    TPixelCM32 *destination  = raster->pixels(y + offset.y) + offset.x;
+    const TPixelCM32 *source = work->pixels(y);
+    int first = width, last = -1;
+    for (int x = 0; x < width; ++x) {
+      if (destination[x] == source[x]) continue;
+      first = std::min(first, x);
+      last  = x;
+    }
+    if (last < first) continue;
+    const TRect changed(first + offset.x, y + offset.y, last + offset.x,
+                        y + offset.y);
+    m_painting.tileSaver->save(changed);
+    std::copy(source + first, source + last + 1, destination + first);
+    m_painting.affectedRect += changed;
+  }
+  return fillSafe;
+}
+
 void ToonzRasterBrushTool::inputSetBusy(bool busy) {
   if (m_painting.active == busy) return;
 
@@ -1219,6 +1387,23 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
       return;
     }
 
+    // Snapshot these operation settings; changing palette/tool while a stroke
+    // finishes must not redirect its fill to another image or style.
+    m_painting.autoFill = m_autoFill.getValue() &&
+                          !m_modifierLockAlpha.getValue() &&
+                          m_painting.styleId > 0;
+    m_painting.autoClose = m_autoClose.getValue() &&
+                           !m_modifierLockAlpha.getValue() &&
+                           m_painting.styleId > 0;
+    m_painting.fillStyle     = m_fillStyle.getValue() == 0 ? m_painting.styleId
+                                                           : m_fillStyle.getValue();
+    m_painting.closeDistance = m_closeDistance.getValue();
+    m_painting.autoEnds.clear();
+    if (m_painting.autoFill || m_painting.autoClose) {
+      m_painting.autoImage = ri;
+      m_painting.autoLevel = app->getCurrentLevel()->getSimpleLevel();
+    }
+
     m_painting.tileSet   = new TTileSetCM32(ras->getSize());
     m_painting.tileSaver = new TTileSaverCM32(ras, m_painting.tileSet);
     m_painting.affectedRect.empty();
@@ -1256,12 +1441,22 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
 
   } else {
     // finish painting
+    bool autoFillOk = true;
 
     if (m_painting.myPaint.isActive) {
       // finish myPaint drawing
       m_workRas->unlock();
     }
 
+    if (m_painting.autoFill || m_painting.autoClose) {
+      try {
+        autoFillOk = applyRasterAutoFill();
+      } catch (const std::exception &) {
+        // Preserve the user's stroke and its undo even if analysis allocation
+        // fails. Report only after clearing the active-stroke state.
+        autoFillOk = false;
+      }
+    }
     delete m_painting.tileSaver;
     m_painting.tileSaver = nullptr;
 
@@ -1271,8 +1466,12 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
     if (m_painting.tileSet->getTileCount() > 0) {
       TTool::Application *app   = TTool::getApplication();
       TXshLevel *level          = app->getCurrentLevel()->getLevel();
-      TXshSimpleLevelP simLevel = level->getSimpleLevel();
-      TRasterCM32P ras          = TToonzImageP(getImage(true))->getRaster();
+      TXshSimpleLevelP simLevel =
+          m_painting.autoLevel ? m_painting.autoLevel
+                               : TXshSimpleLevelP(level->getSimpleLevel());
+      TRasterCM32P ras    = m_painting.autoImage
+                                ? m_painting.autoImage->getRaster()
+                                : TToonzImageP(getImage(true))->getRaster();
       TRasterCM32P subras = ras->extract(m_painting.affectedRect)->clone();
       TUndoManager::manager()->add(new MyPaintBrushUndo(
           m_painting.tileSet, simLevel.getPointer(), frameId, m_isFrameCreated,
@@ -1298,8 +1497,18 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
 
     /*-- FIdを指定して、描画中にフレームが動いても、
       描画開始時のFidのサムネイルが更新されるようにする。--*/
+    if (m_painting.autoLevel)
+      ToolUtils::updateSaveBox(m_painting.autoLevel.getPointer(), frameId);
+    m_painting.autoImage = TToonzImageP();
+    m_painting.autoLevel = TXshSimpleLevelP();
+    m_painting.autoEnds.clear();
+    m_painting.autoFill = m_painting.autoClose = false;
     notifyImageChanged(frameId);
     ToolUtils::updateSaveBox();
+    if (!autoFillOk)
+      DVGui::warning(
+          tr("Automatic close/fill was not fully applied. The drawn "
+             "stroke was kept. Check the fill style and region boundary."));
   }
 }
 
@@ -1439,6 +1648,26 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
                                  m_modifierLockAlpha.getValue());
 
     invalidateRect += convert(strokeRect) - rasCenter;
+  }
+
+  // Capture every completed input track, including assistant/replicator
+  // tracks. Coordinates are those actually rasterized, not raw mouse events.
+  if (lastPoint && m_painting.autoClose) {
+    const TTrackPoint &first = track.front();
+    const TPointD start      = getCenteredCursorPos(first.position) + rasCenter;
+    const double startPressure =
+        m_pressure.getValue() ? first.pressure : defPressure;
+    const double startRadius =
+        m_painting.myPaint.isActive
+            ? m_maxCursorThick * 0.5
+            : computeThickness(startPressure, m_rasThickness) * 0.5;
+    const double endRadius =
+        m_painting.myPaint.isActive
+            ? m_maxCursorThick * 0.5
+            : computeThickness(pressure, m_rasThickness) * 0.5;
+    m_painting.autoEnds.emplace_back(
+        TThickPoint(start, startRadius),
+        TThickPoint(fixedPosition + rasCenter, endRadius));
   }
 
   // invalidate rect
@@ -1692,6 +1921,17 @@ void ToonzRasterBrushTool::updateWorkAndBackupRasters(const TRect &rect) {
 
 bool ToonzRasterBrushTool::onPropertyChanged(std::string propertyName) {
   if (m_propertyUpdating) return true;
+  // These are drawing-operation options, not brush-preset parameters.
+  if (propertyName == m_autoFill.getName() ||
+      propertyName == m_autoClose.getName() ||
+      propertyName == m_closeDistance.getName() ||
+      propertyName == m_fillStyle.getName()) {
+    RasterBrushAutoFill      = m_autoFill.getValue();
+    RasterBrushAutoClose     = m_autoClose.getValue();
+    RasterBrushCloseDistance = m_closeDistance.getValue();
+    RasterBrushFillStyle     = m_fillStyle.getValue();
+    return true;
+  }
 
   if (propertyName == m_preset.getName()) {
     if (m_preset.getValue() != CUSTOM_WSTR)
