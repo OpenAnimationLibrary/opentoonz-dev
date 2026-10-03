@@ -169,6 +169,7 @@ protected slots:
   void clearHistory();
 
   void renameAsToonzLevel();
+  void createLutFromImagePair();
   void renameFolder();
   void updateAndEditVersionControl();
   void editVersionControl();
