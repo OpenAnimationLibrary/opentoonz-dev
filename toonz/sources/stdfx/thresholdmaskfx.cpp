@@ -1,5 +1,6 @@
 #include "stdfx.h"
 #include "tfxparam.h"
+#include "tparamset.h"
 
 #include "thresholdmaskfx_utils.h"
 
