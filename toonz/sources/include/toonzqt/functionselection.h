@@ -27,6 +27,7 @@
 // forward declaration
 class TDoubleParam;
 class TFrameHandle;
+struct EasePreset;
 
 //-----------------------------------------------------------------------------
 
@@ -49,6 +50,9 @@ class FunctionSelection final : public QObject, public TSelection {
                           // (functionpanel only)
   // assert(m_selectedSegment<0 || m_selectedKeyframes.size()==1)
 
+  // Explicit graph segments; the legacy scalar is valid only for one segment.
+  QList<QPair<TDoubleParam *, int>> m_selectedSegments;
+
   TFrameHandle *m_frameHandle;
   ColumnToCurveMapper *m_columnToCurveMapper;
 
@@ -57,6 +61,16 @@ class FunctionSelection final : public QObject, public TSelection {
   //-1 if curve not found
   int touchCurveIndex(TDoubleParam *curve);
   // as getCurve(); if curve not found then add it
+
+  struct TangentClip {
+    bool m_hasIn = false, m_hasOut = false;
+    double m_inXFrac = 0, m_inYFrac = 0;
+    double m_outXFrac = 0, m_outYFrac = 0;
+  };
+  static TangentClip m_tangentClip;
+  bool readSelectedTangents(TangentClip &clip) const;
+  void applyTangentsToSelection(bool flat);
+  QList<QPair<TDoubleParam *, int>> selectedEaseSegments() const;
 
 public:
   FunctionSelection();
@@ -86,6 +100,15 @@ public:
                                                       // selected then also the
                                                       // segment ends are
                                                       // selected
+  //! Adds one segment to the picked ones, keeping those already there.
+  void addSegment(TDoubleParam *curve, int k);
+  int getSelectedSegmentCount() const { return m_selectedSegments.size(); }
+  //! Retypes every picked segment, in one undo.
+  void setSelectedSegmentsType(TDoubleKeyframe::Type type);
+  //! The interpolation ALL the picked segments already share, or -1 when they
+  //! differ. With mixed types no entry may be greyed out: every choice is a
+  //! real change for at least one segment.
+  int getCommonSelectedSegmentsType() const;
   int getSelectedKeyframeCount() const;
   QPair<TDoubleParam *, int> getSelectedKeyframe(int index)
       const;  // if index<0 || index>=getSelectedKeyframeCount() returns (0,-1)
@@ -132,6 +155,24 @@ public:
   int getCommonSegmentType(bool inclusive = true);
 
   QList<int> getSelectedKeyIndices(TDoubleParam *curve);
+
+  //! Curves carrying at least one selected keyframe. More than one of them
+  //! means the selection spans several parameters, which the graph has to
+  //! move as one block.
+  QList<TDoubleParam *> getSelectedCurves() const;
+
+  void setSelectedKeyframesAutoBezier();
+  void setSelectedKeyframesFlat();
+  bool canCopyTangents() const;
+  bool hasCopiedTangents() const {
+    return m_tangentClip.m_hasIn || m_tangentClip.m_hasOut;
+  }
+  void copyTangents();
+  void pasteTangents();
+  bool canApplyEasePreset() const { return !selectedEaseSegments().isEmpty(); }
+  //! Explicit segments take precedence. With only keys selected, presets
+  //! affect segments whose two endpoints are selected.
+  void applyEasePreset(const EasePreset &preset);
 signals:
   void selectionChanged();
 };

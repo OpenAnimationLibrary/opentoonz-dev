@@ -185,30 +185,60 @@ QVariant FunctionTreeModel::ChannelGroup::data(int role) const {
 
 //-----------------------------------------------------------------------------
 
-//! \todo     This is \a not recursive - I guess it should be...?
-void FunctionTreeModel::ChannelGroup::applyShowFilter() {
-  int i, itemCount = getChildCount();
-  for (i = 0; i < itemCount; i++) {
-    FunctionTreeModel::Channel *channel =
-        dynamic_cast<FunctionTreeModel::Channel *>(getChild(i));
-    /*--- ChannelGroupの内部も同じフィルタで更新する ---*/
-    if (!channel) {
-      FunctionTreeModel::ChannelGroup *channelGroup =
-          dynamic_cast<FunctionTreeModel::ChannelGroup *>(getChild(i));
-      if (!channelGroup) continue;
+bool FunctionTreeModel::ChannelGroup::nameMatchesSearch(
+    const QString &search) const {
+  if (search.isEmpty()) return true;
+  // A column or nested group name includes its children, but the fixed Stage
+  // and FX roots must not make every channel match.
+  for (const TreeModel::Item *item = this; item && item->getDepth() >= 2;
+       item                        = item->getParent()) {
+    const ChannelGroup *group = dynamic_cast<const ChannelGroup *>(item);
+    if (group && (group->getLongName().contains(search, Qt::CaseInsensitive) ||
+                  group->data(Qt::DisplayRole)
+                      .toString()
+                      .contains(search, Qt::CaseInsensitive)))
+      return true;
+  }
+  return false;
+}
 
-      channelGroup->setShowFilter(m_showFilter);
+//-----------------------------------------------------------------------------
+
+bool FunctionTreeModel::ChannelGroup::applyShowFilter() {
+  FunctionTreeModel *model = static_cast<FunctionTreeModel *>(getModel());
+  const QString &search    = model->getSearchFilter();
+  const bool groupMatches  = nameMatchesSearch(search);
+  bool anyVisible          = false;
+  for (int i = 0; i < getChildCount(); ++i) {
+    TreeModel::Item *item = getChild(i);
+    bool visible          = false;
+    if (Channel *channel = dynamic_cast<Channel *>(item)) {
+      const bool passesFolderFilter =
+          m_showFilter == ShowAllChannels || channel->isAnimated();
+      // Preserve the existing per-folder filter behaviour. The new search and
+      // global animated filter only restrict the list, preserving graph curves.
+      if (!passesFolderFilter) channel->setIsActive(false);
+      visible = passesFolderFilter &&
+                (!model->isAnimatedOnly() || channel->isAnimated()) &&
+                (groupMatches ||
+                 channel->getLongName().contains(search, Qt::CaseInsensitive));
+    } else if (ChannelGroup *group = dynamic_cast<ChannelGroup *>(item)) {
+      group->m_showFilter = m_showFilter;
+      visible             = group->applyShowFilter();
+      // With no new filter, retain the existing empty-folder visibility.
+      model->setRowHidden(
+          i, createIndex(),
+          (!search.isEmpty() || model->isAnimatedOnly()) && !visible);
+    } else {
       continue;
     }
-
-    bool showItem = (m_showFilter == ShowAllChannels) ||
-                    channel->getParam()->hasKeyframes();
-
-    QModelIndex modelIndex = createIndex();
-    getModel()->setRowHidden(i, modelIndex, !showItem);
-
-    if (!showItem) channel->setIsActive(false);
+    if (dynamic_cast<Channel *>(item))
+      model->setRowHidden(i, createIndex(), !visible);
+    if (visible && !search.isEmpty() && dynamic_cast<ChannelGroup *>(item))
+      model->setExpandedItem(item->createIndex(), true);
+    anyVisible = anyVisible || visible;
   }
+  return anyVisible;
 }
 
 //-----------------------------------------------------------------------------
@@ -798,10 +828,8 @@ bool FunctionTreeModel::Channel::isCurrent() const {
 void FunctionTreeModel::Channel::setIsCurrent(bool current) {
   Channel *oldCurrent = m_model->m_currentChannel;
   if (current) {
-    // this channel must become the current
-    if (oldCurrent == this) return;  // already it is: nothing to do
-    m_model->m_currentChannel = this;
-
+    // Synchronize the owner even when this curve was already current: the
+    // Xsheet selection may have moved to another column in the meantime.
     // change the current fx if the FxChannelGroup is clicked
     FxChannelGroup *fxGroup = dynamic_cast<FxChannelGroup *>(m_group);
     if (fxGroup && m_model->getFxHandle()) {
@@ -816,6 +844,9 @@ void FunctionTreeModel::Channel::setIsCurrent(bool current) {
             stageObjectGroup->getStageObject()->getId());
       }
     }
+
+    if (oldCurrent == this) return;
+    m_model->m_currentChannel = this;
 
     // the current channel must be active
     if (!m_isActive) {
@@ -833,8 +864,9 @@ void FunctionTreeModel::Channel::setIsCurrent(bool current) {
     // this channel is not the current anymore
     if (oldCurrent != this) return;  // it was not: nothing to do
     m_model->m_currentChannel = 0;
-    // refresh the channel
+    // refresh the channel and the toolbar/segment editor
     m_model->emitDataChanged(this);
+    m_model->emitCurveSelected(nullptr);
   }
 }
 
@@ -906,6 +938,7 @@ void FunctionTreeModel::refreshData(TXsheet *xsh) {
     refreshActiveChannels();
   }
   endRefresh();
+  applyShowFilters();
 
   if (m_currentChannel != currentChannel) emit curveSelected(0);
 }
@@ -1326,23 +1359,68 @@ void FunctionTreeModel::setCurrentFx(TFx *fx) {
 //-----------------------------------------------------------------------------
 
 void FunctionTreeModel::applyShowFilters() {
-  // WARNING: This is implemented BAD - notice that the get*() functions below
-  //          DO NOT ACTUALLY RETURN CHANNELS, but rather the child
-  //          ChannelGROUPS!
-  //
-  //          This means that these show filters are presumably applied only to
-  //          the FIRST LEVEL OF PARAMETERS...!
-
-  if (m_stageObjects) {
-    int so, soCount = m_stageObjects->getChildCount();
-    for (so = 0; so != soCount; ++so)
-      getStageObjectChannel(so)->applyShowFilter();
+  const bool filtering = !m_searchFilter.isEmpty() || m_animatedOnly;
+  for (ChannelGroup *root : {m_stageObjects, m_fxs}) {
+    if (!root) continue;
+    for (int i = 0; i < root->getChildCount(); ++i) {
+      ChannelGroup *group = static_cast<ChannelGroup *>(root->getChild(i));
+      const bool visible  = group->applyShowFilter();
+      // Re-evaluate rows after every rebuild, including when a filter clears.
+      setRowHidden(i, root->createIndex(), filtering && !visible);
+      if (visible && !m_searchFilter.isEmpty())
+        setExpandedItem(group->createIndex(), true);
+    }
+    if (!m_searchFilter.isEmpty()) setExpandedItem(root->createIndex(), true);
   }
+}
 
-  if (m_fxs) {
-    int fx, fxCount = m_fxs->getChildCount();
-    for (fx = 0; fx != fxCount; ++fx) getFxChannel(fx)->applyShowFilter();
+//-----------------------------------------------------------------------------
+
+TreeModel::Item *FunctionTreeModel::columnScopeOf(TreeModel::Item *item) {
+  while (item && item->getDepth() > 2) item = item->getParent();
+  return item && item->getDepth() == 2 ? item : nullptr;
+}
+
+//-----------------------------------------------------------------------------
+
+void FunctionTreeModel::setSearchFilter(const QString &search) {
+  const QString trimmed = search.trimmed();
+  if (m_searchFilter == trimmed) return;
+  m_searchFilter = trimmed;
+  applyShowFilters();
+}
+
+//-----------------------------------------------------------------------------
+
+void FunctionTreeModel::setAnimatedOnly(bool animatedOnly) {
+  if (m_animatedOnly == animatedOnly) return;
+  m_animatedOnly = animatedOnly;
+  applyShowFilters();
+}
+
+//-----------------------------------------------------------------------------
+
+FunctionTreeModel::ChannelGroup *FunctionTreeModel::getStageObjectChannelGroup(
+    TStageObject *obj) const {
+  if (!obj || !m_stageObjects) return nullptr;
+  for (int i = 0; i < m_stageObjects->getChildCount(); ++i) {
+    auto *group =
+        dynamic_cast<StageObjectChannelGroup *>(getStageObjectChannel(i));
+    if (group && group->getStageObject() == obj) return group;
   }
+  return nullptr;
+}
+
+//-----------------------------------------------------------------------------
+
+FunctionTreeModel::ChannelGroup *FunctionTreeModel::getFxChannelGroup(
+    TFx *fx) const {
+  if (!fx || !m_fxs) return nullptr;
+  for (int i = 0; i < m_fxs->getChildCount(); ++i) {
+    auto *group = dynamic_cast<FxChannelGroup *>(getFxChannel(i));
+    if (group && group->getFx() == fx) return group;
+  }
+  return nullptr;
 }
 
 //-----------------------------------------------------------------------------
@@ -1682,6 +1760,25 @@ void FunctionTreeView::openContextMenu(FunctionTreeModel::ChannelGroup *group,
 
   expand(group->createIndex());
   group->setShowFilter(showFilter);
+}
+
+//-----------------------------------------------------------------------------
+
+void FunctionTreeView::scrollToItem(TreeModel::Item *item, bool expandItem) {
+  if (!item) return;
+  QList<TreeModel::Item *> ancestors;
+  for (TreeModel::Item *p = item; p && p->getParent(); p = p->getParent()) {
+    // Following a curve must not clear a search or override the user's filters.
+    if (isRowHidden(p->getRow(), p->getParent()->createIndex())) return;
+    ancestors.prepend(p);
+  }
+  for (TreeModel::Item *p : ancestors)
+    if (p != item || expandItem) setExpanded(p->createIndex(), true);
+  const QModelIndex index = item->createIndex();
+  if (!index.isValid()) return;
+  selectionModel()->setCurrentIndex(
+      index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+  scrollTo(index, QAbstractItemView::EnsureVisible);
 }
 
 //-----------------------------------------------------------------------------
