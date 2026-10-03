@@ -5,6 +5,7 @@
 // Tnz6 includes
 #include "menubarcommandids.h"
 #include "filmstripcommand.h"
+#include "filmstrip.h"
 #include "addfilmstripframespopup.h"
 #include "renumberpopup.h"
 #include "tapp.h"
@@ -65,6 +66,11 @@ void TFilmstripSelection::enableCommands() {
   bool isNotEditableFullColorLevel =
       ((type == OVL_XSHLEVEL && path.getFrame() == TFrameId::NO_FRAME) ||
        (ri && ri->isScanBW()));
+
+  if (!sl->isSubsequence() &&
+      (type == PLI_XSHLEVEL || type == TZP_XSHLEVEL || type == OVL_XSHLEVEL))
+    enableCommand(this, MI_CopyPasteFrameRange,
+                  &TFilmstripSelection::copyPasteFrameRange);
 
   if (doEnable && !isNotEditableFullColorLevel) {
     enableCommand(this, MI_Cut, &TFilmstripSelection::cutFrames);
@@ -230,6 +236,12 @@ void TFilmstripSelection::addFrames() {
 void TFilmstripSelection::copyFrames() {
   TXshSimpleLevel *sl = TApp::instance()->getCurrentLevel()->getSimpleLevel();
   if (sl) FilmstripCmd::copy(sl, m_selectedFrames);
+}
+
+void TFilmstripSelection::copyPasteFrameRange() {
+  if (isEmpty()) return;
+  if (auto *frames = dynamic_cast<FilmstripFrames *>(getView()))
+    frames->startCopyPasteFrameRange();
 }
 
 //-----------------------------------------------------------------------------

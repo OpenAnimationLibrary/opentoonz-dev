@@ -5,8 +5,10 @@
 
 #include "tcommon.h"
 #include "tfilepath.h"
+#include "timage.h"
 
 #include <set>
+#include <string>
 #include <vector>
 
 // Forward declarations
@@ -38,6 +40,11 @@ void reorder(TXshSimpleLevel *sl,
 
 // Copy/paste operations for frames
 void copy(TXshSimpleLevel *sl, std::set<TFrameId> &frames);
+// Create a new level with the selected drawings centered along a line.
+bool copyPasteFrameRange(TXshSimpleLevel *source,
+                         const std::vector<TImageP> &images,
+                         const TPointD &first, const TPointD &last,
+                         const std::wstring &levelName);
 bool insertFramesFromLevel(TXshSimpleLevel *sourceLevel,
                            const std::set<TFrameId> &sourceFrames,
                            TXshSimpleLevel *targetLevel,
