@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace ThresholdMaskFxUtils {
 
@@ -10,7 +11,6 @@ inline float clamp01(float value) {
 }
 
 inline float smoothThreshold(float value, float threshold, float softness) {
-  value     = clamp01(value);
   threshold = clamp01(threshold);
   softness  = clamp01(softness);
 
@@ -33,6 +33,42 @@ inline float smoothThreshold(float value, float threshold, float softness) {
 inline float applyInvert(float matte, bool invert) {
   matte = clamp01(matte);
   return invert ? 1.0f - matte : matte;
+}
+
+inline void boxBlur(std::vector<float> &values, int width, int height,
+                    int radius) {
+  if (radius <= 0 || width <= 0 || height <= 0 || values.empty()) return;
+
+  std::vector<float> temp(values.size(), 0.0f);
+  const int diameter = radius * 2 + 1;
+
+  for (int y = 0; y < height; ++y) {
+    float sum = 0.0f;
+    for (int k = -radius; k <= radius; ++k) {
+      const int x = std::max(0, std::min(width - 1, k));
+      sum += values[y * width + x];
+    }
+    for (int x = 0; x < width; ++x) {
+      temp[y * width + x] = sum / static_cast<float>(diameter);
+      const int removeX = std::max(0, std::min(width - 1, x - radius));
+      const int addX = std::max(0, std::min(width - 1, x + radius + 1));
+      sum += values[y * width + addX] - values[y * width + removeX];
+    }
+  }
+
+  for (int x = 0; x < width; ++x) {
+    float sum = 0.0f;
+    for (int k = -radius; k <= radius; ++k) {
+      const int y = std::max(0, std::min(height - 1, k));
+      sum += temp[y * width + x];
+    }
+    for (int y = 0; y < height; ++y) {
+      values[y * width + x] = sum / static_cast<float>(diameter);
+      const int removeY = std::max(0, std::min(height - 1, y - radius));
+      const int addY = std::max(0, std::min(height - 1, y + radius + 1));
+      sum += temp[addY * width + x] - temp[removeY * width + x];
+    }
+  }
 }
 
 }  // namespace ThresholdMaskFxUtils

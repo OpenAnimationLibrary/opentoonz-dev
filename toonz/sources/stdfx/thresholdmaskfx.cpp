@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace {
 
@@ -18,25 +19,34 @@ enum ChannelMode {
 enum OutputMode { OutputMaskedSource = 0, OutputMatte };
 
 template <typename PIXEL>
-float normalizedChannel(const PIXEL &pix, int channel) {
+float normalizedChannel(const PIXEL &pix, int channel, bool unpremultiply) {
   const float invMax = 1.0f / static_cast<float>(PIXEL::maxChannelValue);
+  const float alpha  = static_cast<float>(pix.m) * invMax;
+
+  if (channel == ChannelAlpha) return alpha;
+
+  float r = static_cast<float>(pix.r) * invMax;
+  float g = static_cast<float>(pix.g) * invMax;
+  float b = static_cast<float>(pix.b) * invMax;
+
+  if (unpremultiply) {
+    if (alpha <= 1e-6f) return 0.0f;
+    r /= alpha;
+    g /= alpha;
+    b /= alpha;
+  }
 
   switch (channel) {
-  case ChannelAlpha:
-    return static_cast<float>(pix.m) * invMax;
   case ChannelLuminance:
-    return (0.2126f * static_cast<float>(pix.r) +
-            0.7152f * static_cast<float>(pix.g) +
-            0.0722f * static_cast<float>(pix.b)) *
-           invMax;
+    return 0.2126f * r + 0.7152f * g + 0.0722f * b;
   case ChannelRed:
-    return static_cast<float>(pix.r) * invMax;
+    return r;
   case ChannelGreen:
-    return static_cast<float>(pix.g) * invMax;
+    return g;
   case ChannelBlue:
-    return static_cast<float>(pix.b) * invMax;
+    return b;
   default:
-    return static_cast<float>(pix.m) * invMax;
+    return alpha;
   }
 }
 
@@ -74,31 +84,43 @@ void applyMatteToPixel<TPixelF>(TPixelF &pix, float matte) {
 
 template <typename PIXEL>
 void processRaster(TRasterPT<PIXEL> source, TRasterPT<PIXEL> mask,
-                   float threshold, float softness, int channel, bool invert,
+                   int cropOffset, float threshold, float softness, int channel,
+                   bool invert, bool unpremultiply, int featherRadius,
                    int outputMode) {
-  source->lock();
+  const int maskLx = mask->getLx();
+  const int maskLy = mask->getLy();
+  std::vector<float> matte(maskLx * maskLy, 0.0f);
+
   mask->lock();
-
-  const int lx = source->getLx();
-  const int ly = source->getLy();
-
-  for (int y = 0; y < ly; ++y) {
-    PIXEL *srcPix        = source->pixels(y);
+  for (int y = 0; y < maskLy; ++y) {
     const PIXEL *maskPix = mask->pixels(y);
-    for (int x = 0; x < lx; ++x) {
-      const float value = normalizedChannel(maskPix[x], channel);
-      float matte = ThresholdMaskFxUtils::smoothThreshold(value, threshold,
-                                                          softness);
-      matte = ThresholdMaskFxUtils::applyInvert(matte, invert);
-
-      if (outputMode == OutputMatte)
-        srcPix[x] = makeMattePixel<PIXEL>(matte);
-      else
-        applyMatteToPixel(srcPix[x], matte);
+    for (int x = 0; x < maskLx; ++x) {
+      const float value = normalizedChannel(maskPix[x], channel, unpremultiply);
+      float result = ThresholdMaskFxUtils::smoothThreshold(value, threshold,
+                                                           softness);
+      matte[y * maskLx + x] =
+          ThresholdMaskFxUtils::applyInvert(result, invert);
     }
   }
-
   mask->unlock();
+
+  ThresholdMaskFxUtils::boxBlur(matte, maskLx, maskLy, featherRadius);
+
+  source->lock();
+  const int sourceLx = source->getLx();
+  const int sourceLy = source->getLy();
+  for (int y = 0; y < sourceLy; ++y) {
+    PIXEL *srcPix = source->pixels(y);
+    const int matteY = y + cropOffset;
+    for (int x = 0; x < sourceLx; ++x) {
+      const int matteX = x + cropOffset;
+      const float value = matte[matteY * maskLx + matteX];
+      if (outputMode == OutputMatte)
+        srcPix[x] = makeMattePixel<PIXEL>(value);
+      else
+        applyMatteToPixel(srcPix[x], value);
+    }
+  }
   source->unlock();
 }
 
@@ -112,28 +134,36 @@ class ThresholdMaskFx final : public TStandardRasterFx {
 
   TDoubleParamP m_threshold;
   TDoubleParamP m_softness;
+  TDoubleParamP m_edgeFeather;
   TIntEnumParamP m_channel;
   TBoolParamP m_invert;
+  TBoolParamP m_unpremultiplyMask;
   TIntEnumParamP m_output;
 
 public:
   ThresholdMaskFx()
       : m_threshold(0.5)
       , m_softness(0.0)
+      , m_edgeFeather(0.0)
       , m_channel(new TIntEnumParam(ChannelAlpha, "Alpha"))
       , m_invert(false)
+      , m_unpremultiplyMask(true)
       , m_output(new TIntEnumParam(OutputMaskedSource, "Masked Source")) {
     addInputPort("Source", m_source);
     addInputPort("Mask", m_mask);
 
     bindParam(this, "threshold", m_threshold);
     bindParam(this, "softness", m_softness);
+    bindParam(this, "edgeFeather", m_edgeFeather);
     bindParam(this, "channel", m_channel);
     bindParam(this, "invert", m_invert);
+    bindParam(this, "unpremultiplyMask", m_unpremultiplyMask);
     bindParam(this, "output", m_output);
 
     m_threshold->setValueRange(0.0, 1.0);
     m_softness->setValueRange(0.0, 1.0);
+    m_edgeFeather->setValueRange(0.0, 20.0);
+    m_edgeFeather->setMeasureName("fxLength");
 
     m_channel->addItem(ChannelLuminance, "Luminance");
     m_channel->addItem(ChannelRed, "Red");
@@ -154,7 +184,10 @@ public:
     return m_source->doGetBBox(frame, bBox, info);
   }
 
-  bool canHandle(const TRenderSettings &, double) override { return true; }
+  bool canHandle(const TRenderSettings &info, double frame) override {
+    if (m_edgeFeather->getValue(frame) == 0.0) return true;
+    return isAlmostIsotropic(info.m_affine);
+  }
 
   void doCompute(TTile &tile, double frame,
                  const TRenderSettings &ri) override {
@@ -165,30 +198,45 @@ public:
 
     m_source->compute(tile, frame, ri);
 
+    const double shrink = 0.5 * (ri.m_shrinkX + ri.m_shrinkY);
+    const double feather =
+        std::abs(m_edgeFeather->getValue(frame) *
+                 std::sqrt(std::abs(ri.m_affine.det())) / shrink);
+    const int featherRadius = tceil(feather);
+
+    const TPointD maskPos =
+        tile.m_pos - TPointD(featherRadius, featherRadius);
+    const TDimension maskSize(tile.getRaster()->getLx() + featherRadius * 2,
+                              tile.getRaster()->getLy() + featherRadius * 2);
+
     TTile maskTile;
-    m_mask->allocateAndCompute(maskTile, tile.m_pos, tile.getRaster()->getSize(),
-                               tile.getRaster(), frame, ri);
+    m_mask->allocateAndCompute(maskTile, maskPos, maskSize, tile.getRaster(),
+                               frame, ri);
 
     const float threshold = static_cast<float>(m_threshold->getValue(frame));
     const float softness  = static_cast<float>(m_softness->getValue(frame));
     const int channel     = m_channel->getValue();
     const bool invert     = m_invert->getValue();
-    const int outputMode  = m_output->getValue();
+    const bool unpremultiply = m_unpremultiplyMask->getValue();
+    const int outputMode     = m_output->getValue();
 
     if (TRaster32P source = tile.getRaster()) {
       TRaster32P mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixel32>(source, mask, threshold, softness, channel,
-                              invert, outputMode);
+      processRaster<TPixel32>(source, mask, featherRadius, threshold, softness,
+                              channel, invert, unpremultiply, featherRadius,
+                              outputMode);
     } else if (TRaster64P source = tile.getRaster()) {
       TRaster64P mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixel64>(source, mask, threshold, softness, channel,
-                              invert, outputMode);
+      processRaster<TPixel64>(source, mask, featherRadius, threshold, softness,
+                              channel, invert, unpremultiply, featherRadius,
+                              outputMode);
     } else if (TRasterFP source = tile.getRaster()) {
       TRasterFP mask = maskTile.getRaster();
       if (!mask) throw TException("Threshold Mask: incompatible mask raster");
-      processRaster<TPixelF>(source, mask, threshold, softness, channel, invert,
+      processRaster<TPixelF>(source, mask, featherRadius, threshold, softness,
+                             channel, invert, unpremultiply, featherRadius,
                              outputMode);
     } else {
       throw TException("Threshold Mask: unsupported raster type");
