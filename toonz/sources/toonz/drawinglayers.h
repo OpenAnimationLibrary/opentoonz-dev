@@ -5,11 +5,13 @@
 
 #include <QTreeWidget>
 #include <QPersistentModelIndex>
+#include <QVector>
 
 class TApplication;
 class TApp;
 class QLabel;
 class QMenu;
+class QSlider;
 class TXsheet;
 class QTimer;
 
@@ -19,13 +21,17 @@ class DrawingLayers final : public QTreeWidget {
   TApplication *m_app;
   TXsheet *m_xsheet;
   QTimer *m_rebuildTimer;
-  QTimer *m_hoverTimer    = nullptr;
-  QWidget *m_hoverPreview = nullptr;
+  QTimer *m_hoverTimer     = nullptr;
+  QTimer *m_hoverHideTimer = nullptr;
+  QWidget *m_hoverPreview  = nullptr;
   QLabel *m_previewImage;
+  QSlider *m_previewScrubber;
   QLabel *m_previewCaption;
   QPersistentModelIndex m_hoverIndex;
   QPoint m_hoverPosition;
-  bool m_activating = false;
+  QVector<int> m_hoverRows;
+  int m_hoverExposureIndex = -1;
+  bool m_activating        = false;
 
 public:
   DrawingLayers(TApplication *app, QWidget *parent = nullptr);
@@ -37,6 +43,7 @@ signals:
   void exposureMenuRequested(QMenu *menu, int row, int column);
 
 protected:
+  bool eventFilter(QObject *watched, QEvent *event) override;
   bool viewportEvent(QEvent *event) override;
   void showEvent(QShowEvent *event) override;
   void hideEvent(QHideEvent *event) override;
@@ -47,7 +54,9 @@ protected:
 
 private:
   void hideHoverPreview();
+  void scheduleHoverHide();
   void showHoverPreview();
+  void renderHoverPreview(int exposureIndex);
   QModelIndex thumbnailAt(const QPoint &position) const;
   bool activateExposure(QTreeWidgetItem *item, bool makeCurrent);
   void scheduleRebuild();
