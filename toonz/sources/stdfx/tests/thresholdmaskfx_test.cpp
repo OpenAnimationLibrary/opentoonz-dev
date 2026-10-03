@@ -23,9 +23,11 @@ int main() {
   using ThresholdMaskFxUtils::keepConnectedComponent;
   using ThresholdMaskFxUtils::smoothThreshold;
 
-  assert(near(smoothThreshold(0.0f, 0.0f, 0.0f), 1.0f));
+  assert(near(smoothThreshold(0.0f, 0.0f, 0.0f), 0.0f));
+  assert(near(smoothThreshold(0.01f, 0.0f, 0.0f), 1.0f));
   assert(near(smoothThreshold(0.49f, 0.5f, 0.0f), 0.0f));
-  assert(near(smoothThreshold(0.50f, 0.5f, 0.0f), 1.0f));
+  assert(near(smoothThreshold(0.50f, 0.5f, 0.0f), 0.0f));
+  assert(near(smoothThreshold(0.51f, 0.5f, 0.0f), 1.0f));
   assert(near(smoothThreshold(0.25f, 0.5f, 0.5f), 0.0f));
   assert(near(smoothThreshold(0.50f, 0.5f, 0.5f), 0.5f));
   assert(near(smoothThreshold(0.75f, 0.5f, 0.5f), 1.0f));
