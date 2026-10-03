@@ -54,18 +54,35 @@ jobs:
           PY
           fi
           python3 "$RUNNER_TEMP/apply-layers-update.py"
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y clang-format-14 qtbase5-dev libqt5svg5-dev libqt5opengl5-dev libglew-dev freeglut3-dev libboost-all-dev
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('toonz/sources/toonz/drawinglayers.cpp')
+          text = p.read_text()
+          old = '  // Any scene/structure change while a menu is open invalidates its target.\n'
+          assert text.count(old) == 1
+          text = text.replace(old, old + '''  connect(model(), &QAbstractItemModel::modelAboutToBeReset,
+                  &menu, &QMenu::close);
+            connect(m_app->getCurrentFrame(), &TFrameHandle::frameSwitched,
+                    &menu, &QMenu::close);
+            connect(m_app->getCurrentColumn(), &TColumnHandle::columnIndexSwitched,
+                    &menu, &QMenu::close);
+          ''')
+          p.write_text(text)
+          PY
+          sudo apt-get -qq update > "$RUNNER_TEMP/layers-apt.log" 2>&1
+          sudo apt-get -qq install -y clang-format-14 qtbase5-dev libqt5svg5-dev libqt5opengl5-dev libglew-dev freeglut3-dev libboost-dev >> "$RUNNER_TEMP/layers-apt.log" 2>&1 || { tail -100 "$RUNNER_TEMP/layers-apt.log"; exit 1; }
           clang-format-14 -i toonz/sources/toonz/drawinglayers.cpp toonz/sources/toonz/drawinglayers.h toonz/sources/toonz/drawinglayersxsheet.cpp toonz/sources/toonz/xshcellviewer.h .github/ot-dev/layers-tests/layers_test.cpp
           git diff --check
           mkdir -p "$RUNNER_TEMP/layers-check"
-          FLAGS="-std=c++17 -fPIC -DLINUX -D_LINUX -Dx64 -I toonz/sources/include -I toonz/sources/toonz -I toonz/sources/toonzqt -I toonz/sources/toonzfarm/include $(pkg-config --cflags Qt5Widgets Qt5OpenGL Qt5Svg Qt5Test)"
+          INCLUDES="-I toonz/sources/include -I toonz/sources/toonz -I toonz/sources/toonzqt -I toonz/sources/toonzfarm/include $(pkg-config --cflags Qt5Widgets Qt5OpenGL Qt5Svg Qt5Test)"
+          FLAGS="-std=c++17 -fPIC -DTNZ_LITTLE_ENDIAN=1 -DLINUX -D_LINUX -Dx64 $INCLUDES"
           for source in toonz/sources/toonz/drawinglayers.cpp toonz/sources/toonz/drawinglayersxsheet.cpp .github/ot-dev/layers-tests/layers_test.cpp; do
             echo "SYNTAX_CHECK $source"
             g++ $FLAGS -fsyntax-only "$source"
           done
-          moc $FLAGS toonz/sources/toonz/drawinglayers.h -o "$RUNNER_TEMP/layers-check/moc_drawinglayers.cpp"
+          moc $INCLUDES toonz/sources/toonz/drawinglayers.h -o "$RUNNER_TEMP/layers-check/moc_drawinglayers.cpp"
           g++ $FLAGS -fsyntax-only "$RUNNER_TEMP/layers-check/moc_drawinglayers.cpp"
+          echo 'PASS: Layers widget, Xsheet bridge, regression test and Qt meta-object syntax checks'
           git add toonz/sources/toonz/drawinglayers.cpp toonz/sources/toonz/drawinglayers.h toonz/sources/toonz/drawinglayersxsheet.cpp toonz/sources/toonz/xshcellviewer.h toonz/sources/toonz/CMakeLists.txt .github/ot-dev/layers-tests/layers_test.cpp doc/layers-preview-and-exposure-menu.md
           git commit -m 'Add Layers hover previews and native exposure selection and menus'
           git push origin HEAD:refs/heads/maintenance/layers-155-result-20261002
