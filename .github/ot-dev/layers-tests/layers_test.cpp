@@ -32,6 +32,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QSignalSpy>
+#include <QSlider>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -311,6 +312,10 @@ void panelAndUndoTests() {
   CHECK(timer && timer->isSingleShot() && timer->interval() == 600);
   auto popup = panel.findChild<QWidget *>("LayersHoverPreview");
   CHECK(popup && !popup->isVisible());
+  CHECK(!popup->testAttribute(Qt::WA_TransparentForMouseEvents));
+  auto scrubber = panel.findChild<QSlider *>("LayersHoverScrubber");
+  CHECK(scrubber && scrubber->hasTracking());
+  CHECK(scrubber->focusPolicy() == Qt::NoFocus);
   QEvent leave(QEvent::Leave);
   QApplication::sendEvent(panel.viewport(), &leave);
   CHECK(!timer->isActive() && !popup->isVisible());
