@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    thresholdmaskfx_utils.h
     t3dsource.h
     ../include/tfxaovsource.h
     texturefxP.h
@@ -169,6 +170,7 @@ set(SOURCES
     squaregradientfx.cpp
     stdfx.cpp
     targetspotfx.cpp
+    thresholdmaskfx.cpp
     texturefx.cpp
     threepointlightfx.cpp
     tilefx.cpp
