@@ -51,13 +51,46 @@ def main():
     assert len(values) == 33 ** 3
     for before, after in [(source, target), (black, black), ((0, 0, 1), (0, 0, 1))]:
         assert max(abs(a - b) for a, b in zip(sample(values, 33, before), after)) < 0.251 / 255
+    # Reported crash fixture: valid cyclic mappings near grid planes must not
+    # be rejected as conflicting at either supported grid size.
+    cycle = ET.parse(pathlib.Path(__file__).with_name('simple_palette_cycle.tpl')).getroot()
+    cycle_pairs = []
+    for style_id, style in enumerate(cycle.findall('./styles/style')):
+        parts = style.text.split()
+        if style_id == 0 or int(parts[-1]) != 255:
+            continue
+        before = tuple(int(v) / 255 for v in parts[2:5])
+        after = before
+        keyed_style = cycle.find(f'./animation/style[@id="{style_id}"]')
+        if keyed_style is not None:
+            before = tuple(int(v) / 255 for v in keyed_style.find('./keyframe[@frame="0"]').text.split()[2:5])
+            after = tuple(int(v) / 255 for v in keyed_style.find('./keyframe[@frame="1"]').text.split()[2:5])
+        cycle_pairs.append((before, after, f'style_{style_id}'))
+    assert len(cycle_pairs) == 4
+    assert cycle_pairs[-1][:2] == ((0, 8 / 255, 1), (1, 25 / 255, 0))
+    for size in (33, 65):
+        for tolerance in (0, 0.1):
+            pair_file.write_text(''.join(
+                ' '.join(map(str, before + after + (tolerance,))) + f' {label}\n'
+                for before, after, label in cycle_pairs))
+            cycle_output = work / f'palette cycle {size}.cube'
+            run = subprocess.run([args.exe, '--color-pairs', str(pair_file),
+                                  '--output', str(cycle_output), '--size', str(size)],
+                                 capture_output=True, text=True, check=True)
+            assert 'Changed colors: 3' in run.stdout and 'Preserved colors: 1' in run.stdout
+            values = [tuple(map(float, line.split())) for line in cycle_output.read_text().splitlines()
+                      if line and (line[0].isdigit() or line[0] == '-')]
+            assert len(values) == size ** 3
+            for before, after, _ in cycle_pairs:
+                assert max(abs(a - b) for a, b in zip(sample(values, size, before), after)) < 0.251 / 255
+            assert all(0 <= channel <= 1 for row in values for channel in row)
     # Conflicts must fail before the output is opened or overwritten.
     old = output.read_bytes()
     pair_file.write_text('1 0 0 0 1 0 0.1 change\n1 0 0 1 0 0 0.1 preserve\n')
     bad = subprocess.run(command, capture_output=True, text=True)
     assert bad.returncode != 0 and 'Conflicting' in bad.stderr
     assert output.read_bytes() == old
-    print('TPL fixture, CLI, cube ordering, preservation and conflict handling passed.')
+    print('TPL fixtures, CLI, boundary color mappings, preservation and conflict handling passed.')
 
 
 if __name__ == '__main__':

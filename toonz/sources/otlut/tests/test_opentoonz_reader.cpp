@@ -51,6 +51,16 @@ int main(int argc, char **argv) {
     const auto palette = otlut::fitLutFromColorPairs(example, 33);
     roundTrip(palette, directory.path() + "/palette.cube", false, example);
     roundTrip(palette, directory.path() + "/palette.3dl", true, example);
+    const std::vector<otlut::ColorPair> cycle = {
+        {{0, 0, 0}, {0, 0, 0}, 0.1f, "black"},
+        {{1, 0, 0}, {4 / 255.0f, 1, 0}, 0.1f, "style 2"},
+        {{0, 1, 4 / 255.0f}, {13 / 255.0f, 0, 1}, 0.1f, "style 3"},
+        {{0, 8 / 255.0f, 1}, {1, 25 / 255.0f, 0}, 0.1f, "style 4"}};
+    for (int size : {33, 65}) {
+      const auto generated = otlut::fitLutFromColorPairs(cycle, size);
+      roundTrip(generated, directory.path() + "/cycle.cube", false, cycle);
+      roundTrip(generated, directory.path() + "/cycle.3dl", true, cycle);
+    }
     std::vector<otlut::ColorPair> samples;
     for (int i = 0; i < 100; ++i) {
       const std::array<float, 3> rgb = {(i * 17 % 101) / 100.0f,

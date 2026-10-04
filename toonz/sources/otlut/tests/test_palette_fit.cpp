@@ -30,6 +30,32 @@ void runPaletteTests() {
   expect(lut, {0, 0, 1}, {0, 0, 1});
   expect(lut, {1, 1, 1}, {1, 1, 1});
 
+  // The reported palette cycles red, green and blue. The green component of
+  // style 4 sits almost on a grid plane (8/255), and its saturated target used
+  // to leave a residual after 512 clamped projections at both supported sizes.
+  std::vector<ColorPair> cycle = {
+      {{0, 0, 0}, {0, 0, 0}, 0.1f, "black"},
+      {{1, 0, 0}, {4 / 255.0f, 1, 0}, 0.1f, "style 2"},
+      {{0, 1, 4 / 255.0f}, {13 / 255.0f, 0, 1}, 0.1f, "style 3"},
+      {{0, 8 / 255.0f, 1}, {1, 25 / 255.0f, 0}, 0.1f, "style 4"}};
+  for (int size : {33, 65}) {
+    for (float tolerance : {0.0f, 0.1f, 1.0f}) {
+      for (auto &p : cycle) p.tolerance = tolerance;
+      lut = otlut::fitLutFromColorPairs(cycle, size, &report);
+      check(report.changedColors == 3 && report.preservedColors == 1,
+            "cycle counts");
+      for (const auto &p : cycle) expect(lut, p.source, p.target);
+      for (float value : lut.rgb)
+        check(std::isfinite(value) && value >= 0 && value <= 1,
+              "projected grid stays in gamut");
+    }
+    // All eight nodes can contribute when every input channel is off-grid.
+    const ColorPair interior = {
+        {8 / 255.0f, 16 / 255.0f, 24 / 255.0f}, {0, 1, 0.1f}, 0, "interior"};
+    lut = otlut::fitLutFromColorPairs({interior}, size);
+    expect(lut, interior.source, interior.target);
+  }
+
   auto nearby = example;
   nearby.push_back({{0.98f, 0.04f, 0}, {0.98f, 0.04f, 0}, 0.1f, "protected"});
   // Strong neighboring mappings can be unrepresentable at 33 points; never

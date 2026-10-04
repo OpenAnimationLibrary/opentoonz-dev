@@ -91,8 +91,12 @@ Tests cover the supplied `example_keys.tpl`, its zero-based stored frame numbers
 red-to-green mapping, black preservation, tolerance/falloff, zero tolerance,
 conflicting mappings, unresolvable nearby colors, cancellation, cube ordering,
 image-pair regression and preservation of an existing output on failure.
+The supplied `simple_palette_cycle.tpl` regression covers three cyclic mappings
+near grid planes at both supported sizes, including saturated target channels.
 When built inside OpenToonz with Qt, an additional production-reader test checks
 palette, identity and asymmetric transforms in `.cube` and `.3dl` formats.
+The Qt task test verifies error recovery and repeated generation followed by
+nested dialog event loops, with no polling of a consumed future.
 The Windows build runs these checks; standalone CI covers Windows, Linux and macOS.
 
 Manual application checks: verify both context-menu locations, referenced Studio

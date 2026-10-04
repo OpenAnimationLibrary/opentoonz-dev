@@ -42,6 +42,36 @@ std::array<float, 3> sample(const Lut3D &lut, const Stencil &s) {
   return out;
 }
 
+// Project a channel onto its trilinear constraint within the RGB gamut. When
+// a node reaches a bound, redistribute the remaining correction among the
+// free nodes. Simply clamping an unconstrained projection can converge very
+// slowly when a source sits almost exactly on a grid plane.
+void projectChannel(Lut3D &lut, const Stencil &s, int channel, float target) {
+  bool free[8];
+  for (int i = 0; i < 8; ++i) free[i] = s.weights[i] > 0;
+  for (int pass = 0; pass < 8; ++pass) {
+    double actual = 0, norm = 0;
+    for (int i = 0; i < 8; ++i) {
+      actual += s.weights[i] * double(lut.rgb[s.cells[i] + channel]);
+      if (free[i]) norm += double(s.weights[i]) * s.weights[i];
+    }
+    if (norm == 0) return;
+    const double correction = (target - actual) / norm;
+    bool bounded            = false;
+    for (int i = 0; i < 8; ++i) {
+      if (!free[i]) continue;
+      float &value      = lut.rgb[s.cells[i] + channel];
+      const double next = value + s.weights[i] * correction;
+      value             = static_cast<float>(std::clamp(next, 0.0, 1.0));
+      if (next < 0 || next > 1) {
+        free[i] = false;
+        bounded = true;
+      }
+    }
+    if (!bounded) return;
+  }
+}
+
 float distance2(const std::array<float, 3> &a, const std::array<float, 3> &b) {
   float result = 0;
   for (int c = 0; c < 3; ++c) result += (a[c] - b[c]) * (a[c] - b[c]);
@@ -145,16 +175,8 @@ Lut3D fitLutFromColorPairs(const std::vector<ColorPair> &input, int size,
   for (int pass = 0; pass < 512; ++pass) {
     checkCancelled(cancelled);
     for (size_t n = 0; n < pairs.size(); ++n) {
-      const Stencil &s  = stencils[n];
-      const auto actual = sample(lut, s);
-      float norm        = 0;
-      for (float w : s.weights) norm += w * w;
-      for (int i = 0; i < 8; ++i)
-        for (int c = 0; c < 3; ++c)
-          lut.rgb[s.cells[i] + c] = std::clamp(
-              lut.rgb[s.cells[i] + c] +
-                  s.weights[i] * (pairs[n].target[c] - actual[c]) / norm,
-              0.0f, 1.0f);
+      for (int c = 0; c < 3; ++c)
+        projectChannel(lut, stencils[n], c, pairs[n].target[c]);
     }
     result.maximumError = 0;
     for (size_t n = 0; n < pairs.size(); ++n) {

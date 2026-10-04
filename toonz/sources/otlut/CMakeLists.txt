@@ -49,6 +49,9 @@ if(OTLUT_BUILD_TESTS)
         ${CMAKE_CURRENT_LIST_DIR}/tests/run_palette_integration.py
         --exe $<TARGET_FILE:otlut> --workdir ${CMAKE_CURRENT_BINARY_DIR}/palette)
     if(TARGET Qt5::Core)
+        add_executable(otlut_task_test tests/test_lut_task.cpp)
+        target_link_libraries(otlut_task_test PRIVATE otlut_core Qt5::Core)
+        add_test(NAME otlut_task COMMAND otlut_task_test)
         add_executable(otlut_reader_test tests/test_opentoonz_reader.cpp
             ../toonzlib/lut3d.cpp)
         target_include_directories(otlut_reader_test PRIVATE ../include)

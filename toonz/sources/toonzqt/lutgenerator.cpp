@@ -1,4 +1,5 @@
 #include "toonzqt/lutgenerator.h"
+#include "lutgeneratorwait.h"
 
 #include "palette_fit.h"
 #include "lut_writer.h"
@@ -34,7 +35,6 @@
 #include <QVBoxLayout>
 
 #include <atomic>
-#include <chrono>
 #include <future>
 #include <memory>
 #include <map>
@@ -234,46 +234,38 @@ class PaletteLutDialog final : public QDialog {
   }
 
   void generate(bool save) {
-    const auto input = pairs(false);
-    bool changed     = false;
-    for (const auto &p : input) changed = changed || p.source != p.target;
-    if (!changed) {
-      QMessageBox::information(
-          this, windowTitle(),
-          QObject::tr("Choose two explicit keys with different "
-                      "colors for at least one included style."));
-      return;
-    }
     std::atomic<bool> cancelled{false};
-    QProgressDialog progress(QObject::tr("Generating palette LUT..."),
-                             QObject::tr("Cancel"), 0, 0, this);
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setMinimumDuration(0);
-    progress.show();
-    connect(&progress, &QProgressDialog::canceled, this,
-            [&cancelled] { cancelled = true; });
-    const int size = m_size->currentData().toInt();
-    auto work      = std::async(std::launch::async, [input, size, &cancelled] {
-      otlut::PaletteFitReport report;
-      const auto lut = otlut::fitLutFromColorPairs(
-               input, size, &report, [&cancelled] { return cancelled.load(); });
-      std::ostringstream stream;
-      otlut::LutWriteOptions options;
-      options.title = "OpenToonz palette keys";
-      otlut::writeCube(stream, lut, options);
-      return std::make_pair(stream.str(), report);
-    });
-    QEventLoop loop;
-    QTimer timer;
-    connect(&timer, &QTimer::timeout, &loop, [&] {
-      if (work.wait_for(std::chrono::milliseconds(0)) ==
-          std::future_status::ready)
-        loop.quit();
-    });
-    timer.start(25);
-    loop.exec();
-    progress.reset();
     try {
+      const auto input = pairs(false);
+      bool changed     = false;
+      for (const auto &p : input) changed = changed || p.source != p.target;
+      if (!changed) {
+        QMessageBox::information(
+            this, windowTitle(),
+            QObject::tr("Choose two explicit keys with different "
+                        "colors for at least one included style."));
+        return;
+      }
+      QProgressDialog progress(QObject::tr("Generating palette LUT..."),
+                               QObject::tr("Cancel"), 0, 0, this);
+      progress.setWindowModality(Qt::WindowModal);
+      progress.setMinimumDuration(0);
+      progress.show();
+      connect(&progress, &QProgressDialog::canceled, this,
+              [&cancelled] { cancelled = true; });
+      const int size = m_size->currentData().toInt();
+      auto work = std::async(std::launch::async, [input, size, &cancelled] {
+        otlut::PaletteFitReport report;
+        const auto lut = otlut::fitLutFromColorPairs(
+            input, size, &report, [&cancelled] { return cancelled.load(); });
+        std::ostringstream stream;
+        otlut::LutWriteOptions options;
+        options.title = "OpenToonz palette keys";
+        otlut::writeCube(stream, lut, options);
+        return std::make_pair(stream.str(), report);
+      });
+      LutGenerator::waitForTask(work);
+      progress.reset();
       const auto generated = work.get();
       if (cancelled) return;
       const QByteArray data = QByteArray::fromStdString(generated.first);
