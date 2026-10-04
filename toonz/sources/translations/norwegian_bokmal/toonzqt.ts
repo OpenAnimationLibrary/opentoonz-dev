@@ -3175,4 +3175,154 @@ Are you sure ?</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
+<context>
+    <name>FontStyleNames</name>
+    <message>
+        <source>Regular</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Normal</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>Bok</translation>
+    </message>
+    <message>
+        <source>Roman</source>
+        <translation>Antikva</translation>
+    </message>
+    <message>
+        <source>Thin</source>
+        <translation>Tynn</translation>
+    </message>
+    <message>
+        <source>Extra Light</source>
+        <translation>Ekstra lett</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Lett</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>Middels</translation>
+    </message>
+    <message>
+        <source>Semibold</source>
+        <translation>Halvfet</translation>
+    </message>
+    <message>
+        <source>Demi Bold</source>
+        <translation>Halvfet</translation>
+    </message>
+    <message>
+        <source>Bold</source>
+        <translation>Fet</translation>
+    </message>
+    <message>
+        <source>Extra Bold</source>
+        <translation>Ekstra fet</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>Svart</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>Kraftig</translation>
+    </message>
+    <message>
+        <source>Italic</source>
+        <translation>Kursiv</translation>
+    </message>
+    <message>
+        <source>Oblique</source>
+        <translation>Skrå</translation>
+    </message>
+    <message>
+        <source>Bold Italic</source>
+        <translation>Fet kursiv</translation>
+    </message>
+    <message>
+        <source>Bold Oblique</source>
+        <translation>Fet skrå</translation>
+    </message>
+    <message>
+        <source>Light Italic</source>
+        <translation>Lett kursiv</translation>
+    </message>
+    <message>
+        <source>Medium Italic</source>
+        <translation>Middels kursiv</translation>
+    </message>
+    <message>
+        <source>Semibold Italic</source>
+        <translation>Halvfet kursiv</translation>
+    </message>
+    <message>
+        <source>Extra Bold Italic</source>
+        <translation>Ekstra fet kursiv</translation>
+    </message>
+    <message>
+        <source>Black Italic</source>
+        <translation>Svart kursiv</translation>
+    </message>
+    <message>
+        <source>Condensed</source>
+        <translation>Smal</translation>
+    </message>
+    <message>
+        <source>Condensed Bold</source>
+        <translation>Smal fet</translation>
+    </message>
+    <message>
+        <source>Condensed Italic</source>
+        <translation>Smal kursiv</translation>
+    </message>
+    <message>
+        <source>Condensed Bold Italic</source>
+        <translation>Smal fet kursiv</translation>
+    </message>
+    <message>
+        <source>Expanded</source>
+        <translation>Utvidet</translation>
+    </message>
+</context>
+<context>
+    <name>FileBrowserLocations</name>
+    <message>
+        <source>My Computer</source>
+        <translation>Datamaskin</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>Nettverk</translation>
+    </message>
+    <message>
+        <source>My Documents</source>
+        <translation>Dokumenter</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>Skrivebord</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Bibliotek</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>Historikk</translation>
+    </message>
+    <message>
+        <source>Project root (%1)</source>
+        <translation>Prosjektrot (%1)</translation>
+    </message>
+    <message>
+        <source>Scene Folder</source>
+        <translation>Scenemappe</translation>
+    </message>
+</context>
 </TS>

@@ -23,6 +23,8 @@
 #include "toonzqt/icongenerator.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/pluginloader.h"
+#include "toonzqt/uitranslation.h"
+#include <QDebug>
 
 // TnzStdfx includes
 #include "stdfx/shaderfx.h"
@@ -580,45 +582,64 @@ int main(int argc, char *argv[]) {
 #else
   languagePathString += "\\" + Preferences::instance()->getCurrentLanguage();
 #endif
+  const bool translatedUi = Preferences::instance()->getCurrentLanguage() !=
+                            QStringLiteral("English");
+  auto loadCatalog = [&](QTranslator &catalog, const QString &name) {
+    if (!catalog.load(name, languagePathString) && translatedUi)
+      qWarning() << "Could not load UI translation:" << name
+                 << languagePathString;
+  };
   QTranslator translator;
-  translator.load("toonz", languagePathString);
+  loadCatalog(translator, "toonz");
 
   // La installo
   a.installTranslator(&translator);
 
   // Carico la traduzione contenuta in toonzqt.qm (se e' presente)
   QTranslator translator2;
-  translator2.load("toonzqt", languagePathString);
+  loadCatalog(translator2, "toonzqt");
   a.installTranslator(&translator2);
 
   // Carico la traduzione contenuta in tnzcore.qm (se e' presente)
   QTranslator tnzcoreTranslator;
-  tnzcoreTranslator.load("tnzcore", languagePathString);
+  loadCatalog(tnzcoreTranslator, "tnzcore");
   qApp->installTranslator(&tnzcoreTranslator);
 
   // Carico la traduzione contenuta in toonzlib.qm (se e' presente)
   QTranslator toonzlibTranslator;
-  toonzlibTranslator.load("toonzlib", languagePathString);
+  loadCatalog(toonzlibTranslator, "toonzlib");
   qApp->installTranslator(&toonzlibTranslator);
 
   // Carico la traduzione contenuta in colorfx.qm (se e' presente)
   QTranslator colorfxTranslator;
-  colorfxTranslator.load("colorfx", languagePathString);
+  loadCatalog(colorfxTranslator, "colorfx");
   qApp->installTranslator(&colorfxTranslator);
 
   // Carico la traduzione contenuta in tools.qm
   QTranslator toolTranslator;
-  toolTranslator.load("tnztools", languagePathString);
+  loadCatalog(toolTranslator, "tnztools");
   qApp->installTranslator(&toolTranslator);
 
   // load translation for file writers properties
   QTranslator imageTranslator;
-  imageTranslator.load("image", languagePathString);
+  loadCatalog(imageTranslator, "image");
   qApp->installTranslator(&imageTranslator);
 
+  // OpenToonz owns a small fallback catalog for standard Qt dialog buttons.
+  // A complete toolkit translation, when installed, can override it below.
+  QTranslator qtUiTranslator;
+  loadCatalog(qtUiTranslator, "qt_ui");
+  a.installTranslator(&qtUiTranslator);
   QTranslator qtTranslator;
-  qtTranslator.load("qt_" + QLocale::system().name(),
-                    QLibraryInfo::location(QLibraryInfo::TranslationsPath));
+  QString uiLocale = DVGui::uiTranslationLocale(
+      translator, Preferences::instance()->getCurrentLanguage());
+  if (!DVGui::loadQtUiTranslation(
+          qtTranslator, uiLocale,
+          {languagePathString,
+           QCoreApplication::applicationDirPath() + "/translations",
+           QLibraryInfo::location(QLibraryInfo::TranslationsPath)}) &&
+      translatedUi)
+    qWarning() << "Could not load Qt UI translation for" << uiLocale;
   a.installTranslator(&qtTranslator);
 
   // Aggiorno la traduzione delle properties di tutti i tools

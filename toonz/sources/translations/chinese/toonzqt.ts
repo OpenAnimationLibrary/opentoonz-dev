@@ -3512,4 +3512,154 @@ Apply</source>
         <translation>删除 %1</translation>
     </message>
 </context>
+<context>
+    <name>FontStyleNames</name>
+    <message>
+        <source>Regular</source>
+        <translation>常规</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>标准</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>书体</translation>
+    </message>
+    <message>
+        <source>Roman</source>
+        <translation>罗马体</translation>
+    </message>
+    <message>
+        <source>Thin</source>
+        <translation>细体</translation>
+    </message>
+    <message>
+        <source>Extra Light</source>
+        <translation>特细体</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>轻体</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>中等</translation>
+    </message>
+    <message>
+        <source>Semibold</source>
+        <translation>半粗体</translation>
+    </message>
+    <message>
+        <source>Demi Bold</source>
+        <translation>半粗体</translation>
+    </message>
+    <message>
+        <source>Bold</source>
+        <translation>粗体</translation>
+    </message>
+    <message>
+        <source>Extra Bold</source>
+        <translation>特粗体</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>黑体</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>重体</translation>
+    </message>
+    <message>
+        <source>Italic</source>
+        <translation>斜体</translation>
+    </message>
+    <message>
+        <source>Oblique</source>
+        <translation>倾斜体</translation>
+    </message>
+    <message>
+        <source>Bold Italic</source>
+        <translation>粗斜体</translation>
+    </message>
+    <message>
+        <source>Bold Oblique</source>
+        <translation>粗倾斜体</translation>
+    </message>
+    <message>
+        <source>Light Italic</source>
+        <translation>轻斜体</translation>
+    </message>
+    <message>
+        <source>Medium Italic</source>
+        <translation>中等斜体</translation>
+    </message>
+    <message>
+        <source>Semibold Italic</source>
+        <translation>半粗斜体</translation>
+    </message>
+    <message>
+        <source>Extra Bold Italic</source>
+        <translation>特粗斜体</translation>
+    </message>
+    <message>
+        <source>Black Italic</source>
+        <translation>黑斜体</translation>
+    </message>
+    <message>
+        <source>Condensed</source>
+        <translation>窄体</translation>
+    </message>
+    <message>
+        <source>Condensed Bold</source>
+        <translation>窄粗体</translation>
+    </message>
+    <message>
+        <source>Condensed Italic</source>
+        <translation>窄斜体</translation>
+    </message>
+    <message>
+        <source>Condensed Bold Italic</source>
+        <translation>窄粗斜体</translation>
+    </message>
+    <message>
+        <source>Expanded</source>
+        <translation>宽体</translation>
+    </message>
+</context>
+<context>
+    <name>FileBrowserLocations</name>
+    <message>
+        <source>My Computer</source>
+        <translation>我的电脑</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <source>My Documents</source>
+        <translation>我的文档</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>桌面</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>库</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>历史</translation>
+    </message>
+    <message>
+        <source>Project root (%1)</source>
+        <translation>项目根目录 (%1)</translation>
+    </message>
+    <message>
+        <source>Scene Folder</source>
+        <translation>场景文件夹</translation>
+    </message>
+</context>
 </TS>

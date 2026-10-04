@@ -2093,7 +2093,7 @@ moved to the end of the current style&apos;s page of the palette.</source>
     </message>
     <message>
         <source>Assistants</source>
-        <translation type="unfinished">辅助绘图</translation>
+        <translation>辅助工具</translation>
     </message>
 </context>
 <context>

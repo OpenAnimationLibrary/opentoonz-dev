@@ -4079,4 +4079,154 @@ Apply</source>
         <translation>Удалить %1</translation>
     </message>
 </context>
+<context>
+    <name>FontStyleNames</name>
+    <message>
+        <source>Regular</source>
+        <translation>Обычный</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Обычный</translation>
+    </message>
+    <message>
+        <source>Book</source>
+        <translation>Книжный</translation>
+    </message>
+    <message>
+        <source>Roman</source>
+        <translation>Прямой</translation>
+    </message>
+    <message>
+        <source>Thin</source>
+        <translation>Тонкий</translation>
+    </message>
+    <message>
+        <source>Extra Light</source>
+        <translation>Сверхлёгкий</translation>
+    </message>
+    <message>
+        <source>Light</source>
+        <translation>Лёгкий</translation>
+    </message>
+    <message>
+        <source>Medium</source>
+        <translation>Средний</translation>
+    </message>
+    <message>
+        <source>Semibold</source>
+        <translation>Полужирный</translation>
+    </message>
+    <message>
+        <source>Demi Bold</source>
+        <translation>Полужирный</translation>
+    </message>
+    <message>
+        <source>Bold</source>
+        <translation>Жирный</translation>
+    </message>
+    <message>
+        <source>Extra Bold</source>
+        <translation>Сверхжирный</translation>
+    </message>
+    <message>
+        <source>Black</source>
+        <translation>Чёрный</translation>
+    </message>
+    <message>
+        <source>Heavy</source>
+        <translation>Тяжёлый</translation>
+    </message>
+    <message>
+        <source>Italic</source>
+        <translation>Курсив</translation>
+    </message>
+    <message>
+        <source>Oblique</source>
+        <translation>Наклонный</translation>
+    </message>
+    <message>
+        <source>Bold Italic</source>
+        <translation>Жирный курсив</translation>
+    </message>
+    <message>
+        <source>Bold Oblique</source>
+        <translation>Жирный наклонный</translation>
+    </message>
+    <message>
+        <source>Light Italic</source>
+        <translation>Лёгкий курсив</translation>
+    </message>
+    <message>
+        <source>Medium Italic</source>
+        <translation>Средний курсив</translation>
+    </message>
+    <message>
+        <source>Semibold Italic</source>
+        <translation>Полужирный курсив</translation>
+    </message>
+    <message>
+        <source>Extra Bold Italic</source>
+        <translation>Сверхжирный курсив</translation>
+    </message>
+    <message>
+        <source>Black Italic</source>
+        <translation>Чёрный курсив</translation>
+    </message>
+    <message>
+        <source>Condensed</source>
+        <translation>Узкий</translation>
+    </message>
+    <message>
+        <source>Condensed Bold</source>
+        <translation>Узкий жирный</translation>
+    </message>
+    <message>
+        <source>Condensed Italic</source>
+        <translation>Узкий курсив</translation>
+    </message>
+    <message>
+        <source>Condensed Bold Italic</source>
+        <translation>Узкий жирный курсив</translation>
+    </message>
+    <message>
+        <source>Expanded</source>
+        <translation>Широкий</translation>
+    </message>
+</context>
+<context>
+    <name>FileBrowserLocations</name>
+    <message>
+        <source>My Computer</source>
+        <translation>Мой компьютер</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>Сеть</translation>
+    </message>
+    <message>
+        <source>My Documents</source>
+        <translation>Мои документы</translation>
+    </message>
+    <message>
+        <source>Desktop</source>
+        <translation>Рабочий стол</translation>
+    </message>
+    <message>
+        <source>Library</source>
+        <translation>Библиотека</translation>
+    </message>
+    <message>
+        <source>History</source>
+        <translation>История</translation>
+    </message>
+    <message>
+        <source>Project root (%1)</source>
+        <translation>Корень проекта (%1)</translation>
+    </message>
+    <message>
+        <source>Scene Folder</source>
+        <translation>Папка сцены</translation>
+    </message>
+</context>
 </TS>

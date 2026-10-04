@@ -477,6 +477,7 @@ endif()
 if(WITH_TRANSLATION)
     add_translation(toonz ${HEADERS} ${SOURCES})
     add_compile_translations_command(OpenToonz toonz)
+    add_compile_translations_command(OpenToonz qt_ui)
 endif()
 
 if(BUILD_TARGET_WIN)
