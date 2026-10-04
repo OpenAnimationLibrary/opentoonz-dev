@@ -291,7 +291,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DOTLUT_BUILD_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
         shell: cmd
 
       - name: Build and test OpenEXR image I/O and level source
@@ -351,6 +351,14 @@ jobs:
           cd toonz\build
           msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal ALL_BUILD.vcxproj
         shell: cmd
+
+      - name: Test OTLUT palette and image generators
+        shell: cmd
+        run: |
+          set "PATH=%QT_PATH%\bin;%PATH%"
+          cd toonz\build
+          ctest -C RelWithDebInfo --output-on-failure -R "^otlut_"
+          if %errorlevel% neq 0 exit /b %errorlevel%
 
       # Create the package
       - name: Create Package
