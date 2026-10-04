@@ -238,6 +238,9 @@ public:
   bool isViewerIndicatorEnabled() const {
     return getBoolValue(viewerIndicatorEnabled);
   }
+  bool isRestoreViewerViewFromLastSessionEnabled() const {
+    return getBoolValue(restoreViewerViewFromLastSession);
+  }
 
   // Visualization  tab
   bool getShow0ThickLines() const { return getBoolValue(show0ThickLines); }
@@ -289,6 +292,8 @@ public:
 
   // Import Export Tab
   QString getFfmpegPath() const { return getStringValue(ffmpegPath); }
+  QString getPdfRendererPath() const { return getStringValue(pdfRendererPath); }
+  QString getOtlutPath() const { return getStringValue(otlutPath); }
   int getFfmpegTimeout() { return getIntValue(ffmpegTimeout); }
   QString getFastRenderPath() const { return getStringValue(fastRenderPath); }
   bool getFfmpegMultiThread() const { return getBoolValue(ffmpegMultiThread); }
@@ -372,6 +377,12 @@ public:
   TPixel32 getAnimateToolColor() const {
     return getColorValue(animateToolColor);
   }
+  QString getDefaultStartupTool() const {
+    return getStringValue(defaultStartupTool);
+  }
+  QString getDefaultNewSceneTool() const {
+    return getStringValue(defaultNewSceneTool);
+  }
 
   // Xsheet  tab
   QString getXsheetLayoutPreference() const {
@@ -441,6 +452,18 @@ public:
   }
   void getCurrentColumnData(TPixel &color) const {
     color = getColorValue(currentColumnColor);
+  }
+  bool isCustomCurrentCellColorEnabled() const {
+    return getBoolValue(customCurrentCellColorEnabled);
+  }
+  void getCurrentCellData(TPixel &color) const {
+    color = getColorValue(currentCellColor);
+  }
+  bool isCustomCurrentColumnOutlineColorEnabled() const {
+    return getBoolValue(customCurrentColumnOutlineColorEnabled);
+  }
+  void getCurrentColumnOutlineColor(TPixel &color) const {
+    color = getColorValue(currentColumnOutlineColor);
   }
 
   LevelNameDisplayType getLevelNameDisplayType() const {

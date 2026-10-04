@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "profile": "am-ot-glb-bridge",
+  "profileVersion": "0.1-draft",
+  "baseline": {
+    "repository": "OpenAnimationLibrary/opentoonz-dev",
+    "commit": "88114adeef1112773ab299acff98bcd4886d2f27",
+    "description": "Static GLB Model FX with material RGB overrides; excludes unmerged PBR PR #177. This is a pinned audit baseline, not runtime capability negotiation."
+  },
+  "loaderExtensions": [
+    "KHR_materials_unlit",
+    "KHR_texture_transform",
+    "KHR_mesh_quantization"
+  ],
+  "features": {
+    "triangle_surfaces": {"retention": "geometry", "rendering": "supported", "nextStage": "existing"},
+    "node_transforms": {"retention": "static-local-and-world-matrices", "rendering": "static-only", "nextStage": "animation"},
+    "base_color_rgb": {"retention": "material-factors-and-associations", "rendering": "material-color-mode", "nextStage": "appearance"},
+    "normals": {"retention": "attributes", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "tangents": {"retention": "attributes", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "vertex_colors": {"retention": "attributes", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "textures": {"retention": "references-samplers-and-embedded-bytes", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "material_alpha": {"retention": "factors-and-alpha-mode", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "material_sidedness": {"retention": "double-sided-flag", "rendering": "always-two-sided", "nextStage": "appearance"},
+    "pbr_factors": {"retention": "core-metallic-roughness-factors", "rendering": "not-evaluated", "nextStage": "pbr-pr-177"},
+    "emission": {"retention": "core-factor-and-texture-reference", "rendering": "not-evaluated", "nextStage": "appearance"},
+    "skinning": {"retention": "attributes-and-presence-count-only", "rendering": "not-evaluated", "nextStage": "owned-animation-data"},
+    "animation": {"retention": "count-only", "rendering": "not-evaluated", "nextStage": "owned-animation-data"},
+    "morph_targets": {"retention": "presence-only", "rendering": "not-evaluated", "nextStage": "morphs"},
+    "cameras": {"retention": "not-retained", "rendering": "not-evaluated", "nextStage": "cameras-lights"},
+    "lights": {"retention": "not-retained", "rendering": "not-evaluated", "nextStage": "cameras-lights"},
+    "points_lines": {"retention": "geometry", "rendering": "skipped", "nextStage": "optional-topology"},
+    "bridge_metadata": {"retention": "not-retained", "rendering": "not-used", "nextStage": "identity-metadata"}
+  }
+}

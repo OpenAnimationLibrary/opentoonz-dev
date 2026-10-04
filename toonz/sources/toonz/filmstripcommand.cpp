@@ -792,18 +792,21 @@ public:
                   const std::vector<TFrameId> &oldLevelFrameId,
                   TPaletteP oldPalette, DrawingData::ImageSetType setType,
                   HookSet *oldLevelHooks, bool keepOriginalPalette,
-                  DrawingData *oldData = nullptr)
+                  DrawingData *oldData = nullptr, DrawingData *newData = nullptr)
       : m_sl(sl)
       , m_frames(frames)
       , m_oldLevelFrameId(oldLevelFrameId)
       , m_oldPalette(oldPalette)
       , m_oldData(oldData)
+      , m_newData(newData)
       , m_setType(setType)
       , m_oldLevelHooks(oldLevelHooks)
       , m_keepOriginalPalette(keepOriginalPalette) {
-    QClipboard *clipboard = QApplication::clipboard();
-    QMimeData *data       = cloneData(clipboard->mimeData());
-    m_newData.reset(dynamic_cast<DrawingData *>(data));
+    if (!m_newData) {
+      QClipboard *clipboard = QApplication::clipboard();
+      QMimeData *data       = cloneData(clipboard->mimeData());
+      m_newData.reset(dynamic_cast<DrawingData *>(data));
+    }
     assert(m_newData);
     m_updateXSheet =
         Preferences::instance()->isSyncLevelRenumberWithXsheetEnabled();
@@ -1169,7 +1172,8 @@ class RenumberUndo final : public TUndo {
 
 public:
   RenumberUndo(const TXshSimpleLevelP &level, const std::vector<TFrameId> &fids,
-               bool forceCallUpdateXSheet = false)
+               bool forceCallUpdateXSheet = false,
+               bool skipUpdateXSheet = false)
       : m_level(level), m_fids(fids) {
     assert(m_level);
     std::vector<TFrameId> oldFids;
@@ -1179,8 +1183,9 @@ public:
       if (m_fids[i] != oldFids[i]) m_mapOldFrameId[m_fids[i]] = oldFids[i];
     }
     m_updateXSheet =
-        Preferences::instance()->isSyncLevelRenumberWithXsheetEnabled() ||
-        forceCallUpdateXSheet;
+        !skipUpdateXSheet &&
+        (Preferences::instance()->isSyncLevelRenumberWithXsheetEnabled() ||
+         forceCallUpdateXSheet);
   }
 
   void renumber(std::vector<TFrameId> fids) const {
@@ -1289,6 +1294,53 @@ void FilmstripCmd::renumber(
 
 //-----------------------------------------------------------------------------
 
+void FilmstripCmd::reorder(
+    TXshSimpleLevel *sl,
+    const std::vector<std::pair<TFrameId, TFrameId>> &table) {
+  if (!sl || sl->isSubsequence() || sl->isReadOnly() || table.empty()) return;
+
+  for (const auto &[srcFid, dstFid] : table) {
+    if (!sl->isFid(srcFid)) return;
+  }
+
+  std::vector<TFrameId> fids;
+  sl->getFids(fids);
+  std::set<TFrameId> tmp(fids.begin(), fids.end());
+  for (const auto &[srcFid, _] : table) tmp.erase(srcFid);
+
+  for (size_t i = 0; i < fids.size(); ++i) {
+    TFrameId srcFid = fids[i];
+    auto it =
+        std::find_if(table.begin(), table.end(),
+                     [&srcFid](const auto &p) { return p.first == srcFid; });
+    if (it == table.end()) continue;
+
+    TFrameId tarFid = it->second;
+    if (tmp.count(tarFid) > 0) {
+      do {
+        tarFid =
+            TFrameId(tarFid.getNumber(), getNextLetter(tarFid.getLetter()),
+                     tarFid.getZeroPadding(), tarFid.getStartSeqInd());
+      } while (!tarFid.getLetter().isEmpty() && tmp.count(tarFid) > 0);
+      if (tarFid.getLetter().isEmpty()) return;
+    }
+    tmp.insert(tarFid);
+    fids[i] = tarFid;
+  }
+
+  TXshSimpleLevelP slP(sl);
+  // Level Strip reordering intentionally bypasses the global preference that
+  // synchronizes level renumbering with Xsheet cells. The cell frame IDs must
+  // remain unchanged; the drawing order inside the level is the edited data.
+  TUndoManager::manager()->add(new RenumberUndo(slP, fids, false, true));
+  sl->renumber(fids);
+  sl->setDirtyFlag(true);
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  TApp::instance()->getCurrentLevel()->notifyLevelChange();
+}
+
+//-----------------------------------------------------------------------------
+
 void FilmstripCmd::renumber(TXshSimpleLevel *sl, std::set<TFrameId> &frames,
                             int startFrame, int stepFrame) {
   if (!sl || sl->isSubsequence() || sl->isReadOnly()) return;
@@ -1357,6 +1409,49 @@ void FilmstripCmd::renumber(TXshSimpleLevel *sl, std::set<TFrameId> &frames,
 void FilmstripCmd::copy(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
   if (!sl || frames.empty()) return;
   copyFramesWithoutUndo(sl, frames);
+}
+
+//=============================================================================
+// insertFramesFromLevel
+//-----------------------------------------------------------------------------
+
+bool FilmstripCmd::insertFramesFromLevel(
+    TXshSimpleLevel *sourceLevel, const std::set<TFrameId> &sourceFrames,
+    TXshSimpleLevel *targetLevel, std::set<TFrameId> &targetFrames) {
+  if (!sourceLevel || !targetLevel || sourceFrames.empty() ||
+      targetFrames.empty() || sourceLevel == targetLevel ||
+      sourceLevel->getType() != targetLevel->getType() ||
+      targetLevel->isSubsequence() || targetLevel->isReadOnly())
+    return false;
+
+  std::vector<TFrameId> oldLevelFrameId;
+  targetLevel->getFids(oldLevelFrameId);
+
+  TPaletteP oldPalette;
+  if (TPalette *pal = targetLevel->getPalette()) oldPalette = pal->clone();
+
+  auto *data = new DrawingData();
+  std::set<TFrameId> sourceCopy = sourceFrames;
+  data->setLevelFrames(sourceLevel, sourceCopy);
+
+  auto *oldLevelHooks = new HookSet();
+  *oldLevelHooks      = *targetLevel->getHookSet();
+
+  bool keepOriginalPalette = true;
+  bool inserted = pasteFramesWithoutUndo(
+      data, targetLevel, targetFrames, DrawingData::INSERT, true,
+      keepOriginalPalette);
+  if (!inserted) {
+    delete oldLevelHooks;
+    delete data;
+    return false;
+  }
+
+  TUndoManager::manager()->add(new PasteFramesUndo(
+      targetLevel, targetFrames, oldLevelFrameId, oldPalette,
+      DrawingData::INSERT, oldLevelHooks, keepOriginalPalette, nullptr, data));
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  return true;
 }
 
 //=============================================================================

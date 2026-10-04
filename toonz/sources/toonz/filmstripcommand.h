@@ -30,9 +30,18 @@ void renumber(TXshSimpleLevel *sl, std::set<TFrameId> &frames, int startFrame,
 void renumber(TXshSimpleLevel *sl,
               const std::vector<std::pair<TFrameId, TFrameId>> &table,
               bool forceCallUpdateXSheet = false);
+// Reassign drawing frame IDs without rewriting Xsheet cell references.
+// Used by Level Strip drag reordering, where the drawing order itself is the
+// intended edit.
+void reorder(TXshSimpleLevel *sl,
+             const std::vector<std::pair<TFrameId, TFrameId>> &table);
 
 // Copy/paste operations for frames
 void copy(TXshSimpleLevel *sl, std::set<TFrameId> &frames);
+bool insertFramesFromLevel(TXshSimpleLevel *sourceLevel,
+                           const std::set<TFrameId> &sourceFrames,
+                           TXshSimpleLevel *targetLevel,
+                           std::set<TFrameId> &targetFrames);
 void paste(TXshSimpleLevel *sl, std::set<TFrameId> &frames);
 void merge(TXshSimpleLevel *sl, std::set<TFrameId> &frames);
 void pasteInto(TXshSimpleLevel *sl, std::set<TFrameId> &frames);

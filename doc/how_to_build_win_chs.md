@@ -11,7 +11,8 @@ Visual Studio 2019构建的工程文件可以使用2022版本打开。
 
 ### CMake
 - https://cmake.org/download/
-- 用于生成 VS2019 的项目文件。
+- 需要 3.14 或更高版本，用于生成 VS2019 的项目文件。
+- 默认配置会下载固定版本的 OpenEXR 3.5.0 和 Imath 3.2.3 源码并进行静态链接，因此首次配置时需要连接互联网。如需使用已安装的 OpenEXR 3.5 或更高版本，请设置 `OT_USE_SYSTEM_OPENEXR=ON`。
 
 ### Qt
 - https://www.qt.io/download-open-source/

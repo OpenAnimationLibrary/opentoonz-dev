@@ -22,6 +22,10 @@ class TFilmstripSelection;
 class FilmstripFrameHeadGadget;
 class TXshSimpleLevel;
 class QComboBox;
+class QTimer;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class InbetweenDialog;
 class TXshLevel;
 class SceneViewer;
@@ -46,9 +50,10 @@ public:
                   Qt::WindowFlags flags = Qt::WindowFlags());
   ~FilmstripFrames();
 
-  bool m_isVertical    = true;
-  bool m_showNavigator = true;
-  bool m_showComboBox  = true;
+  bool m_isVertical           = true;
+  bool m_showNavigator        = true;
+  bool m_showComboBox         = true;
+  bool m_responsiveThumbnails = true;
 
   void setBGColor(const QColor &color) { m_bgColor = color; }
   QColor getBGColor() const { return m_bgColor; }
@@ -57,8 +62,12 @@ public:
   void setDarkLineColor(const QColor &color) { m_darkLineColor = color; }
   QColor getDarkLineColor() const { return m_darkLineColor; }
 
-  // helper method: get the current level
+  // Level displayed by this strip. The application current level remains
+  // the active editing context.
   TXshSimpleLevel *getLevel() const;
+  void setLevel(TXshSimpleLevel *level);
+  void setActive(bool active);
+  void setSynchronized(bool synchronized);
 
   QSize getIconSize() const { return m_iconSize; }
   int getFrameLabelWidth() const { return m_frameLabelWidth; }
@@ -117,17 +126,24 @@ public:
   };
   void select(int index, SelectionMode mode = SIMPLE_SELECT);
 
-  int getOneFrameHeight();
-  int getOneFrameWidth();
+  int getOneFrameHeight() const;
+  int getOneFrameWidth() const;
   void setOrientation(bool isVertical);
   void setNavigator(bool showNavigator);
   void setComboBox(bool showComboBox);
+  void setResponsiveThumbnails(bool responsive);
+  bool isResponsiveThumbnails() const { return m_responsiveThumbnails; }
+  bool isDragInProgress() const { return m_dragInProgress; }
+  void updateIconLayout();
 
 signals:
   void orientationToggledSignal(bool);
   void comboBoxToggledSignal();
   void navigatorToggledSignal();
+  void responsiveThumbnailsToggledSignal(bool responsive);
   void levelSelectedSignal(int);
+  void levelActivatedSignal(TXshSimpleLevel *level);
+  void levelStripsResyncRequestedSignal();
 
 protected:
   void showEvent(QShowEvent *) override;
@@ -145,6 +161,9 @@ protected:
   void mousePressEvent(QMouseEvent *event) override;
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseMoveEvent(QMouseEvent *) override;
+  void dragEnterEvent(QDragEnterEvent *event) override;
+  void dragMoveEvent(QDragMoveEvent *event) override;
+  void dropEvent(QDropEvent *event) override;
   void enterEvent(QEvent *event) override;
   void keyPressEvent(QKeyEvent *event) override;
   void wheelEvent(QWheelEvent *event) override;
@@ -156,6 +175,9 @@ protected:
   void contextMenuEvent(QContextMenuEvent *event) override;
 
   void startDragDrop();
+  int dropInsertionIndex(const QPoint &pos) const;
+  void refreshLevelContent();
+  void selectDroppedFrames(const std::set<TFrameId> &fids);
   void createSelectLevelMenu(QMenu *menu);
   void inbetween();
 
@@ -170,8 +192,10 @@ protected slots:
   void orientationToggled(bool);
   void comboBoxToggled(bool);
   void navigatorToggled(bool);
+  void responsiveThumbnailsToggled(bool);
   void levelSelected(int);
   void onViewerAboutToBeDestroyed();
+  void commitResponsiveRenderSize();
 
 private:
   // QSS Properties
@@ -189,10 +213,14 @@ private:
   // Widgets
 
   QScrollArea *m_scrollArea;
+  TXshSimpleLevel *m_level;
   TFilmstripSelection *m_selection;
   FilmstripFrameHeadGadget *m_frameHeadGadget;
   InbetweenDialog *m_inbetweenDialog;
   SceneViewer *m_viewer;
+  bool m_isActive              = false;
+  bool m_isSynchronized        = true;
+  bool m_dragInProgress        = false;
   bool m_justStartedSelection  = false;
   int m_indexForResetSelection = -1;
   bool m_allowResetSelection   = false;
@@ -201,8 +229,21 @@ private:
 
   QPoint m_pos;  //!< Last mouse position.
 
-  const QSize m_iconSize;
+  QSize m_prefIconSize;
+  QSize m_iconSize;
+  QSize m_renderIconSize;
   const int m_frameLabelWidth;
+
+  QTimer *m_responsiveRenderTimer = nullptr;
+
+  bool isCurrentLevel() const;
+  bool isActiveLevel() const;
+  bool isCurrentContextLevel() const;
+  void activateLevel();
+  void updateContentConstraints();
+  void scheduleResponsiveRenderCommit();
+  static QSize quantizeResponsiveRenderSize(const QSize &layout,
+                                            const QSize &pref, bool vertical);
 
   std::pair<int, int> m_selectingRange;
 
@@ -233,9 +274,11 @@ class Filmstrip final : public QWidget, public SaveLoadQSettings {
 
   std::vector<TXshSimpleLevel *> m_levels;
   std::map<TXshSimpleLevel *, TFrameId> m_workingFrames;
-  bool m_isVertical    = true;
-  bool m_showNavigator = true;
-  bool m_showComboBox  = true;
+  bool m_isVertical           = true;
+  bool m_showNavigator        = true;
+  bool m_showComboBox         = true;
+  bool m_responsiveThumbnails = true;
+  bool m_syncWithCurrentLevel = true;
 
 public:
   Filmstrip(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
@@ -271,10 +314,14 @@ public slots:
   void orientationToggled(bool);
   void comboBoxToggled();
   void navigatorToggled();
+  void responsiveThumbnailsToggled(bool responsive);
+  void onLevelActivated(TXshSimpleLevel *level);
+  void resyncLevelStrips();
 
 private:
+  void makeActive();
   void updateWindowTitle();
-  // synchronize the current index of combo to the current level
+  // synchronize the current index of combo to the assigned level
   void updateCurrentLevelComboItem();
 };
 

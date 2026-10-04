@@ -1,31 +1,6 @@
 name: MacOS Build
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: ${{ github.head_ref != '' }}
-
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**/*'                                  # Include all files in the repository
-      - '!appveyor.yml'                         # Ignore changes in AppVeyor
-      - '!README.md'                            # Exclude README
-      - '!doc/**'                               # Exclude documentation
-      - '!**/.github/**'                        # Exclude everything in .github folder
-      - '.github/workflows/workflow_macos.yml'  # Include macOS workflow file
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
-    paths:
-      - '**/*'
-      - '!appveyor.yml'
-      - '!README.md'
-      - '!doc/**'
-      - '!**/.github/**'
-      - '.github/workflows/workflow_macos.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,12 +8,6 @@ permissions:
 
 jobs:
   macOS:
-    # Keep exploratory draft PRs fast. Full CI starts when the PR is promoted,
-    # explicitly labelled ci:full, manually dispatched, or merged to main.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.draft == false ||
-      contains(github.event.pull_request.labels.*.name, 'ci:full')
     timeout-minutes: 180 # Stop job if it exceeds expected build time
     # GHA are sunsetting support for macOS 13 (Intel & Apple Silicon/arm) & will be fully unsupported on (December 4th 2025),
     # See: https://github.blog/changelog/2025-09-19-github-actions-macos-13-runner-image-is-closing-down/ & https://github.com/actions/runner-images/issues/13046
@@ -65,6 +34,8 @@ jobs:
           brew link --overwrite --force python@3.14 || true
 
       - name: Install libraries
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
         run: |
           checkPkgAndInstall() {
             for pkg in "$@"; do
@@ -76,9 +47,7 @@ jobs:
             done
           }
 
-          brew update
-
-          checkPkgAndInstall pkg-config glew lz4 libjpeg libpng lzo boost libusb libmypaint ccache jpeg-turbo ninja opencv@4 openjph openexr
+          checkPkgAndInstall pkg-config glew lz4 libjpeg libpng lzo boost libusb libmypaint ccache jpeg-turbo ninja opencv@4
 
           brew list --formula | grep '^qt' | grep -v '@5' | xargs -n1 brew unlink || true
 
@@ -115,8 +84,11 @@ jobs:
             -DQt5_DIR=$(brew --prefix qt@5)/lib/cmake/Qt5 \
             -DCMAKE_PREFIX_PATH=$(brew --prefix qt@5)/lib/cmake/Qt5 \
             -DOpenCV_DIR=$(brew --prefix opencv@4)/lib/cmake/opencv4 \
+            -DBUILD_EXR_TESTS=ON \
+            -DBUILD_EXR_AOV_FX_TESTS=ON \
             -DWITH_TRANSLATION=OFF
           ninja -j $(sysctl -n hw.ncpu)
+          ctest --output-on-failure -R '^(tiio_exr(_level)?|openexraovfx)$'
       - name: Introduce Libraries and Stuff
         run: |
           cd toonz/build/toonz

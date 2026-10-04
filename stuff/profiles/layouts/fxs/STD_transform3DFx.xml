@@ -1,0 +1,18 @@
+<fxlayout>
+  <page name="Transform">
+    <label>"Model-space transform for a compatible 3D source. Select the Edit Tool to manipulate the active gizmo in the canvas."</label>
+    <control>gizmoMode</control>
+    <separator label="Position"/>
+    <control>positionX</control>
+    <control>positionY</control>
+    <control>positionZ</control>
+    <separator label="Rotation"/>
+    <control>rotationX</control>
+    <control>rotationY</control>
+    <control>rotationZ</control>
+    <separator label="Scale"/>
+    <control>scaleX</control>
+    <control>scaleY</control>
+    <control>scaleZ</control>
+  </page>
+</fxlayout>

@@ -14,6 +14,9 @@
 #include "toonz/tstageobjectid.h"
 #include "toonzqt/colorfield.h"
 #include "toonzqt/functionviewer.h"
+
+#include <QToolBar>
+
 class PaletteViewer;
 class TPaletteHandle;
 class StyleEditor;
@@ -32,6 +35,7 @@ class VectorGuidedDrawingPane;
 class FxSelection;
 class StageObjectSelection;
 class LocatorPopup;
+class InsertFxPopup;
 
 //=========================================================
 // PaletteViewerPanel
@@ -242,10 +246,55 @@ public:
 class CommandBarPanel final : public TPanel {
   Q_OBJECT
 
-  // ToolOptions *m_toolOption;
-
 public:
   CommandBarPanel(QWidget *parent);
+
+  // Keep docking eligibility independent of current orientation.
+  QSize getDockedMinimumSize() override { return QSize(20, 20); }
+  QSize getDockedMaximumSize() override {
+    return QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+  }
+
+  void selectDockPlaceholder(QMouseEvent *me) override {
+    DockWidget::selectDockPlaceholder(me);
+    if (!m_selectedPlace) return;
+
+    Qt::Orientation dockOrientation;
+    switch (m_selectedPlace->getAttribute()) {
+    case DockPlaceholder::left:
+    case DockPlaceholder::right:
+    case DockPlaceholder::sepVert:
+      dockOrientation = Qt::Vertical;
+      break;
+    case DockPlaceholder::top:
+    case DockPlaceholder::bottom:
+    case DockPlaceholder::sepHor:
+      dockOrientation = Qt::Horizontal;
+      break;
+    case DockPlaceholder::root:
+    default:
+      return;
+    }
+
+    QToolBar *commandBar = qobject_cast<QToolBar *>(widget());
+    if (!commandBar || commandBar->orientation() == dockOrientation) return;
+
+    const int floatingLength =
+        isFloating() ? (commandBar->orientation() == Qt::Horizontal ? width()
+                                                                    : height())
+                     : 0;
+
+    commandBar->setOrientation(dockOrientation);
+
+    if (floatingLength > 0) {
+      QSize panelSize = size();
+      if (dockOrientation == Qt::Vertical)
+        panelSize.setHeight(floatingLength);
+      else
+        panelSize.setWidth(floatingLength);
+      resize(panelSize);
+    }
+  }
 };
 
 //=========================================================
@@ -359,6 +408,19 @@ class LocatorPanel final : public TPanel {
 
 public:
   LocatorPanel(QWidget *parent);
+};
+
+//=========================================================
+// FxBrowserPanel
+//---------------------------------------------------------
+
+class FxBrowserPanel final : public TPanel {
+  Q_OBJECT
+
+  InsertFxPopup *m_fxBrowser;
+
+public:
+  FxBrowserPanel(QWidget *parent);
 };
 
 #endif

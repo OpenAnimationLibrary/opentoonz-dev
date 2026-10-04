@@ -29,6 +29,8 @@
 
 // TnzBase includes
 #include "tparamcontainer.h"
+#include "tfxmaterial.h"
+#include "tmacrofx.h"
 #include "tunit.h"
 #include "tenv.h"
 
@@ -276,9 +278,12 @@ void FunctionViewer::showEvent(QShowEvent *) {
                          SLOT(onStageObjectChanged(bool)));
   }
 
-  if (m_fxHandle)
+  if (m_fxHandle) {
     ret = ret &&
           connect(m_fxHandle, SIGNAL(fxSwitched()), this, SLOT(onFxSwitched()));
+    ret = ret && connect(m_fxHandle, SIGNAL(fxChanged()), this,
+                         SLOT(refreshMaterialChannels()), Qt::QueuedConnection);
+  }
 
   // display animated channels when the scene is switched
   if (m_sceneHandle) {
@@ -381,6 +386,16 @@ void FunctionViewer::refreshModel() {
   m_toolbar->setCurve(0);
 }
 
+void FunctionViewer::refreshMaterialChannels() {
+  if (!isVisible() || !m_fxHandle || !m_xshHandle) return;
+  TFx *fx = m_fxHandle->getFx();
+  if (auto *column = dynamic_cast<TZeraryColumnFx *>(fx)) fx = column->getZeraryFx();
+  if (!dynamic_cast<TFxMaterialSource *>(fx) && !dynamic_cast<TMacroFx *>(fx)) return;
+  m_functionGraph->getModel()->refreshData(m_xshHandle->getXsheet());
+  m_treeView->updateAll();
+  m_numericalColumns->updateAll();
+}
+
 //-----------------------------------------------------------------------------
 
 void FunctionViewer::setXsheetHandle(TXsheetHandle *xshHandle) {
@@ -460,6 +475,8 @@ void FunctionViewer::setFxHandle(TFxHandle *fxHandle) {
 
     bool ret =
         connect(m_fxHandle, SIGNAL(fxSwitched()), this, SLOT(onFxSwitched()));
+    ret = ret && connect(m_fxHandle, SIGNAL(fxChanged()), this,
+                         SLOT(refreshMaterialChannels()), Qt::QueuedConnection);
     assert(ret);
   }
 
