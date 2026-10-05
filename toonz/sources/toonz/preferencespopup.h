@@ -118,6 +118,7 @@ private:
   QWidget* createColorsPage();
   QWidget* createVersionControlPage();
   QWidget* createTouchTabletPage();
+  QWidget* createConfigTransferPage();
 #ifdef _WIN32
   QWidget* createAddonsPage();
 #endif

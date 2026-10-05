@@ -381,6 +381,12 @@ public:
 
   void load();
   void save();
+  std::set<std::string> registeredNames() const {
+    std::set<std::string> names;
+    for (const auto &variable : m_variables)
+      if (variable.second->m_defaultDefined) names.insert(variable.first);
+    return names;
+  }
 };
 
 //-------------------------------------------------------------------
@@ -627,6 +633,10 @@ void TEnv::setStuffDir(const TFilePath &stuffDir) {
 }
 
 void TEnv::saveAllEnvVariables() { VariableSet::instance()->save(); }
+
+std::set<std::string> TEnv::getRegisteredVariableNames() {
+  return VariableSet::instance()->registeredNames();
+}
 
 bool TEnv::setArgPathValue(std::string key, std::string value) {
   EnvGlobals *eg = EnvGlobals::instance();
