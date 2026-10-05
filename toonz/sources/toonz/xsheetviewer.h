@@ -4,8 +4,12 @@
 #define XSHEETVIEWER_H
 
 #include <QFrame>
+#include <QRect>
 #include <QScrollArea>
 #include <QKeyEvent>
+#include <QHash>
+#include <QSet>
+#include "toonz/noteink.h"
 #include "xshcellviewer.h"
 #include "xshcolumnviewer.h"
 #include "xshrowviewer.h"
@@ -33,7 +37,9 @@ class TKeyframeSelection;
 class TColumnSelection;
 class TSelection;
 class TXshCell;
+class TXshSoundTextLevel;
 class TStageObjectId;
+class QPainter;
 
 enum TXshButtonType {
   PREVIEW_ON_XSHBUTTON = 1,
@@ -663,6 +669,14 @@ class XsheetViewer final : public QFrame, public SaveLoadQSettings {
 
   int m_frameZoomFactor;
 
+  QSet<int> m_noteInkColumns;
+  QSet<int> m_noteCellTextColumns;
+  QSet<int> m_noteNotebookColumns;
+  QHash<int, int> m_noteInkTool;
+  QHash<int, int> m_noteGridFade;
+  QHash<int, int> m_noteInkSize;
+  QHash<int, int> m_noteMarkStep;
+
 public:
   enum FrameDisplayStyle { Frame = 0, SecAndFrame, SixSecSheet, ThreeSecSheet };
 
@@ -768,6 +782,45 @@ public:
                           optional<QColor> outline) const;
 
   //---------
+
+  bool isNoteInkMode(int col) const;
+  void setNoteInkMode(int col, bool on);
+  void toggleNoteInkMode(int col);
+  bool isNoteCellTextMode(int col) const;
+  void setNoteCellTextMode(int col, bool on);
+  void toggleNoteCellTextMode(int col);
+  bool isNoteNotebookMode(int col) const;
+  void setNoteNotebookMode(int col, bool on);
+  void toggleNoteNotebookMode(int col);
+  int noteInkTool(int col) const;
+  void setNoteInkTool(int col, int tool);
+  bool isNoteInkEraser(int col) const {
+    return noteInkTool(col) == NoteInkEraser;
+  }
+  int noteGridFade(int col) const;
+  void setNoteGridFade(int col, int fade);
+  int noteInkSize(int col) const;
+  void setNoteInkSize(int col, int size);
+  double noteInkPenWidth(int col) const;
+  int noteMarkStep(int col) const;
+  void setNoteMarkStep(int col, int step);
+  QColor noteInkColor(int col) const;
+  TXshSoundTextLevel *noteInkLevel(int col) const;
+
+  struct NoteInkHeaderHit {
+    QRect area, toggle, pencil[NoteInkPencilCount], eraser, clear, cellText;
+    QRect sliderTrack;
+    QRect fadeSlider, sizeSlider, markSlider;
+  };
+  NoteInkHeaderHit noteInkHeaderHit(int col) const;
+  QRect noteColumnClipRect(int col) const;
+
+  QPointF widgetToNoteInk(const QPoint &pos, int col, int blockStartRow);
+  QPointF widgetFromNoteInk(const QPointF &ink, int col, int blockStartRow);
+  void drawNoteInkStrokes(QPainter &p, int col, int blockStartRow,
+                          const NoteInkStrokeList &strokes,
+                          const NoteInkStroke *liveStroke       = nullptr,
+                          const QList<int> *hiddenStrokeIndices = nullptr);
 
   void updateCells() { m_cellArea->update(m_cellArea->visibleRegion()); }
   void updateRows() { m_rowArea->update(m_rowArea->visibleRegion()); }
@@ -1451,7 +1504,7 @@ public slots:
 
   void setFrameZoomFactor(int f) { m_frameZoomFactor = f; }
   int getFrameZoomFactor() const;
-  QPoint getFrameZoomAdjustment();
+  QPoint getFrameZoomAdjustment() const;
 
   void zoomOnFrame(int frame, int factor);
 };

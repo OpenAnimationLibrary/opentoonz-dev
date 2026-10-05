@@ -98,6 +98,28 @@ const bool checkContainsSingleLevel(TXshColumn *column,
   return false;
 }
 
+QStringList wrapNoteTextLines(const QString &text, const QFontMetrics &fm,
+                              int maxWidth) {
+  QStringList lines;
+  if (text.isEmpty()) return lines;
+  if (maxWidth < 4) return QStringList() << text;
+  QString remaining = text;
+  while (!remaining.isEmpty()) {
+    int len = 1;
+    while (len < remaining.length() &&
+           fm.horizontalAdvance(remaining.left(len + 1)) <= maxWidth)
+      ++len;
+    if (len < remaining.length()) {
+      int breakAt = remaining.left(len).lastIndexOf(QLatin1Char(' '));
+      if (breakAt > 0) len = breakAt + 1;
+    }
+    lines.append(remaining.left(len).trimmed());
+    remaining = remaining.mid(len).trimmed();
+  }
+  if (lines.isEmpty()) lines.append(QString());
+  return lines;
+}
+
 bool selectionContainTlvImage(TCellSelection *selection, TXsheet *xsheet,
                               bool onlyTlv = false) {
   int r0, r1, c0, c1;
@@ -514,21 +536,25 @@ class RenameTextCellUndo final : public TUndo {
   const TXshCell m_oldCell;
   const TXshCell m_newCell;
   QString m_oldText, m_newText;
+  QColor m_oldColor, m_newColor;
   TXshSoundTextLevel *m_level;
 
 public:
   RenameTextCellUndo(int row, int col, TXshCell oldCell, TXshCell newCell,
                      QString oldText, QString newText,
-                     TXshSoundTextLevel *level)
+                     TXshSoundTextLevel *level, QColor oldColor = QColor(),
+                     QColor newColor = QColor())
       : m_row(row)
       , m_col(col)
       , m_oldCell(oldCell)
       , m_newCell(newCell)
       , m_oldText(oldText)
       , m_newText(newText)
+      , m_oldColor(oldColor)
+      , m_newColor(newColor)
       , m_level(level) {}
 
-  void setcell(const TXshCell cell, QString text = "") const {
+  void setcell(const TXshCell cell, QString text, const QColor &color) const {
     TApp *app    = TApp::instance();
     TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
     assert(xsh);
@@ -536,14 +562,16 @@ public:
       xsh->clearCells(m_row, m_col);
     else {
       xsh->setCell(m_row, m_col, cell);
-      m_level->setFrameText(cell.getFrameId().getNumber() - 1, text);
+      int index = cell.getFrameId().getNumber() - 1;
+      m_level->setFrameText(index, text);
+      if (color.isValid()) m_level->setFrameTextColor(index, color);
     }
     app->getCurrentXsheet()->notifyXsheetChanged();
   }
 
-  void undo() const override { setcell(m_oldCell, m_oldText); }
+  void undo() const override { setcell(m_oldCell, m_oldText, m_oldColor); }
 
-  void redo() const override { setcell(m_newCell, m_newText); }
+  void redo() const override { setcell(m_newCell, m_newText, m_newColor); }
 
   int getSize() const override { return sizeof *this; }
 
@@ -645,6 +673,7 @@ void RenameCellField::showInRowCol(int row, int col, bool multiColumnSelected) {
 
   m_row = row;
   m_col = col;
+  setStyleSheet(QString());
 
   QString fontName = Preferences::instance()->getInterfaceFont();
   if (fontName == "") {
@@ -708,18 +737,36 @@ void RenameCellField::showInRowCol(int row, int col, bool multiColumnSelected) {
         TXshSoundTextLevelP textLevel = cell.m_level->getSoundTextLevel();
         if (textLevel) {
           setInitialText(textLevel->getFrameText(fid.getNumber() - 1));
+          QColor tc = textLevel->getFrameTextColor(fid.getNumber() - 1);
+          if (m_viewer->isNoteInkMode(m_col) &&
+              !m_viewer->isNoteInkEraser(m_col))
+            tc = m_viewer->noteInkColor(m_col);
+          setStyleSheet(QString("color: rgb(%1,%2,%3);")
+                            .arg(tc.red())
+                            .arg(tc.green())
+                            .arg(tc.blue()));
         }
-        setAlignment(Qt::AlignLeft | Qt::AlignBottom);
-        QFontMetrics fm(this->font());
-        if (o->cellWidth() - 15 < fm.horizontalAdvance(text()))
-          setFixedWidth(fm.horizontalAdvance(text()) + 10);
-        else
-          setFixedSize(o->cellWidth(), o->cellHeight() + 2);
-        connect(this, &QLineEdit::textChanged, this,
-                [this, o, fm](const QString &text) {
-                  if (o->cellWidth() - 15 < fm.horizontalAdvance(text))
-                    setFixedWidth(fm.horizontalAdvance(text) + 10);
-                });
+        int dragHandleWidth =
+            o->rect(PredefinedRect::DRAG_HANDLE_CORNER).width();
+        if (m_viewer->isNoteNotebookMode(m_col) &&
+            !m_viewer->isNoteInkMode(m_col)) {
+          setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+          setFixedSize(qMax(4, o->cellWidth() - dragHandleWidth - padding),
+                       o->cellHeight() + 2);
+          move(xy + QPoint(1 + dragHandleWidth, 1));
+        } else {
+          setAlignment(Qt::AlignLeft | Qt::AlignBottom);
+          QFontMetrics fm(this->font());
+          if (o->cellWidth() - 15 < fm.horizontalAdvance(text()))
+            setFixedWidth(fm.horizontalAdvance(text()) + 10);
+          else
+            setFixedSize(o->cellWidth(), o->cellHeight() + 2);
+          connect(this, &QLineEdit::textChanged, this,
+                  [this, o, fm](const QString &text) {
+                    if (o->cellWidth() - 15 < fm.horizontalAdvance(text))
+                      setFixedWidth(fm.horizontalAdvance(text) + 10);
+                  });
+        }
       }
       // other level types
       else {
@@ -734,10 +781,29 @@ void RenameCellField::showInRowCol(int row, int col, bool multiColumnSelected) {
   }
   // clear the field if the empty cell is clicked
   else {
-    setFixedSize(o->cellWidth(), o->cellHeight() + 2);
-    move(xy + QPoint(1, 1));
+    TXshColumn *column  = xsh->getColumn(col);
+    int dragHandleWidth = o->rect(PredefinedRect::DRAG_HANDLE_CORNER).width();
+    if (column && column->getSoundTextColumn() &&
+        m_viewer->isNoteNotebookMode(m_col) &&
+        !m_viewer->isNoteInkMode(m_col)) {
+      setFixedSize(qMax(4, o->cellWidth() - dragHandleWidth - padding),
+                   o->cellHeight() + 2);
+      move(xy + QPoint(1 + dragHandleWidth, 1));
+      setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    } else {
+      setFixedSize(o->cellWidth(), o->cellHeight() + 2);
+      move(xy + QPoint(1, 1));
+    }
 
     setInitialText("");
+    if (column && column->getSoundTextColumn() &&
+        m_viewer->isNoteInkMode(m_col) && !m_viewer->isNoteInkEraser(m_col)) {
+      QColor tc = m_viewer->noteInkColor(m_col);
+      setStyleSheet(QString("color: rgb(%1,%2,%3);")
+                        .arg(tc.red())
+                        .arg(tc.green())
+                        .arg(tc.blue()));
+    }
   }
   show();
   raise();
@@ -754,7 +820,8 @@ void RenameCellField::renameSoundTextColumn(TXshSoundTextColumn *sndTextCol,
   int r0, c0, r1, c1;
   TCellSelection *cellSelection = dynamic_cast<TCellSelection *>(
       TApp::instance()->getCurrentSelection()->getSelection());
-  if (!cellSelection) {
+  if (!cellSelection || m_viewer->isNoteCellTextMode(m_col) ||
+      m_viewer->isNoteNotebookMode(m_col) || m_viewer->isNoteInkMode(m_col)) {
     r0 = m_row;
     r1 = m_row;
   } else
@@ -776,6 +843,14 @@ void RenameCellField::renameSoundTextColumn(TXshSoundTextColumn *sndTextCol,
       if (lastFrame < 0) {  // no level on column
         sndTextLevel = new TXshSoundTextLevel();
         sndTextLevel->setType(SND_TXT_XSHLEVEL);
+        sndTextLevel->setInkMode(m_viewer->isNoteInkMode(m_col));
+        sndTextLevel->setCellTextMode(m_viewer->isNoteCellTextMode(m_col));
+        sndTextLevel->setNotebookMode(m_viewer->isNoteNotebookMode(m_col));
+        if (sndTextLevel->isInkMode()) {
+          sndTextLevel->setPencilSize(m_viewer->noteInkSize(m_col));
+          sndTextLevel->setGridFade(m_viewer->noteGridFade(m_col));
+          sndTextLevel->setMarkStep(m_viewer->noteMarkStep(m_col));
+        }
         newId = TFrameId(1);
         cell  = TXshCell(sndTextLevel, newId);
         sndTextCol->setCell(row, cell);
@@ -794,9 +869,101 @@ void RenameCellField::renameSoundTextColumn(TXshSoundTextColumn *sndTextCol,
 
     TXshCell prevCell             = xsheet->getCell(row - 1, m_col);
     TXshSoundTextLevel *textLevel = cell.m_level->getSoundTextLevel();
-    if (oldText == "changeMe")
+    QColor oldColor               = QColor(Qt::black);
+    if (oldText == "changeMe") {
       oldText = textLevel->getFrameText(cell.getFrameId().getNumber() - 1);
-    if (!prevCell.isEmpty()) {
+      oldColor =
+          textLevel->getFrameTextColor(cell.getFrameId().getNumber() - 1);
+    }
+    QColor newColor = oldColor;
+    if (m_viewer->isNoteInkMode(m_col) && !m_viewer->isNoteInkEraser(m_col))
+      newColor = m_viewer->noteInkColor(m_col);
+    bool cellTextMode = m_viewer->isNoteCellTextMode(m_col);
+    bool notebookMode = m_viewer->isNoteNotebookMode(m_col);
+    bool inkMode      = m_viewer->isNoteInkMode(m_col);
+    if (notebookMode && row == m_row) {
+      const Orientation *orient = m_viewer->orientation();
+      int dragW = orient->rect(PredefinedRect::DRAG_HANDLE_CORNER).width();
+      int maxW  = qMax(8, orient->cellWidth() - dragW - 8);
+      QString fontName = Preferences::instance()->getInterfaceFont();
+      if (fontName.isEmpty()) fontName = QStringLiteral("Arial");
+      QFont noteFont(fontName, -1, QFont::Normal);
+      noteFont.setPixelSize(XSHEET_FONT_PX_SIZE);
+      QStringList lines = wrapNoteTextLines(s, QFontMetrics(noteFont), maxW);
+      if (lines.isEmpty()) lines.append(QString());
+      for (int li = 0; li < lines.size(); li++) {
+        QString lineText     = lines[li];
+        int targetRow        = row + li;
+        TXshCell lineCell    = xsheet->getCell(targetRow, m_col);
+        TXshCell oldLineCell = lineCell;
+        int lineTextIndex    = lineCell.getFrameId().getNumber() - 1;
+        if (!lineCell.m_level) {
+          oldLineCell   = lineCell;
+          int lastFrame = sndTextCol->getMaxFrame();
+          TXshSoundTextLevel *sndTextLevel;
+          if (lastFrame < 0) {
+            sndTextLevel = new TXshSoundTextLevel();
+            sndTextLevel->setType(SND_TXT_XSHLEVEL);
+            sndTextLevel->setInkMode(inkMode);
+            sndTextLevel->setCellTextMode(cellTextMode);
+            sndTextLevel->setNotebookMode(notebookMode);
+            if (sndTextLevel->isInkMode()) {
+              sndTextLevel->setPencilSize(m_viewer->noteInkSize(m_col));
+              sndTextLevel->setGridFade(m_viewer->noteGridFade(m_col));
+              sndTextLevel->setMarkStep(m_viewer->noteMarkStep(m_col));
+            }
+            lineCell = TXshCell(sndTextLevel, TFrameId(1));
+            sndTextCol->setCell(targetRow, lineCell);
+            lineTextIndex = 0;
+          } else {
+            TXshCell lastCell = xsheet->getCell(lastFrame, m_col);
+            sndTextLevel      = lastCell.m_level->getSoundTextLevel();
+            int textSize      = sndTextLevel->m_framesText.size();
+            lineTextIndex     = textSize;
+            lineCell          = TXshCell(sndTextLevel, TFrameId(textSize + 1));
+            sndTextCol->setCell(targetRow, lineCell);
+          }
+        } else if (cellTextMode || inkMode || notebookMode) {
+          TXshCell prevLine             = xsheet->getCell(targetRow - 1, m_col);
+          TXshCell nextLine             = xsheet->getCell(targetRow + 1, m_col);
+          TXshSoundTextLevel *lineLevel = lineCell.m_level->getSoundTextLevel();
+          if ((!prevLine.isEmpty() && prevLine == lineCell) ||
+              (!nextLine.isEmpty() && nextLine == lineCell)) {
+            int textSize  = lineLevel->m_framesText.size();
+            lineTextIndex = textSize;
+            lineCell      = TXshCell(lineLevel, TFrameId(textSize + 1));
+            sndTextCol->setCell(targetRow, lineCell);
+          }
+        }
+        TXshSoundTextLevel *lineLevel = lineCell.m_level->getSoundTextLevel();
+        QString oldLineText =
+            lineLevel->getFrameText(lineCell.getFrameId().getNumber() - 1);
+        QColor oldLineColor =
+            lineLevel->getFrameTextColor(lineCell.getFrameId().getNumber() - 1);
+        QColor newLineColor = oldLineColor;
+        if (inkMode && !m_viewer->isNoteInkEraser(m_col))
+          newLineColor = m_viewer->noteInkColor(m_col);
+        RenameTextCellUndo *undo = new RenameTextCellUndo(
+            targetRow, m_col, oldLineCell, lineCell, oldLineText, lineText,
+            lineLevel, oldLineColor, newLineColor);
+        TUndoManager::manager()->add(undo);
+        lineLevel->setFrameText(lineCell.getFrameId().getNumber() - 1,
+                                lineText);
+        lineLevel->setFrameTextColor(lineCell.getFrameId().getNumber() - 1,
+                                     newLineColor);
+      }
+      continue;
+    }
+    if (cellTextMode || inkMode || notebookMode) {
+      TXshCell nextCell = xsheet->getCell(row + 1, m_col);
+      if ((!prevCell.isEmpty() && prevCell == cell) ||
+          (!nextCell.isEmpty() && nextCell == cell)) {
+        int textSize = textLevel->m_framesText.size();
+        textIndex    = textSize;
+        cell         = TXshCell(textLevel, TFrameId(textSize + 1));
+        sndTextCol->setCell(row, cell);
+      }
+    } else if (!prevCell.isEmpty()) {
       QString prevCellText =
           textLevel->getFrameText(prevCell.getFrameId().getNumber() - 1);
       // check if the previous cell had the same content as the entered text
@@ -805,8 +972,11 @@ void RenameCellField::renameSoundTextColumn(TXshSoundTextColumn *sndTextCol,
       // cell text.
       if (prevCellText == s || s.isEmpty()) {
         sndTextCol->setCell(row, prevCell);
+        QColor prevColor =
+            textLevel->getFrameTextColor(prevCell.getFrameId().getNumber() - 1);
         RenameTextCellUndo *undo = new RenameTextCellUndo(
-            row, m_col, oldCell, prevCell, oldText, prevCellText, textLevel);
+            row, m_col, oldCell, prevCell, oldText, prevCellText, textLevel,
+            oldColor, prevColor);
         TUndoManager::manager()->add(undo);
         continue;
       }
@@ -821,10 +991,11 @@ void RenameCellField::renameSoundTextColumn(TXshSoundTextColumn *sndTextCol,
         sndTextCol->setCell(row, cell);
       }
     }
-    RenameTextCellUndo *undo = new RenameTextCellUndo(row, m_col, oldCell, cell,
-                                                      oldText, s, textLevel);
+    RenameTextCellUndo *undo = new RenameTextCellUndo(
+        row, m_col, oldCell, cell, oldText, s, textLevel, oldColor, newColor);
     TUndoManager::manager()->add(undo);
     textLevel->setFrameText(textIndex, s);
+    textLevel->setFrameTextColor(textIndex, newColor);
   }
   TUndoManager::manager()->endBlock();
   TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -996,6 +1167,22 @@ void RenameCellField::renameCell() {
 //-----------------------------------------------------------------------------
 
 void RenameCellField::onReturnPressed() {
+  TXsheet *xsheet = m_viewer->getXsheet();
+  if (xsheet->getColumn(m_col) &&
+      xsheet->getColumn(m_col)->getSoundTextColumn() &&
+      m_viewer->isNoteNotebookMode(m_col) && !m_viewer->isNoteInkMode(m_col)) {
+    renameCell();
+    TCellSelection *cellSelection = dynamic_cast<TCellSelection *>(
+        TApp::instance()->getCurrentSelection()->getSelection());
+    if (cellSelection) {
+      int nextRow = m_row + 1;
+      cellSelection->selectCells(nextRow, m_col, nextRow, m_col);
+      showInRowCol(nextRow, m_col, false);
+    }
+    m_viewer->updateCells();
+    TApp::instance()->getCurrentSelection()->notifySelectionChanged();
+    return;
+  }
   renameCell();
   // move the cell selection
   TCellSelection *cellSelection = dynamic_cast<TCellSelection *>(
@@ -1245,6 +1432,21 @@ void CellArea::drawFrameSeparator(QPainter &p, int row, int col,
                 ? 0
                 : o->rect(PredefinedRect::DRAG_HANDLE_CORNER).width()
           : o->rect(PredefinedRect::DRAG_HANDLE_CORNER).height();
+
+  TXshColumn *fadeCol = m_viewer->getXsheet()->getColumn(col);
+  if (fadeCol && fadeCol->getSoundTextColumn() &&
+      m_viewer->isNoteInkMode(col)) {
+    int markStep  = m_viewer->noteMarkStep(col);
+    bool noteMark = markStep > 0 && row > 0 && (row % markStep) == 0;
+    if (noteMark) {
+      color     = m_viewer->getMarkerLineColor();
+      lineWidth = 2.;
+    } else {
+      int fade = m_viewer->noteGridFade(col);
+      if (fade >= 100) return;
+      if (fade > 0) color.setAlpha(color.alpha() * (100 - fade) / 100);
+    }
+  }
 
   QLine horizontalLine = m_viewer->orientation()->horizontalLine(
       frameAxis, layerAxisRange.adjusted(handleSize - 1, 1));
@@ -2457,14 +2659,12 @@ void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
 
   int rStart = r0;
   int rEnd   = r1;
-  // obtain top row of the fist note block
   if (!xsh->getCell(r0, col).isEmpty()) {
     while (rStart > 0 &&
            xsh->getCell(rStart - 1, col) == xsh->getCell(r0, col)) {
       rStart--;
     }
   }
-  // obtain bottom row of the last note block
   if (!xsh->getCell(r1, col).isEmpty()) {
     while (xsh->getCell(rEnd + 1, col) == xsh->getCell(r1, col)) {
       rEnd++;
@@ -2478,6 +2678,119 @@ void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
   TCellSelection *cellSelection     = m_viewer->getCellSelection();
   TColumnSelection *columnSelection = m_viewer->getColumnSelection();
   bool isColSelected                = columnSelection->isColumnSelected(col);
+  const bool inkMode                = m_viewer->isNoteInkMode(col);
+
+  struct OccupiedBlock {
+    TXshCell cell;
+    QList<CellInfo> infoList;
+    int row;
+    int rowTo;
+  };
+  QList<OccupiedBlock> occupiedBlocks;
+
+  auto drawBlockText = [&](const OccupiedBlock &block) {
+    TXshSoundTextLevel *textLevel = block.cell.getSoundTextLevel();
+    if (!textLevel) return;
+    QString text =
+        textLevel->getFrameText(block.cell.m_frameId.getNumber() - 1);
+    if (text.isEmpty()) return;
+    int textCount                   = text.count();
+    int row                         = block.row;
+    int rowTo                       = block.rowTo;
+    const QList<CellInfo> &infoList = block.infoList;
+
+    p.setPen(
+        textLevel->getFrameTextColor(block.cell.m_frameId.getNumber() - 1));
+    if (m_viewer->isNoteNotebookMode(col) && !inkMode) {
+      p.setFont(font);
+      for (auto info : infoList) {
+        QString elided = elideText(text, fm, info.nameRect.width(), "~");
+        p.drawText(info.nameRect, Qt::AlignLeft | Qt::AlignVCenter, elided);
+      }
+      return;
+    }
+    if (inkMode || m_viewer->isNoteCellTextMode(col)) {
+      p.setFont(font);
+      if (inkMode) {
+        QString elided =
+            elideText(text, fm, infoList.front().nameRect.width(), "~");
+        p.drawText(infoList.front().nameRect, Qt::AlignCenter, elided);
+      } else {
+        for (auto info : infoList) {
+          QString elided = elideText(text, fm, info.nameRect.width(), "~");
+          p.drawText(info.nameRect, Qt::AlignCenter, elided);
+        }
+      }
+      return;
+    }
+    if (o->isVerticalTimeline()) {
+      int lettersPerChunk =
+          (int)std::ceil((double)textCount / (double)(rowTo - row + 1));
+      int chunkCount =
+          (int)std::ceil((double)textCount / (double)(lettersPerChunk));
+      bool isChunkOverflow = false;
+      for (int c = 0; c < chunkCount; c++) {
+        int chunkWidth =
+            fm.boundingRect(text.mid(c * lettersPerChunk, lettersPerChunk))
+                .width();
+        if (chunkWidth > infoList.front().nameRect.width()) {
+          isChunkOverflow = true;
+          break;
+        }
+      }
+      if (isChunkOverflow) {
+        p.setFont(font);
+        int textPos = 0;
+        for (auto info : infoList) {
+          int len = 1;
+          while (textPos + len < textCount &&
+                 fm.boundingRect(text.mid(textPos, len + 1)).width() <=
+                     info.nameRect.width()) {
+            len++;
+          }
+          QString curText =
+              (info.row == rowTo)
+                  ? elideText(text.mid(textPos), fm, info.nameRect.width(), "~")
+                  : text.mid(textPos, len);
+
+          p.drawText(info.nameRect, Qt::AlignCenter, curText);
+          textPos += len;
+          if (textPos >= textCount) break;
+        }
+      } else {
+        QRect unitedRect =
+            infoList.front().nameRect.united(infoList.last().nameRect);
+        if (lettersPerChunk == 1 &&
+            unitedRect.height() / textCount > heightThres)
+          p.setFont(largeFont);
+        else
+          p.setFont(font);
+        for (int c = 0; c < chunkCount; c++) {
+          int y0 = unitedRect.top() + unitedRect.height() * c / chunkCount;
+          int y1 =
+              unitedRect.top() + unitedRect.height() * (c + 1) / chunkCount;
+          QRect tmpRect(unitedRect.left(), y0, unitedRect.width(), y1 - y0 + 1);
+          p.drawText(tmpRect, Qt::AlignCenter,
+                     text.mid(c * lettersPerChunk, lettersPerChunk));
+        }
+      }
+    } else {
+      p.setFont(font);
+      QRect unitedRect =
+          infoList.front().nameRect.united(infoList.last().nameRect);
+      int extraWidth = unitedRect.width() - fm.boundingRect(text).width();
+      if (extraWidth >= 0) {
+        int margin = extraWidth / (2 * textCount);
+        p.drawText(
+            unitedRect.adjusted(margin, 0, -margin, 0),
+            Qt::TextJustificationForced | Qt::AlignJustify | Qt::AlignVCenter,
+            text);
+      } else {
+        QString elided = elideText(text, fm, unitedRect.width(), "~");
+        p.drawText(unitedRect, Qt::AlignLeft | Qt::AlignVCenter, elided);
+      }
+    }
+  };
 
   // for each row
   for (int row = rStart; row <= rEnd; row++) {
@@ -2538,7 +2851,6 @@ void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
         drawCurrentTimeIndicator(p, info.xy, col);
 
       drawDragHandle(p, info.xy, sideColor);
-      drawEndOfDragHandle(p, info.row == rowTo, info.xy, tmpCellColor);
       drawLockedDottedLine(p, xsh->getColumn(col)->isLocked(), info.xy,
                            tmpCellColor);
 
@@ -2552,104 +2864,21 @@ void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
       }
     }
 
-    // draw text from here
-
-    QString text =
-        cell.getSoundTextLevel()->getFrameText(cell.m_frameId.getNumber() - 1);
-    if (text.isEmpty()) {
-      // advance the current row
-      row = rowTo;
-      continue;
-    }
-    int textCount = text.count();
-
-    p.setPen(Qt::black);
-    // Vertical case
-    if (o->isVerticalTimeline()) {
-      int lettersPerChunk =
-          (int)std::ceil((double)textCount / (double)(rowTo - row + 1));
-      int chunkCount =
-          (int)std::ceil((double)textCount / (double)(lettersPerChunk));
-      bool isChunkOverflow = false;
-      for (int c = 0; c < chunkCount; c++) {
-        int chunkWidth =
-            fm.boundingRect(text.mid(c * lettersPerChunk, lettersPerChunk))
-                .width();
-        if (chunkWidth > infoList.front().nameRect.width()) {
-          isChunkOverflow = true;
-          break;
-        }
-      }
-      // if any chunk overflows the cell width
-      if (isChunkOverflow) {
-        p.setFont(font);
-        // arrange text from the top cell and elide at the last cell
-        int textPos = 0;
-        for (auto info : infoList) {
-          // add letter and check if the text can be inside the cell
-          int len = 1;
-          while (textPos + len < textCount &&
-                 fm.boundingRect(text.mid(textPos, len + 1)).width() <=
-                     info.nameRect.width()) {
-            len++;
-          }
-          // elide text at the last row
-          QString curText =
-              (info.row == rowTo)
-                  ? elideText(text.mid(textPos), fm, info.nameRect.width(), "~")
-                  : text.mid(textPos, len);
-
-          p.drawText(info.nameRect, Qt::AlignCenter, curText);
-          textPos += len;
-          if (textPos >= textCount) break;
-        }
-      }
-      // if all text chunks can be inside the cells
-      else {
-        // unite the cell rects and divide by the amount of chunks
-        QRect unitedRect =
-            infoList.front().nameRect.united(infoList.last().nameRect);
-        // check if the large font is available
-        if (lettersPerChunk == 1 &&
-            unitedRect.height() / textCount > heightThres)
-          p.setFont(largeFont);
-        else
-          p.setFont(font);
-        // draw text
-        for (int c = 0; c < chunkCount; c++) {
-          int y0 = unitedRect.top() + unitedRect.height() * c / chunkCount;
-          int y1 =
-              unitedRect.top() + unitedRect.height() * (c + 1) / chunkCount;
-          QRect tmpRect(unitedRect.left(), y0, unitedRect.width(), y1 - y0 + 1);
-          p.drawText(tmpRect, Qt::AlignCenter,
-                     text.mid(c * lettersPerChunk, lettersPerChunk));
-        }
-      }
-    }
-    // Horizontal case
-    else {
-      p.setFont(font);
-      // unite the cell rects
-      QRect unitedRect =
-          infoList.front().nameRect.united(infoList.last().nameRect);
-      int extraWidth = unitedRect.width() - fm.boundingRect(text).width();
-      if (extraWidth >= 0) {
-        int margin = extraWidth / (2 * textCount);
-        // Qt::TextJustificationForced flag is needed to make Qt::AlignJustify
-        // to work on the single-line text
-        p.drawText(
-            unitedRect.adjusted(margin, 0, -margin, 0),
-            Qt::TextJustificationForced | Qt::AlignJustify | Qt::AlignVCenter,
-            text);
-      } else {
-        QString elided = elideText(text, fm, unitedRect.width(), "~");
-        p.drawText(unitedRect, Qt::AlignLeft | Qt::AlignVCenter, elided);
-      }
-    }
-
-    // advance the current row
+    occupiedBlocks.append({cell, infoList, row, rowTo});
     row = rowTo;
   }
+
+  if (inkMode) {
+    for (const OccupiedBlock &block : occupiedBlocks) {
+      TXshSoundTextLevel *inkLevel = block.cell.getSoundTextLevel();
+      if (!inkLevel) continue;
+      const NoteInkStrokeList &ink =
+          inkLevel->getFrameInk(block.cell.m_frameId.getNumber() - 1);
+      if (!ink.isEmpty()) m_viewer->drawNoteInkStrokes(p, col, block.row, ink);
+    }
+  }
+
+  for (const OccupiedBlock &block : occupiedBlocks) drawBlockText(block);
 }
 
 //-----------------------------------------------------------------------------
@@ -3290,6 +3519,25 @@ void CellArea::mousePressEvent(QMouseEvent *event) {
     TXsheet *xsh       = m_viewer->getXsheet();
     TXshColumn *column = xsh->getColumn(col);
 
+    if (col >= 0 && m_viewer->isNoteInkMode(col) &&
+        !(event->modifiers() & Qt::AltModifier)) {
+      TXshSoundTextColumn *inkCol =
+          column ? column->getSoundTextColumn() : nullptr;
+      TXshCell inkCell = xsh->getCell(row, col);
+      bool canDraw =
+          inkCol && !inkCol->isLocked() &&
+          ((!m_viewer->isNoteInkEraser(col) && !inkCell.isEmpty() &&
+            inkCell.m_level && inkCell.m_level->getSoundTextLevel()) ||
+           (m_viewer->isNoteInkEraser(col) && inkCol->getMaxFrame() >= 0));
+      if (canDraw) {
+        setDragTool(XsheetGUI::DragTool::makeNoteInkTool(m_viewer));
+        m_viewer->dragToolClick(event);
+        event->accept();
+        update();
+        return;
+      }
+    }
+
     // Check if it's the sound column
     bool isSoundColumn = false;
     if (column) {
@@ -3466,7 +3714,6 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
   QPoint frameAdj      = m_viewer->getFrameZoomAdjustment();
 
   m_viewer->setQtModifiers(event->modifiers());
-  setCursor(Qt::ArrowCursor);
   QPoint pos        = event->pos();
   QRect visibleRect = visibleRegion().boundingRect();
   if (m_isPanning) {
@@ -3484,6 +3731,15 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
   m_pos = pos;
   if (getDragTool()) {
     getDragTool()->onDrag(event);
+    CellPosition inkPos   = m_viewer->xyToPosition(pos);
+    int inkCol            = inkPos.layer();
+    TXshColumn *inkColumn = m_viewer->getXsheet()->getColumn(inkCol);
+    if (inkColumn && inkColumn->getSoundTextColumn() &&
+        m_viewer->isNoteInkMode(inkCol) && !inkColumn->isLocked() &&
+        !(event->modifiers() & Qt::AltModifier))
+      setCursor(Qt::CrossCursor);
+    else
+      setCursor(Qt::ArrowCursor);
     return;
   }
 
@@ -3510,6 +3766,10 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
     TXshSoundTextColumn *soundTextColumn = column->getSoundTextColumn();
     isSoundTextColumn                    = (!soundTextColumn) ? false : true;
   }
+
+  const bool noteInkDrawCursor =
+      isSoundTextColumn && m_viewer->isNoteInkMode(col) && column &&
+      !column->isLocked() && !(event->modifiers() & Qt::AltModifier);
 
   TStageObject *pegbar = xsh->getStageObject(m_viewer->getObjectId(col));
   int k0, k1;
@@ -3556,10 +3816,16 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
 
     // convert the last one digit of the frame number to alphabet
     // Ex.  12 -> 1B    21 -> 2A   30 -> 3
-    if (isSoundTextColumn)
-      m_tooltip = cell.getSoundTextLevel()->getFrameText(
-          cell.m_frameId.getNumber() - 1);
-    else if (Preferences::instance()->isShowFrameNumberWithLettersEnabled()) {
+    if (isSoundTextColumn) {
+      if (m_viewer->isNoteInkMode(col)) {
+        if (m_viewer->isNoteInkEraser(col))
+          m_tooltip = tr("Erase a handwritten note");
+        else
+          m_tooltip = tr("Draw a handwritten note");
+      } else
+        m_tooltip = cell.getSoundTextLevel()->getFrameText(
+            cell.m_frameId.getNumber() - 1);
+    } else if (Preferences::instance()->isShowFrameNumberWithLettersEnabled()) {
       m_tooltip =
           (fid.isEmptyFrame() || fid.isNoFrame())
               ? QString::fromStdWString(levelName)
@@ -3580,14 +3846,25 @@ void CellArea::mouseMoveEvent(QMouseEvent *event) {
     m_tooltip = tr("Click and drag to play");
   else if (m_levelExtenderRect.contains(pos))
     m_tooltip = tr("Click and drag to repeat selected cells");
-  else if (isSoundColumn && rectContainsPos(m_soundLevelModifyRects, pos)) {
-    if (o->isVerticalTimeline())
-      setCursor(Qt::SplitVCursor);
-    else
-      setCursor(Qt::SplitHCursor);
+  else if (isSoundColumn && rectContainsPos(m_soundLevelModifyRects, pos))
     m_tooltip = tr("");
+  else if (isSoundTextColumn && m_viewer->isNoteInkMode(col)) {
+    if (m_viewer->isNoteInkEraser(col))
+      m_tooltip = tr("Erase a handwritten note");
+    else if (xsh->getCell(row, col).isEmpty())
+      m_tooltip = tr("Add a cell before drawing");
+    else
+      m_tooltip = tr("Draw a handwritten note");
   } else
     m_tooltip = tr("");
+
+  if (isSoundColumn && rectContainsPos(m_soundLevelModifyRects, pos)) {
+    setCursor(o->isVerticalTimeline() ? Qt::SplitVCursor : Qt::SplitHCursor);
+  } else if (noteInkDrawCursor) {
+    setCursor(Qt::CrossCursor);
+  } else {
+    setCursor(Qt::ArrowCursor);
+  }
 }
 
 //-----------------------------------------------------------------------------

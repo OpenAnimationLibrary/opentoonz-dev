@@ -12,6 +12,7 @@
 #include "toonz/txsheet.h"
 
 #include "../include/tundo.h"
+#include "tpixel.h"
 #include "../include/historytypes.h"
 
 #include <QWidget>
@@ -31,6 +32,9 @@ class QPushButton;
 class Orientation;
 class TApp;
 class TXsheet;
+namespace DVGui {
+class ColorField;
+}
 
 //=============================================================================
 namespace XsheetGUI {
@@ -292,6 +296,16 @@ class ColumnArea final : public QWidget {
   int m_doOnMove;
   XsheetViewer *m_viewer;
   int m_col;
+  int m_noteSliderDragCol;
+  int m_noteSliderKind;
+  QTimer *m_noteStepHoldTimer;
+  int m_noteStepHoldCol;
+  int m_noteStepHoldKind;
+  QRect m_noteStepHoldSlot;
+  bool m_noteStepHoldIncrease;
+  DVGui::ColorField *m_noteColorField;
+  int m_noteColorCol;
+  int m_noteColorPencil;
   QRect m_indexBox;
   QRect m_tabBox;
   QRect m_nameBox;
@@ -402,6 +416,17 @@ protected slots:
   void onCameraColumnLockToggled(bool);
   void onXsheetCameraChange(int);
   void onSetMask(int);
+  void onNoteInkColorChanged(const TPixel32 &color, bool isDragging);
+  void onNoteInkStepHoldTimeout();
+
+  void stopNoteInkStepHold();
+  void startNoteInkStepHold(int col, int kind, const QRect &slot,
+                            bool increase);
+  void applyNoteInkTimelineStep(int col, int kind, const QRect &slot,
+                                bool increase);
+  void showNoteInkStepValueTip(int col, int kind, const QPoint &globalPos);
+  bool editNoteInkTimelineStepValue(int col, int kind, const QPoint &pos,
+                                    Qt::KeyboardModifiers mods);
 };
 
 //-----------------------------------------------------------------------------

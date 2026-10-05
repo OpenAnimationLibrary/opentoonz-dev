@@ -429,6 +429,12 @@
 		<file>icons/dark/actions/20x20/eraser_rectangular.svg</file>
 		<file>icons/dark/actions/20x20/eraser_freehand.svg</file>
 		<file>icons/dark/actions/20x20/eraser_segment.svg</file>
+		<file>icons/dark/actions/20x20/note_ink_brush.svg</file>
+		<file>icons/dark/actions/20x20/note_ink_switch.svg</file>
+		<file>icons/dark/actions/20x20/note_notebook.svg</file>
+		<file>icons/dark/actions/20x20/note_ink_eraser.svg</file>
+		<file>icons/dark/actions/20x20/note_ink_clear.svg</file>
+		<file>icons/dark/actions/20x20/note_ink_celltext.svg</file>
 
 		<file>icons/dark/actions/20x20/geometric_arc.svg</file>
 		<file>icons/dark/actions/20x20/geometric_circle.svg</file>

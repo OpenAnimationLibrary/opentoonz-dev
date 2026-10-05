@@ -45,6 +45,9 @@
 #include "toonz/tstageobjectkeyframe.h"
 #include "toonz/onionskinmask.h"
 #include "toonz/txshsoundcolumn.h"
+#include "toonz/txshsoundtextcolumn.h"
+#include "toonz/txshsoundtextlevel.h"
+#include "toonz/txshleveltypes.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/txshnoteset.h"
 #include "toutputproperties.h"
@@ -59,6 +62,7 @@
 #include "tundo.h"
 
 // Qt includes
+#include <algorithm>
 #include <QPainter>
 #include <QMouseEvent>
 #include <QUrl>
@@ -1351,6 +1355,392 @@ public:
 XsheetGUI::DragTool *XsheetGUI::DragTool::makeNoteMoveTool(
     XsheetViewer *viewer) {
   return new NoteMoveTool(viewer);
+}
+
+//=============================================================================
+// NoteInkTool
+//-----------------------------------------------------------------------------
+
+namespace {
+
+int noteInkBlockStart(TXsheet *xsh, int row, int col) {
+  TXshCell cell = xsh->getCell(row, col);
+  if (cell.isEmpty()) return row;
+  int r = row;
+  while (r > 0 && xsh->getCell(r - 1, col) == cell) r--;
+  return r;
+}
+
+class NoteInkStrokeUndo final : public TUndo {
+  int m_row, m_col;
+  TXshSoundTextLevelP m_level;
+  int m_frameIndex;
+  NoteInkStroke m_stroke;
+
+public:
+  NoteInkStrokeUndo(int row, int col, TXshSoundTextLevel *level, int frameIndex,
+                    const NoteInkStroke &stroke)
+      : m_row(row)
+      , m_col(col)
+      , m_level(level)
+      , m_frameIndex(frameIndex)
+      , m_stroke(stroke) {}
+
+  void redo() const override {
+    if (m_level) m_level->addFrameStroke(m_frameIndex, m_stroke);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  void undo() const override {
+    if (m_level) m_level->removeLastFrameStroke(m_frameIndex);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  int getSize() const override { return sizeof(*this) + 64; }
+
+  QString getHistoryString() override {
+    return QObject::tr("Handwritten Note  at Column %1  Frame %2")
+        .arg(QString::number(m_col + 1))
+        .arg(QString::number(m_row + 1));
+  }
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
+
+struct NoteInkErasedStroke {
+  int frameIndex;
+  int strokeIndex;
+  NoteInkStroke stroke;
+};
+
+class NoteInkEraseUndo final : public TUndo {
+  int m_col;
+  TXshSoundTextLevelP m_level;
+  QList<NoteInkErasedStroke> m_erased;
+
+public:
+  NoteInkEraseUndo(int col, TXshSoundTextLevel *level,
+                   const QList<NoteInkErasedStroke> &erased)
+      : m_col(col), m_level(level), m_erased(erased) {}
+
+  void redo() const override {
+    if (!m_level) return;
+    for (int i = m_erased.size() - 1; i >= 0; --i)
+      m_level->removeFrameStrokeAt(m_erased[i].frameIndex,
+                                   m_erased[i].strokeIndex);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  void undo() const override {
+    if (!m_level) return;
+    for (const NoteInkErasedStroke &item : m_erased)
+      m_level->insertFrameStroke(item.frameIndex, item.strokeIndex,
+                                 item.stroke);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  int getSize() const override { return sizeof(*this) + 64; }
+
+  QString getHistoryString() override {
+    return QObject::tr("Erase Handwritten Note  at Column %1")
+        .arg(QString::number(m_col + 1));
+  }
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
+
+class NoteInkClearUndo final : public TUndo {
+  int m_col;
+  TXshSoundTextLevelP m_level;
+  QList<NoteInkStrokeList> m_oldInk;
+  QList<QString> m_oldText;
+  QList<QColor> m_oldColor;
+
+public:
+  NoteInkClearUndo(int col, TXshSoundTextLevel *level,
+                   const QList<NoteInkStrokeList> &oldInk,
+                   const QList<QString> &oldText, const QList<QColor> &oldColor)
+      : m_col(col)
+      , m_level(level)
+      , m_oldInk(oldInk)
+      , m_oldText(oldText)
+      , m_oldColor(oldColor) {}
+
+  void redo() const override {
+    if (!m_level) return;
+    m_level->clearAllInk();
+    m_level->clearAllFrameText();
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  void undo() const override {
+    if (!m_level) return;
+    m_level->setAllInk(m_oldInk);
+    m_level->setAllFrameText(m_oldText, m_oldColor);
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+
+  int getSize() const override { return sizeof(*this) + 64; }
+
+  QString getHistoryString() override {
+    return QObject::tr("Clear Notes  at Column %1")
+        .arg(QString::number(m_col + 1));
+  }
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
+
+static double noteInkSegDist2(const QPointF &a, const QPointF &b,
+                              const QPointF &p) {
+  QPointF d   = b - a;
+  double len2 = QPointF::dotProduct(d, d);
+  if (len2 < 1e-8) {
+    QPointF v = p - a;
+    return QPointF::dotProduct(v, v);
+  }
+  double t = QPointF::dotProduct(p - a, d) / len2;
+  if (t < 0.0) t = 0.0;
+  if (t > 1.0) t = 1.0;
+  QPointF v = p - (a + d * t);
+  return QPointF::dotProduct(v, v);
+}
+
+static QPoint clampToNoteInkClip(XsheetViewer *viewer, int col, QPoint pos) {
+  QRect clip = viewer->noteColumnClipRect(col);
+  if (clip.isEmpty()) return pos;
+  pos.setX(qBound(clip.left(), pos.x(), clip.right()));
+  pos.setY(qBound(clip.top(), pos.y(), clip.bottom()));
+  return pos;
+}
+
+static bool noteInkStrokeHits(const NoteInkStroke &stroke,
+                              const QVector<QPointF> &erasePts, int col,
+                              int blockStart, XsheetViewer *viewer) {
+  if (stroke.points.isEmpty() || erasePts.size() < 2) return false;
+  const double thresh2 = 16.0;
+  QVector<QPointF> pts;
+  pts.reserve(stroke.points.size());
+  for (const QPointF &ink : stroke.points)
+    pts.append(viewer->widgetFromNoteInk(ink, col, blockStart));
+  for (int e = 1; e < erasePts.size(); ++e) {
+    for (int s = 0; s < pts.size(); ++s) {
+      QPointF a = (s == 0) ? pts[0] : pts[s - 1];
+      QPointF b = pts[s];
+      if (noteInkSegDist2(a, b, erasePts[e]) <= thresh2) return true;
+      if (noteInkSegDist2(erasePts[e - 1], erasePts[e], b) <= thresh2)
+        return true;
+    }
+  }
+  return false;
+}
+
+class NoteInkTool final : public XsheetGUI::DragTool {
+  int m_col;
+  int m_row;
+  int m_blockStart;
+  int m_frameIndex;
+  TXshSoundTextLevelP m_level;
+  NoteInkStroke m_stroke;
+  QVector<QPointF> m_erasePts;
+  QList<int> m_hidden;
+  QPoint m_lastPos;
+  bool m_valid;
+  bool m_erase;
+
+public:
+  NoteInkTool(XsheetViewer *viewer)
+      : DragTool(viewer)
+      , m_col(-1)
+      , m_row(-1)
+      , m_blockStart(0)
+      , m_frameIndex(-1)
+      , m_valid(false)
+      , m_erase(false) {}
+
+  void onClick(const QMouseEvent *e) override {
+    m_valid = false;
+    m_stroke.points.clear();
+    m_erasePts.clear();
+    m_hidden.clear();
+    CellPosition cellPosition = getViewer()->xyToPosition(e->pos());
+    m_row                     = cellPosition.frame();
+    m_col                     = cellPosition.layer();
+    if (m_row < 0 || m_col < 0) return;
+
+    TXsheet *xsh       = getViewer()->getXsheet();
+    TXshColumn *column = xsh->getColumn(m_col);
+    TXshSoundTextColumn *sndCol =
+        column ? column->getSoundTextColumn() : nullptr;
+    if (!sndCol || sndCol->isLocked()) return;
+
+    TXshCell cell = xsh->getCell(m_row, m_col);
+    m_erase       = getViewer()->isNoteInkEraser(m_col);
+
+    if (m_erase) {
+      if (cell.isEmpty() || !cell.m_level ||
+          !cell.m_level->getSoundTextLevel()) {
+        int last = sndCol->getMaxFrame();
+        for (int r = 0; r <= last; r++) {
+          TXshCell c = xsh->getCell(r, m_col);
+          if (!c.isEmpty() && c.m_level && c.m_level->getSoundTextLevel()) {
+            cell  = c;
+            m_row = r;
+            break;
+          }
+        }
+      }
+      if (cell.isEmpty() || !cell.m_level || !cell.m_level->getSoundTextLevel())
+        return;
+    } else if (cell.isEmpty() || !cell.m_level ||
+               !cell.m_level->getSoundTextLevel())
+      return;
+
+    m_level      = cell.m_level->getSoundTextLevel();
+    m_frameIndex = cell.m_frameId.getNumber() - 1;
+    if (m_frameIndex < 0) return;
+    m_level->ensureFrame(m_frameIndex);
+    m_blockStart = noteInkBlockStart(xsh, m_row, m_col);
+    m_lastPos    = e->pos();
+    QPointF ink  = getViewer()->widgetToNoteInk(m_lastPos, m_col, m_blockStart);
+    if (m_erase)
+      m_erasePts.append(e->pos());
+    else {
+      m_stroke.color = getViewer()->noteInkColor(m_col);
+      m_stroke.width = getViewer()->noteInkPenWidth(m_col);
+      m_stroke.points.append(ink);
+    }
+    m_valid = true;
+    refreshCellsArea();
+  }
+
+  void onDrag(const QMouseEvent *e) override {
+    if (!m_valid) return;
+    QPoint pos = clampToNoteInkClip(getViewer(), m_col, e->pos());
+    if (pos == m_lastPos) return;
+    m_lastPos = pos;
+    if (m_erase) {
+      m_erasePts.append(pos);
+      m_hidden.clear();
+      if (m_level) {
+        const NoteInkStrokeList &ink = m_level->getFrameInk(m_frameIndex);
+        for (int i = 0; i < ink.size(); ++i) {
+          if (noteInkStrokeHits(ink[i], m_erasePts, m_col, m_blockStart,
+                                getViewer()))
+            m_hidden.append(i);
+        }
+      }
+    } else {
+      m_stroke.points.append(
+          getViewer()->widgetToNoteInk(pos, m_col, m_blockStart));
+    }
+    refreshCellsArea();
+  }
+
+  void onRelease(const QMouseEvent *e) override {
+    if (!m_valid) return;
+    QPoint pos = clampToNoteInkClip(getViewer(), m_col, e->pos());
+    if (m_erase) {
+      if ((pos - m_lastPos).manhattanLength() > 0) m_erasePts.append(pos);
+      QList<NoteInkErasedStroke> erased;
+      if (m_level) {
+        const NoteInkStrokeList &ink = m_level->getFrameInk(m_frameIndex);
+        for (int i = ink.size() - 1; i >= 0; --i) {
+          if (noteInkStrokeHits(ink[i], m_erasePts, m_col, m_blockStart,
+                                getViewer())) {
+            NoteInkErasedStroke item;
+            item.frameIndex  = m_frameIndex;
+            item.strokeIndex = i;
+            item.stroke      = ink[i];
+            erased.append(item);
+            m_level->removeFrameStrokeAt(m_frameIndex, i);
+          }
+        }
+      }
+      if (!erased.isEmpty()) {
+        std::reverse(erased.begin(), erased.end());
+        TUndoManager::manager()->add(
+            new NoteInkEraseUndo(m_col, m_level.getPointer(), erased));
+        TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+        TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+      }
+    } else {
+      if (m_stroke.points.isEmpty() ||
+          (pos - m_lastPos).manhattanLength() > 0) {
+        m_stroke.points.append(
+            getViewer()->widgetToNoteInk(pos, m_col, m_blockStart));
+      }
+      if (m_stroke.points.size() >= 2 && m_level) {
+        m_level->addFrameStroke(m_frameIndex, m_stroke);
+        TUndoManager::manager()->add(new NoteInkStrokeUndo(
+            m_row, m_col, m_level.getPointer(), m_frameIndex, m_stroke));
+        TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+        TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+      }
+    }
+    m_valid = false;
+    m_stroke.points.clear();
+    m_erasePts.clear();
+    m_hidden.clear();
+    refreshCellsArea();
+  }
+
+  void drawCellsArea(QPainter &p) override {
+    if (!m_valid) return;
+    if (m_erase) {
+      if (!m_level) return;
+      getViewer()->drawNoteInkStrokes(p, m_col, m_blockStart,
+                                      m_level->getFrameInk(m_frameIndex),
+                                      nullptr, &m_hidden);
+      return;
+    }
+    if (m_stroke.points.isEmpty()) return;
+    getViewer()->drawNoteInkStrokes(p, m_col, m_blockStart, NoteInkStrokeList(),
+                                    &m_stroke);
+  }
+};
+
+}  // namespace
+
+XsheetGUI::DragTool *XsheetGUI::DragTool::makeNoteInkTool(
+    XsheetViewer *viewer) {
+  return new NoteInkTool(viewer);
+}
+
+void XsheetGUI::DragTool::clearNoteInkColumn(XsheetViewer *viewer, int col) {
+  if (!viewer || col < 0) return;
+  TXsheet *xsh             = viewer->getXsheet();
+  TXshColumn *column       = xsh->getColumn(col);
+  TXshSoundTextColumn *snd = column ? column->getSoundTextColumn() : nullptr;
+  if (!snd || snd->isLocked()) return;
+  TXshSoundTextLevel *level = nullptr;
+  int last                  = snd->getMaxFrame();
+  for (int r = 0; r <= last; r++) {
+    TXshCell cell = xsh->getCell(r, col);
+    if (!cell.isEmpty() && cell.m_level)
+      level = cell.m_level->getSoundTextLevel();
+    if (level) break;
+  }
+  if (!level) return;
+  QList<NoteInkStrokeList> oldInk = level->getAllInk();
+  QList<QString> oldText          = level->getAllFrameText();
+  QList<QColor> oldColor          = level->getAllFrameTextColor();
+  bool emptyInk                   = true;
+  for (const NoteInkStrokeList &list : oldInk) {
+    if (!list.isEmpty()) {
+      emptyInk = false;
+      break;
+    }
+  }
+  if (emptyInk && !level->hasFrameText()) return;
+  level->clearAllInk();
+  level->clearAllFrameText();
+  TUndoManager::manager()->add(
+      new NoteInkClearUndo(col, level, oldInk, oldText, oldColor));
+  TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
 }
 
 //=============================================================================

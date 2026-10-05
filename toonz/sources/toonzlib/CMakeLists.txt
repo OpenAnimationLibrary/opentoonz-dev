@@ -151,6 +151,7 @@ set(HEADERS
     ../include/toonz/txshlevelcolumn.h
     ../include/toonz/txshleveltypes.h
     ../include/toonz/txshmeshcolumn.h
+    ../include/toonz/noteink.h
     ../include/toonz/txshnoteset.h
     ../include/toonz/txshpalettecolumn.h
     ../include/toonz/txshpalettelevel.h
