@@ -6,6 +6,7 @@
 #include "orientation.h"
 #include "toonz/txsheet.h"
 #include "toonz/txshcell.h"
+#include "toonz/txshleveltypes.h"
 #include "toonz/txshsoundtextlevel.h"
 #include "toonz/txshcolumn.h"
 #include "toonz/txshlevelcolumn.h"
@@ -110,6 +111,7 @@ void checkColumns(const QString &path) {
   require(sheet->getColumnWidthOverride(1) == 300, "Remove lost width");
   // Replacing an empty level column with another type must preserve its width.
   TXshSoundTextLevelP notes(new TXshSoundTextLevel(L"notes"));
+  notes->setType(SND_TXT_XSHLEVEL);
   notes->setFrameText(0, "Column width regression");
   require(sheet->setCell(0, 1, TXshCell(notes.getPointer(), TFrameId(1))),
           "Could not replace empty column with Note text");
