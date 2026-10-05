@@ -11,6 +11,7 @@
 #include <toonz/strokegenerator.h>
 #include <toonz/rasterstrokegenerator.h>
 #include "toonz/preferences.h"
+#include "toonz/txshsimplelevel.h"
 #include <tools/tool.h>
 #include <tools/cursors.h>
 
@@ -195,6 +196,7 @@ public:
   bool isMyPaintStyleSelected() { return m_isMyPaintStyleSelected; }
 
 private:
+  bool applyRasterAutoFill();
   void updateModifiers();
 
   enum MouseEventType { ME_DOWN, ME_DRAG, ME_UP, ME_MOVE };
@@ -259,6 +261,13 @@ protected:
     TTileSaverCM32 *tileSaver = nullptr;
     TRect affectedRect;
 
+    bool autoFill = false, autoClose = false;
+    int fillStyle = 0, closeDistance = 20;
+    TToonzImageP autoImage;
+    TXshSimpleLevelP autoLevel;
+    // First/last positions; thick stores the end-cap radius for this operation.
+    std::vector<std::pair<TThickPoint, TThickPoint>> autoEnds;
+
     struct Pencil {
       bool isActive   = false;
       bool realPencil = false;
@@ -283,6 +292,10 @@ protected:
   TEnumProperty m_preset;
   TEnumProperty m_drawOrder;
   TBoolProperty m_pencil;
+  TBoolProperty m_autoFill;
+  TBoolProperty m_autoClose;
+  TIntProperty m_closeDistance;
+  TIntProperty m_fillStyle;
   TBoolProperty m_pressure;
   TDoubleProperty m_modifierSize;
   TBoolProperty m_modifierLockAlpha;
