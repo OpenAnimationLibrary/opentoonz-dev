@@ -7,14 +7,17 @@
 #include "toonzqt/dvdialog.h"
 #include "toonzqt/selection.h"
 #include "saveloadqsettings.h"
+#include "toonz/txshsimplelevel.h"
 
 // Qt includes
 #include <QScrollArea>
 #include <QKeyEvent>
+#include <QPointer>
 
 // STD includes
 #include <vector>
 #include <map>
+#include <string>
 
 // forward declaration
 class TFrameId;
@@ -65,6 +68,7 @@ public:
   // Level displayed by this strip. The application current level remains
   // the active editing context.
   TXshSimpleLevel *getLevel() const;
+  void startCopyPasteFrameRange();
   void setLevel(TXshSimpleLevel *level);
   void setActive(bool active);
   void setSynchronized(bool synchronized);
@@ -173,6 +177,8 @@ protected:
   void timerEvent(QTimerEvent *) override;
   TFrameId getCurrentFrameId();
   void contextMenuEvent(QContextMenuEvent *event) override;
+  bool eventFilter(QObject *watched, QEvent *event) override;
+  void cancelCopyPasteFrameRange();
 
   void startDragDrop();
   int dropInsertionIndex(const QPoint &pos) const;
@@ -218,6 +224,14 @@ private:
   FilmstripFrameHeadGadget *m_frameHeadGadget;
   InbetweenDialog *m_inbetweenDialog;
   SceneViewer *m_viewer;
+  QPointer<SceneViewer> m_rangeViewer;
+  TXshSimpleLevelP m_rangeLevel;
+  std::vector<TImageP> m_rangeImages;
+  std::wstring m_rangeLevelName;
+  TPointD m_rangeFirstPoint;
+  bool m_rangeHasFirstPoint    = false;
+  bool m_rangeEatRelease       = false;
+  bool m_rangeComplete         = false;
   bool m_isActive              = false;
   bool m_isSynchronized        = true;
   bool m_dragInProgress        = false;
