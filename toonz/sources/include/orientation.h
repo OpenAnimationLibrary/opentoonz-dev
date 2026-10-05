@@ -294,7 +294,7 @@ protected:
 
 // Enumerates the shared timeline orientations.
 class DVAPI Orientations {
-  Orientation *_topToBottom, *_leftToRight;
+  const Orientation *_topToBottom, *_leftToRight;
   std::vector<const Orientation *> _all;
 
   Orientations();
@@ -309,7 +309,7 @@ public:
   static const Orientation *topToBottom();
   static const Orientation *leftToRight();
   static QString xsheetLayout();
-  static void setXsheetColumnWidth(int width);
+  static const Orientation *withColumnWidth(int width);
 
   static const std::vector<const Orientation *> &all();
 

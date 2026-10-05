@@ -39,6 +39,18 @@ DVAPI void setFFmpegTimeout(int secs);
 DVAPI void runFFmpeg(QProcess &process, const QStringList &arguments);
 DVAPI void runFFprobe(QProcess &process, const QStringList &arguments);
 
+DVAPI bool checkPdfRenderer();
+DVAPI QString autodetectPdfRenderer();
+DVAPI void setPdfRendererDir(const QString &dir);
+DVAPI void runPdfRenderer(QProcess &process, const QStringList &arguments);
+
+DVAPI bool findOtlut(QString dir);
+DVAPI bool checkOtlut();
+DVAPI QString autodetectOtlut();
+DVAPI QString getOtlutDir();
+DVAPI void setOtlutDir(const QString &dir);
+DVAPI void runOtlut(QProcess &process, const QStringList &arguments);
+
 DVAPI void runFFmpegAudio(QProcess &process, QString srcPath, QString dstPath,
                           int samplerate = 44100, int bpp = 16,
                           int channels = 2);

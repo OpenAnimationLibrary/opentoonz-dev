@@ -2307,7 +2307,7 @@ void EllipseFxGadget::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
     setValue(m_xParam, pos.x);
     setValue(m_yParam, pos.y);
   } else if (m_handle == AngleAndAR) {
-    // âÒì]Ç∆êLèkÇ…ï™ÇØÇÈ
+    // rotation and stretching
     TPointD center = getCenter();
     TPointD old_v  = m_pos - center;
     TPointD new_v  = pos - center;
@@ -2532,9 +2532,9 @@ public:
       } else {
         TPointD p[2][2] = {{pc + vec_h * 0.5, pc + vec_h * 0.5 + vec_v},
                            {pc + vec_v * 0.5, pc + vec_v * 0.5 + vec_h}};
-        for (int k = 0; k < 2; k++) {  // ÇΩÇƒÇÊÇ±
+        for (int k = 0; k < 2; k++) {  // vertical
           glBegin(GL_LINE_STRIP);
-          for (int i = 0; i <= 10; i++) {  // ï™äÑ
+          for (int i = 0; i <= 10; i++) {  // subdivision
             double t = (double)i * 0.1;
             tglVertex((1.0 - t) * (1.0 - t) * p[k][0] +
                       2.0 * (1.0 - t) * t * ppivot + t * t * p[k][1]);
@@ -2614,6 +2614,227 @@ public:
     }
     m_clickedPos = pos;
   }
+  void leftButtonUp() override { m_handle = None; }
+};
+
+//=============================================================================
+
+class Transform3DFxGadget final : public FxGadget {
+  TDoubleParamP m_position[3];
+  TDoubleParamP m_rotation[3];
+  TDoubleParamP m_scale[3];
+  TIntEnumParamP m_mode;
+
+  enum Handle { XAxis = 0, YAxis, ZAxis, Center, None } m_handle = None;
+
+  TPointD m_clickedPos;
+  TPointD m_startCenter;
+  double m_startValues[3] = {};
+  double m_startRingAngle = 0.0;
+  double m_dragPixelSize  = 1.0;
+
+  static constexpr double PositionToCanvas = 100.0;
+
+  int mode() const { return m_mode->getValue(); }
+  TPointD center() const {
+    return TPointD(getValue(m_position[0]) * PositionToCanvas,
+                   getValue(m_position[1]) * PositionToCanvas);
+  }
+  static TPointD direction(int axis) {
+    if (axis == XAxis) return TPointD(1.0, 0.0);
+    if (axis == YAxis) return TPointD(0.0, 1.0);
+    return normalize(TPointD(-0.72, -0.72));
+  }
+  void setColor(int handle) const {
+    if (isSelected(handle)) {
+      glColor3dv(m_selectedColor);
+      return;
+    }
+    if (handle == XAxis)
+      glColor3d(0.92, 0.22, 0.18);
+    else if (handle == YAxis)
+      glColor3d(0.20, 0.78, 0.24);
+    else if (handle == ZAxis)
+      glColor3d(0.20, 0.48, 1.0);
+    else
+      glColor3d(0.95, 0.78, 0.18);
+  }
+  TPointD ringPoint(int axis, double angle, double radius) const {
+    TPointD p(std::cos(angle) * radius, std::sin(angle) * radius);
+    if (axis == XAxis)
+      p.x *= 0.35;
+    else if (axis == YAxis)
+      p.y *= 0.35;
+    return p;
+  }
+  double ringAngle(int axis, const TPointD &pos) const {
+    TPointD p = pos - m_startCenter;
+    if (axis == XAxis)
+      p.x /= 0.35;
+    else if (axis == YAxis)
+      p.y /= 0.35;
+    return std::atan2(p.y, p.x);
+  }
+
+public:
+  Transform3DFxGadget(FxGadgetController *controller,
+                      const TParamUIConcept &concept)
+      : FxGadget(controller, 4) {
+    for (int i = 0; i < 3; ++i) {
+      m_position[i] = TDoubleParamP(concept.m_params[i]);
+      m_rotation[i] = TDoubleParamP(concept.m_params[i + 3]);
+      m_scale[i]    = TDoubleParamP(concept.m_params[i + 6]);
+      addParam(m_position[i]);
+      addParam(m_rotation[i]);
+      addParam(m_scale[i]);
+    }
+    m_mode = TIntEnumParamP(concept.m_params[9]);
+    m_mode->addObserver(this);
+  }
+
+  ~Transform3DFxGadget() override { m_mode->removeObserver(this); }
+
+  void draw(bool picking) override {
+    setPixelSize();
+    const double unit     = getPixelSize();
+    const double length   = 64.0 * unit;
+    const double tip      = 8.0 * unit;
+    const TPointD origin  = center();
+    const int currentMode = mode();
+
+    if (picking) glLineWidth(7.0f * m_controller->getDevPixRatio());
+    glPushMatrix();
+    glTranslated(origin.x, origin.y, 0.0);
+
+    if (currentMode == 1) {
+      const double radius    = 49.0 * unit;
+      constexpr int Segments = 72;
+      for (int axis = XAxis; axis <= ZAxis; ++axis) {
+        setColor(axis);
+        glPushName(getId() + axis);
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < Segments; ++i) {
+          const TPointD p = ringPoint(
+              axis, 2.0 * M_PI * double(i) / double(Segments), radius);
+          glVertex2d(p.x, p.y);
+        }
+        glEnd();
+        glPopName();
+      }
+    } else {
+      for (int axis = XAxis; axis <= ZAxis; ++axis) {
+        const TPointD d   = direction(axis);
+        const TPointD end = d * length;
+        setColor(axis);
+        glPushName(getId() + axis);
+        glBegin(GL_LINES);
+        glVertex2d(0.0, 0.0);
+        glVertex2d(end.x, end.y);
+        if (currentMode == 0) {
+          const TPointD side(-d.y, d.x);
+          const TPointD root = end - d * tip;
+          glVertex2d(end.x, end.y);
+          glVertex2d((root + side * tip * 0.55).x,
+                     (root + side * tip * 0.55).y);
+          glVertex2d(end.x, end.y);
+          glVertex2d((root - side * tip * 0.55).x,
+                     (root - side * tip * 0.55).y);
+        }
+        glEnd();
+        if (currentMode == 2) {
+          const double half = 4.0 * unit;
+          tglDrawRect(end.x - half, end.y - half, end.x + half, end.y + half);
+        }
+        glPopName();
+      }
+
+      setColor(Center);
+      glPushName(getId() + Center);
+      const double half = (currentMode == 2 ? 7.0 : 5.0) * unit;
+      tglDrawRect(-half, -half, half, half);
+      glPopName();
+    }
+
+    if (isSelected()) {
+      const char *axisNames[] = {"X", "Y", "Z", "XY / Uniform"};
+      const int selected      = std::min(std::max(m_selected, 0), 3);
+      drawTooltip(TPointD(10.0, 10.0) * unit, axisNames[selected]);
+    }
+
+    glPopMatrix();
+    if (picking) glLineWidth(1.0f);
+  }
+
+  void leftButtonDown(const TPointD &pos, const TMouseEvent &) override {
+    m_handle = static_cast<Handle>(m_selected);
+    if (m_handle == None) return;
+    m_clickedPos    = pos;
+    m_startCenter   = center();
+    m_dragPixelSize = std::max(getPixelSize(), 1e-12);
+    TDoubleParamP *parameters =
+        mode() == 0 ? m_position : (mode() == 1 ? m_rotation : m_scale);
+    for (int i = 0; i < 3; ++i) m_startValues[i] = getValue(parameters[i]);
+    if (mode() == 1 && m_handle != Center)
+      m_startRingAngle = ringAngle(m_handle, pos);
+  }
+
+  void leftButtonDrag(const TPointD &pos, const TMouseEvent &event) override {
+    if (m_handle == None) return;
+    const TPointD delta   = pos - m_clickedPos;
+    const int currentMode = mode();
+
+    if (currentMode == 0) {
+      if (m_handle == Center) {
+        double x = m_startValues[0] + delta.x / PositionToCanvas;
+        double y = m_startValues[1] + delta.y / PositionToCanvas;
+        if (event.isShiftPressed()) {
+          x = std::round(x * 10.0) / 10.0;
+          y = std::round(y * 10.0) / 10.0;
+        }
+        setValue(m_position[0], x);
+        setValue(m_position[1], y);
+      } else if (m_handle == ZAxis) {
+        const double pixels = (delta * direction(ZAxis)) / m_dragPixelSize;
+        double value        = m_startValues[2] + pixels / 100.0;
+        if (event.isShiftPressed()) value = std::round(value * 10.0) / 10.0;
+        setValue(m_position[2], value);
+      } else {
+        double value = m_startValues[m_handle] +
+                       (delta * direction(m_handle)) / PositionToCanvas;
+        if (event.isShiftPressed()) value = std::round(value * 10.0) / 10.0;
+        setValue(m_position[m_handle], value);
+      }
+      return;
+    }
+
+    if (currentMode == 1) {
+      if (m_handle == Center) return;
+      double difference = ringAngle(m_handle, pos) - m_startRingAngle;
+      while (difference > M_PI) difference -= 2.0 * M_PI;
+      while (difference < -M_PI) difference += 2.0 * M_PI;
+      double value = m_startValues[m_handle] + difference * M_180_PI;
+      if (event.isShiftPressed()) value = std::round(value / 15.0) * 15.0;
+      setValue(m_rotation[m_handle], value);
+      return;
+    }
+
+    if (m_handle == Center) {
+      const double pixels =
+          (delta * normalize(TPointD(1.0, 1.0))) / m_dragPixelSize;
+      double factor = std::max(0.00001, 1.0 + pixels / 100.0);
+      if (event.isShiftPressed()) factor = std::round(factor * 10.0) / 10.0;
+      factor = std::max(0.00001, factor);
+      for (int i = 0; i < 3; ++i)
+        setValue(m_scale[i], std::max(0.001, m_startValues[i] * factor));
+    } else {
+      const double pixels = (delta * direction(m_handle)) / m_dragPixelSize;
+      double value        = std::max(0.001, m_startValues[m_handle] + pixels);
+      if (event.isShiftPressed())
+        value = std::max(0.001, std::round(value / 10.0) * 10.0);
+      setValue(m_scale[m_handle], value);
+    }
+  }
+
   void leftButtonUp() override { m_handle = None; }
 };
 
@@ -2869,6 +3090,12 @@ FxGadget *FxGadgetController::allocateGadget(const TParamUIConcept &uiConcept) {
       gadget = new ParallelogramFxGadget(
           this, uiConcept.m_params[0], uiConcept.m_params[1],
           uiConcept.m_params[2], uiConcept.m_params[3]);
+    break;
+  }
+
+  case TParamUIConcept::TRANSFORM_3D: {
+    assert(uiConcept.m_params.size() == 10);
+    gadget = new Transform3DFxGadget(this, uiConcept);
     break;
   }
 

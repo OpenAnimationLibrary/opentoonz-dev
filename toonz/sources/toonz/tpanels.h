@@ -35,6 +35,7 @@ class VectorGuidedDrawingPane;
 class FxSelection;
 class StageObjectSelection;
 class LocatorPopup;
+class InsertFxPopup;
 
 //=========================================================
 // PaletteViewerPanel
@@ -407,6 +408,19 @@ class LocatorPanel final : public TPanel {
 
 public:
   LocatorPanel(QWidget *parent);
+};
+
+//=========================================================
+// FxBrowserPanel
+//---------------------------------------------------------
+
+class FxBrowserPanel final : public TPanel {
+  Q_OBJECT
+
+  InsertFxPopup *m_fxBrowser;
+
+public:
+  FxBrowserPanel(QWidget *parent);
 };
 
 #endif

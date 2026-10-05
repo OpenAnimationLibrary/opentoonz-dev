@@ -38,7 +38,11 @@ set(HEADERS
     autopos.h
     cleanupcommon.h
     cleanuppalette.h
+    exrlevelloader.h
+    exrlevelsource.h
     imagebuilders.h
+    ../include/toonz/txshexrlevel.h
+    ../include/toonz/lut3d.h
     skeletonlut.h
     tcenterlinevectP.h
     texturemanager.h
@@ -181,6 +185,9 @@ set(SOURCES
     convert2tlv.cpp
     customvectorbrushexporter.cpp
     dpiscale.cpp
+    exrlevelloader.cpp
+    exrlevelsource.cpp
+    txshexrlevel.cpp
     fill.cpp
     fillutil.cpp
     fullcolorpalette.cpp
@@ -199,6 +206,7 @@ set(SOURCES
     levelproperties.cpp
     levelset.cpp
     levelupdater.cpp
+    lut3d.cpp
     logger.cpp
     movierenderer.cpp
     multimediarenderer.cpp
@@ -350,9 +358,7 @@ if(BUILD_ENV_APPLE)
     add_dependencies(toonzlib tnzcore tnzbase tnzext)
 endif()
 
-add_definitions(
-    -DTOONZLIB_EXPORTS
-)
+target_compile_definitions(toonzlib PRIVATE TOONZLIB_EXPORTS)
 
 message("subdir: toonzlib")
 message("Bin: " ${CMAKE_CURRENT_BINARY_DIR})
@@ -395,4 +401,12 @@ elseif(BUILD_ENV_UNIXLIKE)
     endif()
 
     target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS} ${MYPAINT_LIB_LDFLAGS})
+endif()
+
+target_link_libraries(toonzlib OpenEXR::OpenEXR)
+
+if(BUILD_XSHEET_COLUMN_WIDTH_TESTS)
+    add_executable(columnwidth_test tests/columnwidth_test.cpp)
+    target_link_libraries(columnwidth_test toonzlib tnzcore tnzbase Qt5::Core Qt5::Gui)
+    add_test(NAME xsheet_column_width COMMAND columnwidth_test)
 endif()

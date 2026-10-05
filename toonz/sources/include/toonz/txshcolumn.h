@@ -67,6 +67,7 @@ class DVAPI TXshColumn : public TColumnHeader, public TPersist {
   TXsheet *m_xsheet;
   int m_colorTag;  // Usato solo in tabkids
   UCHAR m_opacity;
+  int m_xsheetColumnWidth;  // 0 inherits the default; view geometry only
 
 public:
 private:
@@ -103,6 +104,7 @@ Constructs a TXshColumn with default value.
       , m_xsheet(0)
       , m_colorTag(0)
       , m_opacity(255)
+      , m_xsheetColumnWidth(0)
       , m_colorFilterId(0)  // None
   {}
 
@@ -257,6 +259,9 @@ Set column color tag to \b colorTag.
   int getColorFilterId() const { return m_colorFilterId; }
   void setColorFilterId(int id) { m_colorFilterId = id; }
   void resetColumnProperties();
+
+  int getXsheetColumnWidth() const { return m_xsheetColumnWidth; }
+  void setXsheetColumnWidth(int width);
 };
 
 #ifdef _WIN32

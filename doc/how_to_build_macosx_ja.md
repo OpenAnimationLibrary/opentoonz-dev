@@ -5,7 +5,7 @@
 - git
 - brew
 - Xcode
-- cmake (3.10以降)
+- cmake (3.14以降)
 - Qt 5.x (5.15以降)
 - boost　(1.55.0以降)
 
@@ -27,6 +27,11 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 $ brew install glew lz4 libjpeg libpng lzo pkg-config libusb cmake git-lfs libmypaint qt boost
 $ git lfs install
 ```
+
+デフォルトの CMake 設定では、固定された OpenEXR 3.5.0 と Imath 3.2.3 の
+ソースをダウンロードし、静的リンクします。そのため、初回の設定時には
+インターネット接続が必要です。インストール済みの OpenEXR 3.5 以降を使う
+場合は、`-DOT_USE_SYSTEM_OPENEXR=ON` を指定してください。
 
 ### リポジトリを clone
 

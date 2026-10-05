@@ -754,7 +754,7 @@ const bool ColumnArea::isControlPressed() { return isCtrlPressed; }
 ColumnArea::DrawHeader::DrawHeader(ColumnArea *nArea, QPainter &nP, int nCol)
     : area(nArea), p(nP), col(nCol), reservedLevel(nullptr) {
   m_viewer = area->m_viewer;
-  o        = m_viewer->orientation();
+  o        = m_viewer->columnOrientation(col);
   app      = TApp::instance();
   xsh      = m_viewer->getXsheet();
   column   = xsh->getColumn(col);
@@ -1438,9 +1438,7 @@ void ColumnArea::DrawHeader::drawFilterColor() const {
 }
 
 void ColumnArea::DrawHeader::drawSoundIcon(bool isPlaying) const {
-  QRect rect = m_viewer->orientation()
-                   ->rect(PredefinedRect::SOUND_ICON)
-                   .translated(orig);
+  QRect rect = o->rect(PredefinedRect::SOUND_ICON).translated(orig);
   p.drawPixmap(rect, isPlaying ? Pixmaps::soundPlaying() : Pixmaps::sound());
 }
 
@@ -1464,7 +1462,10 @@ void ColumnArea::DrawHeader::drawVolumeControl(double volume) const {
           p.drawLine(o->horizontalLine(frameAxis,
                                        NumberRange(layerAxis - 2, layerAxis)));
     } else {
-      for (int i = 0; i <= 20; i++, layerAxis += 3)
+      int start  = layerAxis;
+      int length = o->rect(PredefinedRect::VOLUME_TRACK).width();
+      for (int i = 0; i <= 20; i++) {
+        layerAxis = start + i * length / 20;
         if ((i % 10) == 0)
           p.drawLine(o->verticalLine(layerAxis,
                                      NumberRange(frameAxis, frameAxis + 3)));
@@ -1474,6 +1475,7 @@ void ColumnArea::DrawHeader::drawVolumeControl(double volume) const {
         else
           p.drawLine(o->verticalLine(layerAxis,
                                      NumberRange(frameAxis, frameAxis + 2)));
+      }
     }
   } else {
     for (int i = 0; i <= 20; i++, frameAxis += 3)
@@ -1566,6 +1568,9 @@ ColumnArea::ColumnArea(XsheetViewer *parent, Qt::WindowFlags flags)
   connect(xsheetHandle, SIGNAL(xsheetCameraChange(int)), this,
           SLOT(onXsheetCameraChange(int)));
   setMouseTracking(true);
+  setFocusPolicy(Qt::ClickFocus);
+  connect(xsheetHandle, &TXsheetHandle::xsheetSwitched, this,
+          [this]() { finishColumnResize(false); });
 }
 
 //-----------------------------------------------------------------------------
@@ -1581,7 +1586,7 @@ void ColumnArea::setDragTool(DragTool *dragTool) {
 
 //-----------------------------------------------------------------------------
 void ColumnArea::drawFoldedColumnHead(QPainter &p, int col) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
 
   QPoint orig = m_viewer->positionToXY(CellPosition(0, col));
   QRect rect  = o->rect(PredefinedRect::FOLDED_LAYER_HEADER).translated(orig);
@@ -1745,7 +1750,7 @@ void ColumnArea::drawPaletteColumnHead(QPainter &p, int col) {  // AREA
 
 void ColumnArea::drawSoundTextColumnHead(QPainter &p, int col) {  // AREA
   TColumnSelection *selection = m_viewer->getColumnSelection();
-  const Orientation *o        = m_viewer->orientation();
+  const Orientation *o        = m_viewer->columnOrientation(col);
 
   int x = m_viewer->columnToLayerAxis(col);
 
@@ -1800,7 +1805,7 @@ void ColumnArea::drawSoundTextColumnHead(QPainter &p, int col) {  // AREA
 //-----------------------------------------------------------------------------
 
 QPixmap ColumnArea::getColumnIcon(int columnIndex) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(columnIndex);
 
   if (columnIndex == -1) {  // Indice colonna = -1 -> CAMERA
     if (o->isVerticalTimeline()) {
@@ -1902,7 +1907,29 @@ void ColumnArea::paintEvent(QPaintEvent *event) {  // AREA
   else
     p.drawRect(toBeUpdated.adjusted(0, 0, -2, -1));
 
+  drawCurrentColumnFocus(p, m_viewer->getCurrentColumn());
+
   if (getDragTool()) getDragTool()->drawColumnsArea(p);
+}
+
+void ColumnArea::drawCurrentColumnFocus(QPainter &p, int col) {
+  const Orientation *o = m_viewer->columnOrientation(col);
+  TXsheet *xsh         = m_viewer->getXsheet();
+  if (!xsh || (col >= 0 && !xsh->getColumnFan(o)->isActive(col))) return;
+
+  QPoint origin = m_viewer->positionToXY(CellPosition(0, col));
+  QRect rect    = o->rect((col < 0) ? PredefinedRect::CAMERA_LAYER_NAME
+                                    : PredefinedRect::LAYER_NAME)
+                   .translated(origin);
+  if (rect.isEmpty()) return;
+
+  QColor color = m_viewer->getColumnFocusColor();
+  if (color.alpha() == 0) return;
+  p.save();
+  p.setPen(color);
+  p.setBrush(Qt::NoBrush);
+  for (int i = 0; i < 2; ++i) p.drawRect(rect.adjusted(i, i, -i, -i));
+  p.restore();
 }
 
 //-----------------------------------------------------------------------------
@@ -2320,8 +2347,108 @@ void ColumnArea::startTransparencyPopupTimer(QMouseEvent *e) {  // AREA
 
 //----------------------------------------------------------------
 
+int ColumnArea::resizeColumnAt(const QPoint &pos) const {
+  if (!m_viewer->hasAdjustableColumns() || !m_viewer->getXsheet()) return -1;
+  // The grip is on the name/number row, leaving header buttons unobstructed.
+  if (pos.y() < 0 ||
+      pos.y() >
+          m_viewer->orientation()->rect(PredefinedRect::LAYER_NAME).bottom())
+    return -1;
+  int col        = m_viewer->xyToPosition(pos).layer();
+  ColumnFan *fan = m_viewer->getXsheet()->getColumnFan(m_viewer->orientation());
+  int leftCol    = m_viewer->xyToPosition(pos - QPoint(4, 0)).layer();
+  for (int candidate : {leftCol, col}) {
+    if (candidate < 0 || !fan->isActive(candidate)) continue;
+    int right = m_viewer->columnToLayerAxis(candidate) +
+                m_viewer->columnWidth(candidate);
+    if (std::abs(pos.x() - right) <= 3) return candidate;
+  }
+  return -1;
+}
+
+std::vector<int> ColumnArea::widthTargets(int col) const {
+  std::vector<int> columns;
+  TColumnSelection *selection = m_viewer->getColumnSelection();
+  if (selection->isColumnSelected(col)) {
+    for (int index : selection->getIndices())
+      if (index >= 0) columns.push_back(index);
+  } else if (col >= 0)
+    columns.push_back(col);
+  return columns;
+}
+
+void ColumnArea::autoFitColumns(int col) {
+  std::map<int, int> widths;
+  for (int index : widthTargets(col))
+    widths[index] = m_viewer->fitColumnWidth(index);
+  m_viewer->setColumnWidths(widths);
+}
+
+void ColumnArea::finishColumnResize(bool commit) {
+  if (m_resizeCol < 0) return;
+  TXsheetP xsheet = m_resizeXsheet;
+  std::map<int, int> after;
+  for (const auto &entry : m_resizeBefore) {
+    after[entry.first] = xsheet->getColumnWidthOverride(entry.first);
+    xsheet->setColumnWidthOverride(entry.first, entry.second);
+  }
+  // A preview may have materialized empty columns solely to hold overrides.
+  // Remove them when restoring the pre-drag state (also before recording undo).
+  while (xsheet->getColumnCount() > m_resizeColumnCount) {
+    int col = xsheet->getColumnCount() - 1;
+    if (!xsheet->isColumnEmpty(col) || xsheet->getColumnWidthOverride(col))
+      break;
+    xsheet->removeColumn(col);
+  }
+  bool changed = m_resizeMoved;
+  m_resizeCol  = -1;
+  m_resizeBefore.clear();
+  m_resizeXsheet = TXsheetP();
+  unsetCursor();
+  if (commit && changed && m_viewer->getXsheet() == xsheet.getPointer())
+    m_viewer->setColumnWidths(after);
+  else if (m_viewer->getXsheet() == xsheet.getPointer())
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+}
+
+void ColumnArea::keyPressEvent(QKeyEvent *event) {
+  if (m_resizeCol >= 0 && event->key() == Qt::Key_Escape) {
+    finishColumnResize(false);
+    event->accept();
+    return;
+  }
+  QWidget::keyPressEvent(event);
+}
+
+void ColumnArea::hideEvent(QHideEvent *event) {
+  finishColumnResize(false);
+  QWidget::hideEvent(event);
+}
+
 void ColumnArea::mousePressEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  int resizeCol = resizeColumnAt(event->pos());
+  if (event->button() == Qt::LeftButton && resizeCol >= 0 && !getDragTool()) {
+    m_resizeCol         = resizeCol;
+    m_resizeStartX      = event->globalPos().x();
+    m_resizeStartWidth  = m_viewer->columnWidth(resizeCol);
+    m_resizeMoved       = false;
+    m_resizeXsheet      = m_viewer->getXsheet();
+    m_resizeColumnCount = m_resizeXsheet->getColumnCount();
+    for (int col : widthTargets(resizeCol))
+      m_resizeBefore[col] = m_resizeXsheet->getColumnWidthOverride(col);
+    m_doOnRelease = m_doOnMove = 0;
+    if (m_transparencyPopupTimer) m_transparencyPopupTimer->stop();
+    setFocus(Qt::MouseFocusReason);
+    setCursor(Qt::SplitHCursor);
+    event->accept();
+    return;
+  }
+  // Keep an existing column selection when opening its sizing menu.
+  if (event->button() == Qt::RightButton && m_viewer->hasAdjustableColumns() &&
+      (resizeCol >= 0 || m_viewer->getColumnSelection()->isColumnSelected(
+                             m_viewer->xyToPosition(event->pos()).layer())))
+    return;
+  const Orientation *o = m_viewer->orientationAt(event->pos());
 
   m_doOnRelease = 0;
   m_doOnMove    = 0;
@@ -2601,7 +2728,31 @@ void ColumnArea::mousePressEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void ColumnArea::mouseMoveEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  if (m_resizeCol >= 0) {
+    if (m_viewer->getXsheet() != m_resizeXsheet.getPointer()) {
+      finishColumnResize(false);
+      return;
+    }
+    int width = qBound(
+        50, m_resizeStartWidth + event->globalPos().x() - m_resizeStartX, 2048);
+    if (width != m_resizeStartWidth || m_resizeMoved) {
+      m_resizeMoved = true;
+      for (const auto &entry : m_resizeBefore)
+        m_resizeXsheet->setColumnWidthOverride(entry.first, width);
+      TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+    }
+    event->accept();
+    return;
+  }
+  int resizeCol = resizeColumnAt(event->pos());
+  if (event->buttons() == Qt::NoButton && resizeCol >= 0) {
+    setCursor(Qt::SplitHCursor);
+    m_pos     = event->pos();
+    m_tooltip = tr("Drag to resize column; double-click to fit to content");
+    return;
+  }
+  unsetCursor();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
 
   m_viewer->setQtModifiers(event->modifiers());
   QPoint pos = event->pos();
@@ -2749,6 +2900,11 @@ bool ColumnArea::event(QEvent *event) {
 //-----------------------------------------------------------------------------
 
 void ColumnArea::mouseReleaseEvent(QMouseEvent *event) {
+  if (m_resizeCol >= 0) {
+    if (event->button() == Qt::LeftButton) finishColumnResize(true);
+    event->accept();
+    return;
+  }
   TApp *app    = TApp::instance();
   TXsheet *xsh = m_viewer->getXsheet();
   int col, totcols = xsh->getColumnCount();
@@ -2758,7 +2914,7 @@ void ColumnArea::mouseReleaseEvent(QMouseEvent *event) {
       QPoint pos = event->pos();
       int col    = m_viewer->xyToPosition(pos).layer();
       // Align popup to be below to CONFIG button
-      QRect configRect = m_viewer->orientation()->rect(
+      QRect configRect = m_viewer->columnOrientation(col)->rect(
           (col < 0) ? PredefinedRect::CAMERA_CONFIG_AREA
                     : PredefinedRect::CONFIG_AREA);
       CellPosition cellPosition(0, col);
@@ -2885,7 +3041,14 @@ void ColumnArea::mouseReleaseEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void ColumnArea::mouseDoubleClickEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  int resizeCol = resizeColumnAt(event->pos());
+  if (event->button() == Qt::LeftButton && resizeCol >= 0) {
+    finishColumnResize(false);
+    autoFitColumns(resizeCol);
+    event->accept();
+    return;
+  }
+  const Orientation *o = m_viewer->orientationAt(event->pos());
 
   QPoint pos = event->pos();
   int col    = m_viewer->xyToPosition(pos).layer();
@@ -2922,9 +3085,11 @@ void ColumnArea::contextMenuEvent(QContextMenuEvent *event) {
 
   QApplication::instance()->sendEvent(this, &fakeRelease);
 #endif
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
 
-  int col = m_viewer->xyToPosition(event->pos()).layer();
+  int col = resizeColumnAt(event->pos());
+  if (col < 0) col = m_viewer->xyToPosition(event->pos()).layer();
+  o = m_viewer->columnOrientation(col);
 
   bool isCamera = col < 0;
 
@@ -2936,17 +3101,31 @@ void ColumnArea::contextMenuEvent(QContextMenuEvent *event) {
   QMenu menu(this);
   CommandManager *cmdManager = CommandManager::instance();
 
-  if (o->isVerticalTimeline() && m_viewer->getXsheetLayout() == "Adjustable") {
-    menu.addAction(tr("Column Width..."), this, [this, o]() {
+  if (m_viewer->hasAdjustableColumns() && col >= 0) {
+    const std::vector<int> targets = widthTargets(col);
+    menu.addAction(tr("Column Width..."), this, [this, col, targets]() {
       bool ok;
       int width =
           QInputDialog::getInt(this, tr("Column Width"), tr("Width (pixels):"),
-                               o->cellWidth(), 50, 200, 1, &ok);
-      if (!ok || width == o->cellWidth()) return;
-      Preferences::instance()->setValue(xsheetColumnWidth, width);
-      Orientations::setXsheetColumnWidth(width);
-      TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
-          "XsheetColumnWidth");
+                               m_viewer->columnWidth(col), 50, 2048, 1, &ok);
+      if (!ok) return;
+      std::map<int, int> widths;
+      for (int index : targets) widths[index] = width;
+      m_viewer->setColumnWidths(widths);
+    });
+    menu.addAction(tr("Fit to Content"), this,
+                   [this, col]() { autoFitColumns(col); });
+    menu.addAction(tr("Reset Column Width"), this, [this, targets]() {
+      std::map<int, int> widths;
+      for (int index : targets) widths[index] = 0;
+      m_viewer->setColumnWidths(widths);
+    });
+    menu.addAction(tr("Reset All Column Widths"), this, [this]() {
+      std::map<int, int> widths;
+      for (int index = 0; index < m_viewer->getXsheet()->getColumnCount();
+           ++index)
+        widths[index] = 0;
+      m_viewer->setColumnWidths(widths);
     });
     menu.addSeparator();
   }
@@ -3114,7 +3293,6 @@ void ColumnArea::contextMenuEvent(QContextMenuEvent *event) {
             showParentColors->isChecked() ? true : false);
       });
       menu.addAction(showParentColors);
-   
     }
   }
 

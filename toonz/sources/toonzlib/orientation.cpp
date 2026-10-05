@@ -1,3 +1,5 @@
+#include <memory>
+#include <map>
 #include "orientation.h"
 #include "toonz/columnfan.h"
 #include "toonz/preferences.h"
@@ -32,7 +34,7 @@ QRect iconRect(const QRect &areaRect, const int iconWidth, const int iconHeight,
 class TopToBottomOrientation : public Orientation {
   const QString m_layout;
   void initialize();
-  int CELL_WIDTH = 74;
+  int CELL_WIDTH                       = 74;
   const int CELL_HEIGHT                = 20;
   const int CELL_DRAG_WIDTH            = 7;
   const int EXTENDER_WIDTH             = 20;
@@ -49,7 +51,7 @@ class TopToBottomOrientation : public Orientation {
   // const int ICON_HEIGHT              = 18;
   int ICON_WIDTH                     = 18;
   int ICON_HEIGHT                    = 18;
-  const int TRACKLEN                 = 60;
+  int TRACKLEN                       = 60;
   const int SHIFTTRACE_DOT_OFFSET    = 3;
   const int CAMERA_CELL_WIDTH        = 22;
   const int LAYER_FOOTER_PANEL_WIDTH = 16;
@@ -210,13 +212,22 @@ const Orientation *Orientations::leftToRight() {
   return instance()._leftToRight;
 }
 QString Orientations::xsheetLayout() {
-  return static_cast<TopToBottomOrientation *>(instance()._topToBottom)
+  return static_cast<const TopToBottomOrientation *>(instance()._topToBottom)
       ->layout();
 }
-void Orientations::setXsheetColumnWidth(int width) {
-  static_cast<TopToBottomOrientation *>(instance()._topToBottom)
-      ->setColumnWidth(width);
+const Orientation *Orientations::withColumnWidth(int width) {
+  if (xsheetLayout() != "Adjustable") return topToBottom();
+  width = qBound(50, width, 2048);
+  if (width == topToBottom()->cellWidth()) return topToBottom();
+  static std::map<int, std::unique_ptr<TopToBottomOrientation>> cache;
+  auto &orientation = cache[width];
+  if (!orientation) {
+    orientation.reset(new TopToBottomOrientation());
+    orientation->setColumnWidth(width);
+  }
+  return orientation.get();
 }
+
 const std::vector<const Orientation *> &Orientations::all() {
   return instance()._all;
 }
@@ -300,12 +311,13 @@ TopToBottomOrientation::TopToBottomOrientation()
 
 void TopToBottomOrientation::setColumnWidth(int width) {
   if (m_layout != "Adjustable") return;
-  CELL_WIDTH = qBound(50, width, 200);
+  CELL_WIDTH = qBound(50, width, 2048);
   initialize();
 }
 
 void TopToBottomOrientation::initialize() {
   QString layout = m_layout;
+  if (layout == "Adjustable") TRACKLEN = std::min(60, CELL_WIDTH - 12);
 
   int use_header_height = LAYER_HEADER_HEIGHT;
 

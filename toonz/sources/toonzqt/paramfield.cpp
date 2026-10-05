@@ -10,10 +10,14 @@
 #include "toonzqt/tonecurvefield.h"
 #include "toonzqt/checkbox.h"
 #include "toonzqt/menubarcommand.h"
+#include "toonzqt/lutcalibrator.h"
+#include "toonzqt/dvdialog.h"
+#include "toonz/preferences.h"
 
 #include "tdoubleparam.h"
 #include "tnotanimatableparam.h"
 #include "tparamset.h"
+#include "tfxmaterial.h"
 #include "tw/stringtable.h"
 
 #include <QString>
@@ -23,6 +27,12 @@
 #include <QComboBox>
 #include <QFontComboBox>
 #include <QKeyEvent>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QInputDialog>
+#include <QVBoxLayout>
+#include <QTimer>
+#include <stdexcept>
 
 using namespace DVGui;
 
@@ -1608,6 +1618,209 @@ StringParamField::StringParamField(QWidget *parent, QString name,
 
 //-----------------------------------------------------------------------------
 
+void StringParamField::enableLutFileControls() {
+  if (!m_textFld || m_lutFileControls) return;
+  m_lutFileControls = true;
+  auto column       = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  m_layout->removeWidget(m_textFld);
+  column->addWidget(m_textFld);
+  auto buttons        = new QHBoxLayout();
+  auto browse         = new QPushButton(tr("Browse..."), this);
+  auto usePreferences = new QPushButton(tr("Use Preferences LUT"), this);
+  buttons->addWidget(browse);
+  buttons->addWidget(usePreferences);
+  column->addLayout(buttons);
+  m_layout->addLayout(column);
+  m_textFld->setToolTip(
+      tr("Apply the LUT once, at the end of the FX chain. "
+         "Disable the same display LUT when inspecting the "
+         "baked result to avoid applying it twice."));
+  usePreferences->setToolTip(
+      tr("Copy the configured Preferences LUT path into "
+         "this scene. Later preference changes do not "
+         "change the rendered look."));
+
+  const auto assignPath = [this](const QString &path) {
+    if (path.isEmpty()) return;
+    Lut3D lut;
+    QString error;
+    if (!lut.load(path, &error)) {
+      DVGui::warning(tr("Cannot load LUT: %1\n%2").arg(path, error));
+      return;
+    }
+    m_textFld->setText(QFileInfo(path).absoluteFilePath());
+    onChange();
+  };
+  connect(browse, &QPushButton::clicked, this, [this, assignPath]() {
+    assignPath(QFileDialog::getOpenFileName(this, tr("Load 3D LUT"),
+                                            m_textFld->text(),
+                                            tr("3D LUT files (*.cube *.3dl)")));
+  });
+  connect(usePreferences, &QPushButton::clicked, this, [this, assignPath]() {
+    QString monitor = LutManager::instance()->getMonitorName();
+    const QString path =
+        Preferences::instance()->getColorCalibrationLutPath(monitor);
+    if (path.isEmpty()) {
+      DVGui::warning(tr("No LUT file is configured in Preferences."));
+      return;
+    }
+    assignPath(path);
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::enableGlbFileControls() {
+  if (!m_textFld || m_glbFileControls) return;
+  m_glbFileControls = true;
+  auto column = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  m_layout->removeWidget(m_textFld);
+  column->addWidget(m_textFld);
+  auto buttons = new QHBoxLayout();
+  auto browse  = new QPushButton(tr("Browse..."), this);
+  auto clear   = new QPushButton(tr("Clear"), this);
+  buttons->addWidget(browse);
+  buttons->addWidget(clear);
+  column->addLayout(buttons);
+  m_layout->addLayout(column);
+  m_textFld->setToolTip(
+      tr("Store a GLB file reference in the scene. Framework only: "
+         "the file is not loaded, modified, or rendered."));
+  clear->setToolTip(tr("Clear the reference without deleting the GLB file."));
+
+  connect(browse, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select GLB Model"), m_textFld->text(),
+        tr("Binary glTF models (*.glb *.GLB)"));
+    if (path.isEmpty()) return;
+    m_textFld->setText(QFileInfo(path).absoluteFilePath());
+    onChange();
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::enableExrFileControls() {
+  if (!m_textFld || m_exrFileControls) return;
+  m_exrFileControls = true;
+  auto column       = new QVBoxLayout();
+  column->setContentsMargins(0, 0, 0, 0);
+  m_layout->removeWidget(m_textFld);
+  column->addWidget(m_textFld);
+  auto buttons = new QHBoxLayout();
+  auto browse  = new QPushButton(tr("Browse..."), this);
+  auto inspect = new QPushButton(tr("Inspect"), this);
+  auto clear   = new QPushButton(tr("Clear"), this);
+  buttons->addWidget(browse);
+  buttons->addWidget(inspect);
+  buttons->addWidget(clear);
+  column->addLayout(buttons);
+  m_layout->addLayout(column);
+  m_textFld->setToolTip(
+      tr("Select an OpenEXR file, or enter a numbered sequence using # "
+         "placeholders such as render.####.exr."));
+  inspect->setToolTip(
+      tr("List the parts, storage types, windows, channels, and layers."));
+  clear->setToolTip(tr("Clear the reference without deleting the EXR file."));
+
+  connect(browse, &QPushButton::clicked, this, [this]() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Select OpenEXR Image"), m_textFld->text(),
+        tr("OpenEXR images (*.exr *.EXR)"));
+    if (path.isEmpty()) return;
+    m_textFld->setText(QFileInfo(path).absoluteFilePath());
+    onChange();
+  });
+  connect(inspect, &QPushButton::clicked, this, [this]() {
+    auto *source = dynamic_cast<TFxAovSource *>(m_actualFx.getPointer());
+    if (!source) {
+      DVGui::warning(tr("The current FX cannot inspect OpenEXR AOVs."));
+      return;
+    }
+    try {
+      DVGui::info(QString::fromStdWString(source->getAovSummary(m_frame)));
+    } catch (const std::exception &error) {
+      DVGui::warning(
+          tr("Cannot inspect EXR: %1").arg(QString::fromUtf8(error.what())));
+    }
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::enableExrChoiceControls(TFxAovChoiceKind kind) {
+  if (!m_textFld || m_exrChoiceControls) return;
+  m_exrChoiceControls = true;
+  m_exrChoiceKind     = kind;
+  auto choose         = new QPushButton(tr("Choose..."), this);
+  auto clear          = new QPushButton(tr("Clear"), this);
+  m_layout->addWidget(choose);
+  m_layout->addWidget(clear);
+
+  connect(choose, &QPushButton::clicked, this, [this]() {
+    auto *source = dynamic_cast<TFxAovSource *>(m_actualFx.getPointer());
+    if (!source) {
+      DVGui::warning(tr("The current FX cannot discover OpenEXR AOVs."));
+      return;
+    }
+    try {
+      const auto choices = source->getAovChoices(m_exrChoiceKind, m_frame);
+      if (choices.empty()) {
+        DVGui::warning(tr("No matching choices were found in this EXR part."));
+        return;
+      }
+      QStringList labels;
+      int current = 0;
+      for (int i = 0; i < int(choices.size()); ++i) {
+        labels << QString::fromStdWString(choices[i].label);
+        if (QString::fromStdWString(choices[i].value) == m_textFld->text())
+          current = i;
+      }
+      QString title;
+      if (m_exrChoiceKind == TFxAovChoiceKind::Part)
+        title = tr("Select EXR Part");
+      else if (m_exrChoiceKind == TFxAovChoiceKind::Layer)
+        title = tr("Select EXR Layer");
+      else
+        title = tr("Select EXR Channel");
+      bool accepted       = false;
+      const QString label = QInputDialog::getItem(
+          this, title, tr("Available in the selected EXR:"), labels, current,
+          false, &accepted);
+      if (!accepted) return;
+      const int selected = labels.indexOf(label);
+      if (selected < 0) return;
+      m_textFld->setText(QString::fromStdWString(choices[selected].value));
+      onChange();
+    } catch (const std::exception &error) {
+      DVGui::warning(
+          tr("Cannot inspect EXR: %1").arg(QString::fromUtf8(error.what())));
+    }
+  });
+  connect(clear, &QPushButton::clicked, this, [this]() {
+    m_textFld->clear();
+    onChange();
+  });
+}
+
+//-----------------------------------------------------------------------------
+
+void StringParamField::setFx(const TFxP &, const TFxP &actual) {
+  m_actualFx = actual;
+}
+
+//-----------------------------------------------------------------------------
+
 void StringParamField::onChange() {
   std::wstring value;
   if (m_multiTextFld)
@@ -1637,6 +1850,7 @@ void StringParamField::setParam(const TParamP &current, const TParamP &actual,
                                 int frame) {
   m_currentParam = current;
   m_actualParam  = actual;
+  m_frame        = frame;
   assert(m_currentParam);
   assert(m_actualParam);
   update(frame);
@@ -1645,6 +1859,7 @@ void StringParamField::setParam(const TParamP &current, const TParamP &actual,
 //-----------------------------------------------------------------------------
 
 void StringParamField::update(int frame) {
+  m_frame = frame;
   if (!m_actualParam || !m_currentParam) return;
   QString str;
   QString strValue = str.fromStdWString(m_actualParam->getValue());
@@ -1985,6 +2200,165 @@ void ToneCurveParamField::onKeyToggled() { onKeyToggle(); }
 // ParamField::create()
 //-----------------------------------------------------------------------------
 
+namespace {
+// A model-derived selector with one native animated color editor. Keeping a
+// single editor makes large material lists usable without thousands of widgets.
+class MaterialColorsParamField final : public ParamField {
+  TFxP m_currentFx, m_actualFx;
+  TParamSetP m_current, m_actual;
+  std::vector<TFxMaterial> m_materials;
+  QComboBox *m_selector;
+  QLabel *m_status;
+  QVBoxLayout *m_body;
+  PixelParamField *m_color = nullptr;
+  TPixelParamP m_currentColor, m_actualColor;
+  std::string m_key;
+  int m_frame = 0;
+  bool m_refreshPending = false;
+  bool m_currentAttached = false, m_actualAttached = false;
+
+  static TPixelParamP find(const TParamSetP &set, const std::string &key) {
+    if (!set) return {};
+    int i = set->getParamIdx(key);
+    return i < set->getParamCount() ? TPixelParamP(set->getParam(i)) : TPixelParamP();
+  }
+
+  void attach(bool actual) {
+    // Viewing the list does not alter the scene. Attach the very same native
+    // parameter on first edit so its undo records remain valid thereafter.
+    if (!find(m_current, m_key)) m_current->addParam(m_currentColor, m_key);
+    if (actual && !find(m_actual, m_key)) m_actual->addParam(m_actualColor, m_key);
+    m_currentAttached = true;
+    if (actual) m_actualAttached = true;
+  }
+
+  void selectMaterial() {
+    delete m_color;
+    m_color = nullptr;
+    m_currentColor = TPixelParamP();
+    m_actualColor = TPixelParamP();
+    const int i = m_selector->currentIndex();
+    if (!m_current || !m_actual || i < 0 || i >= int(m_materials.size())) return;
+    const auto &material = m_materials[i];
+    m_key = material.key;
+    m_actualColor = find(m_actual, m_key);
+    m_actualAttached = bool(m_actualColor);
+    if (!m_actualColor) m_actualColor = new TPixelParam(material.color);
+    m_currentColor = find(m_current, m_key);
+    m_currentAttached = bool(m_currentColor);
+    if (!m_currentColor) m_currentColor = TParamP(m_actualColor->clone());
+    m_actualColor->enableMatte(false);
+    m_currentColor->enableMatte(false);
+    m_color = new PixelParamField(this, QString::fromStdString(material.name), m_actualColor);
+    m_color->setParam(m_currentColor, m_actualColor, m_frame);
+    m_body->insertWidget(1, m_color);
+    connect(m_color, &ParamField::actualParamChanged, this, [this] {
+      attach(true);
+      emit actualParamChanged();
+    });
+    connect(m_color, &ParamField::currentParamChanged, this, [this] {
+      attach(false);
+      emit currentParamChanged();
+    });
+    connect(m_color, &ParamField::paramKeyToggle, this, &ParamField::paramKeyToggle);
+  }
+
+  void refresh() {
+    if (!m_actualFx || !m_current || !m_actual) return;
+    auto *source = dynamic_cast<TFxMaterialSource *>(m_actualFx.getPointer());
+    if (!source) return;
+    try {
+      auto materials = source->getMaterials();
+      bool changed = materials.size() != m_materials.size();
+      for (std::size_t i = 0; !changed && i < materials.size(); ++i)
+        changed = materials[i].key != m_materials[i].key;
+      if (changed) {
+        m_materials = std::move(materials);
+        m_selector->blockSignals(true);
+        m_selector->clear();
+        int selected = 0;
+        for (int i = 0; i < int(m_materials.size()); ++i) {
+          const auto &m = m_materials[i];
+          // The index also distinguishes duplicate material names.
+          m_selector->addItem(QString("%1: %2").arg(i + 1).arg(QString::fromStdString(m.name)));
+          if (m.key == m_key) selected = i;
+        }
+        m_selector->setCurrentIndex(selected);
+        m_selector->blockSignals(false);
+        selectMaterial();
+      } else if (!m_color || ((m_actualAttached || find(m_actual, m_key)) && find(m_actual, m_key) != m_actualColor) ||
+                 ((m_currentAttached || find(m_current, m_key)) && find(m_current, m_key) != m_currentColor)) {
+        selectMaterial();
+      }
+      int inactive = m_actual->getParamCount();
+      for (const auto &m : m_materials) if (find(m_actual, m.key)) --inactive;
+      m_selector->setEnabled(!m_materials.empty());
+      if (m_color) m_color->setEnabled(true);
+      m_status->setText(m_materials.empty() ? tr("Choose a GLB file on the Model page.") :
+          inactive > 0 ? tr("%1 overrides from other GLB contents are retained but inactive.").arg(inactive) :
+          tr("Use Material Colors mode. Click the diamond to set a color key."));
+    } catch (const std::exception &e) {
+      m_selector->setEnabled(false);
+      if (m_color) m_color->setEnabled(false);
+      m_status->setText(QString::fromUtf8(e.what()));
+    }
+  }
+
+  void scheduleRefresh() {
+    if (m_refreshPending) return;
+    m_refreshPending = true;
+    // Never destroy an editor while one of its change/undo handlers is active.
+    QTimer::singleShot(0, this, [this] { m_refreshPending = false; refresh(); });
+  }
+
+public:
+  MaterialColorsParamField(QWidget *parent, QString name, const TParamP &param)
+      : ParamField(parent, name, param) {
+    m_paramName = QString::fromStdString(param->getName());
+    m_selector = new QComboBox(this);
+    m_selector->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_selector->setMinimumContentsLength(20);
+    m_status = new QLabel(this);
+    m_status->setWordWrap(true);
+    m_body = new QVBoxLayout;
+    m_body->addWidget(m_selector);
+    m_body->addWidget(m_status);
+    m_layout->addLayout(m_body);
+    setLayout(m_layout);
+    connect(m_selector, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { selectMaterial(); });
+    auto *timer = new QTimer(this);
+    timer->setInterval(1000);
+    connect(timer, &QTimer::timeout, this, [this] { if (isVisible()) scheduleRefresh(); });
+    timer->start();
+  }
+
+  void setFx(const TFxP &current, const TFxP &actual) override {
+    m_currentFx = current;
+    m_actualFx = actual;
+  }
+  void setParam(const TParamP &current, const TParamP &actual, int frame) override {
+    if (m_current.getPointer() != current.getPointer() || m_actual.getPointer() != actual.getPointer()) {
+      m_materials.clear();
+      m_selector->blockSignals(true);
+      m_selector->clear();
+      m_selector->blockSignals(false);
+      delete m_color;
+      m_color = nullptr;
+    }
+    m_current = current;
+    m_actual = actual;
+    update(frame);
+  }
+  void update(int frame) override {
+    m_frame = frame;
+    if (m_color) m_color->update(frame);
+    scheduleRefresh();
+  }
+  QSize getPreferredSize() override { return QSize(320, 130); }
+};
+}  // namespace
+
 ParamField *ParamField::create(QWidget *parent, QString name,
                                const TParamP &param) {
   if (TDoubleParamP doubleParam = param)
@@ -2009,6 +2383,8 @@ ParamField *ParamField::create(QWidget *parent, QString name,
     return new ToneCurveParamField(parent, name, toneCurveParam);
   else if (TFontParamP fontParam = param)
     return new FontParamField(parent, name, fontParam);
+  else if (param->getName() == "materialColors" && dynamic_cast<TParamSet *>(param.getPointer()))
+    return new MaterialColorsParamField(parent, name, param);
   else
     return 0;
 }

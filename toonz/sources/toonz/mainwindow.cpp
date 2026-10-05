@@ -1,6 +1,7 @@
 
 
 #include "mainwindow.h"
+#include "customhelplink.h"
 
 // Tnz6 includes
 #include "menubar.h"
@@ -443,6 +444,8 @@ void Room::showEvent(QShowEvent *event) {
     DockLayout::State savedState = m_pendingLayoutState;
     DockLayout *layout           = dockLayout();
     QTimer::singleShot(0, this, [layout, savedState]() {
+      // restoreState() already applies the saved panel geometry. Redistributing
+      // here would recalculate it and discard the user's saved panel positions.
       layout->restoreState(savedState);
     });
   }
@@ -536,6 +539,7 @@ centralWidget->setLayout(centralWidgetLayout);*/
   setCommandHandler(MI_About, this, &MainWindow::onAbout);
   setCommandHandler(MI_OpenOnlineManual, this, &MainWindow::onOpenOnlineManual);
   setCommandHandler(MI_OpenWhatsNew, this, &MainWindow::onOpenWhatsNew);
+  setCommandHandler(MI_Quicklink, this, &MainWindow::onOpenQuicklink);
   setCommandHandler(MI_OpenCommunityForum, this,
                     &MainWindow::onOpenCommunityForum);
   setCommandHandler(MI_OpenReportABug, this, &MainWindow::onOpenReportABug);
@@ -1143,6 +1147,10 @@ void MainWindow::onOpenWhatsNew() {
   QDesktopServices::openUrl(
       QUrl(tr("https://github.com/opentoonz/opentoonz/releases/latest")));
 }
+
+//-----------------------------------------------------------------------------
+
+void MainWindow::onOpenQuicklink() { CustomHelpLink::open(); }
 
 //-----------------------------------------------------------------------------
 
@@ -2285,6 +2293,9 @@ void MainWindow::defineActions() {
       MI_ExportOCA,
       QT_TRANSLATE_NOOP("MainWindow", "Export Open Cel Animation (OCA)"), "",
       "export_oca");
+  createMenuFileAction(MI_ExportAnimatedSVG,
+                       QT_TRANSLATE_NOOP("MainWindow", "Export Animated SVG"),
+                       "");
   createMenuFileAction(
       MI_ImportOCA,
       QT_TRANSLATE_NOOP("MainWindow", "Import Open Cel Animation (OCA)"), "",
@@ -2292,6 +2303,8 @@ void MainWindow::defineActions() {
   createMenuFileAction(
       MI_ExportTvpJson,
       QT_TRANSLATE_NOOP("MainWindow", "Export TVPaint JSON File"), "");
+  createMenuFileAction(MI_ExportPDF,
+                       QT_TRANSLATE_NOOP("MainWindow", "Export PDF..."), "");
   createMenuFileAction("MI_RunScript", QT_TR_NOOP("Run Script..."), "",
                        "run_script");
   createMenuFileAction("MI_OpenScriptConsole",
@@ -2515,6 +2528,9 @@ void MainWindow::defineActions() {
                          "insert_frame");
   createMenuXsheetAction(MI_RemoveSceneFrame, QT_TR_NOOP("Remove Frame"), "",
                          "remove_frame");
+  createMenuXsheetAction(MI_RemoveSelectedSceneFrames,
+                         QT_TR_NOOP("Remove Selected Frames"), "",
+                         "remove_frame");
   createMenuXsheetAction(MI_InsertGlobalKeyframe,
                          QT_TR_NOOP("Insert Multiple Keys"), "",
                          "insert_multiple_keys");
@@ -2639,6 +2655,8 @@ void MainWindow::defineActions() {
   createMenuRenderAction(MI_PreviewSettings, QT_TR_NOOP("&Preview Settings..."),
                          "", "preview_settings");
   createMenuRenderAction(MI_Render, QT_TR_NOOP("&Render"), "Ctrl+Shift+R",
+                         "render");
+  createMenuRenderAction(MI_SaveAndRender, QT_TR_NOOP("&Save and Render"), "",
                          "render");
   createMenuRenderAction(MI_FastRender, QT_TR_NOOP("&Fast Render to MP4"),
                          "Alt+R", "fast_render_mp4");
@@ -2840,6 +2858,7 @@ void MainWindow::defineActions() {
                        "F1", "manual");
   createMenuHelpAction(MI_OpenWhatsNew, QT_TR_NOOP("&What's New..."), "",
                        "web");
+  createMenuHelpAction(MI_Quicklink, QT_TR_NOOP("&Quicklink"), "", "web");
   createMenuHelpAction(MI_OpenCommunityForum, QT_TR_NOOP("&Community Forum..."),
                        "", "web");
   createMenuHelpAction(MI_OpenReportABug, QT_TR_NOOP("&Report a Bug..."), "",
