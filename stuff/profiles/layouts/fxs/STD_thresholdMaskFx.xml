@@ -1,0 +1,36 @@
+<fxlayout>
+  <page name="Mask">
+    <label>"Build a matte from the Mask input, an optional Segmentation confidence mask, or a combination of both."</label>
+    <control>maskInputMode</control>
+    <separator label="Threshold"/>
+    <control>channel</control>
+    <control>unpremultiplyMask</control>
+    <control>threshold</control>
+    <control>softness</control>
+    <control>invert</control>
+    <control>edgeFeather</control>
+    <separator label="Result"/>
+    <control>output</control>
+  </page>
+  <page name="Region">
+    <control>regionMode</control>
+    <vbox modeSensitive="regionMode" mode="1">
+      <label>"Keep only the connected thresholded region nearest the Positive Point. The optional box and negative point refine the region without requiring an AI model."</label>
+      <control>positivePoint</control>
+      <control>seedSearchRadius</control>
+      <control>connectivity</control>
+      <separator label="Prompt Box"/>
+      <control>usePromptBox</control>
+      <vbox modeSensitive="usePromptBox" mode="1">
+        <control>boxMin</control>
+        <control>boxMax</control>
+      </vbox>
+      <separator label="Negative Point"/>
+      <control>useNegativePoint</control>
+      <vbox modeSensitive="useNegativePoint" mode="1">
+        <control>negativePoint</control>
+        <control>negativeRadius</control>
+      </vbox>
+    </vbox>
+  </page>
+</fxlayout>

@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    thresholdmaskfx_utils.h
     t3dsource.h
     ../include/tfxaovsource.h
     texturefxP.h
@@ -169,6 +170,7 @@ set(SOURCES
     squaregradientfx.cpp
     stdfx.cpp
     targetspotfx.cpp
+    thresholdmaskfx.cpp
     texturefx.cpp
     threepointlightfx.cpp
     tilefx.cpp
@@ -371,4 +373,12 @@ if(BUILD_EXR_AOV_FX_TESTS)
     add_executable(openexraovfx_test tests/openexraovfx_test.cpp)
     target_link_libraries(openexraovfx_test OpenEXR::OpenEXR Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
     add_test(NAME openexraovfx COMMAND openexraovfx_test)
+endif()
+
+
+# Optional regression target for Threshold Mask math.
+option(BUILD_THRESHOLD_MASK_TESTS "Build the Threshold Mask regression executable" OFF)
+if(BUILD_THRESHOLD_MASK_TESTS)
+    add_executable(thresholdmaskfx_test tests/thresholdmaskfx_test.cpp)
+    add_test(NAME thresholdmaskfx COMMAND thresholdmaskfx_test)
 endif()
