@@ -128,7 +128,7 @@ public:
 
   static bool isEnabledCommand(std::string commandId);
 
-  void createBlankDrawing(int row, int col, bool multiple);
+  void createBlankDrawing(int row, int col, bool multiple, bool insert = false);
   void createBlankDrawings();
   void insertBlankDrawing();
   void fillEmptyCell();
