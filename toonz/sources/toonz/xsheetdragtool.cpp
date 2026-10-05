@@ -721,7 +721,8 @@ public:
         TXsheet *xsh = getViewer()->getXsheet();
         if (!xsh->getCell(m_r0, m_c0).isEmpty())
           for (; xsh->getCell(m_r0 - 1, m_c0) == xsh->getCell(m_r0, m_c0);
-               ++m_rowCount, --m_r0, --r0);
+               ++m_rowCount, --m_r0, --r0)
+            ;
         getViewer()->setCurrentRow(m_r0);
         m_columns.clear();
         m_columns.push_back(CellBuilder(xsh, r0, c0, m_rowCount, m_invert));
@@ -1933,7 +1934,7 @@ public:
   void onDrag(const QMouseEvent *event) override {
     if (!m_enabled) return;
 
-    const Orientation *o = getViewer()->orientation();
+    const Orientation *o = getViewer()->columnOrientation(m_index);
     QRect track          = o->rect(PredefinedRect::VOLUME_TRACK);
     NumberRange range    = o->frameSide(track);
     int frameAxis        = o->frameAxis(event->pos());
@@ -2097,7 +2098,7 @@ protected:
     int r        = row;
     TXsheet *xsh = getViewer()->getXsheet();
     TRect rect   = m_data->getLevelFrameRect(
-        getViewer()->orientation()->isVerticalTimeline());
+          getViewer()->orientation()->isVerticalTimeline());
     for (c = col; c < rect.getLx() + col; c++) {
       for (r = row; r < rect.getLy() + row; r++)
         if (!xsh->getCell(r, c).isEmpty()) return false;
@@ -2194,7 +2195,8 @@ public:
         int r1   = row;
         if (!xsh->getCell(r1, col).isEmpty())
           for (; xsh->getCell(r1, col) == xsh->getCell(r1 + 1, col);
-               fids.push_back(fids.front()), r1++);
+               fids.push_back(fids.front()), r1++)
+            ;
         IoCmd::exposeLevel(sl, row, col, fids, insert, overWrite);
       } else
         for (i = 0; i < (int)m_data->m_levels.size(); i++) {

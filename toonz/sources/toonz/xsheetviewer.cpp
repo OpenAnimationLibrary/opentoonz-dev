@@ -40,6 +40,11 @@
 #include "toonz/txshpalettecolumn.h"
 
 #include "tenv.h"
+#include "toonz/txshsoundtextlevel.h"
+#include "tundo.h"
+#include "historytypes.h"
+#include <QFontMetrics>
+#include <QSet>
 
 #include <QPainter>
 #include <QScrollBar>
@@ -49,7 +54,7 @@
 TEnv::IntVar FrameDisplayStyleInXsheetRowArea(
     "FrameDisplayStyleInXsheetRowArea", 0);
 
-//=============================================================================
+//======================================================================
 namespace XsheetGUI {
 //-----------------------------------------------------------------------------
 
@@ -62,7 +67,7 @@ const int ZOOM_FACTOR_MAX   = 100;
 const int ZOOM_FACTOR_MIN   = 20;
 }  // namespace XsheetGUI
 
-//=============================================================================
+//======================================================================
 // XsheetViewer
 //-----------------------------------------------------------------------------
 
@@ -162,55 +167,55 @@ void XsheetViewer::getButton(const int &btype, QColor &bgColor,
                              QString &svgIconPath, bool isTimeline) {
   switch (btype) {
   case PREVIEW_ON_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelinePreviewButtonBgOnColor()
+    bgColor     = (isTimeline) ? getTimelinePreviewButtonBgOnColor()
                                : getXsheetPreviewButtonBgOnColor();
     svgIconPath = (isTimeline) ? getTimelinePreviewButtonOnImage()
                                : getXsheetPreviewButtonOnImage();
     break;
   case PREVIEW_OFF_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelinePreviewButtonBgOffColor()
+    bgColor     = (isTimeline) ? getTimelinePreviewButtonBgOffColor()
                                : getXsheetPreviewButtonBgOffColor();
     svgIconPath = (isTimeline) ? getTimelinePreviewButtonOffImage()
                                : getXsheetPreviewButtonOffImage();
     break;
   case CAMSTAND_ON_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineCamstandButtonBgOnColor()
+    bgColor     = (isTimeline) ? getTimelineCamstandButtonBgOnColor()
                                : getXsheetCamstandButtonBgOnColor();
     svgIconPath = (isTimeline) ? getTimelineCamstandButtonOnImage()
                                : getXsheetCamstandButtonOnImage();
     break;
   case CAMSTAND_TRANSP_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineCamstandButtonBgOnColor()
+    bgColor     = (isTimeline) ? getTimelineCamstandButtonBgOnColor()
                                : getXsheetCamstandButtonBgOnColor();
     svgIconPath = (isTimeline) ? getTimelineCamstandButtonTranspImage()
                                : getXsheetCamstandButtonTranspImage();
     break;
   case CAMSTAND_OFF_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineCamstandButtonBgOffColor()
+    bgColor     = (isTimeline) ? getTimelineCamstandButtonBgOffColor()
                                : getXsheetCamstandButtonBgOffColor();
     svgIconPath = (isTimeline) ? getTimelineCamstandButtonOffImage()
                                : getXsheetCamstandButtonOffImage();
     break;
   case LOCK_ON_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineLockButtonBgOnColor()
+    bgColor     = (isTimeline) ? getTimelineLockButtonBgOnColor()
                                : getXsheetLockButtonBgOnColor();
     svgIconPath = (isTimeline) ? getTimelineLockButtonOnImage()
                                : getXsheetLockButtonOnImage();
     break;
   case LOCK_OFF_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineLockButtonBgOffColor()
+    bgColor     = (isTimeline) ? getTimelineLockButtonBgOffColor()
                                : getXsheetLockButtonBgOffColor();
     svgIconPath = (isTimeline) ? getTimelineLockButtonOffImage()
                                : getXsheetLockButtonOffImage();
     break;
   case CONFIG_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelineConfigButtonBgColor()
+    bgColor     = (isTimeline) ? getTimelineConfigButtonBgColor()
                                : getXsheetConfigButtonBgColor();
     svgIconPath = (isTimeline) ? getTimelineConfigButtonImage()
                                : getXsheetConfigButtonImage();
     break;
   case UNIFIED_TRANSP_XSHBUTTON:
-    bgColor   = (isTimeline) ? getTimelinePreviewButtonBgOnColor()
+    bgColor     = (isTimeline) ? getTimelinePreviewButtonBgOnColor()
                                : getXsheetPreviewButtonBgOnColor();
     svgIconPath = (isTimeline) ? getTimelineUnifiedButtonTranspImage()
                                : getXsheetUnifiedButtonTranspImage();
@@ -244,7 +249,7 @@ XsheetViewer::XsheetViewer(QWidget *parent, Qt::WindowFlags flags)
     , m_orientation(nullptr)
     , m_xsheetLayout("Classic")
     , m_frameZoomFactor(100) {
-  m_xsheetLayout = Preferences::instance()->getLoadedXsheetLayout();
+  m_xsheetLayout = Orientations::xsheetLayout();
 
   setFocusPolicy(Qt::StrongFocus);
 
@@ -445,11 +450,11 @@ void XsheetViewer::positionSections() {
     if (o->isVerticalTimeline()) {
       headerFrame = headerFrame.adjusted(XsheetGUI::BREADCRUMB_HEIGHT,
                                          XsheetGUI::BREADCRUMB_HEIGHT);
-      bodyFrame = bodyFrame.adjusted(XsheetGUI::BREADCRUMB_HEIGHT, 0);
+      bodyFrame   = bodyFrame.adjusted(XsheetGUI::BREADCRUMB_HEIGHT, 0);
     } else {
       headerLayer = headerLayer.adjusted(XsheetGUI::BREADCRUMB_HEIGHT,
                                          XsheetGUI::BREADCRUMB_HEIGHT);
-      bodyLayer = bodyLayer.adjusted(XsheetGUI::BREADCRUMB_HEIGHT, 0);
+      bodyLayer   = bodyLayer.adjusted(XsheetGUI::BREADCRUMB_HEIGHT, 0);
     }
     m_breadcrumbArea->updateBreadcrumbs();
   } else {
@@ -857,6 +862,162 @@ int XsheetViewer::colToTimelineLayerAxis(int layer) const {
 
 //-----------------------------------------------------------------------------
 
+namespace {
+void applyColumnWidths(TXsheet *xsheet, const std::map<int, int> &widths) {
+  for (const auto &entry : widths)
+    xsheet->setColumnWidthOverride(entry.first, entry.second);
+  TApp *app = TApp::instance();
+  app->getCurrentScene()->setDirtyFlag(true);
+  if (app->getCurrentXsheet()->getXsheet() == xsheet)
+    app->getCurrentXsheet()->notifyXsheetChanged();
+}
+
+class ColumnWidthUndo final : public TUndo {
+  TXsheetP m_xsheet;
+  std::map<int, int> m_before, m_after;
+  int m_columnCountBefore;
+
+public:
+  ColumnWidthUndo(TXsheet *xsheet, const std::map<int, int> &before,
+                  const std::map<int, int> &after)
+      : m_xsheet(xsheet)
+      , m_before(before)
+      , m_after(after)
+      , m_columnCountBefore(xsheet->getColumnCount()) {}
+  void undo() const override {
+    for (const auto &entry : m_before)
+      m_xsheet->setColumnWidthOverride(entry.first, entry.second);
+    while (m_xsheet->getColumnCount() > m_columnCountBefore) {
+      int col = m_xsheet->getColumnCount() - 1;
+      if (!m_xsheet->isColumnEmpty(col) ||
+          m_xsheet->getColumnWidthOverride(col))
+        break;
+      m_xsheet->removeColumn(col);
+    }
+    applyColumnWidths(m_xsheet.getPointer(), {});
+  }
+  void redo() const override {
+    applyColumnWidths(m_xsheet.getPointer(), m_after);
+  }
+  int getSize() const override {
+    return sizeof(*this) +
+           (m_before.size() + m_after.size()) * sizeof(std::pair<int, int>);
+  }
+  QString getHistoryString() override {
+    return QObject::tr("Resize Xsheet Columns");
+  }
+  int getHistoryType() override { return HistoryType::Xsheet; }
+};
+}  // namespace
+
+bool XsheetViewer::hasAdjustableColumns() const {
+  return orientation()->isVerticalTimeline() && m_xsheetLayout == "Adjustable";
+}
+
+int XsheetViewer::columnWidth(int col) const {
+  if (col < 0)
+    return orientation()->dimension(PredefinedDimension::CAMERA_LAYER);
+  int width = getXsheet() ? getXsheet()->getColumnWidthOverride(col) : 0;
+  return hasAdjustableColumns() && width ? width : orientation()->cellWidth();
+}
+
+const Orientation *XsheetViewer::columnOrientation(int col) const {
+  return col >= 0 && hasAdjustableColumns()
+             ? Orientations::withColumnWidth(columnWidth(col))
+             : orientation();
+}
+
+const Orientation *XsheetViewer::orientationAt(const QPoint &point) const {
+  return columnOrientation(xyToPosition(point).layer());
+}
+
+void XsheetViewer::setColumnWidths(const std::map<int, int> &widths) {
+  if (!hasAdjustableColumns() || !getXsheet()) return;
+  std::map<int, int> before, after;
+  for (const auto &entry : widths) {
+    if (entry.first < 0) continue;
+    int width    = entry.second == 0 ? 0 : qBound(50, entry.second, 2048);
+    int oldWidth = getXsheet()->getColumnWidthOverride(entry.first);
+    if (oldWidth == width) continue;
+    before[entry.first] = oldWidth;
+    after[entry.first]  = width;
+  }
+  if (after.empty()) return;
+  TUndoManager::manager()->add(new ColumnWidthUndo(getXsheet(), before, after));
+  applyColumnWidths(getXsheet(), after);
+}
+
+int XsheetViewer::fitColumnWidth(int col) const {
+  TXsheet *xsh = getXsheet();
+  if (!xsh || col < 0) return orientation()->cellWidth();
+  QString family = Preferences::instance()->getInterfaceFont();
+  if (family.isEmpty()) {
+#ifdef _WIN32
+    family = "Arial";
+#else
+    family = "Helvetica";
+#endif
+  }
+  QFont font(family, -1, QFont::Normal);
+  font.setPixelSize(XSHEET_FONT_PX_SIZE);
+  QFontMetrics fm(font);
+  auto measure = [&fm](const QString &text) {
+    int width = 0;
+    for (const QString &line : text.split('\n'))
+      width = std::max(width, fm.horizontalAdvance(line));
+    return width;
+  };
+  TXshColumn *column   = xsh->getColumn(col);
+  TStageObject *object = xsh->getStageObject(getObjectId(col));
+  QString name         = QString::fromStdString(object->getName());
+  if (auto *fxColumn = dynamic_cast<TXshZeraryFxColumn *>(column))
+    if (!fxColumn->isEmpty())
+      name = QString::fromStdWString(
+          fxColumn->getZeraryColumnFx()->getZeraryFx()->getName());
+  int headerPadding =
+      Preferences::instance()->isShowColumnNumbersEnabled() ? 25 : 8;
+  int width = std::max(50, measure(name) + headerPadding);
+  int row0, row1;
+  xsh->getCellRange(col, row0, row1);
+  QSet<TXshLevel *> levels;
+  TXshCell previous;
+  int numberWidth = 0, nameWidth = 0;
+  for (int row = row0; row <= row1; ++row) {
+    const TXshCell &cell = xsh->getCell(row, col);
+    if (cell.isEmpty() || cell == previous) continue;
+    previous = cell;
+    if (TXshSoundTextLevel *text = cell.getSoundTextLevel()) {
+      width = std::max(
+          width,
+          measure(text->getFrameText(cell.getFrameId().getNumber() - 1)) + 18);
+    } else {
+      levels.insert(cell.m_level.getPointer());
+      nameWidth = std::max(
+          nameWidth, measure(QString::fromStdWString(cell.m_level->getName())));
+      TFrameId fid = cell.getFrameId();
+      QString number =
+          Preferences::instance()->isShowFrameNumberWithLettersEnabled()
+              ? getFrameNumberWithLetters(fid.getNumber())
+              : QString::number(fid.getNumber()) + fid.getLetter();
+      numberWidth = std::max(numberWidth, measure(number));
+    }
+  }
+  if (column && !object->hasSpecifiedName() && levels.size() == 1 &&
+      Preferences::instance()->getLevelNameDisplayType() ==
+          Preferences::ShowLevelNameOnColumnHeader)
+    width = std::max(width, nameWidth + headerPadding);
+  bool showLevelName = Preferences::instance()->getLevelNameDisplayType() !=
+                           Preferences::ShowLevelNameOnColumnHeader ||
+                       levels.size() != 1 || object->hasSpecifiedName();
+  // Drag strip, spacing, and the right-hand keyframe lane stay usable.
+  int padding = 18;
+  if (Preferences::instance()->isShowKeyframesOnXsheetCellAreaEnabled())
+    padding += 12;
+  width = std::max(width,
+                   (showLevelName ? nameWidth + 8 : 0) + numberWidth + padding);
+  return qBound(50, width, 2048);
+}
+
 CellPosition XsheetViewer::xyToPosition(const QPoint &point) const {
   const Orientation *o = orientation();
   QPoint usePoint      = point;
@@ -971,8 +1132,9 @@ void XsheetViewer::drawPredefinedPath(QPainter &p, PredefinedPath which,
                                       const CellPosition &pos,
                                       optional<QColor> fill,
                                       optional<QColor> outline) const {
-  QPoint xy         = positionToXY(pos);
-  QPainterPath path = orientation()->path(which).translated(xy);
+  QPoint xy = positionToXY(pos);
+  QPainterPath path =
+      columnOrientation(pos.layer())->path(which).translated(xy);
   if (fill) p.fillPath(path, QBrush(*fill));
   if (outline) {
     p.setPen(*outline);
@@ -1080,6 +1242,7 @@ bool XsheetViewer::isScrubHighlighted(int row, int col) {
 //-----------------------------------------------------------------------------
 
 void XsheetViewer::showEvent(QShowEvent *) {
+  if (m_xsheetLayout == "Adjustable") refreshContentSize(0, 0);
   m_frameScroller.registerFrameScroller();
   if (m_isCurrentFrameSwitched) onCurrentFrameSwitched();
   if (m_isCurrentColumnSwitched) onCurrentColumnSwitched();
@@ -1433,8 +1596,7 @@ void XsheetViewer::enterEvent(QEvent *) {
 void XsheetViewer::scrollTo(int row, int col) {
   QRect visibleRect = m_cellArea->visibleRegion().boundingRect();
   QPoint topLeft    = positionToXY(CellPosition(row, col));
-  QRect cellRect(
-      topLeft, QSize(orientation()->cellWidth(), orientation()->cellHeight()));
+  QRect cellRect(topLeft, QSize(columnWidth(col), orientation()->cellHeight()));
 
   int deltaX = 0;
   int deltaY = 0;
@@ -1491,6 +1653,9 @@ void XsheetViewer::onPreferenceChanged(const QString &prefName) {
     refreshContentSize(0, 0);
   } else if (prefName == "XsheetCamera") {
     refreshContentSize(0, 0);
+  } else if (prefName == "XsheetColumnWidth") {
+    refreshContentSize(0, 0);
+    updateAllAree();
   } else if (prefName == "CurrentCellColor") {
     m_cellArea->update();
     m_columnArea->update();
@@ -1824,7 +1989,7 @@ void XsheetViewer::changeWindowTitle() {
 /*! convert the last one digit of the frame number to alphabet
         Ex.  12 -> 1B    21 -> 2A   30 -> 3
  */
-QString XsheetViewer::getFrameNumberWithLetters(int frame) {
+QString XsheetViewer::getFrameNumberWithLetters(int frame) const {
   int letterNum = frame % 10;
   QChar letter;
 
@@ -2047,7 +2212,7 @@ QColor XsheetViewer::getColumnFocusColor() const {
   return QColor(color.r, color.g, color.b, color.m);
 }
 
-//=============================================================================
+//======================================================================//
 // XSheetViewerCommand
 //-----------------------------------------------------------------------------
 

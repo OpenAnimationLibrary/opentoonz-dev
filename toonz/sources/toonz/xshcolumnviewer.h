@@ -14,6 +14,8 @@
 #include "../include/tundo.h"
 #include "../include/historytypes.h"
 
+#include <map>
+#include <vector>
 #include <QWidget>
 #include <QListWidget>
 #include <QLineEdit>
@@ -50,7 +52,8 @@ class MotionPathMenu final : public QWidget {
   QPoint m_pos;
 
 public:
-  MotionPathMenu(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
+  MotionPathMenu(QWidget *parent       = 0,
+                 Qt::WindowFlags flags = Qt::WindowFlags());
   ~MotionPathMenu();
 
 protected:
@@ -267,9 +270,9 @@ class ColumnArea final : public QWidget {
   Q_OBJECT
 
   enum ReleaseAction {
-    //ToggleTransparency = 1,
+    // ToggleTransparency = 1,
     ToggleAllTransparency = 1,
-    //TogglePreviewVisible,
+    // TogglePreviewVisible,
     ToggleAllPreviewVisible,
     // ToggleLock,
     ToggleAllLock,
@@ -277,12 +280,12 @@ class ColumnArea final : public QWidget {
   };
 
   enum MoveAction {
-      ToggleOnTransparency = 1,
-      ToggleOffTransparency,
-      ToggleOnPreviewVisible,
-      ToggleOffPreviewVisible,
-      ToggleOnLock,
-      ToggleOffLock
+    ToggleOnTransparency = 1,
+    ToggleOffTransparency,
+    ToggleOnPreviewVisible,
+    ToggleOffPreviewVisible,
+    ToggleOnLock,
+    ToggleOffLock
   };
 
   ColumnTransparencyPopup *m_columnTransparencyPopup;
@@ -298,6 +301,18 @@ class ColumnArea final : public QWidget {
   QRect m_linkBox;
 
   bool m_isPanning;
+  int m_resizeCol         = -1;
+  int m_resizeStartX      = 0;
+  int m_resizeStartWidth  = 0;
+  int m_resizeColumnCount = 0;
+  bool m_resizeMoved      = false;
+  TXsheetP m_resizeXsheet;
+  std::map<int, int> m_resizeBefore;
+
+  int resizeColumnAt(const QPoint &pos) const;
+  std::vector<int> widthTargets(int col) const;
+  void finishColumnResize(bool commit);
+  void autoFitColumns(int col);
 
   QPoint m_pos;
   QString m_tooltip;
@@ -391,6 +406,8 @@ protected:
   void mouseReleaseEvent(QMouseEvent *event) override;
   void mouseDoubleClickEvent(QMouseEvent *event) override;
   void contextMenuEvent(QContextMenuEvent *event) override;
+  void keyPressEvent(QKeyEvent *event) override;
+  void hideEvent(QHideEvent *event) override;
   bool event(QEvent *event) override;
 
 protected slots:

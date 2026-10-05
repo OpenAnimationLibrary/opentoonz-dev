@@ -62,6 +62,7 @@ TXshColumn *TXshSoundTextColumn::clone() const {
   column->setStatusWord(getStatusWord());
   column->m_cells = m_cells;
   column->m_first = m_first;
+  column->setXsheetColumnWidth(getXsheetColumnWidth());
   return column;
 }
 

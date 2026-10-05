@@ -41,6 +41,9 @@ class DVAPI ColumnFan {
   std::vector<Column> m_columns;
   std::map<int, int> m_table;
   int m_firstFreePos;
+  int m_firstFreeCol;
+  std::vector<int> m_widths;
+  std::vector<int> m_positions;
   int m_unfolded, m_folded;
   bool m_cameraActive;
   int m_cameraColumnDim;
@@ -57,6 +60,8 @@ Constructs a ColumnFan with default value.
 
   //! Adjust column sizes when switching orientation
   void setDimensions(int unfolded, int cameraColumn);
+  void setWidths(const std::vector<int> &widths);
+  int unfoldedSize(int col) const;
 
   /*!
 Set column \b col not folded.

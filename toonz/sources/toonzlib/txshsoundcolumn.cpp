@@ -196,6 +196,7 @@ TXshColumn *TXshSoundColumn::clone() const {
   for (i = 0; i < m_levels.size(); i++)
     column->insertColumnLevel(m_levels.at(i)->clone(), i);
 
+  column->setXsheetColumnWidth(getXsheetColumnWidth());
   return column;
 }
 

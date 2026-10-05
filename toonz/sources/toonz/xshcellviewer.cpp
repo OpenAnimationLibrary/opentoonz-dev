@@ -639,7 +639,7 @@ void RenameCellField::showInRowCol(int row, int col, bool multiColumnSelected) {
     m_initialText = text;
   };
 
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
 
   m_viewer->scrollTo(row, col);
 
@@ -984,7 +984,8 @@ void RenameCellField::renameCell() {
             TFrameId::EMPTY_FRAME) {
       for (; xsheet->getCell(range.m_r1, range.m_c0) ==
              xsheet->getCell(range.m_r1 + 1, range.m_c0);
-           ++range.m_r1);
+           ++range.m_r1)
+        ;
       cellSelection->selectCells(range.m_r0, range.m_c0, range.m_r1,
                                  range.m_c1);
     }
@@ -1205,7 +1206,7 @@ void CellArea::setDragTool(DragTool *dragTool) {
 
 void CellArea::drawFrameSeparator(QPainter &p, int row, int col,
                                   bool emptyFrame, bool heldFrame) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
   int layerAxis        = m_viewer->columnToLayerAxis(col);
 
   NumberRange layerAxisRange(layerAxis + 1,
@@ -1246,7 +1247,7 @@ void CellArea::drawFrameSeparator(QPainter &p, int row, int col,
                 : o->rect(PredefinedRect::DRAG_HANDLE_CORNER).width()
           : o->rect(PredefinedRect::DRAG_HANDLE_CORNER).height();
 
-  QLine horizontalLine = m_viewer->orientation()->horizontalLine(
+  QLine horizontalLine = m_viewer->columnOrientation(col)->horizontalLine(
       frameAxis, layerAxisRange.adjusted(handleSize - 1, 1));
   if (heldFrame) {
     int x = horizontalLine.x1();
@@ -1320,7 +1321,7 @@ void CellArea::drawCells(QPainter &p, const QRect toBeUpdated) {
           else
             xy.setX(xy.x() + 1);
         }
-        drawCurrentTimeIndicator(p, xy, true);
+        drawCurrentTimeIndicator(p, xy, col, true);
       }
       continue;
     }
@@ -1468,7 +1469,7 @@ void CellArea::drawSelectionBackground(QPainter &p) const {
     int newSelCol0 = std::max(selCol0, selCol1);
     int newSelCol1 = std::min(selCol0, selCol1);
     selectionRect  = m_viewer->rangeToXYRect(
-        CellRange(CellPosition(selRow0, newSelCol0),
+         CellRange(CellPosition(selRow0, newSelCol0),
                    CellPosition(selRow1 + 1, newSelCol1 - 1)));
   }
 
@@ -1559,7 +1560,7 @@ void CellArea::drawExtenderHandles(QPainter &p) {
 //-----------------------------------------------------------------------------
 
 void CellArea::drawSoundCell(QPainter &p, int row, int col, bool isReference) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
   TXshSoundColumn *soundColumn =
       m_viewer->getXsheet()->getColumn(col)->getSoundColumn();
   QPoint xy = m_viewer->positionToXY(CellPosition(row, col));
@@ -1582,7 +1583,9 @@ void CellArea::drawSoundCell(QPainter &p, int row, int col, bool isReference) {
   cellRect.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
   QRect rect = cellRect.adjusted(
       1, 1,
-      (!m_viewer->orientation()->isVerticalTimeline() && !isNextEmpty ? 2 : 0),
+      (!m_viewer->columnOrientation(col)->isVerticalTimeline() && !isNextEmpty
+           ? 2
+           : 0),
       0);
 
   int markId = soundColumn->getCellMark(row);
@@ -1738,14 +1741,14 @@ void CellArea::drawSoundCell(QPainter &p, int row, int col, bool isReference) {
   assert(ret);
 
   if (isFirstRow) {
-    QRect modifierRect = m_viewer->orientation()
+    QRect modifierRect = m_viewer->columnOrientation(col)
                              ->rect(PredefinedRect::BEGIN_SOUND_EDIT)
                              .translated(xy);
     if (r0 != r0WithoutOff) p.fillRect(modifierRect, SoundColumnExtenderColor);
     m_soundLevelModifyRects.append(modifierRect);  // list of clipping rects
   }
   if (isLastRow) {
-    QRect modifierRect = m_viewer->orientation()
+    QRect modifierRect = m_viewer->columnOrientation(col)
                              ->rect(PredefinedRect::END_SOUND_EDIT)
                              .translated(-frameAdj)
                              .translated(xy);
@@ -1767,7 +1770,7 @@ void CellArea::drawSoundCell(QPainter &p, int row, int col, bool isReference) {
 void CellArea::drawDragHandle(QPainter &p, const QPoint &xy,
                               const QColor &sideColor) const {
   QPoint frameAdj      = m_viewer->getFrameZoomAdjustment();
-  QRect dragHandleRect = m_viewer->orientation()
+  QRect dragHandleRect = m_viewer->orientationAt(xy + QPoint(1, 0))
                              ->rect(PredefinedRect::DRAG_HANDLE_CORNER)
                              .adjusted(0, 0, -frameAdj.x(), -frameAdj.y())
                              .translated(xy);
@@ -1779,7 +1782,7 @@ void CellArea::drawEndOfDragHandle(QPainter &p, bool isEnd, const QPoint &xy,
                                    const QColor &cellColor) const {
   if (!isEnd) return;
   QPoint frameAdj     = m_viewer->getFrameZoomAdjustment();
-  QPainterPath corner = m_viewer->orientation()
+  QPainterPath corner = m_viewer->orientationAt(xy + QPoint(1, 0))
                             ->path(PredefinedPath::DRAG_HANDLE_CORNER)
                             .translated(xy - frameAdj);
   p.fillPath(corner, QBrush(cellColor));
@@ -1791,9 +1794,10 @@ void CellArea::drawLockedDottedLine(QPainter &p, bool isLocked,
                                     const QColor &cellColor) const {
   if (!isLocked) return;
   p.setPen(QPen(cellColor, 2, Qt::DotLine));
-  QPoint frameAdj = m_viewer->getFrameZoomAdjustment();
-  QLine dottedLine =
-      m_viewer->orientation()->line(PredefinedLine::LOCKED).translated(xy);
+  QPoint frameAdj  = m_viewer->getFrameZoomAdjustment();
+  QLine dottedLine = m_viewer->orientationAt(xy + QPoint(1, 0))
+                         ->line(PredefinedLine::LOCKED)
+                         .translated(xy);
   dottedLine.setP2(QPoint(dottedLine.x2(), dottedLine.y2()) - frameAdj);
   p.drawLine(dottedLine);
 }
@@ -1802,20 +1806,21 @@ void CellArea::drawCurrentTimeIndicator(QPainter &p, const QPoint &xy, int col,
                                         bool isFolded) {
   QPoint frameAdj       = m_viewer->getFrameZoomAdjustment();
   QColor indicatorColor = m_viewer->getCurrentTimeIndicatorColor();
-  if (!m_viewer->orientation()->isVerticalTimeline()) {
-    QLine line = m_viewer->orientation()
+  if (!m_viewer->columnOrientation(col)->isVerticalTimeline()) {
+    QLine line = m_viewer->columnOrientation(col)
                      ->line(PredefinedLine::CURRENT_TIME_INDICATOR)
                      .translated(xy)
                      .translated(-frameAdj / 2);
     // Adjust for 1st row
     if (xy.x() <= 1) line.translate(-1, 0);
     if (isFolded)
-      line.setP2(line.p1() +
-                 QPoint(0, m_viewer->orientation()->foldedCellSize() - 1));
+      line.setP2(
+          line.p1() +
+          QPoint(0, m_viewer->columnOrientation(col)->foldedCellSize() - 1));
     p.setPen(indicatorColor);
     p.drawLine(line);
   } else {
-    QRect cellRect = m_viewer->orientation()
+    QRect cellRect = m_viewer->columnOrientation(col)
                          ->rect((col < 0) ? PredefinedRect::CAMERA_CELL
                                           : PredefinedRect::CELL)
                          .translated(xy)
@@ -1824,7 +1829,7 @@ void CellArea::drawCurrentTimeIndicator(QPainter &p, const QPoint &xy, int col,
     if (xy.y() <= 1) cellRect.adjust(0, -1, 0, -1);
     if (isFolded)
       cellRect.setRight(cellRect.left() +
-                        m_viewer->orientation()->foldedCellSize() - 1);
+                        m_viewer->columnOrientation(col)->foldedCellSize() - 1);
 
     p.setPen(
         QPen(indicatorColor, 1, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
@@ -1838,11 +1843,11 @@ void CellArea::drawFrameMarker(QPainter &p, const QPoint &xy, QColor color,
   QColor outlineColor = Qt::black;
   QPoint frameAdj     = m_viewer->getFrameZoomAdjustment();
   QRect dotRect       = (isCamera)
-                            ? m_viewer->orientation()
+                            ? m_viewer->orientationAt(xy + QPoint(1, 0))
                             ->rect(PredefinedRect::CAMERA_FRAME_MARKER_AREA)
                             .translated(xy)
                             .translated(-frameAdj / 2)
-                            : m_viewer->orientation()
+                            : m_viewer->orientationAt(xy + QPoint(1, 0))
                             ->rect(PredefinedRect::FRAME_MARKER_AREA)
                             .translated(xy)
                             .translated(-frameAdj / 2);
@@ -1853,13 +1858,15 @@ void CellArea::drawFrameMarker(QPainter &p, const QPoint &xy, QColor color,
                                  outlineColor);
   else {
     // move to column center
-    if (m_viewer->orientation()->isVerticalTimeline()) {
+    if (m_viewer->orientationAt(xy + QPoint(1, 0))->isVerticalTimeline()) {
       PredefinedLine which =
           Preferences::instance()->isLevelNameOnEachMarkerEnabled()
               ? PredefinedLine::CONTINUE_LEVEL_WITH_NAME
               : PredefinedLine::CONTINUE_LEVEL;
 
-      QLine continueLine = m_viewer->orientation()->line(which).translated(xy);
+      QLine continueLine = m_viewer->orientationAt(xy + QPoint(1, 0))
+                               ->line(which)
+                               .translated(xy);
       dotRect.moveCenter(QPoint(continueLine.x1() - 1, dotRect.center().y()));
     }
     p.setPen(outlineColor);
@@ -1879,7 +1886,7 @@ void CellArea::drawFocusCellBorder(QPainter &p) {
   int col         = m_viewer->getCurrentColumn();
   QPoint xy       = m_viewer->positionToXY(CellPosition(row, col));
   QRect rect =
-      m_viewer->orientation()
+      m_viewer->columnOrientation(col)
           ->rect((col < 0) ? PredefinedRect::CAMERA_CELL : PredefinedRect::CELL)
           .translated(xy)
           .adjusted(1, 1, -1 - frameAdj.x(), -frameAdj.y());
@@ -1892,7 +1899,7 @@ void CellArea::drawFocusCellBorder(QPainter &p) {
 
 void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
                              bool showLevelName) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
 
   TXsheet *xsh  = m_viewer->getXsheet();
   TXshCell cell = xsh->getCell(row, col);
@@ -2205,7 +2212,7 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
 //-----------------------------------------------------------------------------
 
 void CellArea::drawSoundTextCell(QPainter &p, int row, int col) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
   TXsheet *xsh         = m_viewer->getXsheet();
   TXshCell cell        = xsh->getCell(row, col);
   TXshCell prevCell;
@@ -2237,7 +2244,8 @@ void CellArea::drawSoundTextCell(QPainter &p, int row, int col) {
   cellRect.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
   QRect rect = cellRect.adjusted(
       1, 1,
-      (!m_viewer->orientation()->isVerticalTimeline() && !nextCell.isEmpty()
+      (!m_viewer->columnOrientation(col)->isVerticalTimeline() &&
+               !nextCell.isEmpty()
            ? 2
            : 0),
       0);
@@ -2390,7 +2398,7 @@ void CellArea::drawSoundTextCell(QPainter &p, int row, int col) {
 //-----------------------------------------------------------------------------
 
 void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
   TXsheet *xsh         = m_viewer->getXsheet();
 
   struct CellInfo {
@@ -2652,7 +2660,7 @@ void CellArea::drawSoundTextColumn(QPainter &p, int r0, int r1, int col) {
 
 void CellArea::drawPaletteCell(QPainter &p, int row, int col,
                                bool isReference) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
 
   TXsheet *xsh  = m_viewer->getXsheet();
   TXshCell cell = xsh->getCell(row, col);
@@ -2688,7 +2696,8 @@ void CellArea::drawPaletteCell(QPainter &p, int row, int col,
   cellRect.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
   QRect rect = cellRect.adjusted(
       1, 1,
-      (!m_viewer->orientation()->isVerticalTimeline() && !nextCell.isEmpty()
+      (!m_viewer->columnOrientation(col)->isVerticalTimeline() &&
+               !nextCell.isEmpty()
            ? 2
            : 0),
       0);
@@ -2913,13 +2922,13 @@ void CellArea::drawKeyframe(QPainter &p, const QRect toBeUpdated) {
   static QPixmap selectedKey = svgToPixmap(":Resources/selected_key.svg");
   static QPixmap key         = svgToPixmap(":Resources/key.svg");
   QPoint frameAdj            = m_viewer->getFrameZoomAdjustment();
-  const QRect &keyRect =
-      o->rect(PredefinedRect::KEY_ICON).translated(-frameAdj / 2);
 
   TXsheet *xsh         = m_viewer->getXsheet();
   ColumnFan *columnFan = xsh->getColumnFan(o);
   int col;
   for (col = c0; col <= c1; col++) {
+    o             = m_viewer->columnOrientation(col);
+    QRect keyRect = o->rect(PredefinedRect::KEY_ICON).translated(-frameAdj / 2);
     if (!columnFan->isActive(col)) continue;
     int layerAxis = m_viewer->columnToLayerAxis(col);
 
@@ -3056,7 +3065,7 @@ void CellArea::drawKeyframe(QPainter &p, const QRect toBeUpdated) {
 void CellArea::drawKeyframeLine(QPainter &p, int col,
                                 const NumberRange &rows) const {
   QPoint frameAdj      = m_viewer->getFrameZoomAdjustment();
-  const QRect &keyRect = m_viewer->orientation()
+  const QRect &keyRect = m_viewer->columnOrientation(col)
                              ->rect((col < 0) ? PredefinedRect::CAMERA_KEY_ICON
                                               : PredefinedRect::KEY_ICON)
                              .translated(-frameAdj / 2);
@@ -3210,7 +3219,7 @@ bool CellArea::isKeyFrameArea(int col, int row, QPoint mouseInCell) {
 
   if (!isKeyframeFrame) return false;
 
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->columnOrientation(col);
   QPoint frameAdj      = m_viewer->getFrameZoomAdjustment();
 
   if (o->isVerticalTimeline())
@@ -3246,7 +3255,7 @@ bool CellArea::isKeyFrameArea(int col, int row, QPoint mouseInCell) {
 }
 
 void CellArea::mousePressEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
 
   m_viewer->setQtModifiers(event->modifiers());
   assert(!m_isPanning);
@@ -3405,9 +3414,9 @@ void CellArea::mousePressEvent(QMouseEvent *event) {
 
     // Drag Cells #2 : When clicked the drag area (side bar)
     else if ((!xsh->getCell(row, col).isEmpty()) &&
-                 o->rect(PredefinedRect::DRAG_AREA)
-                     .adjusted(0, 0, -frameAdj.x(), -frameAdj.y())
-                     .contains(mouseInCell)) {
+             o->rect(PredefinedRect::DRAG_AREA)
+                 .adjusted(0, 0, -frameAdj.x(), -frameAdj.y())
+                 .contains(mouseInCell)) {
       TXshColumn *column = xsh->getColumn(col);
 
       if (column && !m_viewer->getCellSelection()->isCellSelected(row, col)) {
@@ -3458,7 +3467,7 @@ void CellArea::mousePressEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void CellArea::mouseMoveEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
   QPoint frameAdj      = m_viewer->getFrameZoomAdjustment();
 
   m_viewer->setQtModifiers(event->modifiers());
@@ -3599,7 +3608,7 @@ void CellArea::mouseReleaseEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void CellArea::mouseDoubleClickEvent(QMouseEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
   TPoint pos(event->pos().x(), event->pos().y());
   CellPosition cellPosition = m_viewer->xyToPosition(event->pos());
   int row                   = cellPosition.frame();
@@ -3646,7 +3655,7 @@ void CellArea::mouseDoubleClickEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void CellArea::contextMenuEvent(QContextMenuEvent *event) {
-  const Orientation *o = m_viewer->orientation();
+  const Orientation *o = m_viewer->orientationAt(event->pos());
   TPoint pos(event->pos().x(), event->pos().y());
   CellPosition cellPosition = m_viewer->xyToPosition(event->pos());
   int row                   = cellPosition.frame();

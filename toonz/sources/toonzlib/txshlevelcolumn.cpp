@@ -100,6 +100,7 @@ TXshColumn *TXshLevelColumn::clone() const {
   column->setColorTag(getColorTag());
   column->setColorFilterId(getColorFilterId());
 
+  column->setXsheetColumnWidth(getXsheetColumnWidth());
   return column;
 }
 

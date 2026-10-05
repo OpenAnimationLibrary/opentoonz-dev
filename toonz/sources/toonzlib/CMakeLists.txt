@@ -358,9 +358,7 @@ if(BUILD_ENV_APPLE)
     add_dependencies(toonzlib tnzcore tnzbase tnzext)
 endif()
 
-add_definitions(
-    -DTOONZLIB_EXPORTS
-)
+target_compile_definitions(toonzlib PRIVATE TOONZLIB_EXPORTS)
 
 message("subdir: toonzlib")
 message("Bin: " ${CMAKE_CURRENT_BINARY_DIR})
@@ -406,3 +404,9 @@ elseif(BUILD_ENV_UNIXLIKE)
 endif()
 
 target_link_libraries(toonzlib OpenEXR::OpenEXR)
+
+if(BUILD_XSHEET_COLUMN_WIDTH_TESTS)
+    add_executable(columnwidth_test tests/columnwidth_test.cpp)
+    target_link_libraries(columnwidth_test toonzlib tnzcore tnzbase Qt5::Core Qt5::Gui)
+    add_test(NAME xsheet_column_width COMMAND columnwidth_test)
+endif()
