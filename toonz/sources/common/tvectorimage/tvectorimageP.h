@@ -7,6 +7,7 @@
 #include "tvectorimage.h"
 #include "tregion.h"
 #include "tcurves.h"
+#include <memory>
 
 //-----------------------------------------------------------------------------
 
@@ -20,6 +21,7 @@ class VIStroke;
 class TGroupId {
 public:
   std::vector<int> m_id;  // m_id[i-1] e' parent di m_id[i]
+  std::vector<std::shared_ptr<const std::wstring>> m_names;
   TGroupId() : m_id() {}
 
   // ghost group sono i gruppi impliciti: tutti gli stroke che non fanno parte
@@ -29,7 +31,8 @@ public:
 
   TGroupId(TVectorImage *vi, bool isGhost);
 
-  TGroupId(const TGroupId &strokeGroup) : m_id(strokeGroup.m_id){};
+  TGroupId(const TGroupId &strokeGroup)
+      : m_id(strokeGroup.m_id), m_names(strokeGroup.m_names){};
 
   // costruisce un gruppo partendo da un parent e da un id esistente.
   TGroupId(const TGroupId &parent, const TGroupId &id);

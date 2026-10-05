@@ -291,7 +291,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON -DWITH_LAYER_TESTS=ON
         shell: cmd
 
       - name: Build and test OpenEXR image I/O and level source
@@ -385,6 +385,17 @@ jobs:
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
         shell: cmd
+
+      - name: Test Layers panel and persistent vector group names
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$env:GITHUB_WORKSPACE\toonz\build\Opentoonz;$env:QT_PATH\bin;$env:PATH"
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = "$env:QT_PATH\plugins\platforms"
+          ctest --test-dir toonz/build -C RelWithDebInfo --output-on-failure -R '^layers-integration$'
+          if ($LASTEXITCODE) { throw 'Layers integration tests failed' }
 
       - name: Test 3D LUT Bake
         shell: cmd
