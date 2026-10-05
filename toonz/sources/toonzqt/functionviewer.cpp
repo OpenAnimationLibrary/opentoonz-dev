@@ -47,6 +47,10 @@
 #include <QLabel>
 #include <QToolBar>
 #include <QAction>
+#include <QLineEdit>
+#include <QCheckBox>
+#include <QShortcut>
+#include <QKeyEvent>
 
 using namespace DVGui;
 
@@ -89,6 +93,26 @@ FunctionViewer::FunctionViewer(QWidget *parent, Qt::WindowFlags flags)
     m_numericalColumns = new FunctionSheet(this);
   }
   m_treeView = new FunctionTreeView(this);
+  m_searchField = new QLineEdit(this);
+  m_searchField->setObjectName("FunctionEditorSearchField");
+  m_searchField->setPlaceholderText(tr("Search parameter..."));
+  m_searchField->setClearButtonEnabled(true);
+  m_searchField->setFocusPolicy(Qt::ClickFocus);
+  m_searchField->installEventFilter(this);
+
+  // Ctrl+F is already assigned to the FX Browser. Keep this shortcut local.
+  QShortcut *searchShortcut = new QShortcut(QKeySequence("Ctrl+Shift+F"), this);
+  searchShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+  connect(searchShortcut, &QShortcut::activated, this, [this]() {
+    m_searchField->setFocus(Qt::ShortcutFocusReason);
+    m_searchField->selectAll();
+  });
+  QCheckBox *animatedOnly = new QCheckBox(tr("Animated only"), this);
+  animatedOnly->setObjectName("FunctionEditorAnimatedOnly");
+  animatedOnly->setToolTip(
+      tr("List only parameters with keyframes in all columns "
+         "and effects. Keep the displayed curves unchanged."));
+  animatedOnly->setFocusPolicy(Qt::NoFocus);
 
   m_toolbar = new FunctionToolbar;
   m_segmentViewer =
@@ -163,6 +187,8 @@ FunctionViewer::FunctionViewer(QWidget *parent, Qt::WindowFlags flags)
   rightLayout->setSpacing(5);
   {
     rightLayout->addWidget(m_segmentViewer, 0);
+    rightLayout->addWidget(m_searchField, 0);
+    rightLayout->addWidget(animatedOnly, 0);
     rightLayout->addWidget(m_treeView, 1);
   }
   rightPanel->setLayout(rightLayout);
@@ -211,6 +237,20 @@ FunctionViewer::FunctionViewer(QWidget *parent, Qt::WindowFlags flags)
                 SIGNAL(currentChannelChanged(FunctionTreeModel::Channel *)),
                 m_numericalColumns,
                 SLOT(onCurrentChannelChanged(FunctionTreeModel::Channel *)));
+
+  connect(m_searchField, &QLineEdit::textChanged, this,
+          [this, ftModel](const QString &text) {
+            ftModel->setSearchFilter(text);
+            m_treeView->update();
+          });
+  connect(animatedOnly, &QCheckBox::toggled, this, [this, ftModel](bool on) {
+    ftModel->setAnimatedOnly(on);
+    m_treeView->update();
+  });
+  connect(ftModel, &FunctionTreeModel::currentChannelChanged, this,
+          [this](FunctionTreeModel::Channel *channel) {
+            if (isVisible()) m_treeView->scrollToItem(channel);
+          });
 
   assert(ret);
   if (m_toggleStart ==
@@ -497,6 +537,20 @@ void FunctionViewer::setColumnHandle(TColumnHandle *columnHandle) {
 
 //-----------------------------------------------------------------------------
 
+bool FunctionViewer::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == m_searchField && event->type() == QEvent::KeyPress &&
+      static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+    if (m_searchField->text().isEmpty())
+      m_searchField->clearFocus();
+    else
+      m_searchField->clear();
+    return true;
+  }
+  return QSplitter::eventFilter(watched, event);
+}
+
+//-----------------------------------------------------------------------------
+
 void FunctionViewer::onFrameSwitched() {
   int frame = m_localFrame.getFrame();
   m_segmentViewer->setSegmentByFrame(m_curve, frame);
@@ -616,10 +670,12 @@ void FunctionViewer::onStageObjectSwitched() {
                                     ? (TStageObject *)0
                                     : xsh->getStageObject(objId);
 
-  static_cast<FunctionTreeModel *>(m_treeView->model())
-      ->setCurrentStageObject(obj);
+  auto *model = static_cast<FunctionTreeModel *>(m_treeView->model());
+  model->setCurrentStageObject(obj);
 
   m_treeView->updateAll();
+  if (isVisible())
+    m_treeView->scrollToItem(model->getStageObjectChannelGroup(obj), true);
   m_functionGraph->update();
 }
 
@@ -650,8 +706,10 @@ void FunctionViewer::onFxSwitched() {
   TFx *fx              = m_fxHandle->getFx();
   TZeraryColumnFx *zfx = dynamic_cast<TZeraryColumnFx *>(fx);
   if (zfx) fx = zfx->getZeraryFx();
-  static_cast<FunctionTreeModel *>(m_treeView->model())->setCurrentFx(fx);
+  auto *model = static_cast<FunctionTreeModel *>(m_treeView->model());
+  model->setCurrentFx(fx);
   m_treeView->updateAll();
+  if (isVisible()) m_treeView->scrollToItem(model->getFxChannelGroup(fx), true);
   m_functionGraph->update();
 }
 
