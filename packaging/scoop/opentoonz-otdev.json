@@ -1,0 +1,16 @@
+{
+    "version": "alpha-2026-09-20",
+    "description": "OpenToonz development build (portable Windows release)",
+    "homepage": "https://github.com/OpenAnimationLibrary/opentoonz-dev",
+    "license": "BSD-3-Clause",
+    "url": "https://github.com/OpenAnimationLibrary/opentoonz-dev/releases/download/otdev-alpha-2026-09-20/OpenToonz-OTDev-Alpha-2026-09-20-Windows.zip",
+    "hash": "a9f67a0fdbdb394227d8cb8a3f8c14a0fc588b714e7a4f43e33a3243193304e6",
+    "persist": "portablestuff",
+    "shortcuts": [
+        [
+            "OpenToonz.exe",
+            "OpenToonz (OT-Dev)"
+        ]
+    ],
+    "pre_install": "if (!(Test-Path \"$dir\\OpenToonz.exe\") -or !(Test-Path \"$dir\\portablestuff\\config\")) { throw 'The release ZIP must contain OpenToonz.exe and portablestuff/config at its root.' }"
+}
