@@ -92,6 +92,7 @@ void checkGeometry() {
 }
 #ifndef COLUMN_GEOMETRY_ONLY
 void checkColumns(const QString &path) {
+  std::cout << "Checking column operations" << std::endl;
   TXsheetP sheet(new TXsheet());
   for (int col = 0; col < 3; ++col) sheet->insertColumn(col);
   sheet->setColumnWidthOverride(0, 120);
@@ -119,12 +120,16 @@ void checkColumns(const QString &path) {
           "Type replacement lost width");
   for (int type = TXshColumn::eLevelType; type <= TXshColumn::eMeshType;
        ++type) {
+    std::cout << "Checking clone for column type " << type << std::endl;
     TXshColumnP column(TXshColumn::createEmpty(type));
+    // Sound column cloning requires the owning Xsheet, as in the application.
+    column->setXsheet(sheet.getPointer());
     column->setXsheetColumnWidth(123);
     TXshColumnP copy(column->clone());
     require(copy->getXsheetColumnWidth() == 123, "Clone lost width");
   }
   {
+    std::cout << "Checking scene serialization" << std::endl;
     TOStream stream{TFilePath(path)};
     sheet->saveData(stream);
   }
@@ -136,7 +141,10 @@ void checkColumns(const QString &path) {
           "Incompatible scene tag introduced");
   TXsheetP loaded(new TXsheet());
   {
+    std::cout << "Checking scene reload" << std::endl;
     TIStream stream{TFilePath(path)};
+    // TXsheet data is normally read inside a versioned ToonzScene stream.
+    stream.setVersion(VersionNumber(71, 1));
     loaded->loadData(stream);
   }
   for (int col = 0; col < sheet->getColumnCount(); ++col)
