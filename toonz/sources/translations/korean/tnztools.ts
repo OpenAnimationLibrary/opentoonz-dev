@@ -2024,7 +2024,7 @@ moved to the end of the current style&apos;s page of the palette.</source>
     </message>
     <message>
         <source>Assistants</source>
-        <translation type="unfinished"></translation>
+        <translation>보조 도구</translation>
     </message>
 </context>
 <context>

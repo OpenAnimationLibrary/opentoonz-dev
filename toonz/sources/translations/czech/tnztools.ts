@@ -2481,12 +2481,12 @@ moved to the end of the current style&apos;s page of the palette.</source>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1002"/>
         <source>Lock Alpha</source>
-        <translation type="unfinished">Zamknout alfu</translation>
+        <translation>Zamknout alfa</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1003"/>
         <source>Assistants</source>
-        <translation type="unfinished"></translation>
+        <translation>Asistenti</translation>
     </message>
 </context>
 <context>
