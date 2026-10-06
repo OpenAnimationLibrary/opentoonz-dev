@@ -52,6 +52,10 @@ public:
   bool showFamilyRecognitionToggles() const;
   void setShowFamilyRecognitionToggles(bool show);
 
+  bool exportPresetToFile(const QString &presetName,
+                          const QString &filePath) const;
+  QString importPresetFromFile(const QString &filePath, bool replaceIfExists);
+
   void save();
   void load();
 };

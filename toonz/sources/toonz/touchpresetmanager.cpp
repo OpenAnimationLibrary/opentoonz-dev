@@ -6,6 +6,7 @@
 #include "toonzqt/menubarcommand.h"
 
 #include <QAction>
+#include <QFileInfo>
 #include <QSettings>
 
 namespace {
@@ -156,20 +157,13 @@ void TouchPresetManager::load() {
       s.value(QStringLiteral("General/showFamilyRecognitionToggles"), false)
           .toBool();
 
-  const QStringList leftover = {QStringLiteral("Animation"),
-                                QStringLiteral("Paint"),
-                                QStringLiteral("Background")};
-  bool dropped               = false;
-  for (const QString &name : leftover) {
-    if (m_presets.remove(name)) dropped = true;
-  }
   if (!m_presets.contains(QLatin1String(kDefault)))
     m_presets[QLatin1String(kDefault)] = factoryMap();
   if (m_active.isEmpty() || !m_presets.contains(m_active))
     m_active = QLatin1String(kDefault);
 
   const int format = s.value(QStringLiteral("General/format"), 1).toInt();
-  bool persist     = dropped;
+  bool persist     = false;
   if (format < kTouchPresetsFormat) {
     migrateSwipeUndoRedo(m_presets);
     persist = true;
@@ -226,6 +220,56 @@ bool TouchPresetManager::showFamilyRecognitionToggles() const {
 void TouchPresetManager::setShowFamilyRecognitionToggles(bool show) {
   m_showFamilyRecognitionToggles = show;
   save();
+}
+
+bool TouchPresetManager::exportPresetToFile(const QString &presetName,
+                                            const QString &filePath) const {
+  if (!m_presets.contains(presetName)) return false;
+  QSettings s(filePath, QSettings::IniFormat);
+  s.setValue(QStringLiteral("General/format"), kTouchPresetsFormat);
+  s.setValue(QStringLiteral("General/preset"), presetName);
+  s.beginGroup(QStringLiteral("Assignments"));
+  const QMap<TouchSlot, QString> map = m_presets.value(presetName);
+  for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
+    if (touchSlotIsReserved(it.key()) || it.value().isEmpty()) continue;
+    s.setValue(QLatin1String(touchSlotId(it.key())), it.value());
+  }
+  s.endGroup();
+  s.sync();
+  return true;
+}
+
+QString TouchPresetManager::importPresetFromFile(const QString &filePath,
+                                                 bool replaceIfExists) {
+  QSettings s(filePath, QSettings::IniFormat);
+  QString name = s.value(QStringLiteral("General/preset")).toString();
+  if (name.isEmpty()) name = QFileInfo(filePath).completeBaseName();
+  if (name.isEmpty()) return QString();
+
+  QString target = name;
+  if (m_presets.contains(target)) {
+    if (!replaceIfExists) {
+      int suffix = 1;
+      do {
+        target = name + QString::number(suffix++);
+      } while (m_presets.contains(target));
+    }
+  }
+
+  QMap<TouchSlot, QString> map;
+  s.beginGroup(QStringLiteral("Assignments"));
+  const QStringList keys = s.childKeys();
+  for (const QString &key : keys) {
+    const TouchSlot slot = touchSlotFromId(key);
+    if (slot == TouchSlot_None || touchSlotIsReserved(slot)) continue;
+    map[slot] = s.value(key).toString();
+  }
+  s.endGroup();
+  if (map.isEmpty()) return QString();
+
+  m_presets[target] = map;
+  save();
+  return target;
 }
 
 QString TouchPresetManager::activePreset() const { return m_active; }

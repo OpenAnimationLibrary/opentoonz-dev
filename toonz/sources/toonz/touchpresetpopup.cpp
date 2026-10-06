@@ -5,10 +5,16 @@
 #include "tapp.h"
 #include "touchpresetmanager.h"
 
+#include "filebrowserpopup.h"
+#include "toonz/preferences.h"
+#include "toonz/toonzfolders.h"
+#include "toonzqt/dvdialog.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/menubarcommand.h"
+#include "tsystem.h"
 
 #include <QComboBox>
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -62,7 +68,13 @@ TouchPresetPopup::TouchPresetPopup()
   m_dupBtn      = new QPushButton(tr("Duplicate"), this);
   m_renameBtn   = new QPushButton(tr("Rename"), this);
   m_deleteBtn   = new QPushButton(tr("Delete"), this);
-  m_resetBtn    = new QPushButton(tr("Reset"), this);
+  m_resetBtn       = new QPushButton(tr("Reset"), this);
+  m_loadPresetBtn  = new QPushButton(tr("Load"), this);
+  m_savePresetBtn  = new QPushButton(tr("Save As"), this);
+  m_loadPresetBtn->setIcon(createQIcon("load"));
+  m_savePresetBtn->setIcon(createQIcon("saveas"));
+  m_loadPresetBtn->setToolTip(tr("Load a touch preset from file"));
+  m_savePresetBtn->setToolTip(tr("Save the current preset to file"));
 
   m_gestureSearchEdit = new QLineEdit(this);
   m_commandSearchEdit = new QLineEdit(this);
@@ -152,6 +164,8 @@ TouchPresetPopup::TouchPresetPopup()
   presetLay->addWidget(m_renameBtn);
   presetLay->addWidget(m_deleteBtn);
   presetLay->addWidget(m_resetBtn);
+  presetLay->addWidget(m_loadPresetBtn);
+  presetLay->addWidget(m_savePresetBtn);
   presetBox->setLayout(presetLay);
   m_topLayout->addWidget(presetBox);
 
@@ -163,6 +177,8 @@ TouchPresetPopup::TouchPresetPopup()
   connect(m_renameBtn, SIGNAL(clicked()), this, SLOT(onRenamePreset()));
   connect(m_deleteBtn, SIGNAL(clicked()), this, SLOT(onDeletePreset()));
   connect(m_resetBtn, SIGNAL(clicked()), this, SLOT(onResetPreset()));
+  connect(m_loadPresetBtn, SIGNAL(clicked()), this, SLOT(onLoadPreset()));
+  connect(m_savePresetBtn, SIGNAL(clicked()), this, SLOT(onSavePreset()));
   connect(m_assignBtn, SIGNAL(clicked()), this, SLOT(onAssign()));
   connect(m_clearBtn, SIGNAL(clicked()), this, SLOT(onClear()));
   connect(m_gestureSearchEdit, &QLineEdit::textChanged, this,
@@ -189,6 +205,8 @@ TouchPresetPopup::TouchPresetPopup()
             if (!item || !item->parent() || item->isDisabled()) return;
             if (m_chosenAction) onAssign();
           });
+  connect(m_optionsMenu, &QMenu::aboutToShow, this,
+          &TouchPresetPopup::syncOptionsMenu);
   rebuildPresetCombo();
   rebuildTree();
   refreshSelectionBar();
@@ -236,7 +254,7 @@ void TouchPresetPopup::rebuildTree() {
   };
 
   QTreeWidgetItem *locked = new QTreeWidgetItem(m_tree);
-  locked->setText(0, tr("Reserved (locked for now)"));
+  locked->setText(0, touchSlotFamilyLabel(TouchSlotFamily_Reserved));
   for (TouchSlot slot : reservedTouchSlots()) addRow(locked, slot, true);
   locked->setExpanded(false);
 
@@ -264,10 +282,11 @@ void TouchPresetPopup::applyFamilyRecognitionRow(QTreeWidgetItem *group,
     flags |= Qt::ItemIsUserCheckable;
     group->setCheckState(0, enabled ? Qt::Checked : Qt::Unchecked);
     group->setText(1, enabled ? tr("Recognized") : tr("Not recognized"));
-    group->setToolTip(
-        0, tr("When unchecked, OpenToonz ignores this gesture family while "
-              "touch control is on."));
-    group->setToolTip(1, group->toolTip(0));
+    const QString tip =
+        enabled ? tr("Use this gesture family in OpenToonz.")
+                : tr("Ignore this gesture family in OpenToonz.");
+    group->setToolTip(0, tip);
+    group->setToolTip(1, tip);
   } else {
     group->setText(1, QString());
     group->setToolTip(0, QString());
@@ -408,6 +427,73 @@ void TouchPresetPopup::onResetPreset() {
   rebuildTree();
 }
 
+void TouchPresetPopup::onLoadPreset() {
+  GenericLoadFilePopup popup(tr("Load Touch Preset File"));
+  popup.addFilterType("ini");
+  const TFilePath path = popup.getPath();
+  if (path == TFilePath()) return;
+
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  QSettings probe(toQString(path), QSettings::IniFormat);
+  QString presetName = probe.value(QStringLiteral("General/preset")).toString();
+  if (presetName.isEmpty())
+    presetName = path.withoutParentDir().getQString();
+  presetName = QFileInfo(presetName).completeBaseName();
+
+  bool replace = false;
+  if (mgr->hasPreset(presetName)) {
+    const QString question =
+        tr("Replace the existing preset \"%1\" with this file?").arg(presetName);
+    const int ret =
+        DVGui::MsgBox(question, QObject::tr("Yes"), QObject::tr("No"), 0);
+    if (ret == 0 || ret == 2) return;
+    replace = true;
+  }
+
+  const QString imported =
+      mgr->importPresetFromFile(toQString(path), replace);
+  if (imported.isEmpty()) {
+    DVGui::MsgBox(DVGui::CRITICAL,
+                  tr("Could not load touch preset from this file."));
+    return;
+  }
+  mgr->setActivePreset(imported);
+  rebuildPresetCombo();
+  rebuildTree();
+}
+
+void TouchPresetPopup::onSavePreset() {
+  TouchPresetManager *mgr = TouchPresetManager::instance();
+  const QString from     = currentPreset();
+  QString name =
+      DVGui::getText(tr("Enter Preset Name"), tr("Preset Name:"), from);
+  if (name.isEmpty()) return;
+
+  if (mgr->hasPreset(name) && name != from) {
+    const QString question =
+        tr("Replace the existing preset \"%1\"?").arg(name);
+    const int ret =
+        DVGui::MsgBox(question, QObject::tr("Yes"), QObject::tr("No"), 0);
+    if (ret == 0 || ret == 2) return;
+    for (TouchSlot slot : assignableTouchSlots())
+      mgr->setCommandId(name, slot, mgr->commandId(from, slot));
+  } else if (!mgr->hasPreset(name)) {
+    mgr->duplicatePreset(from, name);
+  }
+
+  const TFilePath dir =
+      ToonzFolder::getMyModuleDir() + TFilePath("touchpresetspresets");
+  if (!TSystem::doesExistFileOrLevel(dir)) TSystem::mkDir(dir);
+  const TFilePath fp = dir + TFilePath(name.toStdString() + ".ini");
+  if (!mgr->exportPresetToFile(name, toQString(fp))) {
+    DVGui::MsgBox(DVGui::CRITICAL, tr("Could not save touch preset file."));
+    return;
+  }
+  rebuildPresetCombo();
+  const int idx = mgr->presetNames().indexOf(name);
+  if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
+}
+
 void TouchPresetPopup::assignCurrent(const QString &commandId) {
   if (m_selectedSlot == TouchSlot_None || touchSlotIsReserved(m_selectedSlot))
     return;
@@ -437,16 +523,31 @@ void TouchPresetPopup::onClear() { assignCurrent(QString()); }
 
 void TouchPresetPopup::buildOptionsMenu() {
   m_optionsMenu->clear();
+  m_deferTapAction = m_optionsMenu->addAction(
+      tr("Defer simple tap when a double tap is assigned"));
+  m_deferTapAction->setCheckable(true);
+  connect(m_deferTapAction, &QAction::toggled, this,
+          &TouchPresetPopup::onDeferTapToggled);
+
+  m_optionsMenu->addSeparator();
   m_showFamilyTogglesAction = m_optionsMenu->addAction(
-      tr("Show family recognition toggles"));
+      tr("Show checkboxes to disable gesture families"));
   m_showFamilyTogglesAction->setCheckable(true);
-  m_showFamilyTogglesAction->setChecked(
-      TouchPresetManager::instance()->showFamilyRecognitionToggles());
-  m_showFamilyTogglesAction->setToolTip(
-      tr("Shows a checkbox on each gesture family to enable or disable "
-         "recognition on this device."));
   connect(m_showFamilyTogglesAction, &QAction::toggled, this,
           &TouchPresetPopup::onShowFamilyTogglesToggled);
+}
+
+void TouchPresetPopup::syncOptionsMenu() {
+  QSignalBlocker deferBlock(m_deferTapAction);
+  m_deferTapAction->setChecked(
+      Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+  QSignalBlocker togglesBlock(m_showFamilyTogglesAction);
+  m_showFamilyTogglesAction->setChecked(
+      TouchPresetManager::instance()->showFamilyRecognitionToggles());
+}
+
+void TouchPresetPopup::onDeferTapToggled(bool checked) {
+  Preferences::instance()->setValue(touchDeferTapForDoubleTap, checked);
 }
 
 void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {
