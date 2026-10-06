@@ -1510,7 +1510,10 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use Qt's Native Windows Ink Support*\n(CAUTION: This options is "
           "for "
           "maintenance purpose. \n Do not activate this option or the tablet "
-          "won't work properly.)")}};
+          "won't work properly.)")},
+      {touchDeferTapForDoubleTap,
+       tr("Defer simple tap when a double tap is assigned on the same finger "
+          "count")}};
 
   return uiStringTable.value(id, QString());
 }

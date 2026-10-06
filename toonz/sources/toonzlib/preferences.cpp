@@ -714,6 +714,8 @@ void Preferences::definePreferenceItems() {
   define(winInkEnabled, "winInkEnabled", QMetaType::Bool, false);
   // This option will be shown & available only when WITH_WINTAB is defined
   define(useQtNativeWinInk, "useQtNativeWinInk", QMetaType::Bool, false);
+  define(touchDeferTapForDoubleTap, "touchDeferTapForDoubleTap",
+         QMetaType::Bool, false);
 
   // Others (not appearing in the popup)
   // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.

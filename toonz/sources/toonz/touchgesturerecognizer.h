@@ -35,6 +35,8 @@ class TouchGestureRecognizer final : public QObject {
   } m_session;
 
   QTimer m_holdTimer;
+  QTimer m_tapTimer;
+  TouchSlot m_pendingTap      = TouchSlot_None;
   TouchSlot m_lastTap         = TouchSlot_None;
   qint64 m_lastTapMs          = 0;
   QPointF m_lastTapPos;
@@ -53,6 +55,7 @@ signals:
 private:
   void emitSlot(TouchSlot slot, bool repeat);
   void onHoldTimeout();
+  void onTapTimeout();
   void classifyRelease();
   void considerSwipeOrPinch(const QPointF &centroid, double span);
 };

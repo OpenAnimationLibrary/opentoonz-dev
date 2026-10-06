@@ -560,6 +560,9 @@ public:
   bool isQtNativeWinInkEnabled() const {
     return getBoolValue(useQtNativeWinInk);
   }
+  bool isTouchDeferTapForDoubleTapEnabled() const {
+    return getBoolValue(touchDeferTapForDoubleTap);
+  }
 
   // Others (not appeared in the popup)
   // Shortcut popup settings

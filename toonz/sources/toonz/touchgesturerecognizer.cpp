@@ -1,6 +1,8 @@
 #include "touchgesturerecognizer.h"
 #include "touchpresetmanager.h"
 
+#include "toonz/preferences.h"
+
 #include <QDateTime>
 #include <QLineF>
 #include <QTouchEvent>
@@ -154,8 +156,11 @@ TouchGestureRecognizer::TouchGestureRecognizer(QObject *parent)
     : QObject(parent) {
   m_holdTimer.setSingleShot(true);
   m_holdTimer.setTimerType(Qt::PreciseTimer);
+  m_tapTimer.setSingleShot(true);
   connect(&m_holdTimer, &QTimer::timeout, this,
           &TouchGestureRecognizer::onHoldTimeout);
+  connect(&m_tapTimer, &QTimer::timeout, this,
+          &TouchGestureRecognizer::onTapTimeout);
 }
 
 void TouchGestureRecognizer::emitSlot(TouchSlot slot, bool repeat) {
@@ -178,6 +183,9 @@ void TouchGestureRecognizer::begin(const QTouchEvent *e, bool tabletActive,
     update(e, m_session.reservedBusy);
     return;
   }
+
+  m_tapTimer.stop();
+  m_pendingTap = TouchSlot_None;
 
   m_session               = Session();
   m_session.active        = true;
@@ -289,6 +297,8 @@ void TouchGestureRecognizer::end(const QTouchEvent *) {
 
 void TouchGestureRecognizer::cancel() {
   m_holdTimer.stop();
+  m_tapTimer.stop();
+  m_pendingTap     = TouchSlot_None;
   m_session.active = false;
 }
 
@@ -318,14 +328,34 @@ void TouchGestureRecognizer::classifyRelease() {
       QLineF(m_lastTapPos, m_session.startCentroid).length() < kDoubleTapSlop;
 
   if (canDouble) {
-    m_lastTap = TouchSlot_None;
+    m_tapTimer.stop();
+    m_pendingTap = TouchSlot_None;
+    m_lastTap    = TouchSlot_None;
     emitSlot(dbl, false);
     return;
   }
 
+  const bool deferTap =
+      Preferences::instance()->isTouchDeferTapForDoubleTapEnabled() &&
+      dbl != TouchSlot_None && TouchPresetManager::instance()->hasCommand(dbl);
+
   m_lastTap    = tap;
   m_lastTapMs  = now;
   m_lastTapPos = m_session.startCentroid;
+
+  if (deferTap) {
+    m_pendingTap = tap;
+    m_tapTimer.start(kDoubleTapMaxMs);
+    return;
+  }
+
+  emitSlot(tap, false);
+}
+
+void TouchGestureRecognizer::onTapTimeout() {
+  if (m_pendingTap == TouchSlot_None) return;
+  const TouchSlot tap = m_pendingTap;
+  m_pendingTap          = TouchSlot_None;
   emitSlot(tap, false);
 }
 
