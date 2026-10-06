@@ -12,6 +12,7 @@
 #include "cleanupsettingsmodel.h"
 #include "formatsettingspopups.h"
 #include "columncommand.h"
+#include "touchworkspacesettingspopup.h"
 
 // TnzQt includes
 #include "toonzqt/tabbar.h"
@@ -2710,11 +2711,14 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
   QGridLayout* lay = new QGridLayout();
   setupLayout(lay);
 
+  QPushButton* touchWorkspaceSettings =
+      new QPushButton(tr("Touch Workspace Settings..."));
   QPushButton* configureTouchPresets =
-      new QPushButton(tr("Configure Touch Presets..."));
+      new QPushButton(tr("Touch Preset Manager..."));
 
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
-  lay->addWidget(configureTouchPresets, 1, 0, 1, 2);
+  lay->addWidget(touchWorkspaceSettings, 1, 0, 1, 2);
+  lay->addWidget(configureTouchPresets, 2, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
   insertUI(useQtNativeWinInk, lay);
@@ -2728,6 +2732,9 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
           &QAction::setChecked);
   connect(touchAction, &QAction::triggered, enableTouchGestures,
           &CheckBox::setChecked);
+  connect(touchWorkspaceSettings, &QPushButton::clicked, this, []() {
+    TouchWorkspaceSettingsPopup::showPanel();
+  });
   connect(configureTouchPresets, &QPushButton::clicked, this, []() {
     CommandManager::instance()->execute(MI_TouchPresetManager);
   });

@@ -2101,6 +2101,7 @@ QAction *MainWindow::createVisualizationButtonAction(const char *id,
 QAction *MainWindow::createMiscAction(const char *id, const char *name,
                                       const char *defaultShortcut) {
   QAction *action = new DVAction(tr(name), this);
+  addAction(action);
   CommandManager::instance()->define(id, MiscCommandType, defaultShortcut,
                                      action);
   return action;
@@ -3574,6 +3575,11 @@ void MainWindow::defineActions() {
                    "", TouchGestureControl ? 1 : 0, MiscCommandType, "touch");
   menuAct->setEnabled(true);
   ;
+  createAction(MI_TouchPresetPicker,
+               QT_TR_NOOP("Toggle Touch Preset Picker"), "", MiscCommandType,
+               "touch");
+  createMiscAction(MI_TouchWorkspaceSettings,
+                   QT_TR_NOOP("Touch Workspace Settings"), "");
   createMiscAction(MI_CameraStage, QT_TR_NOOP("&Camera Settings..."), "");
   menuAct =
       createMiscAction(MI_RefreshTree, QT_TR_NOOP("Refresh Folder Tree"), "");

@@ -1,11 +1,13 @@
 #include "touchpresetpopup.h"
 
+#include "touchworkspacesettingspopup.h"
 #include "menubarcommandids.h"
 #include "shortcutpopup.h"
 #include "tapp.h"
 #include "touchpresetmanager.h"
 
 #include "toonz/preferences.h"
+#include "toonz/preferencesitemids.h"
 #include "toonz/toonzfolders.h"
 #include "toonzqt/dvdialog.h"
 #include "toonzqt/gutil.h"
@@ -27,12 +29,16 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QMenu>
+#include <QPointer>
 #include <QSignalBlocker>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QShowEvent>
 #include <QVBoxLayout>
 
 namespace {
+
+QPointer<TouchPresetPopup> s_touchPresetPopup;
 
 QString stripAccel(QString text) {
   text.replace(QRegularExpression("&([^& ])"), "\\1");
@@ -69,9 +75,17 @@ TouchPresetPopup::TouchPresetPopup()
   setWindowTitle(tr("Touch Preset Manager"));
 
   m_presetCombo = new QComboBox(this);
-  m_useBtn      = new QPushButton(tr("Use"), this);
-  m_useBtn->setToolTip(tr("Use selected preset for touch gestures"));
+  m_useBtn = new QPushButton(tr("Use"), this);
   m_useBtn->setIcon(createQIcon("touch_preset_use"));
+  m_useBtn->setContextMenuPolicy(Qt::CustomContextMenu);
+  m_autoUsePresetAction =
+      new QAction(tr("Auto Use on selection"), this);
+  m_autoUsePresetAction->setCheckable(true);
+  connect(m_autoUsePresetAction, &QAction::toggled, this,
+          &TouchPresetPopup::onAutoUsePresetToggled);
+  connect(m_useBtn, &QWidget::customContextMenuRequested, this,
+          &TouchPresetPopup::onUseButtonContextMenu);
+  refreshUseButton();
   m_newBtn = new QPushButton(tr("New"), this);
   m_newBtn->setToolTip(tr("Create a new touch preset"));
   m_newBtn->setIcon(createQIcon("touch_preset_new"));
@@ -237,6 +251,42 @@ TouchPresetPopup::TouchPresetPopup()
           });
   connect(m_optionsMenu, &QMenu::aboutToShow, this,
           &TouchPresetPopup::syncOptionsMenu);
+  TouchPresetManager::instance()->setActivePresetListener(
+      this, [this](const QString &) {
+        if (isVisible()) syncToActivePreset();
+      });
+
+  rebuildPresetCombo();
+  rebuildTree();
+  refreshSelectionBar();
+  s_touchPresetPopup = this;
+}
+
+TouchPresetPopup::~TouchPresetPopup() {
+  if (s_touchPresetPopup == this) s_touchPresetPopup = nullptr;
+  TouchPresetManager::instance()->setActivePresetListener(nullptr, nullptr);
+}
+
+void TouchPresetPopup::syncDeferTapUiFromPreferences() {
+  if (!s_touchPresetPopup || !s_touchPresetPopup->m_deferTapAction) return;
+  QSignalBlocker block(s_touchPresetPopup->m_deferTapAction);
+  s_touchPresetPopup->m_deferTapAction->setChecked(
+      Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+}
+
+void TouchPresetPopup::showEvent(QShowEvent *event) {
+  Dialog::showEvent(event);
+  refreshUseButton();
+  syncToActivePreset();
+}
+
+void TouchPresetPopup::syncToActivePreset() {
+  const QString active = TouchPresetManager::instance()->activePreset();
+  const int idx        = m_presetCombo->findData(active);
+  if (idx >= 0) {
+    QSignalBlocker blocker(m_presetCombo);
+    m_presetCombo->setCurrentIndex(idx);
+  }
   rebuildPresetCombo();
   rebuildTree();
   refreshSelectionBar();
@@ -259,6 +309,16 @@ void TouchPresetPopup::rebuildPresetCombo() {
   int idx = names.indexOf(current);
   if (idx < 0) idx = names.indexOf(mgr->activePreset());
   if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
+
+  const QString editing = currentPreset();
+  const QString active  = mgr->activePreset();
+  if (!editing.isEmpty() && editing != active)
+    m_presetCombo->setToolTip(
+        tr("Editing \"%1\". Touch gestures use \"%2\" until you click Use.")
+            .arg(editing, active));
+  else
+    m_presetCombo->setToolTip(
+        tr("Selected preset is active for touch gestures."));
 }
 
 QString TouchPresetPopup::currentPreset() const {
@@ -412,13 +472,53 @@ void TouchPresetPopup::onCommandSelected(QAction *action) {
   refreshSelectionBar();
 }
 
-void TouchPresetPopup::onPresetChanged(int) { rebuildTree(); }
+void TouchPresetPopup::onPresetChanged(int) {
+  rebuildTree();
+  applyActivePresetIfAutoUse();
+}
+
+void TouchPresetPopup::applyActivePresetIfAutoUse() {
+  if (!TouchPresetManager::instance()->autoUsePresetOnSelection()) return;
+  const QString name = currentPreset();
+  if (name.isEmpty()) return;
+  TouchPresetManager::instance()->setActivePreset(name);
+  rebuildPresetCombo();
+}
 
 void TouchPresetPopup::onUsePreset() {
   const QString name = currentPreset();
   if (name.isEmpty()) return;
   TouchPresetManager::instance()->setActivePreset(name);
   rebuildPresetCombo();
+}
+
+void TouchPresetPopup::onUseButtonContextMenu(const QPoint &pos) {
+  QMenu menu(this);
+  menu.addAction(m_autoUsePresetAction);
+  menu.exec(m_useBtn->mapToGlobal(pos));
+}
+
+void TouchPresetPopup::onAutoUsePresetToggled(bool checked) {
+  TouchPresetManager::instance()->setAutoUsePresetOnSelection(checked);
+  refreshUseButton();
+  if (checked) applyActivePresetIfAutoUse();
+}
+
+void TouchPresetPopup::refreshUseButton() {
+  const bool autoUse =
+      TouchPresetManager::instance()->autoUsePresetOnSelection();
+  QSignalBlocker block(m_autoUsePresetAction);
+  m_autoUsePresetAction->setChecked(autoUse);
+  if (autoUse) {
+    m_useBtn->setToolTip(
+        tr("Auto Use is on: the selected preset is active for touch. "
+           "Right-click to change."));
+    m_useBtn->setStyleSheet(QStringLiteral("font-weight: bold;"));
+  } else {
+    m_useBtn->setToolTip(
+        tr("Use selected preset for touch gestures. Right-click for Auto Use."));
+    m_useBtn->setStyleSheet(QString());
+  }
 }
 
 void TouchPresetPopup::onNewPreset() {
@@ -587,6 +687,13 @@ void TouchPresetPopup::onClear() { assignCurrent(QString()); }
 
 void TouchPresetPopup::buildOptionsMenu() {
   m_optionsMenu->clear();
+  QAction *workspaceSettings = m_optionsMenu->addAction(
+      tr("Touch Workspace Settings..."));
+  connect(workspaceSettings, &QAction::triggered, this, []() {
+    TouchWorkspaceSettingsPopup::showPanel();
+  });
+  m_optionsMenu->addSeparator();
+
   m_deferTapAction = m_optionsMenu->addAction(
       tr("Defer simple tap when a double tap is assigned"));
   m_deferTapAction->setCheckable(true);
@@ -594,6 +701,7 @@ void TouchPresetPopup::buildOptionsMenu() {
           &TouchPresetPopup::onDeferTapToggled);
 
   m_optionsMenu->addSeparator();
+
   m_showFamilyTogglesAction = m_optionsMenu->addAction(
       tr("Show checkboxes to disable gesture families"));
   m_showFamilyTogglesAction->setCheckable(true);
@@ -607,9 +715,11 @@ void TouchPresetPopup::buildOptionsMenu() {
 }
 
 void TouchPresetPopup::syncOptionsMenu() {
-  QSignalBlocker deferBlock(m_deferTapAction);
-  m_deferTapAction->setChecked(
-      Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+  if (m_deferTapAction) {
+    QSignalBlocker deferBlock(m_deferTapAction);
+    m_deferTapAction->setChecked(
+        Preferences::instance()->isTouchDeferTapForDoubleTapEnabled());
+  }
   QSignalBlocker togglesBlock(m_showFamilyTogglesAction);
   m_showFamilyTogglesAction->setChecked(
       TouchPresetManager::instance()->showFamilyRecognitionToggles());
@@ -620,6 +730,7 @@ void TouchPresetPopup::syncOptionsMenu() {
 
 void TouchPresetPopup::onDeferTapToggled(bool checked) {
   Preferences::instance()->setValue(touchDeferTapForDoubleTap, checked);
+  TouchWorkspaceSettingsPopup::syncDeferTapUiFromPreferences();
 }
 
 void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {

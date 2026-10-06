@@ -16,6 +16,7 @@ class QAction;
 class QToolButton;
 class QMenu;
 class ShortcutTree;
+class QShowEvent;
 
 class TouchPresetPopup final : public DVGui::Dialog {
   Q_OBJECT
@@ -43,12 +44,16 @@ class TouchPresetPopup final : public DVGui::Dialog {
   QAction *m_showFamilyTogglesAction;
   QAction *m_showFamilyColorsAction;
   QAction *m_deferTapAction;
+  QAction *m_autoUsePresetAction;
   QLabel *m_selectedName;
   QLabel *m_selectedCommand;
   TouchSlot m_selectedSlot;
 
 public:
   TouchPresetPopup();
+  ~TouchPresetPopup();
+
+  static void syncDeferTapUiFromPreferences();
 
 private:
   void rebuildPresetCombo();
@@ -60,6 +65,12 @@ private:
   QString currentPreset() const;
   void assignCurrent(const QString &commandId);
   void buildOptionsMenu();
+  void syncToActivePreset();
+  void refreshUseButton();
+  void applyActivePresetIfAutoUse();
+
+protected:
+  void showEvent(QShowEvent *event) override;
 
 private slots:
   void onShowFamilyTogglesToggled(bool checked);
@@ -69,6 +80,8 @@ private slots:
   void onTreeItemChanged(QTreeWidgetItem *item, int column);
   void onPresetChanged(int);
   void onUsePreset();
+  void onUseButtonContextMenu(const QPoint &pos);
+  void onAutoUsePresetToggled(bool checked);
   void onNewPreset();
   void onDuplicatePreset();
   void onRenamePreset();

@@ -8,6 +8,7 @@
 #include "tsystem.h"
 #include "commandbarpopup.h"
 #include "pane.h"
+#include "touchworkspacesettingspopup.h"
 
 // TnzQt includes
 #include "toonzqt/menubarcommand.h"
@@ -156,6 +157,9 @@ void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
     connect(openMgr, &QAction::triggered, []() {
       CommandManager::instance()->execute(MI_TouchPresetManager);
     });
+    QAction *openSettings = menu.addAction(tr("Touch Workspace Settings..."));
+    connect(openSettings, &QAction::triggered,
+            []() { TouchWorkspaceSettingsPopup::showPanel(); });
     menu.exec(event->globalPos());
     return;
   }
@@ -300,6 +304,9 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   if (titleBar) titleBar->updateGeometry();
   updateGeometry();
   panel->updateGeometry();
+=======
+  menu.exec(event->globalPos());
+>>>>>>> 5f7af3da1 (feat(touch): touch workspace settings panel)
 }
 
 //-----------------------------------------------------------------------------

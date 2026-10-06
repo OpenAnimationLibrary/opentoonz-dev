@@ -53,6 +53,7 @@ QMap<TouchSlot, QString> factoryMap() {
 }
 
 const int kTouchPresetsFormat = 2;
+const int kMaxPinnedForPicker = 8;
 
 QString familyRecognitionKey(TouchSlotFamily family) {
   switch (family) {
@@ -159,6 +160,58 @@ void TouchPresetManager::load() {
   m_showFamilyRecognitionColors =
       s.value(QStringLiteral("General/showFamilyRecognitionColors"), false)
           .toBool();
+  m_autoUsePresetOnSelection =
+      s.value(QStringLiteral("General/autoUsePresetOnSelection"), false)
+          .toBool();
+
+  const QString pinnedRaw =
+      s.value(QStringLiteral("Picker/pinned")).toString();
+  m_pinnedForPicker.clear();
+  if (!pinnedRaw.isEmpty()) {
+    const QStringList parts = pinnedRaw.split(QLatin1Char(','),
+                                              Qt::SkipEmptyParts);
+    for (const QString &name : parts) {
+      if (m_presets.contains(name) && !m_pinnedForPicker.contains(name))
+        m_pinnedForPicker.append(name);
+    }
+  }
+  if (m_pinnedForPicker.isEmpty() && m_presets.contains(m_active))
+    m_pinnedForPicker.append(m_active);
+
+  const QString layoutStr =
+      s.value(QStringLiteral("Picker/layout"), QStringLiteral("horizontal"))
+          .toString();
+  if (layoutStr == QLatin1String("vertical"))
+    m_pickerLayout = TouchPresetPickerLayout::Vertical;
+  else if (layoutStr == QLatin1String("wheel"))
+    m_pickerLayout = TouchPresetPickerLayout::Wheel;
+  else
+    m_pickerLayout = TouchPresetPickerLayout::Horizontal;
+
+  const QString styleStr =
+      s.value(QStringLiteral("Picker/style"), QStringLiteral("classic"))
+          .toString();
+  m_pickerStyle = (styleStr == QLatin1String("ghost"))
+                      ? TouchPresetPickerStyle::Ghost
+                      : TouchPresetPickerStyle::Classic;
+
+  m_pickerSizePercent =
+      qBound(75, s.value(QStringLiteral("Picker/sizePercent"), 100).toInt(), 150);
+  m_pickerOpacityPercent =
+      qBound(25, s.value(QStringLiteral("Picker/opacityPercent"), 70).toInt(),
+             100);
+
+  const QString themeStr =
+      s.value(QStringLiteral("Picker/theme"), QStringLiteral("hologram"))
+          .toString();
+  if (themeStr == QLatin1String("opentoonz"))
+    m_pickerTheme = TouchPresetPickerTheme::OpenToonz;
+  else if (themeStr == QLatin1String("whiteGreen"))
+    m_pickerTheme = TouchPresetPickerTheme::WhiteGreen;
+  else if (themeStr == QLatin1String("creamSage"))
+    m_pickerTheme = TouchPresetPickerTheme::CreamSage;
+  else
+    m_pickerTheme = TouchPresetPickerTheme::HologramCyan;
 
   if (!m_presets.contains(QLatin1String(kDefault)))
     m_presets[QLatin1String(kDefault)] = factoryMap();
@@ -185,6 +238,8 @@ void TouchPresetManager::save() {
              m_showFamilyRecognitionToggles);
   s.setValue(QStringLiteral("General/showFamilyRecognitionColors"),
              m_showFamilyRecognitionColors);
+  s.setValue(QStringLiteral("General/autoUsePresetOnSelection"),
+             m_autoUsePresetOnSelection);
   s.beginGroup(QStringLiteral("Presets"));
   for (auto it = m_presets.constBegin(); it != m_presets.constEnd(); ++it) {
     s.beginGroup(it.key());
@@ -203,6 +258,36 @@ void TouchPresetManager::save() {
     if (key.isEmpty()) continue;
     s.setValue(key, m_familyRecognition.value(family, true));
   }
+  s.endGroup();
+  s.beginGroup(QStringLiteral("Picker"));
+  s.setValue(QStringLiteral("pinned"), m_pinnedForPicker.join(QLatin1Char(',')));
+  QString layoutKey = QStringLiteral("horizontal");
+  if (m_pickerLayout == TouchPresetPickerLayout::Vertical)
+    layoutKey = QStringLiteral("vertical");
+  else if (m_pickerLayout == TouchPresetPickerLayout::Wheel)
+    layoutKey = QStringLiteral("wheel");
+  s.setValue(QStringLiteral("layout"), layoutKey);
+  s.setValue(QStringLiteral("style"),
+             m_pickerStyle == TouchPresetPickerStyle::Ghost
+                 ? QStringLiteral("ghost")
+                 : QStringLiteral("classic"));
+  s.setValue(QStringLiteral("sizePercent"), m_pickerSizePercent);
+  s.setValue(QStringLiteral("opacityPercent"), m_pickerOpacityPercent);
+  QString themeKey = QStringLiteral("hologram");
+  switch (m_pickerTheme) {
+  case TouchPresetPickerTheme::OpenToonz:
+    themeKey = QStringLiteral("opentoonz");
+    break;
+  case TouchPresetPickerTheme::WhiteGreen:
+    themeKey = QStringLiteral("whiteGreen");
+    break;
+  case TouchPresetPickerTheme::CreamSage:
+    themeKey = QStringLiteral("creamSage");
+    break;
+  default:
+    break;
+  }
+  s.setValue(QStringLiteral("theme"), themeKey);
   s.endGroup();
 }
 
@@ -233,6 +318,16 @@ bool TouchPresetManager::showFamilyRecognitionColors() const {
 
 void TouchPresetManager::setShowFamilyRecognitionColors(bool show) {
   m_showFamilyRecognitionColors = show;
+  save();
+}
+
+bool TouchPresetManager::autoUsePresetOnSelection() const {
+  return m_autoUsePresetOnSelection;
+}
+
+void TouchPresetManager::setAutoUsePresetOnSelection(bool on) {
+  if (m_autoUsePresetOnSelection == on) return;
+  m_autoUsePresetOnSelection = on;
   save();
 }
 
@@ -290,8 +385,21 @@ QString TouchPresetManager::activePreset() const { return m_active; }
 
 void TouchPresetManager::setActivePreset(const QString &name) {
   if (!m_presets.contains(name)) return;
+  if (m_active == name) return;
   m_active = name;
   save();
+  notifyActivePresetChanged();
+}
+
+void TouchPresetManager::setActivePresetListener(
+    QObject *owner, const std::function<void(const QString &)> &callback) {
+  m_activeListener.owner    = owner;
+  m_activeListener.callback = callback;
+}
+
+void TouchPresetManager::notifyActivePresetChanged() {
+  if (!m_activeListener.callback || !m_activeListener.owner) return;
+  m_activeListener.callback(m_active);
 }
 
 QStringList TouchPresetManager::presetNames() const {
@@ -320,6 +428,9 @@ bool TouchPresetManager::renamePreset(const QString &from, const QString &to) {
     return false;
   m_presets[to] = m_presets.take(from);
   if (m_active == from) m_active = to;
+  for (int i = 0; i < m_pinnedForPicker.size(); ++i) {
+    if (m_pinnedForPicker[i] == from) m_pinnedForPicker[i] = to;
+  }
   save();
   return true;
 }
@@ -327,6 +438,7 @@ bool TouchPresetManager::renamePreset(const QString &from, const QString &to) {
 bool TouchPresetManager::removePreset(const QString &name) {
   if (m_presets.size() <= 1 || !m_presets.contains(name)) return false;
   m_presets.remove(name);
+  m_pinnedForPicker.removeAll(name);
   if (m_active == name) m_active = m_presets.keys().first();
   save();
   return true;
@@ -364,7 +476,84 @@ bool TouchPresetManager::hasCommand(TouchSlot slot) const {
 void TouchPresetManager::execute(TouchSlot slot) {
   const QString id = commandId(slot);
   if (id.isEmpty()) return;
-  QAction *action =
-      CommandManager::instance()->getAction(id.toStdString().c_str());
-  if (action) action->trigger();
+  CommandManager::instance()->execute(id.toStdString().c_str());
+}
+
+QStringList TouchPresetManager::pinnedPresetsForPicker() const {
+  QStringList out;
+  for (const QString &name : m_pinnedForPicker) {
+    if (m_presets.contains(name)) out.append(name);
+  }
+  return out;
+}
+
+bool TouchPresetManager::isPinnedForPicker(const QString &name) const {
+  return m_pinnedForPicker.contains(name);
+}
+
+bool TouchPresetManager::setPinnedForPicker(const QString &name, bool pinned) {
+  if (!m_presets.contains(name)) return false;
+  if (pinned) {
+    if (m_pinnedForPicker.contains(name)) return true;
+    if (m_pinnedForPicker.size() >= kMaxPinnedForPicker) return false;
+    m_pinnedForPicker.append(name);
+  } else {
+    m_pinnedForPicker.removeAll(name);
+  }
+  save();
+  return true;
+}
+
+int TouchPresetManager::maxPinnedPresetsForPicker() { return kMaxPinnedForPicker; }
+
+TouchPresetPickerLayout TouchPresetManager::pickerLayout() const {
+  return m_pickerLayout;
+}
+
+void TouchPresetManager::setPickerLayout(TouchPresetPickerLayout layout) {
+  if (m_pickerLayout == layout) return;
+  m_pickerLayout = layout;
+  save();
+}
+
+TouchPresetPickerStyle TouchPresetManager::pickerStyle() const {
+  return m_pickerStyle;
+}
+
+void TouchPresetManager::setPickerStyle(TouchPresetPickerStyle style) {
+  if (m_pickerStyle == style) return;
+  m_pickerStyle = style;
+  save();
+}
+
+int TouchPresetManager::pickerSizePercent() const {
+  return m_pickerSizePercent;
+}
+
+void TouchPresetManager::setPickerSizePercent(int percent) {
+  const int clamped = qBound(75, percent, 150);
+  if (m_pickerSizePercent == clamped) return;
+  m_pickerSizePercent = clamped;
+  save();
+}
+
+int TouchPresetManager::pickerOpacityPercent() const {
+  return m_pickerOpacityPercent;
+}
+
+void TouchPresetManager::setPickerOpacityPercent(int percent) {
+  const int clamped = qBound(25, percent, 100);
+  if (m_pickerOpacityPercent == clamped) return;
+  m_pickerOpacityPercent = clamped;
+  save();
+}
+
+TouchPresetPickerTheme TouchPresetManager::pickerTheme() const {
+  return m_pickerTheme;
+}
+
+void TouchPresetManager::setPickerTheme(TouchPresetPickerTheme theme) {
+  if (m_pickerTheme == theme) return;
+  m_pickerTheme = theme;
+  save();
 }

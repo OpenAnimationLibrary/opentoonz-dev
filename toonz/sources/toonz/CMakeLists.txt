@@ -113,6 +113,8 @@ set(MOC_HEADERS
     toolbar.h
     touchgesturerecognizer.h
     touchpresetpopup.h
+    touchpresetpicker.h
+    touchworkspacesettingspopup.h
     tpanels.h
     trackerpopup.h
     vectorguideddrawingpane.h
@@ -403,6 +405,8 @@ set(SOURCES
     touchgesturerecognizer.cpp
     touchpresetmanager.cpp
     touchpresetpopup.cpp
+    touchpresetpicker.cpp
+    touchworkspacesettingspopup.cpp
     tvpjson_io.cpp
     exportxsheetpdf.cpp
     custompanelmanager.cpp
