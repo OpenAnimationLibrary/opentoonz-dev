@@ -13,6 +13,7 @@
 #include "menubarcommandids.h"
 #include "touchgesturerecognizer.h"
 #include "touchpresetmanager.h"
+#include "touchpresetpicker.h"
 #include "touchslots.h"
 #include "onionskinmaskgui.h"
 #include "ruler.h"
@@ -1248,6 +1249,19 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
   const int live = liveTouchPointCount(e);
   const bool stylusCombo = m_tabletEvent && live <= 1;
 
+  if (!e->touchPoints().isEmpty()) {
+    const QPoint tp = e->touchPoints().first().pos().toPoint();
+    m_touchPresetPickerAnchor      = tp;
+    m_touchPresetPickerAnchorValid = true;
+    if (m_touchPresetPicker && m_touchPresetPicker->isOpen()) {
+      if (m_touchPresetPicker->handleViewerTouch(tp, (QEvent::Type)type)) {
+        if (m_touchRecognizer) m_touchRecognizer->cancel();
+        e->accept();
+        return;
+      }
+    }
+  }
+
   if (live >= 2) m_panning = false;
 
   if (!stylusCombo && live >= 2) {
@@ -1670,6 +1684,12 @@ void SceneViewer::keyPressEvent(QKeyEvent *event) {
   if (m_freezedStatus != NO_FREEZED) return;
   int key = event->key();
 
+  if (key == Qt::Key_Escape && isTouchPresetPickerOpen()) {
+    m_touchPresetPicker->closePicker();
+    event->accept();
+    return;
+  }
+
   // Handle Canon camera controls if enabled
 #ifdef WITH_CANON
   if ((m_stopMotion->m_canon->m_pickLiveViewZoom ||
@@ -1953,6 +1973,11 @@ void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
   const TouchSlotFamily family = touchSlotFamily((TouchSlot)slot);
   // Swipe steps use repeat; hold/tap/pinch do not.
   if (repeat && family != TouchSlotFamily_Swipe) return;
+  const TouchSlot touchSlot = (TouchSlot)slot;
+  if (m_touchRecognizer) {
+    m_touchPresetPickerAnchor      = m_touchRecognizer->lastSlotCentroid();
+    m_touchPresetPickerAnchorValid = true;
+  }
   const bool blocksInput =
       family == TouchSlotFamily_Hold || family == TouchSlotFamily_Stylus;
   if (blocksInput) {
@@ -1960,7 +1985,7 @@ void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
     m_touchAwaitFreshContact       = true;
     touchGestureBlocksToolInput();
   }
-  TouchPresetManager::instance()->execute((TouchSlot)slot);
+  TouchPresetManager::instance()->execute(touchSlot);
   if (blocksInput) {
     m_touchSuppressedPointerDown = true;
     m_buttonClicked = false;

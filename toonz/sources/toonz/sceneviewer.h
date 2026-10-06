@@ -36,6 +36,7 @@ class LocatorPopup;
 class QGestureEvent;
 class QTouchEvent;
 class TouchGestureRecognizer;
+class TouchPresetPickerPanel;
 class QOpenGLFramebufferObject;
 class LutCalibrator;
 class StopMotion;
@@ -99,6 +100,9 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_touchAwaitFreshContact          = false;
   int m_touchPeakLiveCount               = 0;
   TouchGestureRecognizer *m_touchRecognizer = nullptr;
+  TouchPresetPickerPanel *m_touchPresetPicker = nullptr;
+  QPointF m_touchPresetPickerAnchor;
+  bool m_touchPresetPickerAnchorValid = false;
 
   bool touchToolInputBlocked() const;
   void resetTouchGestureSuppression();
@@ -311,6 +315,9 @@ public:
 
   void setIsLocator() { m_isLocator = true; }
   void setIsStyleShortcutSwitchable() { m_isStyleShortcutSwitchable = true; }
+  void toggleTouchPresetPicker(const QPointF *preferredAnchor = nullptr);
+  bool isTouchPresetPickerOpen() const;
+  void syncTouchPresetPickerFromSettings(bool rebuildLayout = false);
   int getVGuideCount() override;
   int getHGuideCount() override;
   double getVGuide(int index) override;

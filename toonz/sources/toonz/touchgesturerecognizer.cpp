@@ -168,6 +168,7 @@ void TouchGestureRecognizer::emitSlot(TouchSlot slot, bool repeat) {
   const TouchSlotFamily family = touchSlotFamily(slot);
   if (!TouchPresetManager::instance()->isFamilyRecognitionEnabled(family))
     return;
+  m_lastSlotCentroid = m_session.lastCentroid;
   emit slotTriggered((int)slot, repeat);
 }
 

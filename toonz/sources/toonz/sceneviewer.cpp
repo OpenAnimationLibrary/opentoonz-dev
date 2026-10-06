@@ -10,6 +10,7 @@
 #include "menubarcommandids.h"
 #include "touchgesturerecognizer.h"
 #include "touchpresetmanager.h"
+#include "touchpresetpicker.h"
 #include "ruler.h"
 #include "locatorpopup.h"
 #if defined(x64)
@@ -67,6 +68,8 @@
 #include "toonz/txshleveltypes.h"
 #include "subcameramanager.h"
 #include "toutputproperties.h"
+
+#include <QCursor>
 
 // TnzCore includes
 #include "tpalette.h"
@@ -862,6 +865,8 @@ SceneViewer::SceneViewer(ImageUtils::FullScreenWidget *parent)
   m_touchRecognizer = new TouchGestureRecognizer(this);
   connect(m_touchRecognizer, &TouchGestureRecognizer::slotTriggered, this,
           &SceneViewer::onTouchPresetSlot);
+
+  m_touchPresetPicker = new TouchPresetPickerPanel(this);
 
   setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 
@@ -1933,6 +1938,44 @@ void SceneViewer::drawOverlay() {
       tglDrawSegment(TPointD(0, -4), TPointD(0, 5));
     }
   }
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::toggleTouchPresetPicker(const QPointF *preferredAnchor) {
+  if (!m_touchPresetPicker) return;
+  if (m_touchPresetPicker->isOpen()) {
+    m_touchPresetPicker->closePicker();
+    return;
+  }
+  QPointF anchor;
+  if (preferredAnchor && rect().contains(preferredAnchor->toPoint()))
+    anchor = *preferredAnchor;
+  else if (m_touchPresetPickerAnchorValid &&
+           rect().contains(m_touchPresetPickerAnchor.toPoint()))
+    anchor = m_touchPresetPickerAnchor;
+  else {
+    const QPoint local = mapFromGlobal(QCursor::pos());
+    if (rect().contains(local))
+      anchor = local;
+    else if (m_touchPresetPickerAnchorValid)
+      anchor = m_touchPresetPickerAnchor;
+    else
+      anchor = rect().center();
+  }
+  m_touchPresetPicker->openAt(anchor);
+}
+
+bool SceneViewer::isTouchPresetPickerOpen() const {
+  return m_touchPresetPicker && m_touchPresetPicker->isOpen();
+}
+
+void SceneViewer::syncTouchPresetPickerFromSettings(bool rebuildLayout) {
+  if (!m_touchPresetPicker || !m_touchPresetPicker->isOpen()) return;
+  if (rebuildLayout)
+    m_touchPresetPicker->refreshFromSettings(true);
+  else
+    m_touchPresetPicker->refreshAppearanceLive();
 }
 
 //-----------------------------------------------------------------------------

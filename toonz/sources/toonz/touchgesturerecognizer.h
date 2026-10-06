@@ -40,6 +40,7 @@ class TouchGestureRecognizer final : public QObject {
   TouchSlot m_lastTap         = TouchSlot_None;
   qint64 m_lastTapMs          = 0;
   QPointF m_lastTapPos;
+  QPointF m_lastSlotCentroid;
 
 public:
   explicit TouchGestureRecognizer(QObject *parent = nullptr);
@@ -48,6 +49,8 @@ public:
   void update(const QTouchEvent *e, bool reservedBusy);
   void end(const QTouchEvent *e);
   void cancel();
+
+  QPointF lastSlotCentroid() const { return m_lastSlotCentroid; }
 
 signals:
   void slotTriggered(int slot, bool repeat);
