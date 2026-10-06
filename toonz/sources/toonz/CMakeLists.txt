@@ -111,6 +111,8 @@ set(MOC_HEADERS
     testpanel.h
     timestretchpopup.h
     toolbar.h
+    touchgesturerecognizer.h
+    touchpresetpopup.h
     tpanels.h
     trackerpopup.h
     vectorguideddrawingpane.h
@@ -214,6 +216,8 @@ set(HEADERS
     processor.h
     predict3d.h
     tvpjson_io.h
+    touchslots.h
+    touchpresetmanager.h
 )
 
 set(SOURCES
@@ -395,6 +399,10 @@ set(SOURCES
     xdtsimportpopup.cpp
     expressionreferencemanager.cpp
     tooloptionsshortcutinvoker.cpp
+    touchslots.cpp
+    touchgesturerecognizer.cpp
+    touchpresetmanager.cpp
+    touchpresetpopup.cpp
     tvpjson_io.cpp
     exportxsheetpdf.cpp
     custompanelmanager.cpp

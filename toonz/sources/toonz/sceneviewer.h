@@ -35,6 +35,7 @@ class SceneViewer;
 class LocatorPopup;
 class QGestureEvent;
 class QTouchEvent;
+class TouchGestureRecognizer;
 class QOpenGLFramebufferObject;
 class LutCalibrator;
 class StopMotion;
@@ -92,6 +93,9 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_rotating                        = false;
   bool m_zooming                         = false;
   bool m_panning                         = false;
+  bool m_touchSuppressToolInput          = false;
+  bool m_touchSuppressedPointerDown      = false;
+  TouchGestureRecognizer *m_touchRecognizer = nullptr;
 
   TPointD m_oldPos;
   bool m_dragging;
@@ -99,7 +103,6 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   QAction *m_keyAction = nullptr;
 
   QPointF m_firstPanPoint;
-  QPointF m_undoPoint;
   double m_scaleFactor;    // used for zoom gesture
   double m_rotationDelta;  // used for rotate gesture
   int m_referenceMode;
@@ -353,6 +356,10 @@ protected:
 
   void gestureEvent(QGestureEvent *e);
   void touchEvent(QTouchEvent *e, int type);
+  void onTouchPresetSlot(int slot, bool repeat);
+  void touchGestureBlocksToolInput();
+  void cancelTouchToolStroke();
+  void releaseTouchToolSuppressionIfIdle();
   void tabletEvent(QTabletEvent *) override;
   void leaveEvent(QEvent *) override;
   void enterEvent(QEvent *) override;

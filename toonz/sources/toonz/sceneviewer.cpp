@@ -8,6 +8,8 @@
 #include "onionskinmaskgui.h"
 #include "viewerdraw.h"
 #include "menubarcommandids.h"
+#include "touchgesturerecognizer.h"
+#include "touchpresetmanager.h"
 #include "ruler.h"
 #include "locatorpopup.h"
 #if defined(x64)
@@ -856,6 +858,10 @@ SceneViewer::SceneViewer(ImageUtils::FullScreenWidget *parent)
   grabGesture(Qt::SwipeGesture);
   grabGesture(Qt::PanGesture);
   grabGesture(Qt::PinchGesture);
+
+  m_touchRecognizer = new TouchGestureRecognizer(this);
+  connect(m_touchRecognizer, &TouchGestureRecognizer::slotTriggered, this,
+          &SceneViewer::onTouchPresetSlot);
 
   setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 

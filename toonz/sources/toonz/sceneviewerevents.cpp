@@ -11,6 +11,9 @@
 #include "tapp.h"
 #include "iocommand.h"
 #include "menubarcommandids.h"
+#include "touchgesturerecognizer.h"
+#include "touchpresetmanager.h"
+#include "touchslots.h"
 #include "onionskinmaskgui.h"
 #include "ruler.h"
 #include "locatorpopup.h"
@@ -65,6 +68,7 @@
 #include <QDebug>
 #include <QMimeData>
 #include <QGestureEvent>
+#include <QTouchEvent>
 #include <QPainter>
 
 // definito - per ora - in tapp.cpp
@@ -165,6 +169,15 @@ public:
   }
 };
 
+int liveTouchPointCount(const QTouchEvent *e) {
+  int live = 0;
+  if (!e) return 0;
+  for (const QTouchEvent::TouchPoint &p : e->touchPoints()) {
+    if (p.state() != Qt::TouchPointReleased) ++live;
+  }
+  return live;
+}
+
 //-----------------------------------------------------------------------------
 }  // namespace
 //-----------------------------------------------------------------------------
@@ -255,6 +268,21 @@ void SceneViewer::onButtonPressed(FlipConsole::EGadget button) {
 
 void SceneViewer::tabletEvent(QTabletEvent *e) {
   if (m_freezedStatus != NO_FREEZED) return;
+
+  if (m_touchSuppressToolInput) {
+    if (e->type() == QEvent::TabletPress) m_touchSuppressedPointerDown = true;
+    if (e->type() == QEvent::TabletRelease) {
+      if (m_tabletState == StartStroke || m_tabletState == OnStroke)
+        m_tabletState = Released;
+      else
+        m_tabletState = None;
+      m_tabletMove  = false;
+      m_tabletEvent = false;
+      m_touchSuppressedPointerDown = false;
+      releaseTouchToolSuppressionIfIdle();
+    }
+    return;
+  }
 
   m_tabletEvent = true;
   m_pressure    = e->pressure();
@@ -489,6 +517,7 @@ void SceneViewer::onEnter() {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mouseMoveEvent(QMouseEvent *event) {
+  if (m_touchSuppressToolInput) return;
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) return;
   // and touchscreens but not touchpads...
@@ -517,6 +546,7 @@ void SceneViewer::mouseMoveEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 void SceneViewer::onMove(const TMouseEvent &event) {
   if (m_freezedStatus != NO_FREEZED) return;
+  if (m_touchSuppressToolInput) return;
 
   // in case mouseReleaseEvent is not called, finish the action for the previous
   // button first.
@@ -727,6 +757,10 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
   // but has reports of being unreliable on mac
   // so m_gestureActive is the marker for rejecting touch events
   int source = event->source();
+  if (m_touchSuppressToolInput) {
+    m_touchSuppressedPointerDown = true;
+    return;
+  }
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) return;
   // and touchscreens but not touchpads...
@@ -749,6 +783,11 @@ void SceneViewer::mousePressEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::onPress(const TMouseEvent &event) {
+  if (m_touchSuppressToolInput) {
+    m_mouseButton = event.button();
+    m_touchSuppressedPointerDown = true;
+    return;
+  }
   m_dragging = true;
   if (m_mouseScrubbing > 0) {
     m_pos           = event.mousePos() * getDevPixRatio();
@@ -881,6 +920,11 @@ void SceneViewer::onPress(const TMouseEvent &event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
+  if (m_touchSuppressToolInput) {
+    m_touchSuppressedPointerDown = false;
+    releaseTouchToolSuppressionIfIdle();
+    return;
+  }
   // if this is called just after tabletEvent, skip the execution
   if (m_tabletEvent) {
     // mouseRelease should not clear flag if we are starting or in middle of
@@ -898,6 +942,7 @@ void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
     m_panning       = false;
     m_scaleFactor   = 0.0;
     m_rotationDelta = 0.0;
+    releaseTouchToolSuppressionIfIdle();
     return;
   }
 
@@ -905,6 +950,7 @@ void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
   if (m_mouseState != None) m_mouseState = Released;
   initToonzEvent(mouseEvent, event, height(), 1.0, getDevPixRatio());
   onRelease(mouseEvent);
+  releaseTouchToolSuppressionIfIdle();
 }
 //-----------------------------------------------------------------------------
 
@@ -984,6 +1030,7 @@ quit:
   m_mouseState = None;
   m_tabletMove = false;
   m_pressure   = 0;
+  releaseTouchToolSuppressionIfIdle();
 }
 
 //-----------------------------------------------------------------------------
@@ -1170,25 +1217,26 @@ void SceneViewer::gestureEvent(QGestureEvent *e) {
 }
 
 void SceneViewer::touchEvent(QTouchEvent *e, int type) {
-  if (type == QEvent::TouchBegin) {
-    if (m_tabletEvent) return;
+  const int live = liveTouchPointCount(e);
+  const bool stylusCombo = m_tabletEvent && live <= 1;
 
-    m_touchActive   = true;
-    m_firstPanPoint = e->touchPoints().at(0).pos();
-    m_undoPoint     = m_firstPanPoint;
-    // obtain device type
-    m_touchDevice = e->device()->type();
-  } else if (m_touchActive) {
-    // touchpads must have 2 finger panning for tools and navigation to be
-    // functional
-    // on other devices, 1 finger panning is preferred
-    if (e->touchPoints().count() == 1 &&
+  if (!stylusCombo &&
+      ((live >= 2) || (m_touchSuppressToolInput && live >= 1)))
+    touchGestureBlocksToolInput();
+
+  if (type == QEvent::TouchBegin) {
+    if (m_touchRecognizer) m_touchRecognizer->begin(e, stylusCombo, size());
+    if (!stylusCombo) {
+      m_touchActive   = true;
+      m_firstPanPoint = e->touchPoints().at(0).pos();
+      m_touchDevice   = e->device()->type();
+    }
+  } else if (type != QEvent::TouchEnd && type != QEvent::TouchCancel) {
+    if (m_touchActive && e->touchPoints().count() == 1 &&
         m_touchDevice == QTouchDevice::TouchScreen) {
       QTouchEvent::TouchPoint panPoint = e->touchPoints().at(0);
       if (!m_panning) {
         QPointF deltaPoint = panPoint.pos() - m_firstPanPoint;
-        // minimize accidental and jerky zooming/rotating during 2 finger
-        // panning
         if ((deltaPoint.manhattanLength() > 100) && !m_zooming && !m_rotating) {
           m_panning = true;
         }
@@ -1198,23 +1246,93 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
                               (panPoint.lastPos() * getDevPixRatio());
         panQt(centerDelta.toPoint());
       }
-    } else if (e->touchPoints().count() == 3) {
-      QPointF newPoint = e->touchPoints().at(0).pos();
-      if (m_undoPoint.x() - newPoint.x() > 100) {
-        CommandManager::instance()->execute("MI_Undo");
-        m_undoPoint = newPoint;
-      }
-      if (m_undoPoint.x() - newPoint.x() < -100) {
-        CommandManager::instance()->execute("MI_Redo");
-        m_undoPoint = newPoint;
-      }
     }
+    if (m_touchRecognizer)
+      m_touchRecognizer->update(e, m_zooming || m_rotating || m_panning);
   }
   if (type == QEvent::TouchEnd || type == QEvent::TouchCancel) {
+    if (m_touchRecognizer) {
+      if (type == QEvent::TouchCancel)
+        m_touchRecognizer->cancel();
+      else
+        m_touchRecognizer->end(e);
+    }
     m_touchActive = false;
     m_panning     = false;
+    releaseTouchToolSuppressionIfIdle();
   }
   e->accept();
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::touchGestureBlocksToolInput() {
+  m_touchSuppressToolInput = true;
+  if (m_touchActive || m_tabletEvent || m_mouseButton != Qt::NoButton ||
+      m_tabletState == Touched || m_tabletState == StartStroke ||
+      m_tabletState == OnStroke || m_mouseState == Touched ||
+      m_mouseState == StartStroke || m_mouseState == OnStroke)
+    m_touchSuppressedPointerDown = true;
+  cancelTouchToolStroke();
+  if (!TApp::instance()->getCurrentTool()->isToolBusy()) return;
+  TTool *tool = TApp::instance()->getCurrentTool()->getTool();
+  if (!tool || !tool->isEnabled()) {
+    TApp::instance()->getCurrentTool()->setToolBusy(false);
+    return;
+  }
+  TMouseEvent ev;
+  const int dpr = getDevPixRatio();
+  ev.m_pos      = TPointD(m_pos.x(), m_pos.y());
+  ev.m_mousePos = QPointF(m_pos.x() / dpr, (height() - 1 - m_pos.y()) / dpr);
+  ev.m_pressure = m_pressure;
+  ev.m_button   = Qt::LeftButton;
+  ev.m_buttons  = Qt::NoButton;
+  ev.m_isTablet = m_tabletEvent;
+  m_buttonClicked = true;
+  m_mouseButton   = Qt::LeftButton;
+  onRelease(ev);
+  m_buttonClicked = false;
+  m_mouseButton   = Qt::NoButton;
+  m_tabletState   = None;
+  m_mouseState    = None;
+}
+
+void SceneViewer::cancelTouchToolStroke() {
+  const bool inTabletStroke =
+      m_tabletState == StartStroke || m_tabletState == OnStroke;
+  const bool inMouseStroke =
+      m_mouseState == StartStroke || m_mouseState == OnStroke;
+  if (!m_buttonClicked && !inTabletStroke && !inMouseStroke) return;
+
+  TMouseEvent ev;
+  const int dpr = getDevPixRatio();
+  ev.m_pos      = TPointD(m_pos.x(), m_pos.y());
+  ev.m_mousePos = QPointF(m_pos.x() / dpr, (height() - 1 - m_pos.y()) / dpr);
+  ev.m_pressure = m_pressure;
+  ev.m_button   = m_mouseButton != Qt::NoButton ? m_mouseButton : Qt::LeftButton;
+  ev.m_buttons  = Qt::NoButton;
+  ev.m_isTablet = m_tabletEvent;
+
+  if (inTabletStroke) m_tabletState = Released;
+  if (inMouseStroke) m_mouseState = Released;
+
+  onRelease(ev);
+  m_tabletState = None;
+  m_mouseState  = None;
+}
+
+void SceneViewer::releaseTouchToolSuppressionIfIdle() {
+  if (!m_touchSuppressToolInput) return;
+  if (m_touchSuppressedPointerDown) return;
+  if (m_touchActive) return;
+  if (m_tabletState == Touched || m_tabletState == StartStroke ||
+      m_tabletState == OnStroke)
+    return;
+  if (m_mouseState == Touched || m_mouseState == StartStroke ||
+      m_mouseState == OnStroke)
+    return;
+  if (m_mouseButton != Qt::NoButton) return;
+  m_touchSuppressToolInput = false;
 }
 
 //-----------------------------------------------------------------------------
@@ -1779,9 +1897,28 @@ void SceneViewer::contextMenuEvent(QContextMenuEvent *e) {
 
 //-----------------------------------------------------------------------------
 
+void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
+  if (repeat) return;
+  const TouchSlotFamily family = touchSlotFamily((TouchSlot)slot);
+  const bool blocksInput =
+      family == TouchSlotFamily_Hold || family == TouchSlotFamily_Stylus;
+  if (blocksInput) touchGestureBlocksToolInput();
+  TouchPresetManager::instance()->execute((TouchSlot)slot);
+  if (blocksInput) {
+    m_buttonClicked = false;
+    m_dragging      = false;
+    m_tabletState   = None;
+    m_mouseState    = None;
+    m_mouseButton   = Qt::NoButton;
+    if (TApp::instance()->getCurrentTool()->isToolBusy())
+      TApp::instance()->getCurrentTool()->setToolBusy(false);
+  }
+}
+
 void SceneViewer::onContextMenu(const QPoint &pos, const QPoint &globalPos) {
   if (m_freezedStatus != NO_FREEZED) return;
   if (m_isLocator) return;
+  if (m_touchSuppressToolInput) return;
   static bool menuVisible = false;
   if (menuVisible) return;
   menuVisible     = true;
