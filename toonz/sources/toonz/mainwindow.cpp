@@ -2253,6 +2253,8 @@ void MainWindow::defineActions() {
                        "gear");
   createMenuFileAction(MI_ShortcutPopup, QT_TR_NOOP("&Configure Shortcuts..."),
                        "", "shortcuts");
+  createMenuFileAction(MI_TouchPresetManager,
+                       QT_TR_NOOP("&Touch Preset Manager..."), "", "touch");
   createMenuFileAction(MI_PrintXsheet, QT_TR_NOOP("&Print Xsheet"), "",
                        "printer");
 

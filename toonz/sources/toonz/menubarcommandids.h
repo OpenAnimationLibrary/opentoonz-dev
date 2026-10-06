@@ -63,6 +63,7 @@
 #define MI_Preferences "MI_Preferences"
 #define MI_SavePreset "MI_SavePreset"
 #define MI_ShortcutPopup "MI_ShortcutPopup"
+#define MI_TouchPresetManager "MI_TouchPresetManager"
 #define MI_Quit "MI_Quit"
 
 #define MI_Undo "MI_Undo"

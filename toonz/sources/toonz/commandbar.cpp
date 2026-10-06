@@ -25,6 +25,7 @@
 #include <QMenuBar>
 #include <QContextMenuEvent>
 #include <QActionGroup>
+#include <string>
 
 //=============================================================================
 // Toolbar
@@ -147,6 +148,18 @@ void CommandBar::buildDefaultToolbar(CommandBar *toolbar) {
 //-----------------------------------------------------------------------------
 
 void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
+  QAction *hit = actionAt(event->pos());
+  if (hit && CommandManager::instance()->getIdFromAction(hit) ==
+                 std::string(MI_TouchGestureControl)) {
+    QMenu menu(this);
+    QAction *openMgr = menu.addAction(tr("Touch Preset Manager..."));
+    connect(openMgr, &QAction::triggered, []() {
+      CommandManager::instance()->execute(MI_TouchPresetManager);
+    });
+    menu.exec(event->globalPos());
+    return;
+  }
+
   QMenu menu(this);
   QAction *customizeCommandBar = menu.addAction(tr("Customize Command Bar"));
   connect(customizeCommandBar, SIGNAL(triggered()),

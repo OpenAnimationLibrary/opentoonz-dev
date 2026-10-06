@@ -543,6 +543,7 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), cleanupMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   addMenuItem(customizeMenu, MI_SceneSettings);
   customizeMenu->addSeparator();
   QMenu *viewPartsMenu = customizeMenu->addMenu(tr("View"));
@@ -715,6 +716,7 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), pltEditMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   addMenuItem(customizeMenu, MI_SceneSettings);
   customizeMenu->addSeparator();
   QMenu *viewPartsMenu = customizeMenu->addMenu(tr("View"));
@@ -896,6 +898,7 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), inknPaintMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   addMenuItem(customizeMenu, MI_SceneSettings);
   customizeMenu->addSeparator();
   QMenu *viewPartsMenu = customizeMenu->addMenu(tr("View"));
@@ -1083,6 +1086,7 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), xsheetMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   addMenuItem(customizeMenu, MI_SceneSettings);
   customizeMenu->addSeparator();
   QMenu *viewPartsMenu = customizeMenu->addMenu(tr("View"));
@@ -1131,6 +1135,7 @@ QMenuBar *StackedMenuBar::createBatchesMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), batchesMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   customizeMenu->addSeparator();
   addMenuItem(customizeMenu, MI_DockingCheck);
   customizeMenu->addSeparator();
@@ -1165,6 +1170,7 @@ QMenuBar *StackedMenuBar::createBrowserMenuBar() {
   QMenu *customizeMenu = addMenu(tr("Customize"), browserMenuBar);
   addMenuItem(customizeMenu, MI_Preferences);
   addMenuItem(customizeMenu, MI_ShortcutPopup);
+  addMenuItem(customizeMenu, MI_TouchPresetManager);
   customizeMenu->addSeparator();
   addMenuItem(customizeMenu, MI_DockingCheck);
   customizeMenu->addSeparator();
@@ -1247,6 +1253,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   fileMenu->addSeparator();
   addMenuItem(fileMenu, MI_Preferences);
   addMenuItem(fileMenu, MI_ShortcutPopup);
+  addMenuItem(fileMenu, MI_TouchPresetManager);
   fileMenu->addSeparator();
   addMenuItem(fileMenu, MI_ClearCacheFolder);
   fileMenu->addSeparator();
