@@ -2707,7 +2707,11 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
   QGridLayout* lay = new QGridLayout();
   setupLayout(lay);
 
+  QPushButton* configureTouchPresets =
+      new QPushButton(tr("Configure Touch Presets..."));
+
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
+  lay->addWidget(configureTouchPresets, 1, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
   insertUI(useQtNativeWinInk, lay);
@@ -2721,6 +2725,9 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
           &QAction::setChecked);
   connect(touchAction, &QAction::triggered, enableTouchGestures,
           &CheckBox::setChecked);
+  connect(configureTouchPresets, &QPushButton::clicked, this, []() {
+    CommandManager::instance()->execute(MI_TouchPresetManager);
+  });
 
   return widget;
 }
