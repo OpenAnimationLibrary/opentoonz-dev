@@ -199,7 +199,9 @@ void CommandManager::execute(CommandId id) {
       action->setChecked(true);
     }
     node->m_handler->execute();
+    return;
   }
+  if (node && node->m_qaction) node->m_qaction->trigger();
 }
 
 //---------------------------------------------------------

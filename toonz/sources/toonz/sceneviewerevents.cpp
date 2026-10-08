@@ -1255,6 +1255,47 @@ bool SceneViewer::touchToolInputBlocked() const {
          m_touchAwaitFreshContact;
 }
 
+void SceneViewer::endTouchScrub() {
+  if (!m_touchScrubActive) return;
+  m_touchScrubActive    = false;
+  m_touchScrubPosValid  = false;
+  m_mouseScrubbing      = 0;
+  invalidateToolStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::updateTouchScrub(const QTouchEvent *e, int liveFingerCount) {
+  if (!m_touchScrubActive || !e || liveFingerCount < 1) return;
+
+  QPointF centroid;
+  int count = 0;
+  for (const QTouchEvent::TouchPoint &p : e->touchPoints()) {
+    if (p.state() == Qt::TouchPointReleased) continue;
+    centroid += p.pos();
+    ++count;
+  }
+  if (count < 1) return;
+  centroid /= count;
+
+  if (!m_touchScrubPosValid) {
+    m_touchScrubLastPos  = centroid;
+    m_touchScrubPosValid = true;
+    return;
+  }
+
+  const double dx = centroid.x() - m_touchScrubLastPos.x();
+  if (std::abs(dx) < 20.0) return;
+
+  if (dx < 0)
+    CommandManager::instance()->execute(MI_PrevFrame);
+  else
+    CommandManager::instance()->execute(MI_NextFrame);
+  m_touchScrubLastPos = centroid;
+}
+
+//-----------------------------------------------------------------------------
+
 void SceneViewer::resetTouchGestureSuppression() {
   m_touchSuppressToolInput       = false;
   m_touchSuppressedPointerDown   = false;
@@ -1265,6 +1306,7 @@ void SceneViewer::resetTouchGestureSuppression() {
   m_gestureActive                = false;
   m_touchActive                  = false;
   m_panning                      = false;
+  endTouchScrub();
 }
 
 void SceneViewer::touchEvent(QTouchEvent *e, int type) {
@@ -1303,8 +1345,9 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
         m_touchContextMenuArmed = true;
     }
   } else if (type != QEvent::TouchEnd && type != QEvent::TouchCancel) {
+    if (m_touchScrubActive) updateTouchScrub(e, live);
     if (m_touchActive && e->touchPoints().count() == 1 &&
-        m_touchDevice == QTouchDevice::TouchScreen) {
+        m_touchDevice == QTouchDevice::TouchScreen && !m_touchScrubActive) {
       QTouchEvent::TouchPoint panPoint = e->touchPoints().at(0);
       if (!m_panning) {
         QPointF deltaPoint = panPoint.pos() - m_firstPanPoint;
@@ -1331,6 +1374,7 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
       m_touchToolInputLockedUntilEnd   = false;
       m_touchSuppressToolInput         = false;
       m_gestureActive                  = false;
+      endTouchScrub();
       releaseTouchToolSuppressionIfIdle();
     } else {
       m_touchActive = true;
@@ -1348,6 +1392,7 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
       m_touchToolInputLockedUntilEnd   = false;
       m_touchSuppressToolInput         = false;
       m_gestureActive                  = false;
+      endTouchScrub();
       releaseTouchToolSuppressionIfIdle();
     } else {
       m_touchActive = true;
@@ -2013,12 +2058,22 @@ void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
     m_touchPresetPickerAnchor      = m_touchRecognizer->lastSlotCentroid();
     m_touchPresetPickerAnchorValid = true;
   }
+  const QString cmdId = TouchPresetManager::instance()->commandId(touchSlot);
   const bool blocksInput =
       family == TouchSlotFamily_Hold || family == TouchSlotFamily_Stylus;
   if (blocksInput) {
     m_touchToolInputLockedUntilEnd = true;
     m_touchAwaitFreshContact       = true;
     touchGestureBlocksToolInput();
+  }
+  if (cmdId == QLatin1String(V_Scrub)) {
+    if (!m_touchScrubActive) {
+      m_touchScrubActive   = true;
+      m_touchScrubPosValid = false;
+      m_mouseScrubbing     = 1;
+      setToolCursor(this, ToolCursor::ScrubCursor);
+    }
+    return;
   }
   TouchPresetManager::instance()->execute(touchSlot);
   if (blocksInput) {

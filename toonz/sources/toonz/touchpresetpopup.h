@@ -17,6 +17,7 @@ class QToolButton;
 class QMenu;
 class ShortcutTree;
 class QShowEvent;
+class QHideEvent;
 
 class TouchPresetPopup final : public DVGui::Dialog {
   Q_OBJECT
@@ -70,9 +71,15 @@ private:
   void syncToActivePreset();
   void refreshUseButton();
   void applyActivePresetIfAutoUse();
+  QStringList collectGestureTreeExpandedState() const;
+  void applyGestureTreeExpandedState(const QStringList &expandedFolders,
+                                     bool useDefaultIfEmpty);
+  void saveGestureTreeExpandedState();
+  void restoreGestureTreeExpandedState();
 
 protected:
   void showEvent(QShowEvent *event) override;
+  void hideEvent(QHideEvent *event) override;
 
 private slots:
   void onShowFamilyTogglesToggled(bool checked);
@@ -81,6 +88,7 @@ private slots:
   void onSuppressContextMenuToggled(bool checked);
   void syncOptionsMenu();
   void onTreeItemChanged(QTreeWidgetItem *item, int column);
+  void onGestureTreeContextMenu(const QPoint &pos);
   void onPresetChanged(int);
   void onUsePreset();
   void onUseButtonContextMenu(const QPoint &pos);

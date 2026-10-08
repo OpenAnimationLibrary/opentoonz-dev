@@ -493,8 +493,8 @@ bool TouchPresetManager::hasCommand(TouchSlot slot) const {
 void TouchPresetManager::execute(TouchSlot slot) {
   const QString id = commandId(slot);
   if (id.isEmpty()) return;
-  CommandManager *cm = CommandManager::instance();
   const std::string cmdId = id.toStdString();
+  CommandManager *cm      = CommandManager::instance();
   QAction *action         = cm->getAction(cmdId.c_str());
   if (action && action->isCheckable())
     action->trigger();

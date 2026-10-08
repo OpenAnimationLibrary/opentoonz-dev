@@ -112,6 +112,12 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_dragging;
   int m_mouseScrubbing = 0;
   QAction *m_keyAction = nullptr;
+  bool m_touchScrubActive = false;
+  bool m_touchScrubPosValid = false;
+  QPointF m_touchScrubLastPos;
+
+  void endTouchScrub();
+  void updateTouchScrub(const QTouchEvent *e, int liveFingerCount);
 
   QPointF m_firstPanPoint;
   double m_scaleFactor;    // used for zoom gesture

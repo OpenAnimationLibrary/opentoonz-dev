@@ -4,6 +4,7 @@
 #include "menubarcommandids.h"
 #include "shortcutpopup.h"
 #include "tapp.h"
+#include "tenv.h"
 #include "touchpresetmanager.h"
 
 #include "toonz/preferences.h"
@@ -34,10 +35,34 @@
 #include <QSignalBlocker>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QHideEvent>
 #include <QShowEvent>
 #include <QVBoxLayout>
 
+#include <string>
+
 namespace {
+
+// Persist gesture tree UI like Configure Shortcuts (.env).
+TEnv::StringVar TouchPresetPopupExpandedFolders("TouchPresetPopupExpandedFolders",
+                                                  "");
+TEnv::IntVar TouchPresetPopupExpandedStateSaved(
+    "TouchPresetPopupExpandedStateSaved", 0);
+
+const QChar kGestureFolderListSeparator(0x1e);
+
+QStringList expandedGestureFoldersFromEnv() {
+  const QString stored =
+      QString::fromStdString((std::string)TouchPresetPopupExpandedFolders);
+  if (stored.isEmpty()) return QStringList();
+  return stored.split(kGestureFolderListSeparator, Qt::SkipEmptyParts);
+}
+
+void saveExpandedGestureFoldersToEnv(const QStringList &expandedFolders) {
+  TouchPresetPopupExpandedFolders =
+      expandedFolders.join(kGestureFolderListSeparator).toStdString();
+}
+
 
 QPointer<TouchPresetPopup> s_touchPresetPopup;
 
@@ -151,6 +176,7 @@ TouchPresetPopup::TouchPresetPopup()
   m_tree->setAlternatingRowColors(true);
   m_tree->setIndentation(14);
   m_tree->setMinimumSize(480, 360);
+  m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
 
   m_commands = new ShortcutTree(this);
   m_commands->setMinimumWidth(320);
@@ -247,6 +273,16 @@ TouchPresetPopup::TouchPresetPopup()
           &TouchPresetPopup::onCommandSearchChanged);
   connect(m_tree, &QTreeWidget::itemChanged, this,
           &TouchPresetPopup::onTreeItemChanged);
+  connect(m_tree, &QTreeWidget::customContextMenuRequested, this,
+          &TouchPresetPopup::onGestureTreeContextMenu);
+  connect(m_tree, &QTreeWidget::itemExpanded, this, [this](QTreeWidgetItem *) {
+    if (m_gestureSearchEdit->text().trimmed().isEmpty())
+      saveGestureTreeExpandedState();
+  });
+  connect(m_tree, &QTreeWidget::itemCollapsed, this, [this](QTreeWidgetItem *) {
+    if (m_gestureSearchEdit->text().trimmed().isEmpty())
+      saveGestureTreeExpandedState();
+  });
   connect(m_commands, &ShortcutTree::actionSelected, this,
           &TouchPresetPopup::onCommandSelected);
   connect(m_commands, &ShortcutTree::searched, m_noSearchLabel,
@@ -304,6 +340,48 @@ void TouchPresetPopup::showEvent(QShowEvent *event) {
   syncToActivePreset();
 }
 
+void TouchPresetPopup::hideEvent(QHideEvent *event) {
+  saveGestureTreeExpandedState();
+  Dialog::hideEvent(event);
+}
+
+QStringList TouchPresetPopup::collectGestureTreeExpandedState() const {
+  QStringList expandedFolders;
+  for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+    QTreeWidgetItem *folder = m_tree->topLevelItem(i);
+    if (folder && folder->isExpanded())
+      expandedFolders.append(folder->text(0));
+  }
+  return expandedFolders;
+}
+
+void TouchPresetPopup::applyGestureTreeExpandedState(
+    const QStringList &expandedFolders, bool useDefaultIfEmpty) {
+  QSignalBlocker blocker(m_tree);
+  for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
+    QTreeWidgetItem *folder = m_tree->topLevelItem(i);
+    if (!folder) continue;
+    const QString folderName = folder->text(0);
+    if (!expandedFolders.isEmpty()) {
+      folder->setExpanded(expandedFolders.contains(folderName));
+    } else if (useDefaultIfEmpty) {
+      folder->setExpanded(folder->text(0) !=
+                          touchSlotFamilyLabel(TouchSlotFamily_Reserved));
+    }
+  }
+}
+
+void TouchPresetPopup::saveGestureTreeExpandedState() {
+  if (m_tree->topLevelItemCount() == 0) return;
+  saveExpandedGestureFoldersToEnv(collectGestureTreeExpandedState());
+  TouchPresetPopupExpandedStateSaved = 1;
+}
+
+void TouchPresetPopup::restoreGestureTreeExpandedState() {
+  const bool hasSavedState = TouchPresetPopupExpandedStateSaved != 0;
+  applyGestureTreeExpandedState(expandedGestureFoldersFromEnv(), !hasSavedState);
+}
+
 void TouchPresetPopup::syncToActivePreset() {
   const QString active = TouchPresetManager::instance()->activePreset();
   const int idx        = m_presetCombo->findData(active);
@@ -354,6 +432,7 @@ QString TouchPresetPopup::currentPreset() const {
 }
 
 void TouchPresetPopup::rebuildTree() {
+  if (m_tree->topLevelItemCount() > 0) saveGestureTreeExpandedState();
   QSignalBlocker treeBlocker(m_tree);
   m_tree->clear();
   TouchPresetManager *mgr = TouchPresetManager::instance();
@@ -383,9 +462,9 @@ void TouchPresetPopup::rebuildTree() {
     applyFamilyRecognitionRow(group, family);
     const QList<TouchSlot> familySlots = touchSlotsInFamily(family);
     for (TouchSlot slot : familySlots) addRow(group, slot, false);
-    group->setExpanded(true);
   }
 
+  restoreGestureTreeExpandedState();
   applyGestureTreeFilter(m_gestureSearchEdit->text());
   setSelectedSlot(m_selectedSlot);
 }
@@ -474,13 +553,14 @@ void TouchPresetPopup::applyGestureTreeFilter(const QString &text) {
       if (visible) anyChildVisible = true;
     }
     top->setHidden(!t.isEmpty() && !familyMatch && !anyChildVisible);
-    if (!top->isHidden() && (familyMatch || anyChildVisible))
+    if (!t.isEmpty() && !top->isHidden() && (familyMatch || anyChildVisible))
       top->setExpanded(true);
   }
 }
 
 void TouchPresetPopup::onGestureSearchChanged(const QString &text) {
   applyGestureTreeFilter(text);
+  if (text.trimmed().isEmpty()) restoreGestureTreeExpandedState();
 }
 
 void TouchPresetPopup::onCommandSearchChanged(const QString &text) {
@@ -782,6 +862,19 @@ void TouchPresetPopup::onShowFamilyColorsToggled(bool checked) {
   TouchPresetManager::instance()->setShowFamilyRecognitionColors(checked);
   rebuildTree();
 }
+
+void TouchPresetPopup::onGestureTreeContextMenu(const QPoint &pos) {
+  QTreeWidgetItem *item = m_tree->itemAt(pos);
+  if (!item || !item->data(0, kFamilyItemRole).isValid()) return;
+
+  syncOptionsMenu();
+  QMenu menu(this);
+  menu.addAction(m_showFamilyTogglesAction);
+  menu.addAction(m_showFamilyColorsAction);
+  menu.exec(m_tree->viewport()->mapToGlobal(pos));
+}
+
+//-----------------------------------------------------------------------------
 
 void TouchPresetPopup::onTreeItemChanged(QTreeWidgetItem *item, int column) {
   if (!item || column != 0) return;
