@@ -1292,6 +1292,7 @@ void SceneViewer::updateTouchScrub(const QTouchEvent *e, int liveFingerCount) {
   else
     CommandManager::instance()->execute(MI_NextFrame);
   m_touchScrubLastPos = centroid;
+  updateTouchViewerHudFrame();
 }
 
 //-----------------------------------------------------------------------------
@@ -2076,6 +2077,7 @@ void SceneViewer::onTouchPresetSlot(int slot, bool repeat) {
     return;
   }
   TouchPresetManager::instance()->execute(touchSlot);
+  onTouchViewerHudAfterCommand(cmdId);
   if (blocksInput) {
     m_touchSuppressedPointerDown = true;
     m_buttonClicked = false;

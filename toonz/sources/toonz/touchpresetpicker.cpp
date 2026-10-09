@@ -741,15 +741,17 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
                      TouchPresetPickerTheme::OpenToonz;
   const int itemGap  = classic ? kLinearSpacing : kGhostItemGap;
   const int arrowGap = classic ? kLinearSpacing : 16;
+  const int outerPad =
+      classic ? kOuterPad : kGhostBodyPad + kOuterPad;
   int w = 0;
   int h = 0;
   if (vertical) {
-    w = qMax(m_stripW, paging ? m_edgeCircle : 0) + kOuterPad * 2;
-    h = n * m_stripH + qMax(0, n - 1) * itemGap + kOuterPad * 2;
+    w = qMax(m_stripW, paging ? m_edgeCircle : 0) + outerPad * 2;
+    h = n * m_stripH + qMax(0, n - 1) * itemGap + outerPad * 2;
     if (paging) h += 2 * (m_edgeCircle + arrowGap);
   } else {
-    h = qMax(m_stripH, paging ? m_edgeCircle : 0) + kOuterPad * 2;
-    w = n * m_stripW + qMax(0, n - 1) * itemGap + kOuterPad * 2;
+    h = qMax(m_stripH, paging ? m_edgeCircle : 0) + outerPad * 2;
+    w = n * m_stripW + qMax(0, n - 1) * itemGap + outerPad * 2;
     if (paging) w += 2 * (m_edgeCircle + arrowGap);
   }
   setFixedSize(qMax(1, w), qMax(1, h));
@@ -771,12 +773,12 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
     next->setAttribute(Qt::WA_TranslucentBackground, flatOt);
   }
 
-  int x = kOuterPad;
-  int y = kOuterPad;
+  int x = outerPad;
+  int y = outerPad;
   if (vertical) {
     if (paging && prev) {
-      prev->move((width() - m_edgeCircle) / 2, kOuterPad);
-      y = kOuterPad + m_edgeCircle + arrowGap;
+      prev->move((width() - m_edgeCircle) / 2, outerPad);
+      y = outerPad + m_edgeCircle + arrowGap;
     }
     for (int i = 0; i < pageNames.size(); ++i) {
       QPushButton *btn = slotAt(i);
@@ -792,11 +794,11 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
     }
     if (paging && next)
       next->move((width() - m_edgeCircle) / 2,
-                 height() - m_edgeCircle - kOuterPad);
+                 height() - m_edgeCircle - outerPad);
   } else {
     if (paging && prev) {
-      prev->move(kOuterPad, (height() - m_edgeCircle) / 2);
-      x = kOuterPad + m_edgeCircle + arrowGap;
+      prev->move(outerPad, (height() - m_edgeCircle) / 2);
+      x = outerPad + m_edgeCircle + arrowGap;
     }
     for (int i = 0; i < pageNames.size(); ++i) {
       QPushButton *btn = slotAt(i);
@@ -811,7 +813,7 @@ void TouchPresetPickerPanel::applyLinearGeometry(bool vertical,
       x += m_stripW + itemGap;
     }
     if (paging && next)
-      next->move(width() - m_edgeCircle - kOuterPad,
+      next->move(width() - m_edgeCircle - outerPad,
                  (height() - m_edgeCircle) / 2);
   }
   if (prev) prev->raise();
@@ -872,10 +874,15 @@ void TouchPresetPickerPanel::paintGhostLook(QPainter &p) {
   if (mgr->pickerLayout() != TouchPresetPickerLayout::Wheel) {
     if (isGhostLook()) {
       if (m_bodyRect.isEmpty()) return;
+      const QRectF box =
+          QRectF(m_bodyRect)
+              .intersected(QRectF(rect()).adjusted(1.0, 1.0, -1.0, -1.0));
+      if (box.width() < 2.0 || box.height() < 2.0) return;
       p.setPen(Qt::NoPen);
       p.setBrush(QColor(tok.g0r, tok.g0g, tok.g0b, alphaFromOpacity(255, op)));
-      const qreal rad = m_stripH * 0.5 + kGhostBodyPad;
-      p.drawPath(roundRectPath(QRectF(m_bodyRect), rad));
+      const qreal rad = qMin(m_stripH * 0.5 + kGhostBodyPad,
+                             qMin(box.width(), box.height()) * 0.5);
+      p.drawRoundedRect(box, rad, rad);
       return;
     }
     if (mgr->pickerTheme() != TouchPresetPickerTheme::OpenToonz) return;

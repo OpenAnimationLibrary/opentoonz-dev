@@ -24,6 +24,7 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QSizePolicy>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -93,6 +94,22 @@ const int kFamilyItemRole = Qt::UserRole + 1;
 
 QColor familyRecognitionStatusColor(bool recognized) {
   return recognized ? QColor(0x3d, 0xa5, 0x4a) : QColor(0xd4, 0x4a, 0x4a);
+}
+
+constexpr int kTouchPresetDefaultWidth  = 1000;
+constexpr int kTouchPresetDefaultHeight = 640;
+constexpr int kTouchPresetMinimumWidth  = 720;
+constexpr int kTouchPresetMinimumHeight = 440;
+
+bool touchPresetDialogHasSavedGeometry() {
+  TFilePath savePath =
+      ToonzFolder::getMyModuleDir() + TFilePath("popups.ini");
+  QSettings settings(QString::fromStdWString(savePath.getWideString()),
+                     QSettings::IniFormat);
+  const QString geo =
+      settings.value(QStringLiteral("TouchPresetDialogGeometry")).toString();
+  if (geo.isEmpty()) return false;
+  return geo.split(QLatin1Char(' '), Qt::SkipEmptyParts).size() == 4;
 }
 
 }  // namespace
@@ -175,11 +192,16 @@ TouchPresetPopup::TouchPresetPopup()
   m_tree->setRootIsDecorated(true);
   m_tree->setAlternatingRowColors(true);
   m_tree->setIndentation(14);
-  m_tree->setMinimumSize(480, 360);
+  m_tree->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  m_tree->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  m_tree->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+  m_tree->setMinimumSize(0, 0);
   m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
 
   m_commands = new ShortcutTree(this);
   m_commands->setMinimumWidth(320);
+  m_commands->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+  m_commands->setMinimumHeight(0);
 
   m_selectedName    = new QLabel(tr("No gesture selected"), this);
   m_selectedCommand = new QLabel(tr("(none)"), this);
@@ -232,6 +254,7 @@ TouchPresetPopup::TouchPresetPopup()
 
   QGroupBox *presetBox = new QGroupBox(tr("Touch Presets"), this);
   presetBox->setObjectName("SolidLineFrame");
+  presetBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
   QHBoxLayout *presetLay = new QHBoxLayout();
   presetLay->setContentsMargins(5, 5, 5, 5);
   presetLay->setSpacing(5);
@@ -253,6 +276,8 @@ TouchPresetPopup::TouchPresetPopup()
   exportLay->setSpacing(5);
   exportLay->addWidget(m_exportPresetBtn, 0);
   m_topLayout->addLayout(exportLay, 0);
+  m_topLayout->setStretch(0, 1);
+  for (int i = 1; i < m_topLayout->count(); ++i) m_topLayout->setStretch(i, 0);
 
   connect(m_presetCombo, SIGNAL(currentIndexChanged(int)), this,
           SLOT(onPresetChanged(int)));
@@ -311,6 +336,11 @@ TouchPresetPopup::TouchPresetPopup()
   rebuildPresetCombo();
   rebuildTree();
   refreshSelectionBar();
+
+  setMinimumSize(kTouchPresetMinimumWidth, kTouchPresetMinimumHeight);
+  if (!touchPresetDialogHasSavedGeometry())
+    resize(kTouchPresetDefaultWidth, kTouchPresetDefaultHeight);
+
   s_touchPresetPopup = this;
 }
 
@@ -646,8 +676,13 @@ void TouchPresetPopup::onDuplicatePreset() {
       this, tr("Duplicate Touch Preset"), tr("Name:"), QLineEdit::Normal,
       from + tr(" copy"), &ok);
   if (!ok || name.trimmed().isEmpty()) return;
-  TouchPresetManager::instance()->duplicatePreset(from, name.trimmed());
+  const QString trimmed = name.trimmed();
+  TouchPresetManager::instance()->duplicatePreset(from, trimmed);
   rebuildPresetCombo();
+  const int idx =
+      TouchPresetManager::instance()->presetNames().indexOf(trimmed);
+  if (idx >= 0) m_presetCombo->setCurrentIndex(idx);
+  rebuildTree();
 }
 
 void TouchPresetPopup::onRenamePreset() {
@@ -705,7 +740,7 @@ void TouchPresetPopup::onLoadPreset() {
                   tr("Could not load touch preset from this file."));
     return;
   }
-  mgr->setActivePreset(imported);
+  mgr->setPinnedForPicker(imported, true);
   m_selectedSlot = TouchSlot_None;
   rebuildPresetCombo();
   const int importIdx = mgr->presetNames().indexOf(imported);
@@ -822,6 +857,7 @@ void TouchPresetPopup::buildOptionsMenu() {
   m_showFamilyColorsAction->setCheckable(true);
   connect(m_showFamilyColorsAction, &QAction::toggled, this,
           &TouchPresetPopup::onShowFamilyColorsToggled);
+  m_showFamilyColorsAction->setEnabled(false);
 }
 
 void TouchPresetPopup::syncOptionsMenu() {
@@ -841,6 +877,8 @@ void TouchPresetPopup::syncOptionsMenu() {
   QSignalBlocker colorsBlock(m_showFamilyColorsAction);
   m_showFamilyColorsAction->setChecked(
       TouchPresetManager::instance()->showFamilyRecognitionColors());
+  m_showFamilyColorsAction->setEnabled(
+      TouchPresetManager::instance()->showFamilyRecognitionToggles());
 }
 
 void TouchPresetPopup::onDeferTapToggled(bool checked) {
@@ -855,6 +893,7 @@ void TouchPresetPopup::onSuppressContextMenuToggled(bool checked) {
 
 void TouchPresetPopup::onShowFamilyTogglesToggled(bool checked) {
   TouchPresetManager::instance()->setShowFamilyRecognitionToggles(checked);
+  if (m_showFamilyColorsAction) m_showFamilyColorsAction->setEnabled(checked);
   rebuildTree();
 }
 

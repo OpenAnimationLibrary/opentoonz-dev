@@ -2719,8 +2719,8 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
       new QPushButton(tr("Touch Preset Manager..."));
 
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
-  lay->addWidget(touchWorkspaceSettings, 1, 0, 1, 2);
-  lay->addWidget(configureTouchPresets, 2, 0, 1, 2);
+  lay->addWidget(configureTouchPresets, 1, 0, 1, 2);
+  lay->addWidget(touchWorkspaceSettings, 2, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
   insertUI(useQtNativeWinInk, lay);

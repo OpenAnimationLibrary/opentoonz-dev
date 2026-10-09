@@ -37,6 +37,7 @@ class QGestureEvent;
 class QTouchEvent;
 class TouchGestureRecognizer;
 class TouchPresetPickerPanel;
+class TouchViewerHud;
 class QOpenGLFramebufferObject;
 class LutCalibrator;
 class StopMotion;
@@ -102,6 +103,11 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   int m_touchPeakLiveCount               = 0;
   TouchGestureRecognizer *m_touchRecognizer = nullptr;
   TouchPresetPickerPanel *m_touchPresetPicker = nullptr;
+  TouchViewerHud *m_touchViewerHud = nullptr;
+
+  void initTouchViewerHud();
+  void updateTouchViewerHudFrame();
+  void onTouchViewerHudAfterCommand(const QString &commandId);
   QPointF m_touchPresetPickerAnchor;
   bool m_touchPresetPickerAnchorValid = false;
 
@@ -325,6 +331,8 @@ public:
   void toggleTouchPresetPicker(const QPointF *preferredAnchor = nullptr);
   bool isTouchPresetPickerOpen() const;
   void syncTouchPresetPickerFromSettings(bool rebuildLayout = false);
+  void syncTouchViewerHudFromSettings();
+  bool isImmersiveForTouchViewerHud() const;
   void syncActiveTouchPresetOnPicker();
   int getVGuideCount() override;
   int getHGuideCount() override;
@@ -374,6 +382,7 @@ protected:
 
   void showEvent(QShowEvent *) override;
   void hideEvent(QHideEvent *) override;
+  void resizeEvent(QResizeEvent *event) override;
 
   void gestureEvent(QGestureEvent *e);
   void touchEvent(QTouchEvent *e, int type);

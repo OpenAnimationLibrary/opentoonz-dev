@@ -24,6 +24,8 @@ enum class TouchPresetPickerTheme {
   CreamSage,
 };
 
+enum class TouchViewerHudStyle { Gray, Frost };
+
 class TouchPresetManager {
   QMap<QString, QMap<TouchSlot, QString>> m_presets;
   QMap<TouchSlotFamily, bool> m_familyRecognition;
@@ -32,12 +34,14 @@ class TouchPresetManager {
   bool m_autoUsePresetOnSelection     = false;
   QString m_active;
   QStringList m_pinnedForPicker;
-  TouchPresetPickerLayout m_pickerLayout = TouchPresetPickerLayout::Horizontal;
+  TouchPresetPickerLayout m_pickerLayout = TouchPresetPickerLayout::Wheel;
   TouchPresetPickerStyle m_pickerStyle   = TouchPresetPickerStyle::Classic;
-  int m_pickerSizePercent    = 100;
-  int m_pickerOpacityPercent = 70;
-  TouchPresetPickerTheme m_pickerTheme = TouchPresetPickerTheme::HologramCyan;
+  int m_pickerSizePercent    = 150;
+  int m_pickerOpacityPercent = 100;
+  TouchPresetPickerTheme m_pickerTheme = TouchPresetPickerTheme::OpenToonz;
   bool m_pickerShowOnlyPinned = false;
+  bool m_viewerHudEnabled = true;
+  TouchViewerHudStyle m_viewerHudStyle = TouchViewerHudStyle::Frost;
   bool m_loaded = false;
 
   struct ActivePresetListener {
@@ -117,6 +121,12 @@ public:
 
   bool pickerShowOnlyPinned() const;
   void setPickerShowOnlyPinned(bool onlyPinned);
+
+  bool viewerHudEnabled() const;
+  void setViewerHudEnabled(bool on);
+
+  TouchViewerHudStyle viewerHudStyle() const;
+  void setViewerHudStyle(TouchViewerHudStyle style);
 
   void save();
   void load();

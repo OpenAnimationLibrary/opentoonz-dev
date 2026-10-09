@@ -29,6 +29,9 @@ class TouchWorkspaceSettingsPopup final : public DVGui::Dialog {
   QCheckBox *m_showOnlyPinnedCheck;
   QCheckBox *m_deferTapCheck;
   QCheckBox *m_suppressContextMenuCheck;
+  QCheckBox *m_viewerHudCheck;
+  QRadioButton *m_hudStyleGray;
+  QRadioButton *m_hudStyleFrost;
   bool m_livePickerPreview = false;
 
 public:
@@ -59,6 +62,8 @@ private slots:
   void onOpenPresetManager();
   void onPinnedItemChanged(QListWidgetItem *item);
   void onShowOnlyPinnedChanged(bool checked);
+  void onViewerHudChanged(bool checked);
+  void onHudStyleChanged(bool checked);
 };
 
 #endif

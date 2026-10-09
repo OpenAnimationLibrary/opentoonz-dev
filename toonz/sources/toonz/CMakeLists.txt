@@ -112,6 +112,7 @@ set(MOC_HEADERS
     timestretchpopup.h
     toolbar.h
     touchgesturerecognizer.h
+    touchviewerhud.h
     touchpresetpopup.h
     touchpresetpicker.h
     touchworkspacesettingspopup.h
@@ -409,6 +410,7 @@ set(SOURCES
     touchpresetpopup.cpp
     touchpresetpicker.cpp
     touchworkspacesettingspopup.cpp
+    touchviewerhud.cpp
     tvpjson_io.cpp
     exportxsheetpdf.cpp
     custompanelmanager.cpp

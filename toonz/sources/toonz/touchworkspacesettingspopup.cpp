@@ -33,9 +33,23 @@ namespace {
 
 QPointer<TouchWorkspaceSettingsPopup> s_workspaceSettingsPopup;
 
+class TouchWorkspaceSettingsCommand final : public MenuItemHandler {
+public:
+  TouchWorkspaceSettingsCommand()
+      : MenuItemHandler(MI_TouchWorkspaceSettings) {}
+  void execute() override { TouchWorkspaceSettingsPopup::showPanel(); }
+};
+
+TouchWorkspaceSettingsCommand s_touchWorkspaceSettingsCommand;
+
 void syncOpenTouchPresetPicker(bool rebuildLayout) {
   SceneViewer *viewer = TApp::instance()->getActiveViewer();
   if (viewer) viewer->syncTouchPresetPickerFromSettings(rebuildLayout);
+}
+
+void syncOpenTouchViewerHud() {
+  SceneViewer *viewer = TApp::instance()->getActiveViewer();
+  if (viewer) viewer->syncTouchViewerHudFromSettings();
 }
 
 }  // namespace
@@ -207,6 +221,26 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
 
   auto *gestureGroup = new QGroupBox(tr("Gesture recognition"), this);
   auto *gestureLay   = new QVBoxLayout(gestureGroup);
+  m_viewerHudCheck = new QCheckBox(tr("Touch indicators"), this);
+  m_hudStyleGray   = new QRadioButton(tr("Gray"), this);
+  m_hudStyleFrost  = new QRadioButton(tr("Frost"), this);
+  auto *hudStyleGroup = new QButtonGroup(this);
+  hudStyleGroup->addButton(m_hudStyleGray);
+  hudStyleGroup->addButton(m_hudStyleFrost);
+  auto *hudRow = new QHBoxLayout();
+  hudRow->setContentsMargins(0, 0, 0, 0);
+  hudRow->addWidget(m_viewerHudCheck);
+  hudRow->addStretch(1);
+  hudRow->addWidget(m_hudStyleGray);
+  hudRow->addWidget(m_hudStyleFrost);
+  gestureLay->addLayout(hudRow);
+  connect(m_viewerHudCheck, &QCheckBox::toggled, this,
+          &TouchWorkspaceSettingsPopup::onViewerHudChanged);
+  connect(m_hudStyleGray, &QRadioButton::toggled, this,
+          &TouchWorkspaceSettingsPopup::onHudStyleChanged);
+  connect(m_hudStyleFrost, &QRadioButton::toggled, this,
+          &TouchWorkspaceSettingsPopup::onHudStyleChanged);
+
   m_deferTapCheck =
       new QCheckBox(tr("Defer simple tap when a double tap is assigned"), this);
   gestureLay->addWidget(m_deferTapCheck);
@@ -231,9 +265,12 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   connect(closeBtn, &QPushButton::clicked, this, &QDialog::close);
 
   loadFromSettings();
+  s_workspaceSettingsPopup = this;
 }
 
-TouchWorkspaceSettingsPopup::~TouchWorkspaceSettingsPopup() = default;
+TouchWorkspaceSettingsPopup::~TouchWorkspaceSettingsPopup() {
+  if (s_workspaceSettingsPopup == this) s_workspaceSettingsPopup = nullptr;
+}
 
 void TouchWorkspaceSettingsPopup::showEvent(QShowEvent *event) {
   DVGui::Dialog::showEvent(event);
@@ -273,6 +310,11 @@ void TouchWorkspaceSettingsPopup::showPanel(QWidget *parent) {
   }
   if (!s_workspaceSettingsPopup)
     s_workspaceSettingsPopup = new TouchWorkspaceSettingsPopup(parent);
+  if (s_workspaceSettingsPopup->isVisible()) {
+    s_workspaceSettingsPopup->hide();
+    return;
+  }
+  s_workspaceSettingsPopup->loadFromSettings();
   s_workspaceSettingsPopup->show();
   s_workspaceSettingsPopup->raise();
   s_workspaceSettingsPopup->activateWindow();
@@ -322,6 +364,18 @@ void TouchWorkspaceSettingsPopup::loadFromSettings() {
 
   QSignalBlocker blockOnlyPinned(m_showOnlyPinnedCheck);
   m_showOnlyPinnedCheck->setChecked(mgr->pickerShowOnlyPinned());
+
+  QSignalBlocker blockHud(m_viewerHudCheck);
+  m_viewerHudCheck->setChecked(mgr->viewerHudEnabled());
+  QSignalBlocker blockHudGray(m_hudStyleGray);
+  QSignalBlocker blockHudFrost(m_hudStyleFrost);
+  if (mgr->viewerHudStyle() == TouchViewerHudStyle::Gray)
+    m_hudStyleGray->setChecked(true);
+  else
+    m_hudStyleFrost->setChecked(true);
+  const bool hudOn = mgr->viewerHudEnabled();
+  m_hudStyleGray->setEnabled(hudOn);
+  m_hudStyleFrost->setEnabled(hudOn);
 
   rebuildPinnedList();
 }
@@ -415,7 +469,19 @@ void TouchWorkspaceSettingsPopup::onPinnedItemChanged(QListWidgetItem *item) {
   syncOpenTouchPresetPicker(true);
 }
 
+void TouchWorkspaceSettingsPopup::onViewerHudChanged(bool checked) {
+  TouchPresetManager::instance()->setViewerHudEnabled(checked);
+  m_hudStyleGray->setEnabled(checked);
+  m_hudStyleFrost->setEnabled(checked);
+  syncOpenTouchViewerHud();
+}
+
+void TouchWorkspaceSettingsPopup::onHudStyleChanged(bool checked) {
+  if (!checked) return;
+  TouchPresetManager::instance()->setViewerHudStyle(
+      m_hudStyleGray->isChecked() ? TouchViewerHudStyle::Gray
+                                  : TouchViewerHudStyle::Frost);
+}
+
 //-----------------------------------------------------------------------------
 
-OpenPopupCommandHandler<TouchWorkspaceSettingsPopup> openTouchWorkspaceSettings(
-    MI_TouchWorkspaceSettings);
