@@ -304,9 +304,6 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   if (titleBar) titleBar->updateGeometry();
   updateGeometry();
   panel->updateGeometry();
-=======
-  menu.exec(event->globalPos());
->>>>>>> 5f7af3da1 (feat(touch): touch workspace settings panel)
 }
 
 //-----------------------------------------------------------------------------
