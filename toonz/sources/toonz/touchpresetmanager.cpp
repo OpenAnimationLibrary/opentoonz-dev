@@ -20,25 +20,25 @@ const char *kDefault = "Default";
 
 QMap<TouchSlot, QString> factoryMap() {
   QMap<TouchSlot, QString> map;
-  map[TouchSlot_Tap2]           = QStringLiteral("MI_Undo");
-  map[TouchSlot_Tap3]           = QStringLiteral("MI_Redo");
-  map[TouchSlot_Tap4]           = QStringLiteral("MI_OnionSkin");
-  map[TouchSlot_Tap5]           = QStringLiteral("MI_CreateBlankDrawing");
-  map[TouchSlot_Swipe2Up]         = QStringLiteral("T_Eraser");
-  map[TouchSlot_Swipe2Down]       = QStringLiteral("T_Brush");
-  map[TouchSlot_Swipe3Left]       = QStringLiteral("A_DecreaseBrushHardness");
-  map[TouchSlot_Swipe3Right]      = QStringLiteral("A_IncreaseBrushHardness");
-  map[TouchSlot_Swipe3Up]         = QStringLiteral("A_IncreaseMaxBrushThickness");
-  map[TouchSlot_Swipe3Down]       = QStringLiteral("A_DecreaseMaxBrushThickness");
-  map[TouchSlot_Swipe4Left]       = QStringLiteral("MI_PrevFrame");
-  map[TouchSlot_Swipe4Right]      = QStringLiteral("MI_NextFrame");
-  map[TouchSlot_Swipe4Up]         = QStringLiteral("MI_FirstFrame");
-  map[TouchSlot_Swipe4Down]       = QStringLiteral("MI_LastFrame");
-  map[TouchSlot_Swipe5Left]       = QStringLiteral("MI_PrevDrawing");
-  map[TouchSlot_Swipe5Right]      = QStringLiteral("MI_NextDrawing");
-  map[TouchSlot_Swipe5Up]         = QStringLiteral("MI_PrevKeyframe");
-  map[TouchSlot_Swipe5Down]       = QStringLiteral("MI_NextKeyframe");
-  map[TouchSlot_Pinch3Out] = QStringLiteral("MI_TouchPresetPicker");
+  map[TouchSlot_Tap2]        = QStringLiteral("MI_Undo");
+  map[TouchSlot_Tap3]        = QStringLiteral("MI_Redo");
+  map[TouchSlot_Tap4]        = QStringLiteral("MI_OnionSkin");
+  map[TouchSlot_Tap5]        = QStringLiteral("MI_CreateBlankDrawing");
+  map[TouchSlot_Swipe2Up]    = QStringLiteral("T_Eraser");
+  map[TouchSlot_Swipe2Down]  = QStringLiteral("T_Brush");
+  map[TouchSlot_Swipe3Left]  = QStringLiteral("A_DecreaseBrushHardness");
+  map[TouchSlot_Swipe3Right] = QStringLiteral("A_IncreaseBrushHardness");
+  map[TouchSlot_Swipe3Up]    = QStringLiteral("A_IncreaseMaxBrushThickness");
+  map[TouchSlot_Swipe3Down]  = QStringLiteral("A_DecreaseMaxBrushThickness");
+  map[TouchSlot_Swipe4Left]  = QStringLiteral("MI_PrevFrame");
+  map[TouchSlot_Swipe4Right] = QStringLiteral("MI_NextFrame");
+  map[TouchSlot_Swipe4Up]    = QStringLiteral("MI_FirstFrame");
+  map[TouchSlot_Swipe4Down]  = QStringLiteral("MI_LastFrame");
+  map[TouchSlot_Swipe5Left]  = QStringLiteral("MI_PrevDrawing");
+  map[TouchSlot_Swipe5Right] = QStringLiteral("MI_NextDrawing");
+  map[TouchSlot_Swipe5Up]    = QStringLiteral("MI_PrevKeyframe");
+  map[TouchSlot_Swipe5Down]  = QStringLiteral("MI_NextKeyframe");
+  map[TouchSlot_Pinch3Out]   = QStringLiteral("MI_TouchPresetPicker");
   return map;
 }
 
@@ -91,7 +91,7 @@ void TouchPresetManager::ensureLoaded() {
 
 void TouchPresetManager::seedFactory() {
   m_presets[QLatin1String(kDefault)] = factoryMap();
-  m_active = QLatin1String(kDefault);
+  m_active                           = QLatin1String(kDefault);
 }
 
 void TouchPresetManager::seedFamilyRecognition() {
@@ -150,12 +150,11 @@ void TouchPresetManager::load() {
       s.value(QStringLiteral("General/autoUsePresetOnSelection"), false)
           .toBool();
 
-  const QString pinnedRaw =
-      s.value(QStringLiteral("Picker/pinned")).toString();
+  const QString pinnedRaw = s.value(QStringLiteral("Picker/pinned")).toString();
   m_pinnedForPicker.clear();
   if (!pinnedRaw.isEmpty()) {
-    const QStringList parts = pinnedRaw.split(QLatin1Char(','),
-                                              Qt::SkipEmptyParts);
+    const QStringList parts =
+        pinnedRaw.split(QLatin1Char(','), Qt::SkipEmptyParts);
     for (const QString &name : parts) {
       if (m_presets.contains(name) && !m_pinnedForPicker.contains(name))
         m_pinnedForPicker.append(name);
@@ -181,11 +180,10 @@ void TouchPresetManager::load() {
                       ? TouchPresetPickerStyle::Ghost
                       : TouchPresetPickerStyle::Classic;
 
-  m_pickerSizePercent =
-      qBound(75, s.value(QStringLiteral("Picker/sizePercent"), 150).toInt(), 150);
-  m_pickerOpacityPercent =
-      qBound(25, s.value(QStringLiteral("Picker/opacityPercent"), 100).toInt(),
-             100);
+  m_pickerSizePercent = qBound(
+      75, s.value(QStringLiteral("Picker/sizePercent"), 150).toInt(), 150);
+  m_pickerOpacityPercent = qBound(
+      25, s.value(QStringLiteral("Picker/opacityPercent"), 100).toInt(), 100);
 
   const QString themeStr =
       s.value(QStringLiteral("Picker/theme"), QStringLiteral("opentoonz"))
@@ -202,11 +200,10 @@ void TouchPresetManager::load() {
   m_pickerShowOnlyPinned =
       s.value(QStringLiteral("Picker/showOnlyPinned"), false).toBool();
 
-  m_viewerHudEnabled =
-      s.value(QStringLiteral("Hud/enabled"), true).toBool();
+  m_viewerHudEnabled = s.value(QStringLiteral("Hud/enabled"), true).toBool();
   m_viewerHudStyle =
-      s.value(QStringLiteral("Hud/style"), QStringLiteral("frost")).toString() ==
-              QLatin1String("gray")
+      s.value(QStringLiteral("Hud/style"), QStringLiteral("frost"))
+                  .toString() == QLatin1String("gray")
           ? TouchViewerHudStyle::Gray
           : TouchViewerHudStyle::Frost;
 
@@ -245,11 +242,12 @@ void TouchPresetManager::save() {
     const QString key = familyRecognitionKey(family);
     if (key.isEmpty()) continue;
     s.setValue(key, m_familyRecognition.value(
-                         family, defaultFamilyRecognitionEnabled(family)));
+                        family, defaultFamilyRecognitionEnabled(family)));
   }
   s.endGroup();
   s.beginGroup(QStringLiteral("Picker"));
-  s.setValue(QStringLiteral("pinned"), m_pinnedForPicker.join(QLatin1Char(',')));
+  s.setValue(QStringLiteral("pinned"),
+             m_pinnedForPicker.join(QLatin1Char(',')));
   QString layoutKey = QStringLiteral("horizontal");
   if (m_pickerLayout == TouchPresetPickerLayout::Vertical)
     layoutKey = QStringLiteral("vertical");
@@ -404,9 +402,7 @@ void TouchPresetManager::notifyActivePresetChanged() {
   m_activeListener.callback(m_active);
 }
 
-QStringList TouchPresetManager::presetNames() const {
-  return m_presets.keys();
-}
+QStringList TouchPresetManager::presetNames() const { return m_presets.keys(); }
 
 bool TouchPresetManager::hasPreset(const QString &name) const {
   return m_presets.contains(name);
@@ -419,7 +415,8 @@ void TouchPresetManager::createPreset(const QString &name) {
   TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 }
 
-void TouchPresetManager::duplicatePreset(const QString &from, const QString &to) {
+void TouchPresetManager::duplicatePreset(const QString &from,
+                                         const QString &to) {
   if (to.isEmpty() || !m_presets.contains(from) || m_presets.contains(to))
     return;
   m_presets[to] = m_presets.value(from);
@@ -513,7 +510,9 @@ bool TouchPresetManager::setPinnedForPicker(const QString &name, bool pinned) {
   return true;
 }
 
-int TouchPresetManager::maxPinnedPresetsForPicker() { return kMaxPinnedForPicker; }
+int TouchPresetManager::maxPinnedPresetsForPicker() {
+  return kMaxPinnedForPicker;
+}
 
 TouchPresetPickerLayout TouchPresetManager::pickerLayout() const {
   return m_pickerLayout;

@@ -45,8 +45,8 @@
 namespace {
 
 // Persist gesture tree UI like Configure Shortcuts (.env).
-TEnv::StringVar TouchPresetPopupExpandedFolders("TouchPresetPopupExpandedFolders",
-                                                  "");
+TEnv::StringVar TouchPresetPopupExpandedFolders(
+    "TouchPresetPopupExpandedFolders", "");
 TEnv::IntVar TouchPresetPopupExpandedStateSaved(
     "TouchPresetPopupExpandedStateSaved", 0);
 
@@ -63,7 +63,6 @@ void saveExpandedGestureFoldersToEnv(const QStringList &expandedFolders) {
   TouchPresetPopupExpandedFolders =
       expandedFolders.join(kGestureFolderListSeparator).toStdString();
 }
-
 
 QPointer<TouchPresetPopup> s_touchPresetPopup;
 
@@ -82,8 +81,7 @@ QString commandLabel(const QString &id) {
   if (id.isEmpty()) return QObject::tr("(none)");
   if (QAction *a =
           CommandManager::instance()->getAction(id.toStdString().c_str())) {
-    const QString label =
-        a->iconText().isEmpty() ? a->text() : a->iconText();
+    const QString label = a->iconText().isEmpty() ? a->text() : a->iconText();
     return stripAccel(label);
   }
   return id;
@@ -102,8 +100,7 @@ constexpr int kTouchPresetMinimumWidth  = 720;
 constexpr int kTouchPresetMinimumHeight = 440;
 
 bool touchPresetDialogHasSavedGeometry() {
-  TFilePath savePath =
-      ToonzFolder::getMyModuleDir() + TFilePath("popups.ini");
+  TFilePath savePath = ToonzFolder::getMyModuleDir() + TFilePath("popups.ini");
   QSettings settings(QString::fromStdWString(savePath.getWideString()),
                      QSettings::IniFormat);
   const QString geo =
@@ -123,12 +120,11 @@ TouchPresetPopup::TouchPresetPopup()
   setWindowTitle(tr("Touch Preset Manager"));
 
   m_presetCombo = new QComboBox(this);
-  m_useBtn = new QPushButton(tr("Use"), this);
+  m_useBtn      = new QPushButton(tr("Use"), this);
   m_useBtn->setIcon(createQIcon("touch_preset_use"));
   avoidIconFocusStuck(m_useBtn);
   m_useBtn->setContextMenuPolicy(Qt::CustomContextMenu);
-  m_autoUsePresetAction =
-      new QAction(tr("Auto Use on selection"), this);
+  m_autoUsePresetAction = new QAction(tr("Auto Use on selection"), this);
   m_autoUsePresetAction->setCheckable(true);
   connect(m_autoUsePresetAction, &QAction::toggled, this,
           &TouchPresetPopup::onAutoUsePresetToggled);
@@ -179,8 +175,7 @@ TouchPresetPopup::TouchPresetPopup()
   m_optionsBtn->setFocusPolicy(Qt::NoFocus);
   buildOptionsMenu();
   m_optionsBtn->setMenu(m_optionsMenu);
-  m_noSearchLabel =
-      new QLabel(tr("Couldn't find any matching command."), this);
+  m_noSearchLabel = new QLabel(tr("Couldn't find any matching command."), this);
   m_noSearchLabel->setHidden(true);
 
   m_tree = new QTreeWidget(this);
@@ -205,7 +200,7 @@ TouchPresetPopup::TouchPresetPopup()
 
   m_selectedName    = new QLabel(tr("No gesture selected"), this);
   m_selectedCommand = new QLabel(tr("(none)"), this);
-  m_assignBtn = new QPushButton(tr("Assign"), this);
+  m_assignBtn       = new QPushButton(tr("Assign"), this);
   m_assignBtn->setToolTip(tr("Assign the selected command to the gesture"));
   m_clearBtn = new QPushButton(tr("Clear"), this);
   m_clearBtn->setToolTip(tr("Clear the command assigned to the gesture"));
@@ -379,8 +374,7 @@ QStringList TouchPresetPopup::collectGestureTreeExpandedState() const {
   QStringList expandedFolders;
   for (int i = 0; i < m_tree->topLevelItemCount(); ++i) {
     QTreeWidgetItem *folder = m_tree->topLevelItem(i);
-    if (folder && folder->isExpanded())
-      expandedFolders.append(folder->text(0));
+    if (folder && folder->isExpanded()) expandedFolders.append(folder->text(0));
   }
   return expandedFolders;
 }
@@ -409,7 +403,8 @@ void TouchPresetPopup::saveGestureTreeExpandedState() {
 
 void TouchPresetPopup::restoreGestureTreeExpandedState() {
   const bool hasSavedState = TouchPresetPopupExpandedStateSaved != 0;
-  applyGestureTreeExpandedState(expandedGestureFoldersFromEnv(), !hasSavedState);
+  applyGestureTreeExpandedState(expandedGestureFoldersFromEnv(),
+                                !hasSavedState);
 }
 
 void TouchPresetPopup::syncToActivePreset() {
@@ -455,8 +450,7 @@ void TouchPresetPopup::rebuildPresetCombo() {
 
 QString TouchPresetPopup::currentPreset() const {
   const QString name = m_presetCombo->currentData().toString();
-  if (!name.isEmpty() &&
-      TouchPresetManager::instance()->hasPreset(name))
+  if (!name.isEmpty() && TouchPresetManager::instance()->hasPreset(name))
     return name;
   return TouchPresetManager::instance()->activePreset();
 }
@@ -509,9 +503,9 @@ void TouchPresetPopup::applyFamilyRecognitionRow(QTreeWidgetItem *group,
     flags |= Qt::ItemIsUserCheckable;
     group->setCheckState(0, enabled ? Qt::Checked : Qt::Unchecked);
     group->setText(1, enabled ? tr("Recognized") : tr("Not recognized"));
-    const QString tip =
-        enabled ? tr("Use this gesture family in OpenToonz.")
-                : tr("Ignore this gesture family in OpenToonz.");
+    const QString tip = enabled
+                            ? tr("Use this gesture family in OpenToonz.")
+                            : tr("Ignore this gesture family in OpenToonz.");
     group->setToolTip(0, tip);
     group->setToolTip(1, tip);
     if (mgr->showFamilyRecognitionColors()) {
@@ -550,8 +544,8 @@ void TouchPresetPopup::setSelectedSlot(TouchSlot slot) {
 }
 
 void TouchPresetPopup::refreshSelectionBar() {
-  const bool has = m_selectedSlot != TouchSlot_None &&
-                   !touchSlotIsReserved(m_selectedSlot);
+  const bool has =
+      m_selectedSlot != TouchSlot_None && !touchSlotIsReserved(m_selectedSlot);
   if (!has) {
     m_selectedName->setText(tr("No gesture selected"));
     m_selectedCommand->setText(tr("(none)"));
@@ -560,9 +554,9 @@ void TouchPresetPopup::refreshSelectionBar() {
     return;
   }
   m_selectedName->setText(touchSlotLabel(m_selectedSlot));
-  m_selectedCommand->setText(commandLabel(
-      TouchPresetManager::instance()->commandId(currentPreset(),
-                                                m_selectedSlot)));
+  m_selectedCommand->setText(
+      commandLabel(TouchPresetManager::instance()->commandId(currentPreset(),
+                                                             m_selectedSlot)));
   m_assignBtn->setEnabled(m_chosenAction != nullptr);
   m_clearBtn->setEnabled(true);
 }
@@ -649,17 +643,17 @@ void TouchPresetPopup::refreshUseButton() {
            "Right-click to change."));
     m_useBtn->setStyleSheet(QStringLiteral("font-weight: bold;"));
   } else {
-    m_useBtn->setToolTip(
-        tr("Use selected preset for touch gestures. Right-click for Auto Use."));
+    m_useBtn->setToolTip(tr(
+        "Use selected preset for touch gestures. Right-click for Auto Use."));
     m_useBtn->setStyleSheet(QString());
   }
 }
 
 void TouchPresetPopup::onNewPreset() {
-  bool ok            = false;
-  const QString name = QInputDialog::getText(
-      this, tr("New Touch Preset"), tr("Name:"), QLineEdit::Normal, QString(),
-      &ok);
+  bool ok = false;
+  const QString name =
+      QInputDialog::getText(this, tr("New Touch Preset"), tr("Name:"),
+                            QLineEdit::Normal, QString(), &ok);
   if (!ok || name.trimmed().isEmpty()) return;
   TouchPresetManager::instance()->createPreset(name.trimmed());
   rebuildPresetCombo();
@@ -672,9 +666,9 @@ void TouchPresetPopup::onNewPreset() {
 void TouchPresetPopup::onDuplicatePreset() {
   const QString from = currentPreset();
   bool ok            = false;
-  const QString name = QInputDialog::getText(
-      this, tr("Duplicate Touch Preset"), tr("Name:"), QLineEdit::Normal,
-      from + tr(" copy"), &ok);
+  const QString name =
+      QInputDialog::getText(this, tr("Duplicate Touch Preset"), tr("Name:"),
+                            QLineEdit::Normal, from + tr(" copy"), &ok);
   if (!ok || name.trimmed().isEmpty()) return;
   const QString trimmed = name.trimmed();
   TouchPresetManager::instance()->duplicatePreset(from, trimmed);
@@ -688,9 +682,9 @@ void TouchPresetPopup::onDuplicatePreset() {
 void TouchPresetPopup::onRenamePreset() {
   const QString from = currentPreset();
   bool ok            = false;
-  const QString name = QInputDialog::getText(
-      this, tr("Rename Touch Preset"), tr("Name:"), QLineEdit::Normal, from,
-      &ok);
+  const QString name =
+      QInputDialog::getText(this, tr("Rename Touch Preset"), tr("Name:"),
+                            QLineEdit::Normal, from, &ok);
   if (!ok || name.trimmed().isEmpty()) return;
   if (TouchPresetManager::instance()->renamePreset(from, name.trimmed()))
     rebuildPresetCombo();
@@ -719,22 +713,21 @@ void TouchPresetPopup::onLoadPreset() {
   TouchPresetManager *mgr = TouchPresetManager::instance();
   QSettings probe(toQString(path), QSettings::IniFormat);
   QString presetName = probe.value(QStringLiteral("General/preset")).toString();
-  if (presetName.isEmpty())
-    presetName = path.withoutParentDir().getQString();
+  if (presetName.isEmpty()) presetName = path.withoutParentDir().getQString();
   presetName = QFileInfo(presetName).completeBaseName();
 
   bool replace = false;
   if (mgr->hasPreset(presetName)) {
     const QString question =
-        tr("Replace the existing preset \"%1\" with this file?").arg(presetName);
+        tr("Replace the existing preset \"%1\" with this file?")
+            .arg(presetName);
     const int ret =
         DVGui::MsgBox(question, QObject::tr("Yes"), QObject::tr("No"), 0);
     if (ret == 0 || ret == 2) return;
     replace = true;
   }
 
-  const QString imported =
-      mgr->importPresetFromFile(toQString(path), replace);
+  const QString imported = mgr->importPresetFromFile(toQString(path), replace);
   if (imported.isEmpty()) {
     DVGui::MsgBox(DVGui::CRITICAL,
                   tr("Could not load touch preset from this file."));
@@ -753,7 +746,7 @@ void TouchPresetPopup::onLoadPreset() {
 
 void TouchPresetPopup::onSavePreset() {
   TouchPresetManager *mgr = TouchPresetManager::instance();
-  const QString from     = currentPreset();
+  const QString from      = currentPreset();
   QString name =
       DVGui::getText(tr("Enter Preset Name"), tr("Preset Name:"), from);
   if (name.isEmpty()) return;
@@ -785,10 +778,10 @@ void TouchPresetPopup::onSavePreset() {
 
 void TouchPresetPopup::onExportPreset() {
   TouchPresetManager *mgr = TouchPresetManager::instance();
-  const QString preset  = currentPreset();
-  QString qs = QFileDialog::getSaveFileName(
-      this, tr("Export Current Touch Preset"), preset + QStringLiteral(".ini"),
-      tr("Touch preset files (*.ini);;All files (*.*)"));
+  const QString preset    = currentPreset();
+  QString qs              = QFileDialog::getSaveFileName(
+                   this, tr("Export Current Touch Preset"), preset + QStringLiteral(".ini"),
+                   tr("Touch preset files (*.ini);;All files (*.*)"));
   if (qs.isEmpty()) return;
   if (!qs.endsWith(QStringLiteral(".ini"), Qt::CaseInsensitive))
     qs += QStringLiteral(".ini");
@@ -826,11 +819,10 @@ void TouchPresetPopup::onClear() { assignCurrent(QString()); }
 
 void TouchPresetPopup::buildOptionsMenu() {
   m_optionsMenu->clear();
-  QAction *workspaceSettings = m_optionsMenu->addAction(
-      tr("Touch Workspace Settings..."));
-  connect(workspaceSettings, &QAction::triggered, this, []() {
-    TouchWorkspaceSettingsPopup::showPanel();
-  });
+  QAction *workspaceSettings =
+      m_optionsMenu->addAction(tr("Touch Workspace Settings..."));
+  connect(workspaceSettings, &QAction::triggered, this,
+          []() { TouchWorkspaceSettingsPopup::showPanel(); });
   m_optionsMenu->addSeparator();
 
   m_deferTapAction = m_optionsMenu->addAction(
@@ -852,8 +844,8 @@ void TouchPresetPopup::buildOptionsMenu() {
   m_showFamilyTogglesAction->setCheckable(true);
   connect(m_showFamilyTogglesAction, &QAction::toggled, this,
           &TouchPresetPopup::onShowFamilyTogglesToggled);
-  m_showFamilyColorsAction = m_optionsMenu->addAction(
-      tr("Show recognized status in color"));
+  m_showFamilyColorsAction =
+      m_optionsMenu->addAction(tr("Show recognized status in color"));
   m_showFamilyColorsAction->setCheckable(true);
   connect(m_showFamilyColorsAction, &QAction::toggled, this,
           &TouchPresetPopup::onShowFamilyColorsToggled);
@@ -920,7 +912,7 @@ void TouchPresetPopup::onTreeItemChanged(QTreeWidgetItem *item, int column) {
   if (!item->data(0, kFamilyItemRole).isValid()) return;
   const TouchSlotFamily family =
       (TouchSlotFamily)item->data(0, kFamilyItemRole).toInt();
-  const bool enabled = item->checkState(0) == Qt::Checked;
+  const bool enabled      = item->checkState(0) == Qt::Checked;
   TouchPresetManager *mgr = TouchPresetManager::instance();
   if (mgr->isFamilyRecognitionEnabled(family) == enabled) return;
   mgr->setFamilyRecognitionEnabled(family, enabled);

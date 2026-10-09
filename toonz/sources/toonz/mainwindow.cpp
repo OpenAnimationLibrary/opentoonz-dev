@@ -3577,9 +3577,8 @@ void MainWindow::defineActions() {
                    "", TouchGestureControl ? 1 : 0, MiscCommandType, "touch");
   menuAct->setEnabled(true);
   ;
-  createAction(MI_TouchPresetPicker,
-               QT_TR_NOOP("Toggle Touch Preset Picker"), "", MiscCommandType,
-               "touch");
+  createAction(MI_TouchPresetPicker, QT_TR_NOOP("Toggle Touch Preset Picker"),
+               "", MiscCommandType, "touch");
   createMiscAction(MI_TouchWorkspaceSettings,
                    QT_TR_NOOP("Touch Workspace Settings"), "");
   createMiscAction(MI_CameraStage, QT_TR_NOOP("&Camera Settings..."), "");

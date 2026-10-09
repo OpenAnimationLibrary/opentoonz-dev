@@ -169,8 +169,8 @@ QString touchViewerHudFormatBrushHardness() {
 
 TouchViewerHud::TouchViewerHud(SceneViewer *viewer)
     : QWidget(viewer && viewer->parentWidget() ? viewer->parentWidget()
-                                               : static_cast<QWidget *>(viewer)),
-      m_viewer(viewer) {
+                                               : static_cast<QWidget *>(viewer))
+    , m_viewer(viewer) {
   setObjectName(QStringLiteral("TouchViewerHud"));
   setAttribute(Qt::WA_TransparentForMouseEvents);
   setAttribute(Qt::WA_TranslucentBackground);
@@ -212,10 +212,9 @@ void TouchViewerHud::positionAtTop() {
 }
 
 void TouchViewerHud::relayout() {
-  const HudLayout L =
-      makeHudLayout(font(), m_showSize, m_sizeText, m_showHardness,
-                    m_hardnessText, m_showFrame, m_prevFrame, m_currentFrame,
-                    m_nextFrame);
+  const HudLayout L = makeHudLayout(font(), m_showSize, m_sizeText,
+                                    m_showHardness, m_hardnessText, m_showFrame,
+                                    m_prevFrame, m_currentFrame, m_nextFrame);
   resize(L.boxW, L.boxH);
   positionAtTop();
 }
@@ -229,7 +228,8 @@ void TouchViewerHud::captureFrost() {
   const QImage fb = m_viewer->grabFramebuffer();
   if (fb.isNull() || fb.width() < 2 || fb.height() < 2) return;
 
-  QWidget *host = parentWidget() ? parentWidget() : static_cast<QWidget *>(m_viewer);
+  QWidget *host =
+      parentWidget() ? parentWidget() : static_cast<QWidget *>(m_viewer);
   const QPoint topLeft = m_viewer->mapFrom(host, pos());
   QRect src(topLeft, size());
   src = src.intersected(QRect(0, 0, m_viewer->width(), m_viewer->height()));
@@ -244,11 +244,9 @@ void TouchViewerHud::captureFrost() {
 
   const QImage slice = fb.copy(fbRect);
   const QSize tiny(qMax(1, slice.width() / 6), qMax(1, slice.height() / 6));
-  const QImage mist = slice
-                          .scaled(tiny, Qt::IgnoreAspectRatio,
-                                  Qt::SmoothTransformation)
-                          .scaled(size(), Qt::IgnoreAspectRatio,
-                                  Qt::SmoothTransformation);
+  const QImage mist =
+      slice.scaled(tiny, Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+          .scaled(size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
   m_frost = QPixmap::fromImage(mist);
 }
 
@@ -323,10 +321,9 @@ void TouchViewerHud::paintEvent(QPaintEvent *event) {
     return;
   }
 
-  const HudLayout L =
-      makeHudLayout(font(), m_showSize, m_sizeText, m_showHardness,
-                    m_hardnessText, m_showFrame, m_prevFrame, m_currentFrame,
-                    m_nextFrame);
+  const HudLayout L = makeHudLayout(font(), m_showSize, m_sizeText,
+                                    m_showHardness, m_hardnessText, m_showFrame,
+                                    m_prevFrame, m_currentFrame, m_nextFrame);
 
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing, true);
@@ -334,7 +331,7 @@ void TouchViewerHud::paintEvent(QPaintEvent *event) {
   p.setRenderHint(QPainter::SmoothPixmapTransform, true);
   p.setOpacity(m_opacity);
 
-  const QRectF box = QRectF(rect()).adjusted(0.5, 0.5, -1.5, -1.5);
+  const QRectF box   = QRectF(rect()).adjusted(0.5, 0.5, -1.5, -1.5);
   const qreal radius = qMin(box.height() * 0.5, 18.0);
   QPainterPath pill;
   pill.addRoundedRect(box, radius, radius);
@@ -343,8 +340,7 @@ void TouchViewerHud::paintEvent(QPaintEvent *event) {
                      TouchViewerHudStyle::Frost;
 
   p.setPen(Qt::NoPen);
-  const bool frostOnLight =
-      frost && frostLuminance(m_frost) >= 150;
+  const bool frostOnLight = frost && frostLuminance(m_frost) >= 150;
   if (frost) {
     p.setClipPath(pill);
     if (!m_frost.isNull()) p.drawPixmap(rect(), m_frost);

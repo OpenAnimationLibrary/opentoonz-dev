@@ -61,7 +61,8 @@ public:
 private:
   void rebuildPresetCombo();
   void rebuildTree();
-  void applyFamilyRecognitionRow(QTreeWidgetItem *group, TouchSlotFamily family);
+  void applyFamilyRecognitionRow(QTreeWidgetItem *group,
+                                 TouchSlotFamily family);
   void applyGestureTreeFilter(const QString &text);
   void setSelectedSlot(TouchSlot slot);
   void refreshSelectionBar();

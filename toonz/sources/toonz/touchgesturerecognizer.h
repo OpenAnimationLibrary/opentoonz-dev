@@ -15,21 +15,21 @@ class TouchGestureRecognizer final : public QObject {
   Q_OBJECT
 
   struct Session {
-    bool active         = false;
-    bool tablet         = false;
-    int startCount      = 0;
-    int maxCount        = 0;
+    bool active    = false;
+    bool tablet    = false;
+    int startCount = 0;
+    int maxCount   = 0;
     QPointF startCentroid;
     QPointF lastCentroid;
     QPointF swipeAnchor;
-    double startSpan    = 0.0;
-    qint64 startMs      = 0;
-    bool holdFired      = false;
-    bool swipeArmed     = false;
-    bool pinchFired     = false;
-    bool reservedBusy   = false;
-    int edge            = 0;
-    int liveCount       = 0;
+    double startSpan  = 0.0;
+    qint64 startMs    = 0;
+    bool holdFired    = false;
+    bool swipeArmed   = false;
+    bool pinchFired   = false;
+    bool reservedBusy = false;
+    int edge          = 0;
+    int liveCount     = 0;
     QSize widgetSize;
     QPointF fingerStart0;
     QPointF fingerStart1;
@@ -38,9 +38,9 @@ class TouchGestureRecognizer final : public QObject {
 
   QTimer m_holdTimer;
   QTimer m_tapTimer;
-  TouchSlot m_pendingTap      = TouchSlot_None;
-  TouchSlot m_lastTap         = TouchSlot_None;
-  qint64 m_lastTapMs          = 0;
+  TouchSlot m_pendingTap = TouchSlot_None;
+  TouchSlot m_lastTap    = TouchSlot_None;
+  qint64 m_lastTapMs     = 0;
   QPointF m_lastTapPos;
   QPointF m_lastSlotCentroid;
 

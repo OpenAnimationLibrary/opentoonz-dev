@@ -39,11 +39,11 @@ void reloadShortcutsForCommands(const QSet<QString> &commandIds) {
   QSettings settings(toQString(shortcutsFile), QSettings::IniFormat);
   settings.beginGroup(QStringLiteral("shortcuts"));
   for (const QString &commandId : commandIds) {
-    const QString savedShortcut = settings.value(commandId, QString()).toString();
+    const QString savedShortcut =
+        settings.value(commandId, QString()).toString();
     if (savedShortcut.isEmpty()) continue;
-    QAction *action =
-        CommandManager::instance()->getAction(commandId.toStdString().c_str(),
-                                                false);
+    QAction *action = CommandManager::instance()->getAction(
+        commandId.toStdString().c_str(), false);
     if (action) action->setShortcut(QKeySequence(savedShortcut));
   }
   settings.endGroup();
@@ -118,8 +118,7 @@ void TouchPresetCommandManager::registerTouchPresetCommands() {
                                        TouchPresetCommandType, "", action,
                                        "touch");
     CommandManager::instance()->setHandler(
-        commandId.toStdString().c_str(),
-        new TouchPresetActivateHandler(name));
+        commandId.toStdString().c_str(), new TouchPresetActivateHandler(name));
   }
 
   const QSet<QString> obsolete = m_registeredIds - current;
@@ -140,8 +139,8 @@ void TouchPresetCommandManager::updateCheckedStates() {
   const QString active    = mgr->activePreset();
   for (const QString &name : mgr->presetNames()) {
     const QString commandId = commandIdForPreset(name);
-    QAction *action       = CommandManager::instance()->getAction(
-        commandId.toStdString().c_str(), false);
+    QAction *action         = CommandManager::instance()->getAction(
+                commandId.toStdString().c_str(), false);
     if (action) action->setChecked(name == active);
   }
 }

@@ -16,13 +16,13 @@ class TouchPresetPickerPanel final : public QWidget {
 
   SceneViewer *m_viewer;
   QPointF m_anchor;
-  int m_pageStart = 0;
-  int m_wheelDiam     = 88;
-  int m_wheelRing     = 62;
-  int m_wheelDead     = 24;
-  int m_stripW        = 132;
-  int m_stripH        = 34;
-  int m_edgeCircle    = 26;
+  int m_pageStart            = 0;
+  int m_wheelDiam            = 88;
+  int m_wheelRing            = 62;
+  int m_wheelDead            = 24;
+  int m_stripW               = 132;
+  int m_stripH               = 34;
+  int m_edgeCircle           = 26;
   qint64 m_blockInputUntilMs = 0;
   QPoint m_touchStartLocal;
   bool m_touchActive          = false;

@@ -95,15 +95,15 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_rotating                        = false;
   bool m_zooming                         = false;
   bool m_panning                         = false;
-  bool m_touchSuppressToolInput          = false;
-  bool m_touchSuppressedPointerDown      = false;
-  bool m_touchToolInputLockedUntilEnd    = false;
-  bool m_touchAwaitFreshContact          = false;
-  bool m_touchContextMenuArmed           = false;
-  int m_touchPeakLiveCount               = 0;
-  TouchGestureRecognizer *m_touchRecognizer = nullptr;
+  bool m_touchSuppressToolInput               = false;
+  bool m_touchSuppressedPointerDown           = false;
+  bool m_touchToolInputLockedUntilEnd         = false;
+  bool m_touchAwaitFreshContact               = false;
+  bool m_touchContextMenuArmed                = false;
+  int m_touchPeakLiveCount                    = 0;
+  TouchGestureRecognizer *m_touchRecognizer   = nullptr;
   TouchPresetPickerPanel *m_touchPresetPicker = nullptr;
-  TouchViewerHud *m_touchViewerHud = nullptr;
+  TouchViewerHud *m_touchViewerHud            = nullptr;
 
   void initTouchViewerHud();
   void updateTouchViewerHudFrame();
@@ -118,7 +118,7 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_dragging;
   int m_mouseScrubbing = 0;
   QAction *m_keyAction = nullptr;
-  bool m_touchScrubActive = false;
+  bool m_touchScrubActive   = false;
   bool m_touchScrubPosValid = false;
   QPointF m_touchScrubLastPos;
 

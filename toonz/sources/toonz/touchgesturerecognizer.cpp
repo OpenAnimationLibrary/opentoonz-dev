@@ -11,17 +11,17 @@
 
 namespace {
 
-const int kHoldMs          = 500;
-const int kDoubleTapMinMs  = 45;
-const int kDoubleTapMaxMs  = 190;
-const double kDoubleTapSlop = 26.0;
-const double kTapSlop      = 40.0;
+const int kHoldMs               = 500;
+const int kDoubleTapMinMs       = 45;
+const int kDoubleTapMaxMs       = 190;
+const double kDoubleTapSlop     = 26.0;
+const double kTapSlop           = 40.0;
 const double kSwipePx           = 100.0;
 const double kHorizSwipePx      = 120.0;
 const double kPinchRatio        = 0.18;
 const double kHorizMaxSpanDelta = 0.10;
 const int kTwoFingerHorizArmMs  = 90;
-const double kEdgeBand   = 36.0;
+const double kEdgeBand          = 36.0;
 
 QList<QTouchEvent::TouchPoint> livePoints(const QTouchEvent *e) {
   QList<QTouchEvent::TouchPoint> live;
@@ -124,19 +124,23 @@ TouchSlot holdSlot(int n) {
 TouchSlot swipeSlot(int n, const QPointF &delta) {
   const bool horiz = std::abs(delta.x()) >= std::abs(delta.y());
   if (n == 2) {
-    if (horiz) return delta.x() < 0 ? TouchSlot_Swipe2Left : TouchSlot_Swipe2Right;
+    if (horiz)
+      return delta.x() < 0 ? TouchSlot_Swipe2Left : TouchSlot_Swipe2Right;
     return delta.y() < 0 ? TouchSlot_Swipe2Up : TouchSlot_Swipe2Down;
   }
   if (n == 3) {
-    if (horiz) return delta.x() < 0 ? TouchSlot_Swipe3Left : TouchSlot_Swipe3Right;
+    if (horiz)
+      return delta.x() < 0 ? TouchSlot_Swipe3Left : TouchSlot_Swipe3Right;
     return delta.y() < 0 ? TouchSlot_Swipe3Up : TouchSlot_Swipe3Down;
   }
   if (n == 4) {
-    if (horiz) return delta.x() < 0 ? TouchSlot_Swipe4Left : TouchSlot_Swipe4Right;
+    if (horiz)
+      return delta.x() < 0 ? TouchSlot_Swipe4Left : TouchSlot_Swipe4Right;
     return delta.y() < 0 ? TouchSlot_Swipe4Up : TouchSlot_Swipe4Down;
   }
   if (n == 5) {
-    if (horiz) return delta.x() < 0 ? TouchSlot_Swipe5Left : TouchSlot_Swipe5Right;
+    if (horiz)
+      return delta.x() < 0 ? TouchSlot_Swipe5Left : TouchSlot_Swipe5Right;
     return delta.y() < 0 ? TouchSlot_Swipe5Up : TouchSlot_Swipe5Down;
   }
   return TouchSlot_None;
@@ -266,7 +270,8 @@ void TouchGestureRecognizer::update(const QTouchEvent *e, bool reservedBusy) {
     m_session.startSpan     = spanOf(pts);
     m_session.startMs       = QDateTime::currentMSecsSinceEpoch();
     if (n >= 3)
-      m_session.edge = nearestEdge(m_session.startCentroid, m_session.widgetSize);
+      m_session.edge =
+          nearestEdge(m_session.startCentroid, m_session.widgetSize);
     m_holdTimer.stop();
     m_holdTimer.start(kHoldMs);
     if (n >= 2) storeTwoFingerStarts(pts);
@@ -311,8 +316,7 @@ void TouchGestureRecognizer::considerSwipeOrPinch(
 
     const QPointF fromAnchor = centroid - m_session.swipeAnchor;
     const double segLen      = QLineF(QPointF(), fromAnchor).length();
-    const bool horizSeg =
-        std::abs(fromAnchor.x()) >= std::abs(fromAnchor.y());
+    const bool horizSeg = std::abs(fromAnchor.x()) >= std::abs(fromAnchor.y());
 
     if (horizSeg) {
       if (segLen < kHorizSwipePx) return;
@@ -343,11 +347,10 @@ void TouchGestureRecognizer::considerSwipeOrPinch(
   if (m_session.pinchFired) return;
 
   if (m_session.edge && n == 3 && moved >= kSwipePx) {
-    const bool inward =
-        (m_session.edge == 1 && fromStart.x() > 0) ||
-        (m_session.edge == 2 && fromStart.x() < 0) ||
-        (m_session.edge == 3 && fromStart.y() > 0) ||
-        (m_session.edge == 4 && fromStart.y() < 0);
+    const bool inward = (m_session.edge == 1 && fromStart.x() > 0) ||
+                        (m_session.edge == 2 && fromStart.x() < 0) ||
+                        (m_session.edge == 3 && fromStart.y() > 0) ||
+                        (m_session.edge == 4 && fromStart.y() < 0);
     if (inward && !m_session.swipeArmed) {
       m_session.swipeArmed = true;
       emitSlot(edgeSlot(m_session.edge), false);
@@ -430,7 +433,7 @@ void TouchGestureRecognizer::classifyRelease() {
 void TouchGestureRecognizer::onTapTimeout() {
   if (m_pendingTap == TouchSlot_None) return;
   const TouchSlot tap = m_pendingTap;
-  m_pendingTap          = TouchSlot_None;
+  m_pendingTap        = TouchSlot_None;
   emitSlot(tap, false);
 }
 

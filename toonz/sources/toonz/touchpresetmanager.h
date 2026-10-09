@@ -36,13 +36,13 @@ class TouchPresetManager {
   QStringList m_pinnedForPicker;
   TouchPresetPickerLayout m_pickerLayout = TouchPresetPickerLayout::Wheel;
   TouchPresetPickerStyle m_pickerStyle   = TouchPresetPickerStyle::Classic;
-  int m_pickerSizePercent    = 150;
-  int m_pickerOpacityPercent = 100;
-  TouchPresetPickerTheme m_pickerTheme = TouchPresetPickerTheme::OpenToonz;
-  bool m_pickerShowOnlyPinned = false;
-  bool m_viewerHudEnabled = true;
-  TouchViewerHudStyle m_viewerHudStyle = TouchViewerHudStyle::Frost;
-  bool m_loaded = false;
+  int m_pickerSizePercent                = 150;
+  int m_pickerOpacityPercent             = 100;
+  TouchPresetPickerTheme m_pickerTheme   = TouchPresetPickerTheme::OpenToonz;
+  bool m_pickerShowOnlyPinned            = false;
+  bool m_viewerHudEnabled                = true;
+  TouchViewerHudStyle m_viewerHudStyle   = TouchViewerHudStyle::Frost;
+  bool m_loaded                          = false;
 
   struct ActivePresetListener {
     QPointer<QObject> owner;

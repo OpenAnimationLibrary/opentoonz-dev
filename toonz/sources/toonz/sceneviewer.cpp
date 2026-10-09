@@ -2001,9 +2001,8 @@ bool SceneViewer::isImmersiveForTouchViewerHud() const {
     if (dock && dock->isMaximized()) return true;
   }
   QWidget *top = window();
-  return top &&
-         (top->isFullScreen() ||
-          (top->windowState() & Qt::WindowFullScreen) != 0);
+  return top && (top->isFullScreen() ||
+                 (top->windowState() & Qt::WindowFullScreen) != 0);
 }
 
 void SceneViewer::syncTouchViewerHudFromSettings() {
@@ -2048,10 +2047,9 @@ void SceneViewer::onTouchViewerHudAfterCommand(const QString &commandId) {
     updateTouchViewerHudFrame();
     return;
   }
-  static const char *kSizeIds[] = {"A_IncreaseMaxBrushThickness",
-                                   "A_DecreaseMaxBrushThickness",
-                                   "A_IncreaseMinBrushThickness",
-                                   "A_DecreaseMinBrushThickness"};
+  static const char *kSizeIds[] = {
+      "A_IncreaseMaxBrushThickness", "A_DecreaseMaxBrushThickness",
+      "A_IncreaseMinBrushThickness", "A_DecreaseMinBrushThickness"};
   for (const char *id : kSizeIds) {
     if (commandId != QLatin1String(id)) continue;
     QMetaObject::invokeMethod(

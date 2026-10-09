@@ -141,7 +141,7 @@ CommandListTree::CommandListTree(const QString& dropTargetString,
             toolModifiersFolder);
   addFolder(ShortcutTree::tr("Visualization"), VisualizationButtonCommandType,
             advancedFolder);
-  QTreeWidgetItem *miscFolder =
+  QTreeWidgetItem* miscFolder =
       addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
   addFolder(ShortcutTree::tr("Touch Presets"), TouchPresetCommandType,
             miscFolder);
@@ -226,7 +226,7 @@ void CommandListTree::refreshTree() {
             toolModifiersFolder);
   addFolder(ShortcutTree::tr("Visualization"), VisualizationButtonCommandType,
             advancedFolder);
-  QTreeWidgetItem *miscFolderRefresh =
+  QTreeWidgetItem* miscFolderRefresh =
       addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
   addFolder(ShortcutTree::tr("Touch Presets"), TouchPresetCommandType,
             miscFolderRefresh);

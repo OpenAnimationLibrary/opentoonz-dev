@@ -82,8 +82,7 @@ const char *touchSlotId(TouchSlot slot) {
 }
 
 QString touchSlotLabel(TouchSlot slot) {
-  if (const SlotInfo *info = findInfo(slot))
-    return QObject::tr(info->label);
+  if (const SlotInfo *info = findInfo(slot)) return QObject::tr(info->label);
   return QString();
 }
 
@@ -279,9 +278,9 @@ QString touchSlotFamilyLabel(TouchSlotFamily family) {
 }
 
 QList<TouchSlotFamily> assignableTouchFamilies() {
-  return {TouchSlotFamily_Tap,       TouchSlotFamily_DoubleTap,
-          TouchSlotFamily_Hold,      TouchSlotFamily_Swipe,
-          TouchSlotFamily_Pinch,     TouchSlotFamily_Edge,
+  return {TouchSlotFamily_Tap,   TouchSlotFamily_DoubleTap,
+          TouchSlotFamily_Hold,  TouchSlotFamily_Swipe,
+          TouchSlotFamily_Pinch, TouchSlotFamily_Edge,
           TouchSlotFamily_Stylus};
 }
 

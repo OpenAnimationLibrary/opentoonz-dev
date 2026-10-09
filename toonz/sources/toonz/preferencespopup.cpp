@@ -1515,8 +1515,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {touchDeferTapForDoubleTap,
        tr("Defer simple tap when a double tap is assigned on the same finger "
           "count")},
-      {touchSuppressViewerContextMenu,
-       tr("Hide context menu on touch hold")}};
+      {touchSuppressViewerContextMenu, tr("Hide context menu on touch hold")}};
 
   return uiStringTable.value(id, QString());
 }
@@ -2734,12 +2733,10 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
           &QAction::setChecked);
   connect(touchAction, &QAction::triggered, enableTouchGestures,
           &CheckBox::setChecked);
-  connect(touchWorkspaceSettings, &QPushButton::clicked, this, []() {
-    TouchWorkspaceSettingsPopup::showPanel();
-  });
-  connect(configureTouchPresets, &QPushButton::clicked, this, []() {
-    CommandManager::instance()->execute(MI_TouchPresetManager);
-  });
+  connect(touchWorkspaceSettings, &QPushButton::clicked, this,
+          []() { TouchWorkspaceSettingsPopup::showPanel(); });
+  connect(configureTouchPresets, &QPushButton::clicked, this,
+          []() { CommandManager::instance()->execute(MI_TouchPresetManager); });
 
   return widget;
 }

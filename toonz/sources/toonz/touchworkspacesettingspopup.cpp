@@ -68,8 +68,8 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   pickerLay->setSpacing(10);
   pickerLay->addSpacing(6);
 
-  auto *layoutLabel = new QLabel(tr("Layout:"), this);
-  auto *lookLabel   = new QLabel(tr("Look:"), this);
+  auto *layoutLabel  = new QLabel(tr("Layout:"), this);
+  auto *lookLabel    = new QLabel(tr("Look:"), this);
   m_layoutHorizontal = new QRadioButton(tr("Horizontal list"), this);
   m_layoutVertical   = new QRadioButton(tr("Vertical list"), this);
   m_layoutWheel      = new QRadioButton(tr("Wheel"), this);
@@ -84,8 +84,8 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   layoutRadios->addWidget(m_layoutWheel);
   layoutRadios->addStretch(1);
 
-  m_styleClassic = new QRadioButton(tr("Style A"), this);
-  m_styleGhost   = new QRadioButton(tr("Style B"), this);
+  m_styleClassic   = new QRadioButton(tr("Style A"), this);
+  m_styleGhost     = new QRadioButton(tr("Style B"), this);
   auto *styleGroup = new QButtonGroup(this);
   styleGroup->addButton(m_styleClassic);
   styleGroup->addButton(m_styleGhost);
@@ -97,7 +97,8 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
 
   auto *layoutLookGrid = new QGridLayout();
   layoutLookGrid->setContentsMargins(0, 0, 0, 0);
-  layoutLookGrid->addWidget(layoutLabel, 0, 0, Qt::AlignLeft | Qt::AlignVCenter);
+  layoutLookGrid->addWidget(layoutLabel, 0, 0,
+                            Qt::AlignLeft | Qt::AlignVCenter);
   layoutLookGrid->addLayout(layoutRadios, 0, 1);
   layoutLookGrid->addWidget(lookLabel, 1, 0, Qt::AlignLeft | Qt::AlignVCenter);
   layoutLookGrid->addLayout(styleRadios, 1, 1);
@@ -118,32 +119,29 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   auto *themeBlock = new QVBoxLayout();
   themeBlock->setContentsMargins(0, 0, 0, 0);
   themeBlock->setSpacing(3);
-  auto *themeHeading = new QLabel(tr("Color theme:"), this);
+  auto *themeHeading     = new QLabel(tr("Color theme:"), this);
   QFont themeHeadingFont = themeHeading->font();
   themeHeadingFont.setBold(true);
   themeHeading->setFont(themeHeadingFont);
   themeBlock->addWidget(themeHeading);
   m_themeCombo = new QComboBox(this);
-  m_themeCombo->addItem(
-      tr("OpenToonz"),
-      static_cast<int>(TouchPresetPickerTheme::OpenToonz));
+  m_themeCombo->addItem(tr("OpenToonz"),
+                        static_cast<int>(TouchPresetPickerTheme::OpenToonz));
   m_themeCombo->addItem(tr("Hologram"),
                         static_cast<int>(TouchPresetPickerTheme::HologramCyan));
-  m_themeCombo->addItem(
-      tr("White & green"),
-      static_cast<int>(TouchPresetPickerTheme::WhiteGreen));
-  m_themeCombo->addItem(
-      tr("Cream & sage"),
-      static_cast<int>(TouchPresetPickerTheme::CreamSage));
+  m_themeCombo->addItem(tr("White & green"),
+                        static_cast<int>(TouchPresetPickerTheme::WhiteGreen));
+  m_themeCombo->addItem(tr("Cream & sage"),
+                        static_cast<int>(TouchPresetPickerTheme::CreamSage));
   themeBlock->addWidget(m_themeCombo);
   pickerLay->addLayout(themeBlock);
-  connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-          &TouchWorkspaceSettingsPopup::onThemeChanged);
+  connect(m_themeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, &TouchWorkspaceSettingsPopup::onThemeChanged);
 
   auto *sizeBlock = new QVBoxLayout();
   sizeBlock->setContentsMargins(0, 0, 0, 0);
   sizeBlock->setSpacing(2);
-  auto *sizeHeading = new QLabel(tr("Size:"), this);
+  auto *sizeHeading     = new QLabel(tr("Size:"), this);
   QFont sizeHeadingFont = sizeHeading->font();
   sizeHeadingFont.setBold(true);
   sizeHeading->setFont(sizeHeadingFont);
@@ -163,9 +161,8 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   sizeEndLabels->addWidget(sizeLarge, 1);
   sizeBlock->addLayout(sizeEndLabels);
   pickerLay->addLayout(sizeBlock);
-  connect(m_sizeSlider, &QSlider::sliderPressed, this, [this]() {
-    m_livePickerPreview = true;
-  });
+  connect(m_sizeSlider, &QSlider::sliderPressed, this,
+          [this]() { m_livePickerPreview = true; });
   connect(m_sizeSlider, &QSlider::sliderReleased, this, [this]() {
     m_livePickerPreview = false;
     syncOpenTouchPresetPicker(false);
@@ -176,7 +173,7 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   auto *opacityBlock = new QVBoxLayout();
   opacityBlock->setContentsMargins(0, 0, 0, 0);
   opacityBlock->setSpacing(2);
-  auto *opacityHeading = new QLabel(tr("Transparency:"), this);
+  auto *opacityHeading     = new QLabel(tr("Transparency:"), this);
   QFont opacityHeadingFont = opacityHeading->font();
   opacityHeadingFont.setBold(true);
   opacityHeading->setFont(opacityHeadingFont);
@@ -196,9 +193,8 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   opacityEndLabels->addWidget(opacityHi, 1);
   opacityBlock->addLayout(opacityEndLabels);
   pickerLay->addLayout(opacityBlock);
-  connect(m_opacitySlider, &QSlider::sliderPressed, this, [this]() {
-    m_livePickerPreview = true;
-  });
+  connect(m_opacitySlider, &QSlider::sliderPressed, this,
+          [this]() { m_livePickerPreview = true; });
   connect(m_opacitySlider, &QSlider::sliderReleased, this, [this]() {
     m_livePickerPreview = false;
     syncOpenTouchPresetPicker(false);
@@ -213,17 +209,16 @@ TouchWorkspaceSettingsPopup::TouchWorkspaceSettingsPopup(QWidget *parent)
   connect(m_pinnedList, &QListWidget::itemChanged, this,
           &TouchWorkspaceSettingsPopup::onPinnedItemChanged);
 
-  m_showOnlyPinnedCheck =
-      new QCheckBox(tr("Show only pinned presets"), this);
+  m_showOnlyPinnedCheck = new QCheckBox(tr("Show only pinned presets"), this);
   pickerLay->addWidget(m_showOnlyPinnedCheck);
   connect(m_showOnlyPinnedCheck, &QCheckBox::toggled, this,
           &TouchWorkspaceSettingsPopup::onShowOnlyPinnedChanged);
 
-  auto *gestureGroup = new QGroupBox(tr("Gesture recognition"), this);
-  auto *gestureLay   = new QVBoxLayout(gestureGroup);
-  m_viewerHudCheck = new QCheckBox(tr("Touch indicators"), this);
-  m_hudStyleGray   = new QRadioButton(tr("Gray"), this);
-  m_hudStyleFrost  = new QRadioButton(tr("Frost"), this);
+  auto *gestureGroup  = new QGroupBox(tr("Gesture recognition"), this);
+  auto *gestureLay    = new QVBoxLayout(gestureGroup);
+  m_viewerHudCheck    = new QCheckBox(tr("Touch indicators"), this);
+  m_hudStyleGray      = new QRadioButton(tr("Gray"), this);
+  m_hudStyleFrost     = new QRadioButton(tr("Frost"), this);
   auto *hudStyleGroup = new QButtonGroup(this);
   hudStyleGroup->addButton(m_hudStyleGray);
   hudStyleGroup->addButton(m_hudStyleFrost);
@@ -391,9 +386,8 @@ void TouchWorkspaceSettingsPopup::rebuildPinnedList() {
     auto *item = new QListWidgetItem(name, m_pinnedList);
     item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
     item->setCheckState(mgr->isPinnedForPicker(name) ? Qt::Checked
-                                                      : Qt::Unchecked);
-    const bool canPin =
-        mgr->isPinnedForPicker(name) || pinnedCount < maxPin;
+                                                     : Qt::Unchecked);
+    const bool canPin = mgr->isPinnedForPicker(name) || pinnedCount < maxPin;
     if (!canPin) item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
   }
 }
@@ -457,8 +451,8 @@ void TouchWorkspaceSettingsPopup::onShowOnlyPinnedChanged(bool checked) {
 
 void TouchWorkspaceSettingsPopup::onPinnedItemChanged(QListWidgetItem *item) {
   if (!item) return;
-  const QString name = item->text();
-  const bool want    = item->checkState() == Qt::Checked;
+  const QString name      = item->text();
+  const bool want         = item->checkState() == Qt::Checked;
   TouchPresetManager *mgr = TouchPresetManager::instance();
   if (!mgr->setPinnedForPicker(name, want)) {
     QSignalBlocker block(m_pinnedList);
@@ -484,4 +478,3 @@ void TouchWorkspaceSettingsPopup::onHudStyleChanged(bool checked) {
 }
 
 //-----------------------------------------------------------------------------
-
