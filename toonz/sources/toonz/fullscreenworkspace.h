@@ -48,7 +48,7 @@ class FullScreenWorkspace final {
   void writeItems(const QString &name, const QVector<Item> &items);
   void removeStored(const QString &name);
 
-  QVector<Item> captureVisibleCustomPanels() const;
+  QVector<Item> captureVisiblePanels() const;
   void begin(QString name);
   void end();
   void placeItems(const QVector<Item> &items);

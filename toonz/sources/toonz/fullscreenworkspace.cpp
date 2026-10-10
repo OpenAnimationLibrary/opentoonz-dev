@@ -31,13 +31,8 @@ QSettings openStore() {
                    QSettings::IniFormat);
 }
 
-bool isCustomPanelType(const QString &panelType) {
-  return panelType.startsWith(QStringLiteral("Custom_"));
-}
-
 bool isViewerPanelType(const std::string &panelType) {
-  return panelType == "SceneViewer" || panelType == "ComboViewer" ||
-         panelType == "FlipBook";
+  return panelType == "SceneViewer" || panelType == "ComboViewer";
 }
 
 QString panelTypeOf(const TPanel *panel) {
@@ -244,7 +239,7 @@ void FullScreenWorkspace::removeStored(const QString &name) {
 //-----------------------------------------------------------------------------
 
 QVector<FullScreenWorkspace::Item>
-FullScreenWorkspace::captureVisibleCustomPanels() const {
+FullScreenWorkspace::captureVisiblePanels() const {
   QVector<Item> items;
   const QRect screen = targetScreen();
   QList<TPanel *> panels = collectPanels(mainWindow());
@@ -256,7 +251,7 @@ FullScreenWorkspace::captureVisibleCustomPanels() const {
     if (!panel->isFloating() && panel->parentWidget() != sceneViewerFullScreen())
       continue;
     const QString type = panelTypeOf(panel);
-    if (!isCustomPanelType(type)) continue;
+    if (type.isEmpty() || isViewerPanelType(panel->getPanelType())) continue;
     bool already = false;
     for (const Item &item : items) {
       if (item.panelType == type) {
@@ -536,7 +531,7 @@ void FullScreenWorkspace::save() {
     saveAs();
     return;
   }
-  writeItems(m_activeName, captureVisibleCustomPanels());
+  writeItems(m_activeName, captureVisiblePanels());
   registerCommands();
 }
 
@@ -550,7 +545,7 @@ void FullScreenWorkspace::saveAs() {
   const QString name = cleanName(in);
   if (name.isEmpty() || name == QLatin1String("catalog")) return;
 
-  writeItems(name, captureVisibleCustomPanels());
+  writeItems(name, captureVisiblePanels());
   if (m_active) m_activeName = name;
   registerCommands();
 }
