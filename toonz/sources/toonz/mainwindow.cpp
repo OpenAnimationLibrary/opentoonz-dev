@@ -1533,7 +1533,10 @@ void MainWindow::registerRoomCommands() {
       QAction *action = CommandManager::instance()->getAction(
           commandId.toStdString().c_str(), false);
       if (action) {
-        action->setShortcut(QKeySequence(savedShortcut));
+        const QString canonical = QKeySequence(savedShortcut).toString();
+        if (!canonical.isEmpty())
+          CommandManager::instance()->setShortcut(action,
+                                                 canonical.toStdString());
       }
     }
   }
