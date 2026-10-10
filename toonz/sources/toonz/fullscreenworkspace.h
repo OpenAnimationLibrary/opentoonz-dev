@@ -52,6 +52,7 @@ class FullScreenWorkspace final {
   void begin(QString name);
   void end();
   void placeItems(const QVector<Item> &items);
+  void concealForeignPanels(const QVector<Item> &items);
   void raisePlaced();
   void holdVisibleFloatingPanels();
 

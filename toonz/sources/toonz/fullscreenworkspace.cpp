@@ -320,9 +320,66 @@ void FullScreenWorkspace::placeItems(const QVector<Item> &items) {
 
 //-----------------------------------------------------------------------------
 
+void FullScreenWorkspace::concealForeignPanels(const QVector<Item> &items) {
+  QList<TPanel *> panels = collectPanels(mainWindow());
+  for (const QPointer<TPanel> &held : m_placed) {
+    if (held && !panels.contains(held.data())) panels.append(held.data());
+  }
+  ImageUtils::FullScreenWidget *host = sceneViewerFullScreen();
+  for (TPanel *panel : panels) {
+    if (!panel || panel->isHidden()) continue;
+    if (isViewerPanelType(panel->getPanelType())) continue;
+    if (!panel->isFloating() && panel->parentWidget() != host) continue;
+
+    const QString type = panelTypeOf(panel);
+    bool saved         = false;
+    for (const Item &item : items) {
+      if (item.panelType == type) {
+        saved = true;
+        break;
+      }
+    }
+    if (saved && panel->parentWidget() == host) continue;
+    if (saved) {
+      bool placed = false;
+      for (const QPointer<TPanel> &held : m_placed) {
+        if (held && panelTypeOf(held.data()) == type &&
+            held->parentWidget() == host) {
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) continue;
+    }
+
+    for (FrozenPanel &frozen : m_frozen) {
+      if (frozen.panel.data() != panel || frozen.created) continue;
+      frozen.touched = true;
+      break;
+    }
+    m_holding = true;
+    panel->hide();
+    m_holding = false;
+  }
+}
+
+//-----------------------------------------------------------------------------
+
 void FullScreenWorkspace::begin(QString name) {
   m_pendingName.clear();
-  if (m_active) end();
+  if (m_active || !m_frozen.isEmpty()) {
+    QVector<QPointer<TPanel>> shown;
+    const bool workspace = m_active;
+    for (const FrozenPanel &frozen : m_frozen) {
+      if (!frozen.panel || frozen.created) continue;
+      const bool visible =
+          workspace ? frozen.visible : !frozen.panel->isHidden();
+      if (visible) shown.append(frozen.panel);
+    }
+    end();
+    m_sessionVisible    = shown;
+    m_hasSessionVisible = true;
+  }
 
   const QVector<Item> items = readItems(name);
 
@@ -356,16 +413,7 @@ void FullScreenWorkspace::begin(QString name) {
   }
 
   placeItems(items);
-
-  for (FrozenPanel &frozen : m_frozen) {
-    TPanel *panel = frozen.panel;
-    if (!panel || frozen.created || frozen.touched) continue;
-    if (!frozen.floating || !frozen.visible) continue;
-    if (isViewerPanelType(panel->getPanelType())) continue;
-    placePanel(panel, frozen.geometry);
-    frozen.touched = true;
-    m_placed.append(panel);
-  }
+  concealForeignPanels(items);
 
   m_active     = true;
   m_activeName = name;
@@ -376,6 +424,8 @@ void FullScreenWorkspace::begin(QString name) {
 
 void FullScreenWorkspace::end() {
   const bool workspace = m_active;
+  const bool holding   = m_holding;
+  m_holding            = true;
   m_active             = false;
   m_activeName.clear();
   m_placed.clear();
@@ -403,6 +453,7 @@ void FullScreenWorkspace::end() {
     panel->setSkipFloatingGeometrySave(false);
   }
   m_frozen.clear();
+  m_holding = holding;
 }
 
 //-----------------------------------------------------------------------------
@@ -503,7 +554,9 @@ void FullScreenWorkspace::open(const QString &name) {
   }
   if ((fs->windowState() & Qt::WindowFullScreen) && m_active &&
       m_activeName == name) {
-    placeItems(readItems(name));
+    const QVector<Item> items = readItems(name);
+    placeItems(items);
+    concealForeignPanels(items);
     raisePlaced();
     return;
   }
@@ -546,7 +599,12 @@ void FullScreenWorkspace::saveAs() {
   if (name.isEmpty() || name == QLatin1String("catalog")) return;
 
   writeItems(name, captureVisiblePanels());
-  if (m_active) m_activeName = name;
+  if (ImageUtils::isViewerFullScreenActive()) {
+    m_active     = true;
+    m_activeName = name;
+  } else if (m_active) {
+    m_activeName = name;
+  }
   registerCommands();
 }
 
