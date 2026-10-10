@@ -1,6 +1,7 @@
 
 
 #include "pane.h"
+#include "fullscreenworkspace.h"
 
 // Tnz6 includes
 #include "tapp.h"
@@ -37,6 +38,7 @@
 #include <QLineEdit>
 #include <QTextEdit>
 #include <QScreen>
+#include <QShowEvent>
 #include <QGlobalStatic>
 #include <memory>
 #include <utility>
@@ -59,7 +61,8 @@ TPanel::TPanel(QWidget *parent, Qt::WindowFlags flags,
     , m_isRoomBound(false)
     , m_boundRoomName("")
     , m_roomBindButton(nullptr)
-    , m_ignorePanelShortcutToggle(false) {
+    , m_ignorePanelShortcutToggle(false)
+    , m_skipFloatingGeometrySave(false) {
   m_panelTitleBar = new TPanelTitleBar(this, orientation);
   setTitleBarWidget(m_panelTitleBar);
   connect(m_panelTitleBar, &TPanelTitleBar::doubleClick, this,
@@ -86,7 +89,7 @@ TPanel::TPanel(QWidget *parent, Qt::WindowFlags flags,
 TPanel::~TPanel() {
   // On quitting, save the floating panel's geometry and state in order to
   // restore them when opening the floating panel next time
-  if (isFloating()) {
+  if (isFloating() && !m_skipFloatingGeometrySave) {
     const TFilePath savePath =
         ToonzFolder::getMyModuleDir() + TFilePath("popups.ini");
     QSettings settings(QString::fromStdWString(savePath.getWideString()),
@@ -258,6 +261,14 @@ void TPanel::restoreFloatingPanelState() {
 }
 
 //-----------------------------------------------------------------------------
+
+void TPanel::showEvent(QShowEvent *event) {
+  QWidget::showEvent(event);
+  FullScreenWorkspace::instance().holdPanel(this);
+}
+
+//-----------------------------------------------------------------------------
+
 // if the panel has no contents to be zoomed, simply resize the panel here
 // currently only Flipbook and Color Model panels support resizing of contents
 void TPanel::zoomContentsAndFitGeometry(bool forward) {

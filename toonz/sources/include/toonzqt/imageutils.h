@@ -151,6 +151,9 @@ void DVAPI getStrokeStyleInformationInArea(
         &strokesInfo,  // pair:strokeIndex, styleIndex
     const TRectD &area);
 
+//! True while a scene viewer is in Qt fullscreen.
+DVAPI bool isViewerFullScreenActive();
+
 //*********************************************************************************************
 //    FullScreenWidget  declaration
 //*********************************************************************************************
@@ -177,6 +180,9 @@ public:
 
 public slots:
   bool toggleFullScreen(bool quit = false);
+
+signals:
+  void viewerFullScreenChanged(bool active);
 
 private slots:
   void opacityChanged(int value, bool &hideMain);

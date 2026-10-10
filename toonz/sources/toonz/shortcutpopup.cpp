@@ -293,6 +293,7 @@ ShortcutTree::ShortcutTree(QWidget *parent) : QTreeWidget(parent) {
   QTreeWidgetItem *windowsFolder = m_subFolders.back();
   addFolder(tr("Custom Panels"), CustomPanelCommandType, windowsFolder);
   addFolder(tr("Rooms"), RoomCommandType, windowsFolder);
+  addFolder(tr("Fullscreen"), FullScreenWorkspaceCommandType, windowsFolder);
   addFolder(tr("Help"), MenuHelpCommandType, menuCommandFolder);
 
   addFolder(tr("Right-click Menu Commands"), RightClickMenuCommandType);
@@ -451,6 +452,7 @@ void ShortcutTree::refreshTree() {
   QTreeWidgetItem *windowsFolder = m_subFolders.back();
   addFolder(tr("Custom Panels"), CustomPanelCommandType, windowsFolder);
   addFolder(tr("Rooms"), RoomCommandType, windowsFolder);
+  addFolder(tr("Fullscreen"), FullScreenWorkspaceCommandType, windowsFolder);
   addFolder(tr("Help"), MenuHelpCommandType, menuCommandFolder);
 
   addFolder(tr("Right-click Menu Commands"), RightClickMenuCommandType);

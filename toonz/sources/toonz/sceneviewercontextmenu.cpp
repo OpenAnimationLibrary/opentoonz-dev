@@ -2,6 +2,7 @@
 
 #include "sceneviewer.h"
 #include "sceneviewercontextmenu.h"
+#include "fullscreenworkspace.h"
 
 // Toonz includes
 #include "tapp.h"
@@ -66,6 +67,7 @@ SceneViewerContextMenu::SceneViewerContextMenu(SceneViewer *parent)
     addAction(action);
     connect(action, &QAction::triggered, fsWidget,
             &ImageUtils::FullScreenWidget::toggleFullScreen);
+    if (isFullScreen) FullScreenWorkspace::addSaveActions(this);
   }
 
   // swap compared

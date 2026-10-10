@@ -2,6 +2,7 @@
 
 #include "menubar.h"
 #include "customhelplink.h"
+#include "fullscreenworkspace.h"
 
 // Tnz6 includes
 #include "menubarcommandids.h"
@@ -426,9 +427,11 @@ bool StackedMenuBar::readMenuRecursive(QXmlStreamReader &reader, QMenu *menu) {
       QString title  = reader.attributes().value("title").toString();
       QMenu *subMenu = new QMenu(tr(title.toStdString().c_str()));
 
-      if (readMenuRecursive(reader, subMenu))
+      if (readMenuRecursive(reader, subMenu)) {
+        if (title == QStringLiteral("Workspace"))
+          FullScreenWorkspace::attachMenu(subMenu);
         menu->addMenu(subMenu);
-      else {
+      } else {
         reader.raiseError(tr("Failed to load menu %1").arg(title));
         delete subMenu;
         return false;
@@ -1570,6 +1573,8 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
     addMenuItem(workspaceMenu, MI_DockingCheck);
     workspaceMenu->addSeparator();
     addMenuItem(workspaceMenu, MI_ResetRoomLayout);
+    workspaceMenu->addSeparator();
+    FullScreenWorkspace::attachMenu(workspaceMenu);
   }
   addMenuItem(windowsMenu, MI_OpenCommandToolbar);
   addMenuItem(windowsMenu, MI_OpenToolbar);
