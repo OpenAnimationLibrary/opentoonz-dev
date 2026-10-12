@@ -36,9 +36,13 @@
 #include "toonz/toonzscene.h"
 #include "toonz/levelset.h"
 #include "toonz/preferences.h"
+#include "toonz/dpiscale.h"
+#include "toonz/namebuilder.h"
+#include "tools/toolhandle.h"
 
 // TnzCore includes
 #include "tpalette.h"
+#include "tsystem.h"
 
 // Qt includes
 #include <QPainter>
@@ -54,9 +58,39 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QTimer>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <algorithm>
 
 namespace {
+bool rangeLevelNameInUse(ToonzScene *scene, int type,
+                         const std::wstring &name) {
+  TLevelSet *levels = scene->getLevelSet();
+  if (levels->hasLevel(name)) return true;
+
+  TFilePath path =
+      scene->decodeFilePath(scene->getDefaultLevelPath(type, name));
+  if (TSystem::doesExistFileOrLevel(path)) return true;
+  std::vector<TXshLevel *> existing;
+  levels->listLevels(existing);
+  for (TXshLevel *level : existing) {
+    TXshSimpleLevel *simple = level->getSimpleLevel();
+    if (simple && !simple->getPath().isEmpty() &&
+        scene->decodeFilePath(simple->getPath()) == path)
+      return true;
+  }
+  return false;
+}
+
+bool validRangeLevelName(const QString &name) {
+  if (name.isEmpty() || name.endsWith('.') || name != name.trimmed())
+    return false;
+  const QString invalid = QStringLiteral("/\\:*?\"<>|");
+  for (QChar character : invalid)
+    if (name.contains(character)) return false;
+  return true;
+}
+
 QString fidToFrameNumberWithLetter(int f) {
   QString str = QString::number((int)(f / 10));
   while (str.length() < 3) str.push_front("0");
@@ -181,6 +215,7 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
 //-----------------------------------------------------------------------------
 
 FilmstripFrames::~FilmstripFrames() {
+  cancelCopyPasteFrameRange();
   delete m_selection;
   delete m_frameHeadGadget;
 }
@@ -193,6 +228,7 @@ TXshSimpleLevel *FilmstripFrames::getLevel() const { return m_level; }
 
 void FilmstripFrames::setLevel(TXshSimpleLevel *level) {
   if (m_level == level) return;
+  cancelCopyPasteFrameRange();
 
   m_level = level;
   m_selection->selectNone();
@@ -736,6 +772,7 @@ void FilmstripFrames::showEvent(QShowEvent *) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::hideEvent(QHideEvent *) {
+  cancelCopyPasteFrameRange();
   TApp *app = TApp::instance();
 
   // cambiamenti al livello
@@ -826,7 +863,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
   // fids, frameCount <- frames del livello
   std::vector<TFrameId> fids;
-  TXshSimpleLevel *sl = getLevel();
+  TXshSimpleLevel *sl            = getLevel();
   const bool currentContextLevel = isCurrentContextLevel();
   if (sl)
     sl->getFids(fids);
@@ -1225,7 +1262,7 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
         m_pos           = event->pos();
       }
     } else if (sl->getType() == PLI_XSHLEVEL &&
-             m_selection->isInInbetweenRange(fid) && inbetweenSelected) {
+               m_selection->isInInbetweenRange(fid) && inbetweenSelected) {
       inbetween();
     } else {
       // move current frame when clicked without modifier
@@ -1246,8 +1283,8 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
       } else if (m_selection->isSelected(fid)) {
         // If it's already selected, drag the current selection. A click
         // without enough movement still collapses the group to this frame.
-        m_dragDropArmed = true;
-        m_pos           = event->pos();
+        m_dragDropArmed          = true;
+        m_pos                    = event->pos();
         m_allowResetSelection    = true;
         m_indexForResetSelection = index;
       } else if (!actualIconClicked) {
@@ -1323,7 +1360,7 @@ void FilmstripFrames::mouseReleaseEvent(QMouseEvent *e) {
 
 void FilmstripFrames::mouseMoveEvent(QMouseEvent *e) {
   QPoint pos = e->pos();
-  //m_dragDropArmed
+  // m_dragDropArmed
   int index;
   if (m_isVertical) {
     index = y2index(e->pos().y());
@@ -1559,6 +1596,11 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
     menu->addAction(cm->getAction(MI_Cut));
   }
   menu->addAction(cm->getAction(MI_Copy));
+  if (sl && !sl->isSubsequence() && !m_selection->isEmpty() &&
+      (sl->getType() == PLI_XSHLEVEL || sl->getType() == TZP_XSHLEVEL ||
+       sl->getType() == OVL_XSHLEVEL)) {
+    menu->addAction(cm->getAction(MI_CopyPasteFrameRange));
+  }
 
   if (!isSubsequenceLevel && !isReadOnly) {
     menu->addAction(cm->getAction(MI_Paste));
@@ -1612,6 +1654,140 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
           SLOT(responsiveThumbnailsToggled(bool)));
 
   menu->exec(event->globalPos());
+}
+
+void FilmstripFrames::startCopyPasteFrameRange() {
+  TXshSimpleLevel *sl = getLevel();
+  if (!sl || sl->isSubsequence() || m_selection->isEmpty() ||
+      (sl->getType() != PLI_XSHLEVEL && sl->getType() != TZP_XSHLEVEL &&
+       sl->getType() != OVL_XSHLEVEL))
+    return;
+
+  cancelCopyPasteFrameRange();
+  getViewer();
+  if (!m_viewer || m_viewer->is3DView() || !isCurrentContextLevel()) {
+    DVGui::warning(tr("Open the source level in a 2D viewer first."));
+    return;
+  }
+  ToonzScene *scene = sl->getScene();
+  if (!scene) return;
+  m_rangeLevelName = sl->getName() + L"_range";
+  if (rangeLevelNameInUse(scene, sl->getType(), m_rangeLevelName)) {
+    NameModifier names(m_rangeLevelName);
+    std::wstring suggested;
+    do {
+      suggested = names.getNext();
+    } while (rangeLevelNameInUse(scene, sl->getType(), suggested));
+
+    for (;;) {
+      bool accepted = false;
+      QString name  = QInputDialog::getText(
+           this, tr("Copy Paste Frame Range"), tr("New level name:"),
+           QLineEdit::Normal, QString::fromStdWString(suggested), &accepted);
+      if (!accepted) {
+        m_rangeLevelName.clear();
+        return;
+      }
+      if (!validRangeLevelName(name)) {
+        DVGui::warning(tr("Enter a valid level filename."));
+        continue;
+      }
+      m_rangeLevelName = name.toStdWString();
+      if (!rangeLevelNameInUse(scene, sl->getType(), m_rangeLevelName)) break;
+      DVGui::warning(tr("A level with that name or filename already exists."));
+    }
+  }
+  for (const TFrameId &fid : m_selection->getSelectedFids()) {
+    TImageP image = sl->getFrame(fid, false);
+    m_rangeImages.push_back(image ? image->cloneImage() : nullptr);
+  }
+  if (m_rangeImages.empty()) return;
+  m_rangeLevel  = sl;
+  m_rangeViewer = m_viewer;
+  m_rangeViewer->installEventFilter(this);
+  m_rangeViewer->setCursor(Qt::CrossCursor);
+}
+
+void FilmstripFrames::cancelCopyPasteFrameRange() {
+  if (m_rangeViewer) {
+    m_rangeViewer->removeEventFilter(this);
+    m_rangeViewer->unsetCursor();
+  }
+  m_rangeViewer = nullptr;
+  m_rangeLevel  = nullptr;
+  m_rangeImages.clear();
+  m_rangeLevelName.clear();
+  m_rangeHasFirstPoint = false;
+  m_rangeComplete      = false;
+  m_rangeEatRelease    = false;
+}
+
+bool FilmstripFrames::eventFilter(QObject *watched, QEvent *event) {
+  if (!m_rangeViewer || watched != m_rangeViewer)
+    return QFrame::eventFilter(watched, event);
+
+  if (event->type() == QEvent::KeyPress &&
+      static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+    cancelCopyPasteFrameRange();
+    return true;
+  }
+  if (event->type() == QEvent::MouseButtonRelease && m_rangeEatRelease) {
+    if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+      m_rangeEatRelease = false;
+      if (m_rangeComplete) cancelCopyPasteFrameRange();
+      return true;
+    }
+  }
+  if (event->type() != QEvent::MouseButtonPress ||
+      static_cast<QMouseEvent *>(event)->button() != Qt::LeftButton)
+    return QFrame::eventFilter(watched, event);
+  if (m_rangeComplete) return true;
+
+  TApp *app = TApp::instance();
+  if (app->getCurrentLevel()->getSimpleLevel() != m_rangeLevel.getPointer() ||
+      m_rangeViewer->is3DView()) {
+    cancelCopyPasteFrameRange();
+    return true;
+  }
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (!tool) {
+    cancelCopyPasteFrameRange();
+    return true;
+  }
+  const auto *mouse = static_cast<QMouseEvent *>(event);
+  TPointD point =
+      m_rangeViewer->winToWorld(mouse->pos() * m_rangeViewer->getDevPixRatio());
+  // In level editing mode the viewer uses the active level's matrix. In
+  // scene mode the new column has an identity stage transform instead.
+  if (app->getCurrentFrame()->isEditingLevel())
+    point = tool->getMatrix().inv() * point;
+  if (m_rangeLevel->getType() != PLI_XSHLEVEL) {
+    TPointD scale =
+        getCurrentDpiScale(m_rangeLevel.getPointer(), getCurrentFrameId());
+    if (scale.x == 0 || scale.y == 0) {
+      cancelCopyPasteFrameRange();
+      return true;
+    }
+    point.x /= scale.x;
+    point.y /= scale.y;
+  }
+  m_rangeEatRelease = true;
+  if (!m_rangeHasFirstPoint) {
+    m_rangeFirstPoint    = point;
+    m_rangeHasFirstPoint = true;
+    if (m_rangeImages.size() == 1) {
+      FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(),
+                                        m_rangeImages, point, point,
+                                        m_rangeLevelName);
+      m_rangeComplete = true;
+    }
+  } else {
+    FilmstripCmd::copyPasteFrameRange(m_rangeLevel.getPointer(), m_rangeImages,
+                                      m_rangeFirstPoint, point,
+                                      m_rangeLevelName);
+    m_rangeComplete = true;
+  }
+  return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -1801,7 +1977,7 @@ int FilmstripFrames::dropInsertionIndex(const QPoint &pos) const {
   if (!level) return 0;
 
   int index = m_isVertical ? y2index(pos.y()) : x2index(pos.x());
-  index = std::max(0, std::min(index, level->getFrameCount()));
+  index     = std::max(0, std::min(index, level->getFrameCount()));
 
   if (index < level->getFrameCount()) {
     const int frameStart = m_isVertical ? index2y(index) : index2x(index);
@@ -1813,13 +1989,11 @@ int FilmstripFrames::dropInsertionIndex(const QPoint &pos) const {
     // Responsive thumbnails can make the visible gutter very small. Give
     // each before/after boundary a wider logical snap zone without changing
     // thumbnail spacing or causing a layout reflow during the drag.
-    const int edgeZone =
-        m_responsiveThumbnails
-            ? std::max(12, std::min(frameSize / 4, 24))
-            : std::max(4, fs_frameSpacing);
+    const int edgeZone = m_responsiveThumbnails
+                             ? std::max(12, std::min(frameSize / 4, 24))
+                             : std::max(4, fs_frameSpacing);
 
-    if (local <= edgeZone)
-      return index;
+    if (local <= edgeZone) return index;
     if (local >= frameSize - edgeZone)
       return std::min(index + 1, level->getFrameCount());
 
@@ -1879,9 +2053,8 @@ void FilmstripFrames::dragMoveEvent(QDragMoveEvent *event) {
     return;
   }
 
-  const bool copyRequested =
-      event->keyboardModifiers() & Qt::ControlModifier;
-  Qt::DropAction action = Qt::MoveAction;
+  const bool copyRequested = event->keyboardModifiers() & Qt::ControlModifier;
+  Qt::DropAction action    = Qt::MoveAction;
   if (sourceLevel != targetLevel &&
       (copyRequested || sourceLevel->isReadOnly() ||
        sourceLevel->isSubsequence()))
@@ -1895,7 +2068,8 @@ void FilmstripFrames::dragMoveEvent(QDragMoveEvent *event) {
 
 void FilmstripFrames::dropEvent(QDropEvent *event) {
   FilmstripFrames *sourceStrip = s_dragSourceFilmstrip;
-  TXshSimpleLevel *sourceLevel = sourceStrip ? sourceStrip->getLevel() : nullptr;
+  TXshSimpleLevel *sourceLevel =
+      sourceStrip ? sourceStrip->getLevel() : nullptr;
   TXshSimpleLevel *targetLevel = getLevel();
   if (!sourceLevel || !targetLevel || s_dragSourceFrames.empty()) {
     event->ignore();
@@ -1928,7 +2102,8 @@ void FilmstripFrames::dropEvent(QDropEvent *event) {
 
     insertionIndex = std::min(insertionIndex, (int)remaining.size());
     std::vector<TFrameId> desired = remaining;
-    desired.insert(desired.begin() + insertionIndex, moving.begin(), moving.end());
+    desired.insert(desired.begin() + insertionIndex, moving.begin(),
+                   moving.end());
     if (desired == oldFids) {
       event->setDropAction(Qt::MoveAction);
       event->accept();
@@ -1959,8 +2134,9 @@ void FilmstripFrames::dropEvent(QDropEvent *event) {
   }
 
   if (sourceLevel->getType() != targetLevel->getType()) {
-    DVGui::warning(tr("Frames cannot be dropped between different level types. "
-                      "Level conversion can be added as a future drop option."));
+    DVGui::warning(
+        tr("Frames cannot be dropped between different level types. "
+           "Level conversion can be added as a future drop option."));
     event->ignore();
     return;
   }
@@ -1975,18 +2151,15 @@ void FilmstripFrames::dropEvent(QDropEvent *event) {
   else
     insertionPoint.insert(targetFids.back() + 1);
 
-  const bool copyRequested =
-      event->keyboardModifiers() & Qt::ControlModifier;
-  const bool canMove =
-      !copyRequested && !sourceLevel->isReadOnly() &&
-      !sourceLevel->isSubsequence();
-  const Qt::DropAction dropAction =
-      canMove ? Qt::MoveAction : Qt::CopyAction;
+  const bool copyRequested = event->keyboardModifiers() & Qt::ControlModifier;
+  const bool canMove       = !copyRequested && !sourceLevel->isReadOnly() &&
+                       !sourceLevel->isSubsequence();
+  const Qt::DropAction dropAction = canMove ? Qt::MoveAction : Qt::CopyAction;
 
   if (canMove) TUndoManager::manager()->beginBlock();
 
   if (!FilmstripCmd::insertFramesFromLevel(sourceLevel, s_dragSourceFrames,
-                                            targetLevel, insertionPoint)) {
+                                           targetLevel, insertionPoint)) {
     if (canMove) TUndoManager::manager()->endBlock();
     event->ignore();
     return;
@@ -2056,6 +2229,7 @@ void FilmstripFrames::inbetween() {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onViewerAboutToBeDestroyed() {
+  cancelCopyPasteFrameRange();
   if (m_viewer) {
     disconnect(m_viewer, SIGNAL(onZoomChanged()), this, SLOT(update()));
     disconnect(m_viewer, SIGNAL(refreshNavi()), this, SLOT(update()));
@@ -2131,7 +2305,7 @@ void Filmstrip::onChooseLevelComboChanged(int index) {
   m_syncWithCurrentLevel = false;
   m_frames->setSynchronized(false);
 
-  TApp *tapp = TApp::instance();
+  TApp *tapp       = TApp::instance();
   int noLevelIndex = m_chooseLevelCombo->findText(tr("- No Current Level -"));
 
   if (index == noLevelIndex) {
