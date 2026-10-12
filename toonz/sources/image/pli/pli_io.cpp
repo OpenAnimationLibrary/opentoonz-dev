@@ -963,6 +963,23 @@ TagElem *ParsedPliImp::readTag() {
   case PliTag::GROUP_GOBJ:
     newTag = readGroupTag();
     break;
+  case PliTag::GROUP_NAME_NGOBJ: {
+    // Optional, unreferenced metadata following its group. Older readers skip
+    // this tag by length; no geometric object points to an unknown tag.
+    if (m_tagLength < 5 || m_tagLength > 65541 || m_buf[0] != 1) break;
+    TUINT32 offset = 0;
+    for (int b = 0; b < 4; ++b) offset |= TUINT32(m_buf[b + 1]) << (8 * b);
+    PliTag *target = findTagFromOffset(offset);
+    if (!target || target->m_type != PliTag::GROUP_GOBJ) break;
+    auto group = static_cast<GroupTag *>(target);
+    if (group->m_type != GroupTag::STROKE) break;
+    QByteArray utf8(reinterpret_cast<const char *>(m_buf.get() + 5),
+                    int(m_tagLength - 5));
+    QString name = QString::fromUtf8(utf8);
+    if (name.toUtf8() == utf8 && !name.contains(QChar::Null))
+      group->m_name = name.toStdWString();
+    break;
+  }
   case PliTag::IMAGE_GOBJ:
     newTag = readImageTag();
     break;
@@ -2165,6 +2182,13 @@ TUINT32 ParsedPliImp::writeGroupTag(GroupTag *tag) {
 
   for (i = 0; i < tag->m_numObjects; i++) writeDynamicData(objectOffset[i]);
 
+  if (tag->m_type == GroupTag::STROKE && !tag->m_name.empty()) {
+    QByteArray name = QString::fromStdWString(tag->m_name).toUtf8();
+    writeTagHeader((UCHAR)PliTag::GROUP_NAME_NGOBJ, 5 + name.size());
+    *m_oChan << UCHAR(1);
+    for (int b = 0; b < 4; ++b) *m_oChan << UCHAR(offset >> (8 * b));
+    m_oChan->writeBuf(name.data(), name.size());
+  }
   return offset;
 }
 

@@ -49,6 +49,7 @@ set(MOC_HEADERS
     frameheadgadget.h
     fxparameditorpopup.h
     histogrampopup.h
+    drawinglayers.h
     historypane.h
     imageviewer.h
     layerfooterpanel.h
@@ -380,6 +381,8 @@ set(SOURCES
     antialiaspopup.cpp
     mergecmapped.cpp
     comboviewerpane.cpp
+    drawinglayers.cpp
+    drawinglayersxsheet.cpp
     historypane.cpp
     cleanupsettingspane.cpp
     audiorecordingpopup.cpp

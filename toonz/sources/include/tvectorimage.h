@@ -140,6 +140,19 @@ public:
   /*! The returned number is the depth of the nested group containing the
    * stroke.*/
   int getGroupDepth(UINT index) const;
+  // Depth is one-based, starting at the outermost group. Names are metadata;
+  // changing them does not regroup strokes or invalidate computed fills.
+  std::wstring getGroupName(UINT index, int depth) const;
+  bool setGroupName(UINT index, int depth, const std::wstring &name);
+
+  // In-memory undo state: group membership, names, entered group and stroke
+  // order. Restoring it preserves the actual strokes and their pointer
+  // identity.
+  class GroupStructure;
+  using GroupStructureP = std::shared_ptr<const GroupStructure>;
+  GroupStructureP getGroupStructure() const;
+  bool restoreGroupStructure(const GroupStructureP &state);
+  static int getGroupStructureSize(const GroupStructureP &state);
 
   //! it says if two strokes are in the same group, even qhen the image is
   //! entered in a group.

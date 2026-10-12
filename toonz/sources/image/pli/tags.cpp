@@ -159,7 +159,8 @@ GroupTag::GroupTag(UCHAR type, TUINT32 numObjects,
 GroupTag::GroupTag(const GroupTag &groupTag)
     : PliObjectTag(PliTag::GROUP_GOBJ)
     , m_type(groupTag.m_type)
-    , m_numObjects(groupTag.m_numObjects) {
+    , m_numObjects(groupTag.m_numObjects)
+    , m_name(groupTag.m_name) {
   if (m_numObjects > 0) {
     m_object.reset(new PliObjectTag *[m_numObjects]);
     for (UINT i = 0; i < m_numObjects; i++) {
