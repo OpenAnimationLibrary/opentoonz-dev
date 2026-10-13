@@ -38,10 +38,15 @@
 #include "toonz/navigationtags.h"
 #include "toonz/txshlevelcolumn.h"
 #include "toonz/txshpalettecolumn.h"
+#include "toonz/txshsoundtextcolumn.h"
+#include "toonz/txshsoundtextlevel.h"
 
 #include "tenv.h"
 
+#include <cmath>
+
 #include <QPainter>
+#include <QPainterPath>
 #include <QScrollBar>
 #include <QMouseEvent>
 #include <QMainWindow>
@@ -1984,7 +1989,7 @@ int XsheetViewer::getFrameZoomFactor() const {
   return m_frameZoomFactor;
 }
 
-QPoint XsheetViewer::getFrameZoomAdjustment() {
+QPoint XsheetViewer::getFrameZoomAdjustment() const {
   // if (orientation()->isVerticalTimeline()) return 0;
 
   QRect frameRect = orientation()->rect(PredefinedRect::FRAME_HEADER);
@@ -2043,6 +2048,363 @@ QColor XsheetViewer::getColumnFocusColor() const {
   TPixel color;
   preferences->getCurrentColumnOutlineColor(color);
   return QColor(color.r, color.g, color.b, color.m);
+}
+
+void XsheetViewer::setNoteInkMode(int col, bool on) {
+  if (col < 0) return;
+  if (on)
+    m_noteInkColumns.insert(col);
+  else
+    m_noteInkColumns.remove(col);
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setInkMode(on);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+bool XsheetViewer::isNoteInkMode(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->isInkMode();
+  return m_noteInkColumns.contains(col);
+}
+
+void XsheetViewer::toggleNoteInkMode(int col) {
+  setNoteInkMode(col, !isNoteInkMode(col));
+}
+
+void XsheetViewer::setNoteCellTextMode(int col, bool on) {
+  if (col < 0) return;
+  if (on)
+    m_noteCellTextColumns.insert(col);
+  else
+    m_noteCellTextColumns.remove(col);
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setCellTextMode(on);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+bool XsheetViewer::isNoteCellTextMode(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->isCellTextMode();
+  return m_noteCellTextColumns.contains(col);
+}
+
+void XsheetViewer::toggleNoteCellTextMode(int col) {
+  setNoteCellTextMode(col, !isNoteCellTextMode(col));
+}
+
+void XsheetViewer::setNoteNotebookMode(int col, bool on) {
+  if (col < 0) return;
+  if (on)
+    m_noteNotebookColumns.insert(col);
+  else
+    m_noteNotebookColumns.remove(col);
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setNotebookMode(on);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+bool XsheetViewer::isNoteNotebookMode(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->isNotebookMode();
+  return m_noteNotebookColumns.contains(col);
+}
+
+void XsheetViewer::toggleNoteNotebookMode(int col) {
+  setNoteNotebookMode(col, !isNoteNotebookMode(col));
+}
+
+int XsheetViewer::noteInkTool(int col) const {
+  return m_noteInkTool.value(col, NoteInkPencil0);
+}
+
+void XsheetViewer::setNoteInkTool(int col, int tool) {
+  if (col < 0) return;
+  if (tool < NoteInkPencil0) tool = NoteInkPencil0;
+  if (tool > NoteInkEraser) tool = NoteInkEraser;
+  m_noteInkTool[col] = tool;
+}
+
+int XsheetViewer::noteGridFade(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->getGridFade();
+  int fade = m_noteGridFade.value(col, 0);
+  if (fade < 0) return 0;
+  if (fade > 100) return 100;
+  return fade;
+}
+
+void XsheetViewer::setNoteGridFade(int col, int fade) {
+  if (col < 0) return;
+  if (fade < 0) fade = 0;
+  if (fade > 100) fade = 100;
+  m_noteGridFade[col]       = fade;
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setGridFade(fade);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+TXshSoundTextLevel *XsheetViewer::noteInkLevel(int col) const {
+  TXsheet *xsh             = getXsheet();
+  TXshColumn *column       = xsh ? xsh->getColumn(col) : nullptr;
+  TXshSoundTextColumn *snd = column ? column->getSoundTextColumn() : nullptr;
+  if (!snd) return nullptr;
+  int last = snd->getMaxFrame();
+  for (int r = 0; r <= last; r++) {
+    TXshCell cell = xsh->getCell(r, col);
+    if (!cell.isEmpty() && cell.m_level && cell.m_level->getSoundTextLevel())
+      return cell.m_level->getSoundTextLevel();
+  }
+  return nullptr;
+}
+
+int XsheetViewer::noteInkSize(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->getPencilSize();
+  int size = m_noteInkSize.value(col, 3);
+  if (size < 1) return 1;
+  if (size > 20) return 20;
+  return size;
+}
+
+void XsheetViewer::setNoteInkSize(int col, int size) {
+  if (col < 0) return;
+  if (size < 1) size = 1;
+  if (size > 20) size = 20;
+  m_noteInkSize[col]        = size;
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setPencilSize(size);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+double XsheetViewer::noteInkPenWidth(int col) const {
+  return 0.4 + noteInkSize(col) * 0.4;
+}
+
+int XsheetViewer::noteMarkStep(int col) const {
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->getMarkStep();
+  int step = m_noteMarkStep.value(col, 0);
+  if (step < 0) return 0;
+  if (step > 24) return 24;
+  return step;
+}
+
+void XsheetViewer::setNoteMarkStep(int col, int step) {
+  if (col < 0) return;
+  if (step < 0) step = 0;
+  if (step > 24) step = 24;
+  m_noteMarkStep[col]       = step;
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) {
+    level->setMarkStep(step);
+    TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  }
+}
+
+QColor XsheetViewer::noteInkColor(int col) const {
+  int tool = noteInkTool(col);
+  if (tool == NoteInkEraser) return defaultNoteInkPencil(0);
+  TXshSoundTextLevel *level = noteInkLevel(col);
+  if (level) return level->getPencilColor(tool);
+  return defaultNoteInkPencil(tool);
+}
+
+XsheetViewer::NoteInkHeaderHit XsheetViewer::noteInkHeaderHit(int col) const {
+  NoteInkHeaderHit hit;
+  const Orientation *o = orientation();
+  QPoint orig          = positionToXY(CellPosition(0, col));
+  hit.toggle           = o->rect((col < 0) ? PredefinedRect::CAMERA_CONFIG_AREA
+                                           : PredefinedRect::CONFIG_AREA)
+                   .translated(orig);
+  hit.area = o->rect(PredefinedRect::THUMBNAIL).translated(orig);
+  if (!isNoteInkMode(col)) return hit;
+
+  bool unify = Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled();
+  if (unify && o->flag(PredefinedFlag::PREVIEW_LAYER_AREA_VISIBLE)) {
+    QRect u = o->rect(PredefinedRect::UNIFIEDVIEW_LAYER_AREA).translated(orig);
+    int mid = u.left() + u.width() / 2;
+    hit.eraser = QRect(u.left(), u.top(), mid - u.left(), u.height());
+    hit.clear  = QRect(mid, u.top(), u.right() - mid + 1, u.height());
+  } else {
+    if (o->flag(PredefinedFlag::EYE_AREA_VISIBLE))
+      hit.eraser = o->rect(PredefinedRect::EYE_AREA).translated(orig);
+    if (o->flag(PredefinedFlag::PREVIEW_LAYER_AREA_VISIBLE))
+      hit.clear = o->rect(PredefinedRect::PREVIEW_LAYER_AREA).translated(orig);
+  }
+
+  QRect box = hit.area.adjusted(2, 2, -2, -2);
+  if (box.width() < 8 || box.height() < 8) return hit;
+
+  const int nSlot     = NoteInkPencilCount + 1;
+  const int slotGap   = 2;
+  const int sliderGap = 2;
+
+  QRect iconBox = box;
+  int sliderTop = box.top();
+  int slSpan    = box.height();
+  if (o->flag(PredefinedFlag::PEGBAR_NAME_VISIBLE)) {
+    QRect pegBar = o->rect(PredefinedRect::PEGBAR_NAME).translated(orig);
+    iconBox      = pegBar.adjusted(2, 2, -2, -2);
+  } else {
+    const int iconRowGap = 2;
+    int iconRowH         = qBound(8, box.height() / 4, 11);
+    iconBox              = QRect(box.left(), box.top(), box.width(), iconRowH);
+    sliderTop            = box.top() + iconRowH + iconRowGap;
+    slSpan               = qMax(6, box.bottom() - sliderTop + 1);
+  }
+
+  int iconRowH = qMax(8, iconBox.height());
+
+  for (int i = 0; i < nSlot; i++) {
+    QRect slot   = noteInkIconSlotRect(i, nSlot, slotGap, iconBox, iconRowH);
+    QRect square = noteInkSlotChipSquare(slot);
+    if (i < NoteInkPencilCount)
+      hit.pencil[i] = square;
+    else
+      hit.cellText = square;
+  }
+
+  const bool timelineStepControls = !o->isVerticalTimeline();
+  if (timelineStepControls) {
+    const QRect sliderBox(box.left(), sliderTop, box.width(), slSpan);
+    hit.sizeSlider = noteInkTimelineStepZone(0, nSlot, slotGap, iconBox,
+                                             iconRowH, sliderBox);
+    hit.fadeSlider = noteInkTimelineStepZone(1, nSlot, slotGap, iconBox,
+                                             iconRowH, sliderBox);
+    hit.markSlider = noteInkTimelineStepZone(2, nSlot, slotGap, iconBox,
+                                             iconRowH, sliderBox);
+    hit.sliderTrack =
+        hit.sizeSlider.united(hit.fadeSlider).united(hit.markSlider);
+  } else {
+    int slH         = qMax(3, (slSpan - 2 * sliderGap) / 3);
+    hit.sliderTrack = QRect(box.left() + NoteInkSliderInset, sliderTop,
+                            box.width() - 2 * NoteInkSliderInset, slSpan);
+    hit.sizeSlider  = QRect(box.left(), sliderTop, box.width(), slH);
+    hit.fadeSlider =
+        QRect(box.left(), sliderTop + slH + sliderGap, box.width(), slH);
+    hit.markSlider =
+        QRect(box.left(), sliderTop + 2 * (slH + sliderGap), box.width(), slH);
+  }
+  return hit;
+}
+
+QRect XsheetViewer::noteColumnClipRect(int col) const {
+  const Orientation *o     = orientation();
+  TXsheet *xsh             = getXsheet();
+  TXshColumn *column       = xsh ? xsh->getColumn(col) : nullptr;
+  TXshSoundTextColumn *snd = column ? column->getSoundTextColumn() : nullptr;
+  int r0 = 0, r1 = -1;
+  if (snd) snd->getRange(r0, r1);
+  if (r1 < r0) r1 = snd ? snd->getMaxFrame() : 0;
+  if (r1 < 0) r1 = 0;
+
+  QPoint frameAdj = getFrameZoomAdjustment();
+  QRect a         = o->rect(PredefinedRect::CELL)
+                .translated(positionToXY(CellPosition(r0, col)));
+  QRect b = o->rect(PredefinedRect::CELL)
+                .translated(positionToXY(CellPosition(r1, col)));
+  a.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
+  b.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
+  QRect clip = a.united(b);
+  if (o->isVerticalTimeline())
+    clip.adjust(1, 0, 0, 0);
+  else
+    clip.adjust(0, 1, 0, 0);
+  return clip;
+}
+
+QPointF XsheetViewer::widgetToNoteInk(const QPoint &pos, int col,
+                                      int blockStartRow) {
+  const Orientation *o = orientation();
+  QPoint origin        = positionToXY(CellPosition(blockStartRow, col));
+  QPoint next          = positionToXY(CellPosition(blockStartRow + 1, col));
+  QPoint frameAdj      = getFrameZoomAdjustment();
+  QRect cellRect       = o->rect(PredefinedRect::CELL).translated(origin);
+  cellRect.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
+  if (cellRect.width() < 1) cellRect.setWidth(1);
+  if (cellRect.height() < 1) cellRect.setHeight(1);
+
+  double xNorm, yAlong;
+  if (o->isVerticalTimeline()) {
+    int stride = next.y() - origin.y();
+    if (stride < 1) stride = cellRect.height();
+    xNorm  = (pos.x() - origin.x()) / (double)cellRect.width();
+    yAlong = (pos.y() - origin.y()) / (double)stride;
+  } else {
+    int stride = next.x() - origin.x();
+    if (stride < 1) stride = cellRect.width();
+    xNorm  = (pos.y() - origin.y()) / (double)cellRect.height();
+    yAlong = (pos.x() - origin.x()) / (double)stride;
+  }
+  if (xNorm < 0.0) xNorm = 0.0;
+  if (xNorm > 1.0) xNorm = 1.0;
+  return QPointF(xNorm, yAlong);
+}
+
+QPointF XsheetViewer::widgetFromNoteInk(const QPointF &ink, int col,
+                                        int blockStartRow) {
+  const Orientation *o = orientation();
+  QPoint origin        = positionToXY(CellPosition(blockStartRow, col));
+  QPoint next          = positionToXY(CellPosition(blockStartRow + 1, col));
+  QPoint frameAdj      = getFrameZoomAdjustment();
+  QRect cellRect       = o->rect(PredefinedRect::CELL).translated(origin);
+  cellRect.adjust(0, 0, -frameAdj.x(), -frameAdj.y());
+  if (cellRect.width() < 1) cellRect.setWidth(1);
+  if (cellRect.height() < 1) cellRect.setHeight(1);
+
+  if (o->isVerticalTimeline()) {
+    int stride = next.y() - origin.y();
+    if (stride < 1) stride = cellRect.height();
+    return QPointF(origin.x() + ink.x() * cellRect.width(),
+                   origin.y() + ink.y() * stride);
+  }
+  int stride = next.x() - origin.x();
+  if (stride < 1) stride = cellRect.width();
+  return QPointF(origin.x() + ink.y() * stride,
+                 origin.y() + ink.x() * cellRect.height());
+}
+
+void XsheetViewer::drawNoteInkStrokes(QPainter &p, int col, int blockStartRow,
+                                      const NoteInkStrokeList &strokes,
+                                      const NoteInkStroke *liveStroke,
+                                      const QList<int> *hiddenStrokeIndices) {
+  p.save();
+  p.setClipRect(noteColumnClipRect(col), Qt::IntersectClip);
+  p.setRenderHint(QPainter::Antialiasing, true);
+  p.setBrush(Qt::NoBrush);
+
+  auto drawStroke = [&](const NoteInkStroke &stroke) {
+    if (stroke.points.isEmpty()) return;
+    QColor color = stroke.color.isValid() ? stroke.color : QColor(40, 40, 40);
+    double w     = stroke.width > 0.2 ? stroke.width : 1.6;
+    p.setPen(QPen(color, w, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    if (stroke.points.size() == 1) {
+      p.drawPoint(widgetFromNoteInk(stroke.points[0], col, blockStartRow));
+      return;
+    }
+    QPainterPath path;
+    path.moveTo(widgetFromNoteInk(stroke.points[0], col, blockStartRow));
+    for (int i = 1; i < stroke.points.size(); ++i)
+      path.lineTo(widgetFromNoteInk(stroke.points[i], col, blockStartRow));
+    p.drawPath(path);
+  };
+
+  for (int i = 0; i < strokes.size(); ++i) {
+    if (hiddenStrokeIndices && hiddenStrokeIndices->contains(i)) continue;
+    drawStroke(strokes[i]);
+  }
+  if (liveStroke) drawStroke(*liveStroke);
+  p.restore();
 }
 
 //=============================================================================

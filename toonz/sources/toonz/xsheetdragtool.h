@@ -56,6 +56,8 @@ public:
   static DragTool *makeKeyFrameHandleMoverTool(XsheetViewer *viewer,
                                                bool isEaseOut, int keyRow);
   static DragTool *makeNoteMoveTool(XsheetViewer *viewer);
+  static DragTool *makeNoteInkTool(XsheetViewer *viewer);
+  static void clearNoteInkColumn(XsheetViewer *viewer, int col);
 
   static DragTool *makeKeyOnionSkinMaskModifierTool(XsheetViewer *viewer,
                                                     bool isFos);
