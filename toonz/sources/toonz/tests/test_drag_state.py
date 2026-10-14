@@ -47,6 +47,10 @@ def main():
             ("toonz/xshcellmover.cpp", "void LevelMoverTool::onCellChange("),
             ("toonz/xshcellmover.cpp", "LevelMoverTool::~LevelMoverTool()"),
         ],
+        "keyframe_tool": [
+            ("toonz/keyframemover.cpp", "void KeyframeMoverTool::onClick("),
+            ("toonz/keyframemover.cpp", "void KeyframeMoverTool::onCellChange("),
+        ],
         "keyframe_undo": [
             ("toonz/keyframemover.cpp", "class UndoMoveKeyFrame final"),
         ],

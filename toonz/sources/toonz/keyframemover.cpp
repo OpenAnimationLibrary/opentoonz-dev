@@ -479,10 +479,11 @@ void KeyframeMoverTool::onClick(const QMouseEvent *event) {
     }
     getSelection()->makeCurrent();
   }
-  if (!getSelection()->isEmpty())
-    m_offset       = row - getSelection()->getFirstRow();
   if (!m_selecting && !getSelection()->isEmpty())
     m_mover->start(getSelection(), KeyframeMover::eMoveKeyframes);
+  // start() removes locked columns; anchor against the resulting selection.
+  if (!getSelection()->isEmpty())
+    m_offset = row - getSelection()->getFirstRow();
   m_startSelection = *getSelection();
   getViewer()->update();
   m_startPos = TPointD(event->pos().x(), event->pos().y());
