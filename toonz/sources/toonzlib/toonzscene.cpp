@@ -1243,7 +1243,7 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
 
   // Discriminate sound levels
   if (ltype.m_ltype == SND_XSHLEVEL) {
-    TXshSoundLevel *sl = new TXshSoundLevel(levelName);
+    TXshSoundLevelP sl = new TXshSoundLevel(levelName);
     sl->setType(ltype.m_ltype);
     sl->setScene(this);
     sl->setPath(codeFilePath(levelPath));
@@ -1255,8 +1255,8 @@ TXshLevel *ToonzScene::loadLevel(const TFilePath &actualPath,
       throw TException(msg);
     }  // from load, and rethrowing... curious!
 
-    m_levelSet->insertLevel(sl);
-    return sl;
+    m_levelSet->insertLevel(sl.getPointer());
+    return sl.getPointer();
   } else {
     // Keep EXR source identity in a dedicated level object.  The class still
     // reports OVL_XSHLEVEL, so the existing full-color level behavior remains
