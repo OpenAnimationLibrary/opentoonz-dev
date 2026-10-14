@@ -19,6 +19,8 @@
 #include "toonzqt/dvdialog.h"
 #include "toonzqt/imageutils.h"
 
+#include "externalsourcesync.h"
+
 // boost includes
 #include <boost/optional.hpp>
 
@@ -274,14 +276,23 @@ bool saveSound(TXshSoundLevel *sc);
 
 int loadResources(
     LoadResourceArguments &args,  //!< Resources to be loaded.
-    bool updateRecentFiles =
-        true,  //!< Whether Toonz's <I>Recent Files</I> list must be updated.
-    LoadResourceArguments::ScopedBlock *sb =
-        0  //!< Load block. May be nonzero in order to extend block data
-           //!  access and finalization.
-           //!< Loads a group of resources by path.
-           //!  \return  The actually loaded levels count.
+    bool updateRecentFiles,
+    LoadResourceArguments::ScopedBlock *sb
 );
+
+// First user-facing external-source synchronization pass. Wrapping the normal
+// one- and two-argument entry points keeps the existing implementation intact,
+// while ensuring re-add/load operations resolve changed sources before the
+// Scene Cast reuses an already-loaded level.
+inline int loadResources(LoadResourceArguments &args) {
+  if (!ExternalSourceSync::synchronize(args.resourceDatas)) return 0;
+  return loadResources(args, true, nullptr);
+}
+
+inline int loadResources(LoadResourceArguments &args, bool updateRecentFiles) {
+  if (!ExternalSourceSync::synchronize(args.resourceDatas)) return 0;
+  return loadResources(args, updateRecentFiles, nullptr);
+}
 
 int loadResourceFolders(
     LoadResourceArguments &args,  //!< Resource folders to be loaded.
