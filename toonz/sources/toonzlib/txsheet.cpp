@@ -331,7 +331,7 @@ bool TXsheet::setCells(int row, int col, int rowCount, const TXshCell cells[]) {
   // previews restore empty buffers after clearing a mesh column. Retyping that
   // column would discard its stage object, Plastic rig and animation.
   if (i == rowCount) {
-    TXshColumn* column = getColumn(col);
+    TXshColumn *column = getColumn(col);
     if (!column || !column->getCellColumn() || column->isLocked()) return false;
     clearCells(row, col, rowCount);
     return true;
