@@ -609,7 +609,7 @@ public:
     TToonzImageP tSrcImg = srcImg;
     assert(tSrcImg);
     ras->copy(tSrcImg->getRaster(), m_offset);
-    ToolUtils::updateSaveBox();
+    ToolUtils::updateSaveBox(m_level, m_frameId);
     TTool::getApplication()->getCurrentXsheet()->notifyXsheetChanged();
     notifyImageChanged();
   }
