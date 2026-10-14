@@ -48,10 +48,11 @@ corrections. Do not interpret expected failing controls as CI tests to enable.
 
 ## Integration and remaining manual validation
 
-This integration preserves the four original #7099 commits and their authorship.
-The only subsequent brush behavior changes are origin savebox updates on commit
-and redo, and retaining the completed Vector endpoint preview across synchronous
-image notifications. OT-Dev Ctrl+Alt resizing (5989bf2) and MyPaint erasing
+This integration preserves all six #7099 commits through
+`78469a7c27e0ecb42870ad6cc7eb4e0eaa8a518e`, including the newly upstreamed
+origin savebox and redo fixes, with authorship and cherry-pick provenance.
+The additional brush correction retains the completed Vector endpoint preview
+across synchronous image notifications. OT-Dev Ctrl+Alt resizing (5989bf2) and MyPaint erasing
 (ec975d2) are retained. Exact source comparisons verified the three
 `inputMouseMove` resize implementations, MyPaint brush implementation/header,
 and Toonz Raster `askRead`, `askWrite`, `updateWorkAndBackupRasters` are unchanged.
@@ -100,5 +101,7 @@ Before merging, run on a built application:
 - OT-Dev #20 changes Vector scene-row frame ranges and Ctrl-continuation. Its
   range bookkeeping needs explicit reconciliation with the endpoint snapshot.
 
-Their feature changes are intentionally not part of this PR. Re-run the above
+Read-only `git merge-tree --write-tree` checks found a content conflict with
+#220 in `toonzrasterbrushtool.cpp`, multiple conflicts with #20, and a clean
+textual merge with #214. Their feature changes are not part of this PR. Re-run the above
 checks after resolving overlaps; a clean textual merge is not behavioral proof.
