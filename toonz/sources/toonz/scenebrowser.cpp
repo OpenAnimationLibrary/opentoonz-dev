@@ -1,4 +1,4 @@
-
+#include "toonzqt/lutgenerator.h"
 
 #include "scenebrowser.h"
 
@@ -1011,34 +1011,9 @@ void SceneBrowser::createLutFromImagePair() {
                                .toStdWString());
   }
 
-  QStringList arguments;
-  arguments << "--source" << sourcePath.getQString()
-            << "--target" << targetPath
-            << "--output" << outputPath.getQString()
-            << "--size" << "33";
-
-  QProcess process;
-  ThirdParty::runOtlut(process, arguments);
-
-  if (!process.waitForStarted(5000)) {
-    DVGui::error(tr("Could not start OTLUT."));
+  if (!generateLutFromImagePair(this, sourcePath.getQString(), targetPath,
+                                outputPath.getQString()))
     return;
-  }
-
-  if (!process.waitForFinished(120000)) {
-    process.kill();
-    process.waitForFinished();
-    DVGui::error(tr("OTLUT timed out while creating the LUT."));
-    return;
-  }
-
-  if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-    QString errorText = QString::fromUtf8(process.readAllStandardError()).trimmed();
-    if (errorText.isEmpty())
-      errorText = tr("OTLUT exited with code %1.").arg(process.exitCode());
-    DVGui::error(tr("OTLUT could not create the LUT.\n") + errorText);
-    return;
-  }
 
   DVGui::info(tr("3D LUT created successfully:\n") + outputPath.getQString());
 }

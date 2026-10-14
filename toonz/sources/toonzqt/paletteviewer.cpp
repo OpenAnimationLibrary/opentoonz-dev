@@ -1,4 +1,4 @@
-
+#include "toonzqt/lutgenerator.h"
 
 #include "toonzqt/paletteviewer.h"
 
@@ -856,6 +856,11 @@ void PaletteViewer::contextMenuEvent(QContextMenuEvent *event) {
     menu->addAction(
         CommandManager::instance()->getAction("MI_EraseUnusedStyles"));
   }
+
+  menu->addSeparator();
+  QAction *lut = menu->addAction(tr("Create 3D LUT from Palette Keys..."));
+  connect(lut, &QAction::triggered, this,
+          [this] { openPaletteLutDialog(getPalette(), this); });
 
   menu->exec(event->globalPos());
 }

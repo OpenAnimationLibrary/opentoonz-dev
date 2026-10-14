@@ -674,6 +674,12 @@ if(BUILD_ENV_APPLE)
         COMMENT "Creating qss directory"
     )
 
+    add_dependencies(OpenToonz otlut)
+    add_custom_command(TARGET OpenToonz POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:otlut> $<TARGET_FILE_DIR:OpenToonz>
+        COMMENT "Bundling OTLUT"
+    )
+
     # REMOVED: The duplicate RPATH commands were merged at the top of if(BUILD_ENV_APPLE)
 endif()
 
@@ -789,3 +795,10 @@ elseif(BUILD_ENV_UNIXLIKE AND NOT BUILD_TARGET_WIN)
     )
 
 endif()
+
+add_dependencies(OpenToonz otlut)
+add_custom_command(TARGET OpenToonz POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../thirdparty/otlut/LICENSE $<TARGET_FILE_DIR:OpenToonz>/OTLUT-LICENSE.txt
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/../../thirdparty/otlut/STB-LICENSE $<TARGET_FILE_DIR:OpenToonz>/STB-LICENSE.txt
+    COMMENT "Bundling OTLUT license notices"
+)
