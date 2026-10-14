@@ -2,6 +2,7 @@
 // Uses the real TXsheet, TStageObject, Plastic rig and persistence components.
 #include "toonz/toonzscene.h"
 #include "toonz/txsheet.h"
+#include "toonz/txshcell.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/tstageobject.h"
