@@ -5,6 +5,7 @@
 #include "toonz/tproject.h"
 #include "toonz/levelset.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/txshexrlevel.h"
 #include "toonz/txshpalettelevel.h"
 #include "toonz/levelproperties.h"
 #include "toonz/txshsoundlevel.h"
@@ -19,6 +20,8 @@
 #include "tconvert.h"
 #include "tlogger.h"
 #include "tsystem.h"
+
+#include <algorithm>
 
 namespace {
 //=============================================================================
@@ -107,6 +110,116 @@ bool getCollectedPath(ToonzScene *scene, TFilePath &path) {
   path = collectedPath;
   return true;
 }
+
+// Return a frame-independent key for a physical image source.  Dedicated EXR
+// levels intentionally share one file/sequence while selecting different
+// parts or layers, so their resource identity cannot be the TXshLevel object.
+TFilePath physicalLevelPath(ToonzScene *scene, const TFilePath &path) {
+  const TFilePath actual = scene ? scene->decodeFilePath(path) : path;
+  return actual.getParentDir() + TFilePath(actual.getLevelNameW());
+}
+
+// One scene resource represents all of the dedicated EXR levels backed by the
+// same physical document.  The first level performs filesystem work; path
+// changes are then applied to every sibling without touching its EXR selector.
+class SharedExrSceneLevel final : public SceneResource {
+  std::vector<TXshExrLevel *> m_levels;
+  std::vector<TFilePath> m_oldPaths;
+  SceneLevel m_representative;
+
+  TXshExrLevel *representative() const { return m_levels.front(); }
+
+  void propagatePath(const TFilePath &path, bool retainCachedImages) {
+    for (TXshExrLevel *level : m_levels) {
+      if (level->getPath() != path) level->setPath(path, retainCachedImages);
+    }
+  }
+
+public:
+  SharedExrSceneLevel(ToonzScene *scene, TXshExrLevel *level)
+      : SceneResource(scene), m_representative(scene, level) {
+    addLevel(level);
+  }
+
+  void addLevel(TXshExrLevel *level) {
+    m_levels.push_back(level);
+    m_oldPaths.push_back(level->getPath());
+  }
+
+  bool save() override {
+    // SceneLevel contains the established Save As/path-remapping behavior.
+    // Running it once avoids a second sibling trying to copy over the file
+    // that the first sibling has just created.
+    const bool saved = m_representative.save();
+    if (saved) propagatePath(representative()->getPath(), false);
+    return saved;
+  }
+
+  void updatePath() override {
+    m_representative.updatePath();
+    propagatePath(representative()->getPath(), true);
+  }
+
+  void rollbackPath() override {
+    m_representative.rollbackPath();
+    if (!m_untitledScene) return;
+
+    for (std::size_t i = 1; i < m_levels.size(); ++i) {
+      if (m_levels[i]->getPath() != m_oldPaths[i])
+        m_levels[i]->setPath(m_oldPaths[i], true);
+    }
+  }
+
+  void accept(ResourceProcessor *processor) override {
+    // Importing or collecting performs physical file work.  Process the
+    // document once, then give every selected part/layer the resulting coded
+    // path.  Other visitors may have per-level side effects (for example,
+    // moving cast entries between scenes), so retain their original behavior.
+    const bool sharedPhysicalOperation =
+        dynamic_cast<ResourceImporter *>(processor) != nullptr ||
+        dynamic_cast<ResourceCollector *>(processor) != nullptr;
+    if (!sharedPhysicalOperation) {
+      for (TXshExrLevel *level : m_levels) processor->process(level);
+      return;
+    }
+
+    TXshExrLevel *source = representative();
+    if (dynamic_cast<ResourceImporter *>(processor)) {
+      // Import operates on coded/project-relative paths. If legacy and
+      // dedicated levels refer to the same decoded source using different
+      // spellings, do not let an absolute representative suppress import.
+      const auto coded = std::find_if(m_levels.begin(), m_levels.end(),
+                                      [](const TXshExrLevel *level) {
+                                        return !level->getPath().isAbsolute();
+                                      });
+      if (coded != m_levels.end()) source = *coded;
+    } else if (dynamic_cast<ResourceCollector *>(processor)) {
+      // Collection converts external absolute paths into project paths.
+      const auto external = std::find_if(m_levels.begin(), m_levels.end(),
+                                         [](const TXshExrLevel *level) {
+                                           return level->getPath().isAbsolute();
+                                         });
+      if (external != m_levels.end()) source = *external;
+    }
+    processor->process(source);
+    propagatePath(source->getPath(), false);
+    for (TXshExrLevel *level : m_levels)
+      if (level != source) level->setDirtyFlag(source->getDirtyFlag());
+  }
+
+  bool isDirty() override {
+    for (TXshExrLevel *level : m_levels) {
+      if (level->getProperties()->getDirtyFlag() ||
+          (level->getPalette() && level->getPalette()->getDirtyFlag()))
+        return true;
+    }
+    return false;
+  }
+
+  QStringList getResourceName() override {
+    return m_representative.getResourceName();
+  }
+};
 
 }  // namespace
 
@@ -515,12 +628,26 @@ void SceneResources::getResources() {
   std::vector<TXshLevel *> levels;
   scene->getLevelSet()->listLevels(levels);
   std::vector<TXshLevel *>::iterator it;
+  std::map<TFilePath, SharedExrSceneLevel *> sharedExrResources;
 
   for (it = levels.begin(); it != levels.end(); ++it) {
     TXshSimpleLevel *sl = (*it)->getSimpleLevel();
     if (sl) {
+      if (auto *exrLevel = dynamic_cast<TXshExrLevel *>(sl);
+          exrLevel && !exrLevel->getPath().isEmpty()) {
+        const TFilePath key = physicalLevelPath(scene, exrLevel->getPath());
+        auto shared         = sharedExrResources.find(key);
+        if (shared == sharedExrResources.end()) {
+          auto *resource          = new SharedExrSceneLevel(scene, exrLevel);
+          sharedExrResources[key] = resource;
+          m_resources.push_back(resource);
+        } else {
+          shared->second->addLevel(exrLevel);
+        }
+      } else {
         m_resources.push_back(new SceneLevel(scene, sl));
-        continue;
+      }
+      continue;
     }
     TXshPaletteLevel *pl = (*it)->getPaletteLevel();
     if (pl) { 

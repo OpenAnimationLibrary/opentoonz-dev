@@ -1,0 +1,67 @@
+<fxlayout>
+  <page name="Source">
+    <label>"Read flat scanline, tiled, or multipart OpenEXR AOVs without reducing the file to RGBA first. Use #### in the path for a sequence."</label>
+    <control>exrFile</control>
+    <control>frameOffset</control>
+    <control>part</control>
+    <separator label="Color Handling"/>
+    <label>"Scene-Linear Color participates in OpenToonz color conversion. Raw Data preserves normals, depth, IDs, and other numeric channels."</label>
+    <control>interpretation</control>
+  </page>
+  <page name="Output">
+    <control>outputMode</control>
+    <vbox modeSensitive="outputMode" mode="0">
+      <label>"Map R/G/B/A in the selected layer. Y becomes grayscale; X/Y/Z maps to RGB. Blank selects the base layer."</label>
+      <control>layer</control>
+    </vbox>
+    <vbox modeSensitive="outputMode" mode="1">
+      <label>"Replicate one channel to RGB. Alpha is one inside the data window."</label>
+      <control>channel</control>
+    </vbox>
+    <vbox modeSensitive="outputMode" mode="2">
+      <label>"Visualize one scalar channel with a blue-to-red diagnostic ramp."</label>
+      <control>channel</control>
+      <control>falseColorLow</control>
+      <control>falseColorHigh</control>
+      <control>falseColorInvert</control>
+    </vbox>
+    <vbox modeSensitive="outputMode" mode="3">
+      <label>"Route any four full channel names to the OpenToonz RGBA result. Blank RGB is zero; blank alpha is one."</label>
+      <control>redChannel</control>
+      <control>greenChannel</control>
+      <control>blueChannel</control>
+      <control>alphaChannel</control>
+    </vbox>
+  </page>
+  <page name="Composite">
+    <label>"Used by Composite Layers output. Slots are evaluated from 1 to 4. Over assumes premultiplied AOV colors; gain scales RGB."</label>
+    <separator label="Slot 1"/>
+    <control>slot1Enabled</control>
+    <vbox modeSensitive="slot1Enabled" mode="1">
+      <control>slot1Layer</control>
+      <control>slot1Gain</control>
+      <control>slot1Operation</control>
+    </vbox>
+    <separator label="Slot 2"/>
+    <control>slot2Enabled</control>
+    <vbox modeSensitive="slot2Enabled" mode="1">
+      <control>slot2Layer</control>
+      <control>slot2Gain</control>
+      <control>slot2Operation</control>
+    </vbox>
+    <separator label="Slot 3"/>
+    <control>slot3Enabled</control>
+    <vbox modeSensitive="slot3Enabled" mode="1">
+      <control>slot3Layer</control>
+      <control>slot3Gain</control>
+      <control>slot3Operation</control>
+    </vbox>
+    <separator label="Slot 4"/>
+    <control>slot4Enabled</control>
+    <vbox modeSensitive="slot4Enabled" mode="1">
+      <control>slot4Layer</control>
+      <control>slot4Gain</control>
+      <control>slot4Operation</control>
+    </vbox>
+  </page>
+</fxlayout>

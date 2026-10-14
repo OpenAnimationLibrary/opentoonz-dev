@@ -17,6 +17,7 @@
 #include "toonzqt/trepetitionguard.h"
 #include "toonzqt/gutil.h"
 #include "toonzqt/tselectionhandle.h"
+#include "toonzqt/dvdialog.h"
 
 // TnzLib includes
 #include "toonz/txshlevelhandle.h"
@@ -49,6 +50,11 @@
 #include <QMainWindow>
 #include <QMimeData>
 #include <QDrag>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
+#include <QTimer>
+#include <algorithm>
 
 namespace {
 QString fidToFrameNumberWithLetter(int f) {
@@ -88,6 +94,35 @@ QString fidToFrameNumberWithLetter(int f) {
   }
   return str;
 }
+
+class StripViewportResizeFilter final : public QObject {
+  FilmstripFrames *m_frames;
+  bool m_busy = false;
+
+public:
+  StripViewportResizeFilter(FilmstripFrames *frames, QObject *viewport)
+      : QObject(viewport), m_frames(frames) {
+    viewport->installEventFilter(this);
+  }
+
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    if (event->type() == QEvent::Resize && m_frames &&
+        m_frames->isResponsiveThumbnails() && !m_frames->isDragInProgress() &&
+        !m_busy) {
+      m_busy = true;
+      m_frames->updateIconLayout();
+      m_busy = false;
+    }
+    return QObject::eventFilter(watched, event);
+  }
+};
+
+const int kResponsiveIconQuantStep    = 16;
+const int kResponsiveRenderDebounceMs = 120;
+
+Filmstrip *s_activeFilmstrip           = nullptr;
+FilmstripFrames *s_dragSourceFilmstrip = nullptr;
+std::set<TFrameId> s_dragSourceFrames;
 }  // namespace
 
 //=============================================================================
@@ -97,11 +132,14 @@ QString fidToFrameNumberWithLetter(int f) {
 FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
     : QFrame(parent, flags)
     , m_scrollArea(parent)
+    , m_level(0)
     , m_selection(new TFilmstripSelection())
     , m_frameHeadGadget(0)
     , m_inbetweenDialog(0)
     , m_pos(0, 0)
-    , m_iconSize(dimension2QSize(IconGenerator::instance()->getIconSize()))
+    , m_prefIconSize(dimension2QSize(IconGenerator::instance()->getIconSize()))
+    , m_iconSize(m_prefIconSize)
+    , m_renderIconSize(m_prefIconSize)
     , m_frameLabelWidth(11)
     , m_selectingRange(0, 0)
     , m_scrollSpeed(0)
@@ -115,24 +153,29 @@ FilmstripFrames::FilmstripFrames(QScrollArea *parent, Qt::WindowFlags flags)
   setFrameStyle(QFrame::StyledPanel);
 
   setFocusPolicy(Qt::StrongFocus);
+  setAcceptDrops(true);
+  updateContentConstraints();
   if (m_isVertical) {
-    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
-                  fs_iconMarginLR * 2);
     setFixedHeight(parentWidget()->height());
   } else {
-    setFixedHeight(parentWidget()->height());
     setFixedWidth(parentWidget()->width());
   }
 
   // la testa mobile che indica il frame corrente (e gestisce la GUI dell'onion
   // skin)
   m_frameHeadGadget = new FilmstripFrameHeadGadget(this);
-  installEventFilter(m_frameHeadGadget);
 
   m_selection->setView(this);
   setMouseTracking(true);
 
   m_viewer = NULL;
+
+  m_responsiveRenderTimer = new QTimer(this);
+  m_responsiveRenderTimer->setSingleShot(true);
+  connect(m_responsiveRenderTimer, SIGNAL(timeout()), this,
+          SLOT(commitResponsiveRenderSize()));
+
+  new StripViewportResizeFilter(this, m_scrollArea->viewport());
 }
 
 //-----------------------------------------------------------------------------
@@ -144,9 +187,212 @@ FilmstripFrames::~FilmstripFrames() {
 
 //-----------------------------------------------------------------------------
 
-TXshSimpleLevel *FilmstripFrames::getLevel() const {
-  TXshLevel *xl = TApp::instance()->getCurrentLevel()->getLevel();
-  return xl ? xl->getSimpleLevel() : 0;
+TXshSimpleLevel *FilmstripFrames::getLevel() const { return m_level; }
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setLevel(TXshSimpleLevel *level) {
+  if (m_level == level) return;
+
+  m_level = level;
+  m_selection->selectNone();
+
+  removeEventFilter(m_frameHeadGadget);
+  if (m_isActive && m_level) installEventFilter(m_frameHeadGadget);
+
+  if (m_isVertical)
+    updateContentHeight(0);
+  else
+    updateContentWidth(0);
+
+  if (isCurrentContextLevel())
+    onFrameSwitched();
+  else
+    update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setActive(bool active) {
+  if (m_isActive == active) return;
+
+  m_isActive = active;
+  removeEventFilter(m_frameHeadGadget);
+  if (m_isActive && m_level) installEventFilter(m_frameHeadGadget);
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setSynchronized(bool synchronized) {
+  if (m_isSynchronized == synchronized) return;
+
+  m_isSynchronized = synchronized;
+  if (isCurrentContextLevel())
+    onFrameSwitched();
+  else
+    update();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::isCurrentLevel() const {
+  return m_level &&
+         m_level == TApp::instance()->getCurrentLevel()->getSimpleLevel();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::isActiveLevel() const {
+  return m_isActive && isCurrentLevel();
+}
+
+//-----------------------------------------------------------------------------
+
+bool FilmstripFrames::isCurrentContextLevel() const {
+  return (m_isActive || m_isSynchronized) && isCurrentLevel();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::activateLevel() {
+  if (m_level) emit levelActivatedSignal(m_level);
+}
+
+//-----------------------------------------------------------------------------
+
+QSize FilmstripFrames::quantizeResponsiveRenderSize(const QSize &layout,
+                                                    const QSize &pref,
+                                                    bool vertical) {
+  if (layout.width() <= 0 || layout.height() <= 0) return pref;
+  if (pref.width() <= 0 || pref.height() <= 0) return layout;
+
+  auto quantize = [](int v) {
+    if (v <= 0) return 1;
+    const int q =
+        ((v + kResponsiveIconQuantStep / 2) / kResponsiveIconQuantStep) *
+        kResponsiveIconQuantStep;
+    return std::max(kResponsiveIconQuantStep, q);
+  };
+
+  if (vertical) {
+    const int w = quantize(layout.width());
+    const int h = std::max(1, w * pref.height() / pref.width());
+    return QSize(w, h);
+  }
+  const int h = quantize(layout.height());
+  const int w = std::max(1, h * pref.width() / pref.height());
+  return QSize(w, h);
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::updateContentConstraints() {
+  if (!m_scrollArea) return;
+  if (m_responsiveThumbnails) {
+    m_scrollArea->setWidgetResizable(true);
+    if (m_isVertical) {
+      setMinimumWidth(0);
+      setMaximumWidth(QWIDGETSIZE_MAX);
+      setMinimumHeight(getFramesHeight());
+      setMaximumHeight(QWIDGETSIZE_MAX);
+    } else {
+      setMinimumHeight(0);
+      setMaximumHeight(QWIDGETSIZE_MAX);
+      setMinimumWidth(getFramesWidth());
+      setMaximumWidth(QWIDGETSIZE_MAX);
+    }
+  } else if (m_isVertical) {
+    m_scrollArea->setWidgetResizable(false);
+    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
+                  fs_iconMarginLR * 2);
+    setMinimumHeight(0);
+    setMaximumHeight(QWIDGETSIZE_MAX);
+  } else {
+    m_scrollArea->setWidgetResizable(false);
+    setFixedHeight(getOneFrameHeight());
+    setMinimumWidth(0);
+    setMaximumWidth(QWIDGETSIZE_MAX);
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::scheduleResponsiveRenderCommit() {
+  if (!m_responsiveRenderTimer) return;
+  m_responsiveRenderTimer->start(kResponsiveRenderDebounceMs);
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::commitResponsiveRenderSize() {
+  if (!m_responsiveThumbnails) {
+    m_renderIconSize = m_prefIconSize;
+    return;
+  }
+  const QSize next =
+      quantizeResponsiveRenderSize(m_iconSize, m_prefIconSize, m_isVertical);
+  if (next == m_renderIconSize) return;
+  m_renderIconSize = next;
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::updateIconLayout() {
+  m_prefIconSize = dimension2QSize(IconGenerator::instance()->getIconSize());
+
+  QSize effective = m_prefIconSize;
+  if (m_responsiveThumbnails && m_scrollArea) {
+    QWidget *vp = m_scrollArea->viewport();
+    if (vp && m_prefIconSize.width() > 0 && m_prefIconSize.height() > 0) {
+      if (m_isVertical) {
+        const int availW =
+            vp->width() - fs_leftMargin - fs_rightMargin - fs_iconMarginLR * 2;
+        if (availW > 0) {
+          const int w = availW;
+          const int h =
+              std::max(1, w * m_prefIconSize.height() / m_prefIconSize.width());
+          effective = QSize(w, h);
+        }
+      } else {
+        const int availH = vp->height() - fs_frameSpacing - fs_iconMarginTop -
+                           fs_iconMarginBottom;
+        if (availH > 0) {
+          const int h = availH;
+          const int w =
+              std::max(1, h * m_prefIconSize.width() / m_prefIconSize.height());
+          effective = QSize(w, h);
+        }
+      }
+    }
+  }
+
+  m_iconSize = effective;
+
+  updateContentConstraints();
+  if (m_frameHeadGadget) m_frameHeadGadget->updateFrameMetrics();
+  if (m_isVertical)
+    updateContentHeight();
+  else
+    updateContentWidth();
+
+  if (m_responsiveThumbnails)
+    scheduleResponsiveRenderCommit();
+  else {
+    if (m_responsiveRenderTimer) m_responsiveRenderTimer->stop();
+    m_renderIconSize = m_prefIconSize;
+  }
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setResponsiveThumbnails(bool responsive) {
+  if (m_responsiveThumbnails == responsive) return;
+  m_responsiveThumbnails = responsive;
+  updateIconLayout();
+  if (responsive) commitResponsiveRenderSize();
 }
 
 //-----------------------------------------------------------------------------
@@ -230,14 +476,14 @@ int FilmstripFrames::getFramesWidth() const {
 
 //-----------------------------------------------------------------------------
 
-int FilmstripFrames::getOneFrameHeight() {
+int FilmstripFrames::getOneFrameHeight() const {
   return m_iconSize.height() + fs_frameSpacing + fs_iconMarginTop +
          fs_iconMarginBottom;
 }
 
 //-----------------------------------------------------------------------------
 
-int FilmstripFrames::getOneFrameWidth() {
+int FilmstripFrames::getOneFrameWidth() const {
   return m_iconSize.width() + fs_frameSpacing + fs_leftMargin +
          fs_iconMarginLR + fs_rightMargin;
 }
@@ -250,41 +496,58 @@ void FilmstripFrames::updateContentHeight(int minimumHeight) {
   if (contentHeight < minimumHeight) contentHeight = minimumHeight;
   int parentHeight = parentWidget()->height();
   if (contentHeight < parentHeight) contentHeight = parentHeight;
-  if (contentHeight != height()) setFixedHeight(contentHeight);
+  if (m_responsiveThumbnails) {
+    setMinimumHeight(contentHeight);
+  } else if (contentHeight != height()) {
+    setFixedHeight(contentHeight);
+  }
 }
 
 //-----------------------------------------------------------------------------
 void FilmstripFrames::updateContentWidth(int minimumWidth) {
-  setFixedHeight(getOneFrameHeight());
+  if (!m_responsiveThumbnails) setFixedHeight(getOneFrameHeight());
   if (minimumWidth < 0) minimumWidth = visibleRegion().boundingRect().right();
   int contentWidth = getFramesWidth();
   if (contentWidth < minimumWidth) contentWidth = minimumWidth;
   int parentWidth = parentWidget()->width();
   if (contentWidth < parentWidth) contentWidth = parentWidth;
-  if (contentWidth != width()) setFixedWidth(contentWidth);
+  if (m_responsiveThumbnails) {
+    setMinimumWidth(contentWidth);
+  } else if (contentWidth != width()) {
+    setFixedWidth(contentWidth);
+  }
 }
 
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::showFrame(int index) {
   TXshSimpleLevel *level = getLevel();
+  if (!level) return;
   if (m_isVertical) {
     if (!level->isFid(index2fid(index))) {
       if (!level->isFid(index2fid(index))) return;
     }
     int y0 = index2y(index);
-    int y1 = y0 + m_iconSize.height() + fs_frameSpacing + fs_iconMarginTop +
-             fs_iconMarginBottom;
-    if (y1 > height()) setFixedHeight(y1);
+    int y1 = y0 + getOneFrameHeight();
+    if (y1 > height()) {
+      if (m_responsiveThumbnails)
+        setMinimumHeight(y1);
+      else
+        setFixedHeight(y1);
+    }
     m_scrollArea->ensureVisible(0, (y0 + y1) / 2, 50, (y1 - y0) / 2);
   } else {
     if (!level->isFid(index2fid(index))) {
       if (!level->isFid(index2fid(index - 1))) return;
     }
     int x0 = index2x(index);
-    int x1 = x0 + m_iconSize.width() + fs_frameSpacing + fs_leftMargin +
-             fs_rightMargin + fs_iconMarginLR;
-    if (x1 > width()) setFixedWidth(x1);
+    int x1 = x0 + getOneFrameWidth();
+    if (x1 > width()) {
+      if (m_responsiveThumbnails)
+        setMinimumWidth(x1);
+      else
+        setFixedWidth(x1);
+    }
     m_scrollArea->ensureVisible((x0 + x1) / 2, 0, (x1 - x0) / 2, 50);
   }
 }
@@ -318,6 +581,8 @@ void FilmstripFrames::scroll(int dy) {
 //---------------------------------------------------------------------------
 
 void FilmstripFrames::mouseDoubleClickEvent(QMouseEvent *event) {
+  activateLevel();
+
   int index;
   if (m_isVertical) {
     index = y2index(event->pos().y());
@@ -562,6 +827,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
   // fids, frameCount <- frames del livello
   std::vector<TFrameId> fids;
   TXshSimpleLevel *sl = getLevel();
+  const bool currentContextLevel = isCurrentContextLevel();
   if (sl)
     sl->getFids(fids);
   else {
@@ -584,7 +850,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
   QRect naviRect;
 
-  if ((sl->getType() == TZP_XSHLEVEL || sl->getType() == OVL_XSHLEVEL) &&
+  if (currentContextLevel &&
+      (sl->getType() == TZP_XSHLEVEL || sl->getType() == OVL_XSHLEVEL) &&
       m_viewer && m_viewer->isVisible()) {
     // imgSize: image's pixel size
     QSize imgSize(sl->getProperties()->getImageRes().lx,
@@ -592,7 +859,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
     // Viewer affine
     TAffine viewerAff = m_viewer->getViewMatrix();
     // pixel size which will be displayed with 100% scale in Viewer Stage
-    TFrameId currentId = TApp::instance()->getCurrentFrame()->getFid();
+    TFrameId currentId = getCurrentFrameId();
     double imgPixelWidth =
         (double)(imgSize.width()) / sl->getDpi(currentId).x * Stage::inch;
     double imgPixelHeight =
@@ -673,6 +940,7 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
       tmp_frameRect   = frameRect.translated(QPoint(oneFrameWidth * i, 0));
     }
     bool isCurrentFrame =
+        currentContextLevel &&
         (i == sl->fid2index(TApp::instance()->getCurrentFrame()->getFid()));
     bool isSelected =
         (0 <= i && i < frameCount && m_selection->isSelected(fids[i]));
@@ -694,7 +962,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
       // Frame number
       if (m_selection->isSelected(fids[i])) {
-        if (TApp::instance()->getCurrentFrame()->isEditingLevel() &&
+        if (currentContextLevel &&
+            TApp::instance()->getCurrentFrame()->isEditingLevel() &&
             isCurrentFrame)
           p.setPen(Qt::red);
         else
@@ -745,7 +1014,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
     }
 
     // red frame for the current frame
-    if (TApp::instance()->getCurrentFrame()->isEditingLevel() &&
+    if (currentContextLevel &&
+        TApp::instance()->getCurrentFrame()->isEditingLevel() &&
         (isCurrentFrame || isSelected)) {
       QPen pen;
       pen.setColor(Qt::red);
@@ -760,7 +1030,8 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
 
   // se sono in modalita' level edit faccio vedere la freccia che indica il
   // frame corrente
-  if (TApp::instance()->getCurrentFrame()->isEditingLevel())
+  if (currentContextLevel &&
+      TApp::instance()->getCurrentFrame()->isEditingLevel())
     m_frameHeadGadget->draw(p, QColor(Qt::white), QColor(Qt::black));
 }
 
@@ -770,11 +1041,28 @@ void FilmstripFrames::drawFrameIcon(QPainter &p, const QRect &r, int index,
                                     const TFrameId &fid, int flags) {
   QPixmap pm;
   TXshSimpleLevel *sl = getLevel();
-  if (sl) {
-    pm = IconGenerator::instance()->getIcon(sl, fid);
+  TXshLevel *xl       = sl;
+  if (sl && xl) {
+    const bool needNativeSize =
+        m_responsiveThumbnails &&
+        (m_renderIconSize.width() > m_prefIconSize.width() ||
+         m_renderIconSize.height() > m_prefIconSize.height());
+    if (needNativeSize) {
+      const TDimension dim(m_renderIconSize.width(), m_renderIconSize.height());
+      pm = IconGenerator::instance()->getResponsiveIcon(xl, fid, dim);
+    }
+    if (pm.isNull()) pm = IconGenerator::instance()->getIcon(xl, fid);
   }
   if (!pm.isNull()) {
-    p.drawPixmap(r.left(), r.top(), pm);
+    if (pm.size() == r.size()) {
+      p.drawPixmap(r.topLeft(), pm);
+    } else {
+      const QPixmap scaled =
+          pm.scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+      QRect dest(scaled.rect());
+      dest.moveCenter(r.center());
+      p.drawPixmap(dest.topLeft(), scaled);
+    }
 
     if (sl && sl->getType() == PLI_XSHLEVEL && flags & F_INBETWEEN_RANGE) {
       if (m_isVertical) {
@@ -828,7 +1116,9 @@ void FilmstripFrames::enterEvent(QEvent *event) { getViewer(); }
 //-----------------------------------------------------------------------------
 
 TFrameId FilmstripFrames::getCurrentFrameId() {
-  TApp *app        = TApp::instance();
+  TApp *app = TApp::instance();
+  if (!isCurrentContextLevel()) return TFrameId();
+
   TFrameHandle *fh = app->getCurrentFrame();
   TFrameId currFid;
   if (fh->isEditingLevel())
@@ -858,6 +1148,8 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
   TFrameId fid = index2fid(index);
 
   TXshSimpleLevel *sl = getLevel();
+  if (sl) activateLevel();
+
   int frameHeight = m_iconSize.height() + fs_frameSpacing + fs_iconMarginTop +
                     fs_iconMarginBottom;
   int frameWidth = m_iconSize.width() + fs_frameSpacing + fs_iconMarginLR +
@@ -924,33 +1216,38 @@ void FilmstripFrames::mousePressEvent(QMouseEvent *event) {
         m_dragDropArmed = true;
         m_pos           = event->pos();
       }
-    } else if (event->modifiers() & Qt::ControlModifier)
+    } else if (event->modifiers() & Qt::ControlModifier) {
       select(index, CTRL_SELECT);
-
-    else if (sl->getType() == PLI_XSHLEVEL &&
+      if (m_selection->isSelected(fid)) {
+        // Ctrl-click-drag is the explicit copy gesture. Arm the drag
+        // immediately after toggling this frame into the selection.
+        m_dragDropArmed = true;
+        m_pos           = event->pos();
+      }
+    } else if (sl->getType() == PLI_XSHLEVEL &&
              m_selection->isInInbetweenRange(fid) && inbetweenSelected) {
       inbetween();
     } else {
       // move current frame when clicked without modifier
       TApp *tapp = TApp::instance();
       std::vector<TFrameId> fids;
-      TXshLevel *level = tapp->getCurrentLevel()->getLevel();
-      level->getFids(fids);
+      sl->getFids(fids);
 
       tapp->getCurrentFrame()->setFrameIds(fids);
       tapp->getCurrentFrame()->setFid(fid);
 
-      if (actualIconClicked &&
-          (!m_selection->isSelected(fid) || m_justStartedSelection)) {
-        // click on a non-selected frame
-        m_selecting = true;  // allow drag-select
-        select(index, START_DRAG_SELECT);
-      } else if (m_selection->isSelected(fid)) {
-        // if it's already selected - it can be drag and dropped
+      if (actualIconClicked && !m_selection->isSelected(fid)) {
+        // Plain click-drag on an unselected drawing should immediately move
+        // that drawing. Multi-frame drag sources are built explicitly with
+        // Shift/Ctrl selection instead of competing with drag-select here.
+        select(index, ONLY_SELECT);
         m_dragDropArmed = true;
         m_pos           = event->pos();
-        // allow a the frame to be reselected if the mouse isn't moved far
-        // this is to enable a group selection to become a single selection
+      } else if (m_selection->isSelected(fid)) {
+        // If it's already selected, drag the current selection. A click
+        // without enough movement still collapses the group to this frame.
+        m_dragDropArmed = true;
+        m_pos           = event->pos();
         m_allowResetSelection    = true;
         m_indexForResetSelection = index;
       } else if (!actualIconClicked) {
@@ -1139,9 +1436,11 @@ void FilmstripFrames::mouseMoveEvent(QMouseEvent *e) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::keyPressEvent(QKeyEvent *event) {
-  TFrameHandle *fh       = TApp::instance()->getCurrentFrame();
   TXshSimpleLevel *level = getLevel();
   if (!level) return;
+
+  activateLevel();
+  TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   std::vector<TFrameId> fids;
   level->getFids(fids);
   if (fids.empty()) return;
@@ -1242,14 +1541,19 @@ void FilmstripFrames::timerEvent(QTimerEvent *) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
-  QMenu *menu             = new QMenu();
-  TXshSimpleLevel *sl     = getLevel();
+  QMenu *menu         = new QMenu();
+  TXshSimpleLevel *sl = getLevel();
+  if (sl) activateLevel();
+
   bool isSubsequenceLevel = (sl && sl->isSubsequence());
   bool isReadOnly         = (sl && sl->isReadOnly());
   CommandManager *cm      = CommandManager::instance();
 
   menu->addAction(cm->getAction(MI_SelectAll));
   menu->addAction(cm->getAction(MI_InvertSelection));
+  QAction *resyncAction = menu->addAction(tr("Resync Level Strips"));
+  connect(resyncAction, &QAction::triggered, this,
+          [this] { emit levelStripsResyncRequestedSignal(); });
   menu->addSeparator();
   if (!isSubsequenceLevel && !isReadOnly) {
     menu->addAction(cm->getAction(MI_Cut));
@@ -1291,16 +1595,21 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
   QAction *hideComboBox = panelMenu->addAction(tr("Show/Hide Drop Down Menu"));
   QAction *hideNavigator =
       panelMenu->addAction(tr("Show/Hide Level Navigator"));
+  QAction *responsiveThumbs = panelMenu->addAction(tr("Responsive Thumbnails"));
   hideComboBox->setCheckable(true);
   hideComboBox->setChecked(m_showComboBox);
   hideNavigator->setCheckable(true);
   hideNavigator->setChecked(m_showNavigator);
+  responsiveThumbs->setCheckable(true);
+  responsiveThumbs->setChecked(m_responsiveThumbnails);
   connect(toggleOrientation, SIGNAL(triggered(bool)), this,
           SLOT(orientationToggled(bool)));
   connect(hideComboBox, SIGNAL(triggered(bool)), this,
           SLOT(comboBoxToggled(bool)));
   connect(hideNavigator, SIGNAL(triggered(bool)), this,
           SLOT(navigatorToggled(bool)));
+  connect(responsiveThumbs, SIGNAL(triggered(bool)), this,
+          SLOT(responsiveThumbnailsToggled(bool)));
 
   menu->exec(event->globalPos());
 }
@@ -1356,6 +1665,12 @@ void FilmstripFrames::navigatorToggled(bool ignore) {
 
 //-----------------------------------------------------------------------------
 
+void FilmstripFrames::responsiveThumbnailsToggled(bool responsive) {
+  emit(responsiveThumbnailsToggledSignal(responsive));
+}
+
+//-----------------------------------------------------------------------------
+
 void FilmstripFrames::orientationToggled(bool ignore) {
   m_isVertical = !m_isVertical;
   emit(orientationToggledSignal(m_isVertical));
@@ -1365,18 +1680,7 @@ void FilmstripFrames::orientationToggled(bool ignore) {
 
 void FilmstripFrames::setOrientation(bool isVertical) {
   m_isVertical = isVertical;
-  if (m_isVertical) {
-    setFixedWidth(m_iconSize.width() + fs_leftMargin + fs_rightMargin +
-                  fs_iconMarginLR * 2);
-    setFixedHeight(parentWidget()->height());
-  } else {
-    setFixedHeight(parentWidget()->height());
-    setFixedWidth(parentWidget()->width());
-  }
-  if (m_isVertical)
-    updateContentHeight();
-  else
-    updateContentWidth();
+  updateIconLayout();
   TApp *app        = TApp::instance();
   TFrameHandle *fh = app->getCurrentFrame();
   TFrameId fid     = getCurrentFrameId();
@@ -1403,6 +1707,8 @@ void FilmstripFrames::setComboBox(bool showComboBox) {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onLevelChanged() {
+  if (!isCurrentLevel()) return;
+
   if (m_isVertical)
     updateContentHeight();
   else
@@ -1413,16 +1719,24 @@ void FilmstripFrames::onLevelChanged() {
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onLevelSwitched(TXshLevel *) {
+  if (!isCurrentLevel()) return;
+
   if (m_isVertical)
     updateContentHeight(0);
   else
     updateContentWidth(0);
-  onFrameSwitched();  // deve visualizzare il frame corrente nella levelstrip
+
+  if (isCurrentContextLevel())
+    onFrameSwitched();  // deve visualizzare il frame corrente nella levelstrip
+  else
+    update();
 }
 
 //-----------------------------------------------------------------------------
 
 void FilmstripFrames::onFrameSwitched() {
+  if (!isCurrentContextLevel()) return;
+
   // no. interferische con lo shift-click per la selezione.
   // m_selection->selectNone();
   TApp *app        = TApp::instance();
@@ -1433,13 +1747,15 @@ void FilmstripFrames::onFrameSwitched() {
   if (index >= 0) {
     showFrame(index);
 
-    TFilmstripSelection *fsSelection =
-        dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
+    if (m_isActive) {
+      TFilmstripSelection *fsSelection =
+          dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
 
-    // don't select if already selected - may be part of a group selection
-    if (!m_selection->isSelected(index2fid(index)) && fsSelection) {
-      select(index, ONLY_SELECT);
-      m_justStartedSelection = true;
+      // don't select if already selected - may be part of a group selection
+      if (!m_selection->isSelected(index2fid(index)) && fsSelection) {
+        select(index, ONLY_SELECT);
+        m_justStartedSelection = true;
+      }
     }
   }
   update();
@@ -1463,7 +1779,237 @@ void FilmstripFrames::startDragDrop() {
   QPixmap dropThumbnail = IconGenerator::instance()->getIcon(sl, *fids.begin());
   if (!dropThumbnail.isNull()) drag->setPixmap(dropThumbnail);
   drag->setMimeData(mimeData);
-  Qt::DropAction dropAction = drag->exec(Qt::CopyAction | Qt::MoveAction);
+
+  s_dragSourceFilmstrip = this;
+  s_dragSourceFrames    = fids;
+  m_dragInProgress      = true;
+  drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::MoveAction);
+  m_dragInProgress = false;
+  s_dragSourceFrames.clear();
+  s_dragSourceFilmstrip = nullptr;
+
+  // Responsive thumbnail mode can receive viewport resize events while
+  // QDrag::exec() runs its nested event loop. Keep the frame metrics fixed
+  // for the drag, then reconcile the responsive layout once the drop ends.
+  if (m_responsiveThumbnails) updateIconLayout();
+}
+
+//-----------------------------------------------------------------------------
+
+int FilmstripFrames::dropInsertionIndex(const QPoint &pos) const {
+  TXshSimpleLevel *level = getLevel();
+  if (!level) return 0;
+
+  int index = m_isVertical ? y2index(pos.y()) : x2index(pos.x());
+  index = std::max(0, std::min(index, level->getFrameCount()));
+
+  if (index < level->getFrameCount()) {
+    const int frameStart = m_isVertical ? index2y(index) : index2x(index);
+    const int frameSize =
+        m_isVertical ? getOneFrameHeight() : getOneFrameWidth();
+    const int cursor = m_isVertical ? pos.y() : pos.x();
+    const int local  = cursor - frameStart;
+
+    // Responsive thumbnails can make the visible gutter very small. Give
+    // each before/after boundary a wider logical snap zone without changing
+    // thumbnail spacing or causing a layout reflow during the drag.
+    const int edgeZone =
+        m_responsiveThumbnails
+            ? std::max(12, std::min(frameSize / 4, 24))
+            : std::max(4, fs_frameSpacing);
+
+    if (local <= edgeZone)
+      return index;
+    if (local >= frameSize - edgeZone)
+      return std::min(index + 1, level->getFrameCount());
+
+    if (cursor >= frameStart + frameSize / 2) ++index;
+  }
+
+  return std::max(0, std::min(index, level->getFrameCount()));
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::refreshLevelContent() {
+  if (m_isVertical)
+    updateContentHeight(0);
+  else
+    updateContentWidth(0);
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::selectDroppedFrames(const std::set<TFrameId> &fids) {
+  m_selection->selectNone();
+  for (const TFrameId &fid : fids) {
+    int index = fid2index(fid);
+    if (index >= 0) m_selection->select(fid);
+  }
+  if (!fids.empty()) {
+    int index = fid2index(*fids.begin());
+    if (index >= 0) showFrame(index);
+  }
+  update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dragEnterEvent(QDragEnterEvent *event) {
+  if (!s_dragSourceFilmstrip ||
+      !event->mimeData()->hasFormat("application/vnd.toonz.drawings") ||
+      !getLevel()) {
+    event->ignore();
+    return;
+  }
+
+  event->acceptProposedAction();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dragMoveEvent(QDragMoveEvent *event) {
+  TXshSimpleLevel *sourceLevel =
+      s_dragSourceFilmstrip ? s_dragSourceFilmstrip->getLevel() : nullptr;
+  TXshSimpleLevel *targetLevel = getLevel();
+  if (!sourceLevel || !targetLevel || targetLevel->isSubsequence() ||
+      targetLevel->isReadOnly()) {
+    event->ignore();
+    return;
+  }
+
+  const bool copyRequested =
+      event->keyboardModifiers() & Qt::ControlModifier;
+  Qt::DropAction action = Qt::MoveAction;
+  if (sourceLevel != targetLevel &&
+      (copyRequested || sourceLevel->isReadOnly() ||
+       sourceLevel->isSubsequence()))
+    action = Qt::CopyAction;
+
+  event->setDropAction(action);
+  event->accept();
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::dropEvent(QDropEvent *event) {
+  FilmstripFrames *sourceStrip = s_dragSourceFilmstrip;
+  TXshSimpleLevel *sourceLevel = sourceStrip ? sourceStrip->getLevel() : nullptr;
+  TXshSimpleLevel *targetLevel = getLevel();
+  if (!sourceLevel || !targetLevel || s_dragSourceFrames.empty()) {
+    event->ignore();
+    return;
+  }
+
+  activateLevel();
+  const int targetIndex = dropInsertionIndex(event->pos());
+
+  if (sourceLevel == targetLevel) {
+    std::vector<TFrameId> oldFids;
+    targetLevel->getFids(oldFids);
+
+    std::vector<TFrameId> moving;
+    std::vector<TFrameId> remaining;
+    int insertionIndex = 0;
+    for (int i = 0; i < (int)oldFids.size(); ++i) {
+      const TFrameId &fid = oldFids[i];
+      if (s_dragSourceFrames.count(fid))
+        moving.push_back(fid);
+      else {
+        if (i < targetIndex) ++insertionIndex;
+        remaining.push_back(fid);
+      }
+    }
+    if (moving.empty()) {
+      event->ignore();
+      return;
+    }
+
+    insertionIndex = std::min(insertionIndex, (int)remaining.size());
+    std::vector<TFrameId> desired = remaining;
+    desired.insert(desired.begin() + insertionIndex, moving.begin(), moving.end());
+    if (desired == oldFids) {
+      event->setDropAction(Qt::MoveAction);
+      event->accept();
+      return;
+    }
+
+    std::vector<std::pair<TFrameId, TFrameId>> renumberTable;
+    std::set<TFrameId> movedFids;
+    for (int i = 0; i < (int)oldFids.size(); ++i) {
+      renumberTable.emplace_back(desired[i], oldFids[i]);
+      if (i >= insertionIndex && i < insertionIndex + (int)moving.size())
+        movedFids.insert(oldFids[i]);
+    }
+
+    FilmstripCmd::reorder(targetLevel, renumberTable);
+    refreshLevelContent();
+    selectDroppedFrames(movedFids);
+
+    std::vector<TFrameId> fids;
+    targetLevel->getFids(fids);
+    TApp::instance()->getCurrentFrame()->setFrameIds(fids);
+    if (!movedFids.empty())
+      TApp::instance()->getCurrentFrame()->setFid(*movedFids.begin());
+
+    event->setDropAction(Qt::MoveAction);
+    event->accept();
+    return;
+  }
+
+  if (sourceLevel->getType() != targetLevel->getType()) {
+    DVGui::warning(tr("Frames cannot be dropped between different level types. "
+                      "Level conversion can be added as a future drop option."));
+    event->ignore();
+    return;
+  }
+
+  std::vector<TFrameId> targetFids;
+  targetLevel->getFids(targetFids);
+  std::set<TFrameId> insertionPoint;
+  if (targetFids.empty())
+    insertionPoint.insert(TFrameId(1));
+  else if (targetIndex < (int)targetFids.size())
+    insertionPoint.insert(targetFids[targetIndex]);
+  else
+    insertionPoint.insert(targetFids.back() + 1);
+
+  const bool copyRequested =
+      event->keyboardModifiers() & Qt::ControlModifier;
+  const bool canMove =
+      !copyRequested && !sourceLevel->isReadOnly() &&
+      !sourceLevel->isSubsequence();
+  const Qt::DropAction dropAction =
+      canMove ? Qt::MoveAction : Qt::CopyAction;
+
+  if (canMove) TUndoManager::manager()->beginBlock();
+
+  if (!FilmstripCmd::insertFramesFromLevel(sourceLevel, s_dragSourceFrames,
+                                            targetLevel, insertionPoint)) {
+    if (canMove) TUndoManager::manager()->endBlock();
+    event->ignore();
+    return;
+  }
+
+  if (canMove) {
+    std::set<TFrameId> sourceFrames = s_dragSourceFrames;
+    FilmstripCmd::remove(sourceLevel, sourceFrames);
+    TUndoManager::manager()->endBlock();
+    sourceStrip->m_selection->selectNone();
+    sourceStrip->refreshLevelContent();
+  }
+
+  refreshLevelContent();
+  selectDroppedFrames(insertionPoint);
+  targetFids.clear();
+  targetLevel->getFids(targetFids);
+  TApp::instance()->getCurrentFrame()->setFrameIds(targetFids);
+  if (!insertionPoint.empty())
+    TApp::instance()->getCurrentFrame()->setFid(*insertionPoint.begin());
+
+  event->setDropAction(dropAction);
+  event->accept();
 }
 
 //-----------------------------------------------------------------------------
@@ -1550,6 +2096,7 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
   setLayout(mainLayout);
 
   setFocusProxy(m_frames);
+  m_frames->setLevel(TApp::instance()->getCurrentLevel()->getSimpleLevel());
 
   onLevelSwitched(0);
 
@@ -1564,8 +2111,16 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
           SLOT(comboBoxToggled()));
   connect(m_frames, SIGNAL(navigatorToggledSignal()), this,
           SLOT(navigatorToggled()));
+  connect(m_frames, SIGNAL(responsiveThumbnailsToggledSignal(bool)), this,
+          SLOT(responsiveThumbnailsToggled(bool)));
   connect(m_frames, SIGNAL(levelSelectedSignal(int)), this,
           SLOT(onChooseLevelComboChanged(int)));
+  connect(m_frames, SIGNAL(levelActivatedSignal(TXshSimpleLevel *)), this,
+          SLOT(onLevelActivated(TXshSimpleLevel *)));
+  connect(m_frames, SIGNAL(levelStripsResyncRequestedSignal()), this,
+          SLOT(resyncLevelStrips()));
+
+  m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 }
 
 //-----------------------------------------------------------------------------
@@ -1573,41 +2128,98 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
  * changed
  */
 void Filmstrip::onChooseLevelComboChanged(int index) {
+  m_syncWithCurrentLevel = false;
+  m_frames->setSynchronized(false);
+
   TApp *tapp = TApp::instance();
-  // empty level
-  if (index == m_chooseLevelCombo->findText(tr("- No Current Level -")))
+  int noLevelIndex = m_chooseLevelCombo->findText(tr("- No Current Level -"));
+
+  if (index == noLevelIndex) {
+    makeActive();
+    m_frames->setLevel(0);
     tapp->getCurrentLevel()->setLevel(0);
-  else {
-    std::vector<TFrameId> fids;
-    m_levels[index]->getFids(fids);
-    tapp->getCurrentFrame()->setFrameIds(fids);
+    updateWindowTitle();
+    return;
+  }
 
-    // retrieve to the current working frame of the level
-    TFrameId WF;
-    std::map<TXshSimpleLevel *, TFrameId>::iterator WFit;
-    WFit = m_workingFrames.find(m_levels[index]);
-    if (WFit != m_workingFrames.end())
-      WF = WFit->second;
-    else
-      WF = fids[0];
+  if (index < 0 || index >= (int)m_levels.size()) return;
 
-    // this function emits xshLevelSwitched() signal and eventually calls
-    // FlipConsole::UpdateRange
-    // it may move the current frame so we need to keep the current frameId
-    // before calling setLevel.
-    tapp->getCurrentLevel()->setLevel(m_levels[index]);
+  TXshSimpleLevel *level = m_levels[index];
+  m_frames->setLevel(level);
+  onLevelActivated(level);
 
-    if (tapp->getCurrentSelection()->getSelection())
-      tapp->getCurrentSelection()->getSelection()->selectNone();
+  std::vector<TFrameId> fids;
+  level->getFids(fids);
 
-    // move to the current working frame
-    tapp->getCurrentFrame()->setFid(WF);
+  QApplication::setOverrideCursor(Qt::WaitCursor);
+  invalidateIcons(level, fids);
+  QApplication::restoreOverrideCursor();
 
-    QApplication::setOverrideCursor(Qt::WaitCursor);
+  updateWindowTitle();
+}
 
-    invalidateIcons(m_levels[index], fids);
+//-----------------------------------------------------------------------------
 
-    QApplication::restoreOverrideCursor();
+void Filmstrip::onLevelActivated(TXshSimpleLevel *level) {
+  if (!level) return;
+
+  const bool wasActive = s_activeFilmstrip == this;
+  makeActive();
+
+  TApp *tapp              = TApp::instance();
+  const bool levelChanged = tapp->getCurrentLevel()->getSimpleLevel() != level;
+  if (wasActive && !levelChanged) return;
+
+  std::vector<TFrameId> fids;
+  level->getFids(fids);
+  tapp->getCurrentFrame()->setFrameIds(fids);
+
+  TFrameId workingFid;
+  std::map<TXshSimpleLevel *, TFrameId>::iterator workingIt =
+      m_workingFrames.find(level);
+  if (workingIt != m_workingFrames.end() && level->isFid(workingIt->second))
+    workingFid = workingIt->second;
+  else if (!fids.empty())
+    workingFid = fids.front();
+
+  if (levelChanged) tapp->getCurrentLevel()->setLevel(level);
+
+  if (tapp->getCurrentSelection()->getSelection())
+    tapp->getCurrentSelection()->getSelection()->selectNone();
+
+  if (workingFid != TFrameId()) tapp->getCurrentFrame()->setFid(workingFid);
+}
+
+//-----------------------------------------------------------------------------
+
+void Filmstrip::resyncLevelStrips() {
+  TApp *app                     = TApp::instance();
+  TXshSimpleLevel *currentLevel = app->getCurrentLevel()->getSimpleLevel();
+
+  TFrameId currentFid;
+  TFrameHandle *frameHandle = app->getCurrentFrame();
+  if (currentLevel && frameHandle->isEditingLevel() &&
+      currentLevel->isFid(frameHandle->getFid()))
+    currentFid = frameHandle->getFid();
+
+  const QWidgetList widgets = QApplication::allWidgets();
+  for (QWidget *widget : widgets) {
+    Filmstrip *filmstrip = qobject_cast<Filmstrip *>(widget);
+    if (!filmstrip) continue;
+
+    filmstrip->m_syncWithCurrentLevel = true;
+    filmstrip->m_frames->setSynchronized(true);
+    filmstrip->m_frames->setLevel(currentLevel);
+
+    if (currentLevel && currentFid != TFrameId()) {
+      std::map<TXshSimpleLevel *, TFrameId>::iterator workingIt =
+          filmstrip->m_workingFrames.find(currentLevel);
+      if (workingIt != filmstrip->m_workingFrames.end())
+        workingIt->second = currentFid;
+    }
+
+    filmstrip->updateWindowTitle();
+    filmstrip->update();
   }
 }
 
@@ -1615,6 +2227,8 @@ void Filmstrip::onChooseLevelComboChanged(int index) {
 /*! update combo items when the contents of scene cast are changed
  */
 void Filmstrip::updateChooseLevelComboItems() {
+  TXshSimpleLevel *stripLevel = m_frames->getLevel();
+
   // clear items
   m_chooseLevelCombo->clear();
   for (auto oldLevel : m_levels) oldLevel->release();
@@ -1671,12 +2285,24 @@ void Filmstrip::updateChooseLevelComboItems() {
   m_workingFrames.clear();
   m_workingFrames = new_workingFrames;
 
-  // synchronize the current index of combo to the current level
+  if (std::find(m_levels.begin(), m_levels.end(), stripLevel) ==
+      m_levels.end()) {
+    TXshSimpleLevel *currentLevel =
+        TApp::instance()->getCurrentLevel()->getSimpleLevel();
+    if (std::find(m_levels.begin(), m_levels.end(), currentLevel) !=
+        m_levels.end())
+      stripLevel = currentLevel;
+    else
+      stripLevel = 0;
+  }
+  m_frames->setLevel(stripLevel);
+
+  // synchronize the combo to this strip's assigned level
   updateCurrentLevelComboItem();
 }
 
 //-----------------------------------------------------------------------------
-/*! synchronize the current index of combo to the current level
+/*! synchronize the combo to the level assigned to this strip
  */
 void Filmstrip::updateCurrentLevelComboItem() {
   if (m_chooseLevelCombo->count() == 1 &&
@@ -1685,8 +2311,7 @@ void Filmstrip::updateCurrentLevelComboItem() {
     return;
   }
 
-  TXshSimpleLevel *currentLevel =
-      TApp::instance()->getCurrentLevel()->getSimpleLevel();
+  TXshSimpleLevel *currentLevel = m_frames->getLevel();
   if (!currentLevel) {
     int noLevelIndex = m_chooseLevelCombo->findText(tr("- No Current Level -"));
     if (noLevelIndex == -1) {
@@ -1698,7 +2323,7 @@ void Filmstrip::updateCurrentLevelComboItem() {
   }
 
   for (int i = 0; i < m_levels.size(); i++) {
-    if (currentLevel->getName() == m_levels[i]->getName()) {
+    if (currentLevel == m_levels[i]) {
       m_chooseLevelCombo->setCurrentIndex(i);
       int noLevelIndex =
           m_chooseLevelCombo->findText(tr("- No Current Level -"));
@@ -1718,14 +2343,37 @@ void Filmstrip::updateCurrentLevelComboItem() {
 //-----------------------------------------------------------------------------
 
 Filmstrip::~Filmstrip() {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(false);
+    s_activeFilmstrip = nullptr;
+  }
+
   for (auto level : m_levels) level->release();
   m_levels.clear();
 }
 
 //-----------------------------------------------------------------------------
 
+void Filmstrip::makeActive() {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(true);
+    return;
+  }
+
+  if (s_activeFilmstrip) s_activeFilmstrip->m_frames->setActive(false);
+
+  s_activeFilmstrip = this;
+  m_frames->setActive(true);
+}
+
+//-----------------------------------------------------------------------------
+
 void Filmstrip::showEvent(QShowEvent *) {
-  TApp *app                    = TApp::instance();
+  TApp *app = TApp::instance();
+  if (!s_activeFilmstrip) makeActive();
+  if (!m_frames->getLevel())
+    m_frames->setLevel(app->getCurrentLevel()->getSimpleLevel());
+
   TXshLevelHandle *levelHandle = app->getCurrentLevel();
   bool ret = connect(levelHandle, SIGNAL(xshLevelSwitched(TXshLevel *)),
                      SLOT(onLevelSwitched(TXshLevel *)));
@@ -1766,6 +2414,11 @@ void Filmstrip::showEvent(QShowEvent *) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::hideEvent(QHideEvent *) {
+  if (s_activeFilmstrip == this) {
+    m_frames->setActive(false);
+    s_activeFilmstrip = nullptr;
+  }
+
   TApp *app                    = TApp::instance();
   TXshLevelHandle *levelHandle = app->getCurrentLevel();
   disconnect(levelHandle, SIGNAL(xshLevelSwitched(TXshLevel *)), this,
@@ -1825,31 +2478,52 @@ void Filmstrip::updateWindowTitle() {
   if (!level) {
     parentWidget()->setWindowTitle(tr("Level Strip"));
     return;
-  } else {
-    levelName = QString::fromStdWString(level->getName());
-    if (level->getProperties()->getDirtyFlag()) levelName += " *";
   }
+
+  levelName = QString::fromStdWString(level->getName());
+  if (level->getProperties()->getDirtyFlag()) levelName += " *";
 
   // parentWidget() is TPanel
   parentWidget()->setWindowTitle(tr("Level:  ") + levelName);
 
+  TFrameId workingFid;
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
-  if (fh->isEditingLevel() && fh->getFid().getNumber() >= 0)
-    levelName += QString("  [#") + QString::number(fh->getFid().getNumber()) +
+  if (s_activeFilmstrip == this &&
+      level == TApp::instance()->getCurrentLevel()->getSimpleLevel() &&
+      fh->isEditingLevel() && level->isFid(fh->getFid())) {
+    workingFid = fh->getFid();
+  } else {
+    std::map<TXshSimpleLevel *, TFrameId>::iterator workingIt =
+        m_workingFrames.find(level);
+    if (workingIt != m_workingFrames.end()) workingFid = workingIt->second;
+  }
+
+  if (workingFid.getNumber() >= 0)
+    levelName += QString("  [#") + QString::number(workingFid.getNumber()) +
                  QString("]");
 
-  m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
-                                  levelName);
+  if (m_chooseLevelCombo->currentIndex() >= 0)
+    m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
+                                    levelName);
 }
 
 //-----------------------------------------------------------------------------
 
 void Filmstrip::onLevelSwitched(TXshLevel *oldLevel) {
+  (void)oldLevel;
+
+  if (m_syncWithCurrentLevel || s_activeFilmstrip == this) {
+    TXshSimpleLevel *activeLevel =
+        TApp::instance()->getCurrentLevel()->getSimpleLevel();
+    m_frames->setLevel(activeLevel);
+  }
+
   updateWindowTitle();
 
   int tc = ToonzCheck::instance()->getChecks();
-  if (tc & (ToonzCheck::eInk | ToonzCheck::ePaint)) {
-    TXshLevel *sl = TApp::instance()->getCurrentLevel()->getLevel();
+  if (s_activeFilmstrip == this &&
+      (tc & (ToonzCheck::eInk | ToonzCheck::ePaint))) {
+    TXshLevel *sl = m_frames->getLevel();
     if (!sl) return;
     std::vector<TFrameId> fids;
     sl->getFids(fids);
@@ -1861,10 +2535,8 @@ void Filmstrip::onLevelSwitched(TXshLevel *oldLevel) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::onSliderMoved(int val) {
-  int oneFrameHeight = m_frames->getIconSize().height() + fs_frameSpacing +
-                       fs_iconMarginTop + fs_iconMarginBottom;
-  int oneFrameWidth =
-      m_frames->getIconSize().width() + fs_frameSpacing + fs_iconMarginLR;
+  int oneFrameHeight = m_frames->getOneFrameHeight();
+  int oneFrameWidth  = m_frames->getOneFrameWidth();
   if (m_isVertical) {
     int tmpVal =
         (int)((float)val / (float)oneFrameHeight + 0.5f) * oneFrameHeight;
@@ -1879,22 +2551,29 @@ void Filmstrip::onSliderMoved(int val) {
 //-----------------------------------------------------------------------------
 
 void Filmstrip::onFrameSwitched() {
+  if (!m_syncWithCurrentLevel && s_activeFilmstrip != this) return;
+
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   if (!fh->isEditingLevel()) return;
 
   TXshSimpleLevel *level = m_frames->getLevel();
+  if (!level || level != TApp::instance()->getCurrentLevel()->getSimpleLevel())
+    return;
+
+  TFrameId fid = fh->getFid();
+  if (!level->isFid(fid)) return;
 
   std::map<TXshSimpleLevel *, TFrameId>::iterator WFit;
   WFit = m_workingFrames.find(level);
   if (WFit == m_workingFrames.end()) return;
 
-  WFit->second = fh->getFid();
+  WFit->second = fid;
 
   QString levelName = QString::fromStdWString(level->getName());
   if (level->getProperties()->getDirtyFlag()) levelName += " *";
-  if (fh->getFid().getNumber() >= 0)
-    levelName += QString("  [#") + QString::number(fh->getFid().getNumber()) +
-                 QString("]");
+  if (fid.getNumber() >= 0)
+    levelName +=
+        QString("  [#") + QString::number(fid.getNumber()) + QString("]");
 
   m_chooseLevelCombo->setItemText(m_chooseLevelCombo->currentIndex(),
                                   levelName);
@@ -1922,6 +2601,13 @@ void Filmstrip::comboBoxToggled() {
 void Filmstrip::navigatorToggled() {
   m_showNavigator = !m_showNavigator;
   m_frames->setNavigator(m_showNavigator);
+}
+
+//-----------------------------------------------------------------------------
+
+void Filmstrip::responsiveThumbnailsToggled(bool responsive) {
+  m_responsiveThumbnails = responsive;
+  m_frames->setResponsiveThumbnails(responsive);
 }
 
 //-----------------------------------------------------------------------------
@@ -1955,6 +2641,9 @@ void Filmstrip::save(QSettings &settings) const {
   UINT navigator = 0;
   navigator      = m_showNavigator ? 1 : 0;
   settings.setValue("navigator", navigator);
+
+  UINT responsive = m_responsiveThumbnails ? 1 : 0;
+  settings.setValue("responsiveThumbnails", responsive);
 }
 
 void Filmstrip::load(QSettings &settings) {
@@ -1974,6 +2663,10 @@ void Filmstrip::load(QSettings &settings) {
     m_chooseLevelCombo->hide();
   }
   m_frames->setComboBox(m_showComboBox);
+
+  UINT responsive        = settings.value("responsiveThumbnails", 1).toUInt();
+  m_responsiveThumbnails = responsive == 1;
+  m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 }
 
 //=============================================================================

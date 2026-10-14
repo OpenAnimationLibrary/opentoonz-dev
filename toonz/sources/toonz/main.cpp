@@ -74,6 +74,7 @@
 #include <QApplication>
 #include <QAbstractEventDispatcher>
 #include <QAbstractNativeEventFilter>
+#include <QByteArray>
 #include <QSplashScreen>
 #include <QGLPixelBuffer>
 #include <QTranslator>
@@ -174,6 +175,8 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
   /*-- ENGLISH: Confirm TOONZROOT Path
         Check if the xxxroot is defined and corresponds to an existing folder
   --*/
+
+  TEnv::initUserStuffDir();
 
   TFilePath stuffDir = TEnv::getStuffDir();
   if (stuffDir == TFilePath())
@@ -793,7 +796,12 @@ int main(int argc, char *argv[]) {
   // Show floating panels only after the main window has been shown
   w.startupFloatingPanels();
 
-  CommandManager::instance()->execute(T_Hand);
+  const QByteArray defaultStartupTool =
+      Preferences::instance()->getDefaultStartupTool().toLatin1();
+  if (CommandManager::instance()->getAction(defaultStartupTool.constData()))
+    CommandManager::instance()->execute(defaultStartupTool.constData());
+  else
+    CommandManager::instance()->execute(T_Hand);
   if (!loadFilePath.isEmpty()) {
     splash.showMessage(
         QString("Loading file '") + loadFilePath.getQString() + "'...",

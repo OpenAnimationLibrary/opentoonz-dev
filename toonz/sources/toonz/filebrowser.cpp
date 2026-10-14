@@ -31,6 +31,7 @@
 #include "toonz/namebuilder.h"
 #include "toonz/toonzimageutils.h"
 #include "toonz/preferences.h"
+#include "thirdparty.h"
 
 // TnzBase includes
 #include "tenv.h"
@@ -73,6 +74,8 @@
 #include <QTreeWidgetItem>
 #include <QSplitter>
 #include <QFileSystemWatcher>
+#include <QFileDialog>
+#include <QProcess>
 
 // tcg includes
 #include "tcg/boost/range_utility.h"
@@ -1006,6 +1009,116 @@ void FileBrowser::renameItem(int index, const QString &newName) {
 
 //-----------------------------------------------------------------------------
 
+void FileBrowser::createLutFromImagePair() {
+  FileSelection *fs =
+      dynamic_cast<FileSelection *>(m_itemViewer->getPanel()->getSelection());
+  if (!fs) return;
+
+  std::vector<TFilePath> files;
+  fs->getSelectedFiles(files);
+  if (files.size() != 1) return;
+
+  const TFilePath selectedPath = files[0];
+  if (!TFileType::isFullColor(TFileType::getInfo(selectedPath))) return;
+
+  TFilePath sourcePath = selectedPath;
+  if (selectedPath.isLevelName()) {
+    try {
+      TLevelReaderP reader(selectedPath);
+      TLevelP level = reader->loadInfo();
+      if (!level || level->getFrameCount() == 0) {
+        DVGui::warning(tr("The selected raster level contains no frames."));
+        return;
+      }
+      sourcePath = selectedPath.withFrame(level->begin()->first);
+    } catch (...) {
+      DVGui::warning(
+          tr("Could not resolve a frame from the selected raster level."));
+      return;
+    }
+  }
+
+  if (!QFileInfo(sourcePath.getQString()).isFile()) {
+    DVGui::warning(tr("The selected raster image could not be found on disk."));
+    return;
+  }
+
+  if (!ThirdParty::checkOtlut()) {
+    const QString detected = ThirdParty::autodetectOtlut();
+    if (!detected.isEmpty()) ThirdParty::setOtlutDir(detected);
+  }
+
+  if (!ThirdParty::checkOtlut()) {
+    DVGui::warning(
+        tr("OTLUT was not found. Place otlut next to OpenToonz or set the "
+           "OTLUT Path in Preferences > Import/Export."));
+    return;
+  }
+
+  const QString targetPath = QFileDialog::getOpenFileName(
+      this, tr("Select Graded / Target Image"),
+      sourcePath.getParentDir().getQString(),
+      tr("Raster Images (*.png *.jpg *.jpeg *.bmp *.tga *.psd *.gif *.hdr "
+         "*.pic *.pnm);;All Files (*)"));
+  if (targetPath.isEmpty()) return;
+
+  TFilePath lutDir = TEnv::getStuffDir() + "library" + "luts";
+  try {
+    if (!TFileStatus(lutDir).doesExist()) TSystem::mkDir(lutDir);
+  } catch (...) {
+    DVGui::error(tr("Could not create the LUT library folder: ") +
+                 lutDir.getQString());
+    return;
+  }
+
+  const QString baseName =
+      QFileInfo(sourcePath.getQString()).completeBaseName();
+  TFilePath outputPath =
+      lutDir + TFilePath((baseName + ".cube").toStdWString());
+  int suffix = 2;
+  while (TSystem::doesExistFileOrLevel(outputPath)) {
+    outputPath =
+        lutDir +
+        TFilePath((baseName + "_" + QString::number(suffix++) + ".cube")
+                      .toStdWString());
+  }
+
+  QStringList arguments;
+  arguments << "--source" << sourcePath.getQString() << "--target"
+            << targetPath << "--output" << outputPath.getQString() << "--size"
+            << "33";
+
+  QProcess process;
+  ThirdParty::runOtlut(process, arguments);
+
+  if (!process.waitForStarted(5000)) {
+    DVGui::error(tr("Could not start OTLUT."));
+    return;
+  }
+
+  if (!process.waitForFinished(120000)) {
+    process.kill();
+    process.waitForFinished();
+    DVGui::error(tr("OTLUT timed out while creating the LUT."));
+    return;
+  }
+
+  if (process.exitStatus() != QProcess::NormalExit ||
+      process.exitCode() != 0) {
+    QString errorText =
+        QString::fromUtf8(process.readAllStandardError()).trimmed();
+    if (errorText.isEmpty())
+      errorText = tr("OTLUT exited with code %1.").arg(process.exitCode());
+    DVGui::error(tr("OTLUT could not create the LUT.\n") + errorText);
+    return;
+  }
+
+  DVGui::info(tr("3D LUT created successfully:\n") +
+              outputPath.getQString());
+}
+
+//-----------------------------------------------------------------------------
+
 bool FileBrowser::renameFile(TFilePath &fp, QString newName) {
   if (isSpaceString(newName)) return true;
 
@@ -1127,6 +1240,17 @@ QMenu *FileBrowser::getContextMenu(QWidget *parent, int index) {
   TFilePath clickedFile;
   if (0 <= index && index < (int)m_items.size())
     clickedFile = m_items[index].m_path;
+
+  if (files.size() == 1) {
+    const TFileType::Type selectedType = TFileType::getInfo(files[0]);
+    if (TFileType::isFullColor(selectedType)) {
+      QAction *lutAction =
+          menu->addAction(tr("Create 3D LUT from Image Pair..."));
+      connect(lutAction, &QAction::triggered, this,
+              &FileBrowser::createLutFromImagePair);
+      menu->addSeparator();
+    }
+  }
 
   if (areResources) {
     QString title;

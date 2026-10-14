@@ -59,7 +59,7 @@ class TRasterImageP;
   \todo Substitute m_frames with a sorted vector or a boost flat_set.
 */
 
-class DVAPI TXshSimpleLevel final : public TXshLevel {
+class DVAPI TXshSimpleLevel : public TXshLevel {
   Q_OBJECT
 
   PERSIST_DECLARATION(TXshSimpleLevel)
@@ -122,7 +122,7 @@ public:
   // Read-only status
   bool isReadOnly() const { return m_isReadOnly; }
   void setIsReadOnly(bool value) { m_isReadOnly = value; }
-  void updateReadOnly();
+  virtual void updateReadOnly();
 
   // Properties management
   LevelProperties *getProperties() const { return m_properties.get(); }
@@ -264,8 +264,8 @@ public:
     Save the level in the specified fp.
     The oldFp is used when the current scene path change...
   */
-  void save(const TFilePath &fp, const TFilePath &oldFp = TFilePath(),
-            bool overwritePalette = true);
+  virtual void save(const TFilePath &fp, const TFilePath &oldFp = TFilePath(),
+                    bool overwritePalette = true);
 
   // Content history management
   const TContentHistory *getContentHistory() const {
@@ -287,7 +287,7 @@ public:
   //! must have the same size).
   void renumber(const std::vector<TFrameId> &fids);
 
-  bool isFrameReadOnly(TFrameId fid);
+  virtual bool isFrameReadOnly(TFrameId fid);
 
 public:
   // Static methods for auxiliary files management: hooks, tpl, etc.
@@ -335,6 +335,11 @@ public:
 
   static void setCompatibilityMasks(int writeMask, int neededMask,
                                     int forbiddenMask);
+
+protected:
+  // Specialized retained-source levels use the same one-shot loading range
+  // contract as TXshSimpleLevel::load().
+  void setIsSubsequence(bool value) { m_isSubsequence = value; }
 
 public Q_SLOTS:
   void onPaletteChanged();  //!< Invoked when some colorstyle has been changed

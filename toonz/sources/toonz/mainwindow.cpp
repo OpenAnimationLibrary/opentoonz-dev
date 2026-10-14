@@ -1,6 +1,7 @@
 
 
 #include "mainwindow.h"
+#include "customhelplink.h"
 
 // Tnz6 includes
 #include "menubar.h"
@@ -18,6 +19,9 @@
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
+#ifdef ENABLE_CRASH_REPORTER_TEST
+#include "crashhandler.h"
+#endif
 
 // TnzTools includes
 #include "tools/toolcommandids.h"
@@ -29,6 +33,7 @@
 #include "toonzqt/viewcommandids.h"
 #include "toonzqt/updatechecker.h"
 #include "toonzqt/paletteviewer.h"
+#include "toonzqt/lutcalibrator.h"
 #include "toonzqt/seethroughwindow.h"
 
 // TnzLib includes
@@ -59,6 +64,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QMessageBox>
+#include <QTimer>
 #ifdef _WIN32
 #include <QtPlatformHeaders/QWindowsWindowFunctions>
 #endif
@@ -419,7 +425,30 @@ void Room::load(const TFilePath &fp, RoomLoadParams &params) {
 
   layout->restoreState(state);
 
+  // Store layout state for deferred re-apply after the first show.
+  // Without this, TMainWindow::resizeEvent → redistribute() recalculates
+  // panel sizes before the window has reached its final geometry.
+  m_pendingLayoutState        = state;
+  m_hasPendingLayoutRestore   = true;
+
   m_initialized = true;
+}
+
+//-----------------------------------------------------------------------------
+
+void Room::showEvent(QShowEvent *event) {
+  TMainWindow::showEvent(event);
+
+  if (m_hasPendingLayoutRestore) {
+    m_hasPendingLayoutRestore = false;
+    DockLayout::State savedState = m_pendingLayoutState;
+    DockLayout *layout           = dockLayout();
+    QTimer::singleShot(0, this, [layout, savedState]() {
+      // restoreState() already applies the saved panel geometry. Redistributing
+      // here would recalculate it and discard the user's saved panel positions.
+      layout->restoreState(savedState);
+    });
+  }
 }
 
 //=============================================================================
@@ -510,9 +539,14 @@ centralWidget->setLayout(centralWidgetLayout);*/
   setCommandHandler(MI_About, this, &MainWindow::onAbout);
   setCommandHandler(MI_OpenOnlineManual, this, &MainWindow::onOpenOnlineManual);
   setCommandHandler(MI_OpenWhatsNew, this, &MainWindow::onOpenWhatsNew);
+  setCommandHandler(MI_Quicklink, this, &MainWindow::onOpenQuicklink);
   setCommandHandler(MI_OpenCommunityForum, this,
                     &MainWindow::onOpenCommunityForum);
   setCommandHandler(MI_OpenReportABug, this, &MainWindow::onOpenReportABug);
+#ifdef ENABLE_CRASH_REPORTER_TEST
+  setCommandHandler(MI_TestCrashReporter, this,
+                    &MainWindow::onTestCrashReporter);
+#endif
 
   setCommandHandler(MI_MaximizePanel, this, &MainWindow::maximizePanel);
   setCommandHandler(MI_FullScreenWindow, this, &MainWindow::fullScreenWindow);
@@ -1116,6 +1150,10 @@ void MainWindow::onOpenWhatsNew() {
 
 //-----------------------------------------------------------------------------
 
+void MainWindow::onOpenQuicklink() { CustomHelpLink::open(); }
+
+//-----------------------------------------------------------------------------
+
 void MainWindow::onOpenCommunityForum() {
   QDesktopServices::openUrl(
       QUrl(tr("https://groups.google.com/forum/#!forum/opentoonz_en")));
@@ -1136,6 +1174,20 @@ void MainWindow::onOpenReportABug() {
     QDesktopServices::openUrl(
         QUrl("https://github.com/opentoonz/opentoonz/issues"));
 }
+//-----------------------------------------------------------------------------
+
+#ifdef ENABLE_CRASH_REPORTER_TEST
+void MainWindow::onTestCrashReporter() {
+  const std::vector<QString> buttons = {tr("Crash OpenToonz"), tr("Cancel")};
+  const int ret = DVGui::MsgBox(
+      DVGui::WARNING,
+      tr("This will deliberately terminate OpenToonz without saving. "
+         "Continue?"),
+      buttons, 1);
+  if (ret == 1) CrashHandler::triggerTestCrash();
+}
+#endif
+
 //-----------------------------------------------------------------------------
 
 void MainWindow::autofillToggle() {
@@ -2241,6 +2293,9 @@ void MainWindow::defineActions() {
       MI_ExportOCA,
       QT_TRANSLATE_NOOP("MainWindow", "Export Open Cel Animation (OCA)"), "",
       "export_oca");
+  createMenuFileAction(MI_ExportAnimatedSVG,
+                       QT_TRANSLATE_NOOP("MainWindow", "Export Animated SVG"),
+                       "");
   createMenuFileAction(
       MI_ImportOCA,
       QT_TRANSLATE_NOOP("MainWindow", "Import Open Cel Animation (OCA)"), "",
@@ -2248,6 +2303,8 @@ void MainWindow::defineActions() {
   createMenuFileAction(
       MI_ExportTvpJson,
       QT_TRANSLATE_NOOP("MainWindow", "Export TVPaint JSON File"), "");
+  createMenuFileAction(MI_ExportPDF,
+                       QT_TRANSLATE_NOOP("MainWindow", "Export PDF..."), "");
   createMenuFileAction("MI_RunScript", QT_TR_NOOP("Run Script..."), "",
                        "run_script");
   createMenuFileAction("MI_OpenScriptConsole",
@@ -2270,6 +2327,27 @@ void MainWindow::defineActions() {
                        "");
 
   // Menu - Edit
+
+  createMenuEditAction(MI_AlignLeft, QT_TR_NOOP("Align Left"), "",
+                       "select_align_left");
+  createMenuEditAction(MI_AlignRight, QT_TR_NOOP("Align Right"), "",
+                       "select_align_right");
+  createMenuEditAction(MI_AlignTop, QT_TR_NOOP("Align Top"), "",
+                       "select_align_top");
+  createMenuEditAction(MI_AlignBottom, QT_TR_NOOP("Align Bottom"), "",
+                       "select_align_bottom");
+  createMenuEditAction(MI_AlignCenterHorizontal,
+                       QT_TR_NOOP("Align Center Horizontally"), "",
+                       "select_align_center_h");
+  createMenuEditAction(MI_AlignCenterVertical,
+                       QT_TR_NOOP("Align Center Vertically"), "",
+                       "select_align_center_v");
+  createMenuEditAction(MI_DistributeHorizontal,
+                       QT_TR_NOOP("Distribute Horizontally"), "",
+                       "select_distribute_h");
+  createMenuEditAction(MI_DistributeVertical,
+                       QT_TR_NOOP("Distribute Vertically"), "",
+                       "select_distribute_v");
 
   createMenuEditAction(MI_SelectAll, QT_TR_NOOP("&Select All"), "Ctrl+A",
                        "select_all");
@@ -2471,6 +2549,9 @@ void MainWindow::defineActions() {
                          "insert_frame");
   createMenuXsheetAction(MI_RemoveSceneFrame, QT_TR_NOOP("Remove Frame"), "",
                          "remove_frame");
+  createMenuXsheetAction(MI_RemoveSelectedSceneFrames,
+                         QT_TR_NOOP("Remove Selected Frames"), "",
+                         "remove_frame");
   createMenuXsheetAction(MI_InsertGlobalKeyframe,
                          QT_TR_NOOP("Insert Multiple Keys"), "",
                          "insert_multiple_keys");
@@ -2596,6 +2677,8 @@ void MainWindow::defineActions() {
                          "", "preview_settings");
   createMenuRenderAction(MI_Render, QT_TR_NOOP("&Render"), "Ctrl+Shift+R",
                          "render");
+  createMenuRenderAction(MI_SaveAndRender, QT_TR_NOOP("&Save and Render"), "",
+                         "render");
   createMenuRenderAction(MI_FastRender, QT_TR_NOOP("&Fast Render to MP4"),
                          "Alt+R", "fast_render_mp4");
   createMenuRenderAction(MI_Preview, QT_TR_NOOP("&Preview"), "Ctrl+R",
@@ -2611,11 +2694,29 @@ void MainWindow::defineActions() {
 
   createRightClickMenuAction(MI_OpenPltGizmo, QT_TR_NOOP("&Palette Gizmo"), "",
                              "palettegizmo");
+  createRightClickMenuAction(MI_SetLinearControlPoint,
+                             QT_TR_NOOP("Set Linear Control Point"), "",
+                             "set_linear_cp");
+  createRightClickMenuAction(MI_SetNonLinearControlPoint,
+                             QT_TR_NOOP("Set Nonlinear Control Point"), "",
+                             "set_nonlinear_cp");
   createRightClickMenuAction(MI_EraseUnusedStyles,
                              QT_TR_NOOP("&Delete Unused Styles"), "",
                              "delete_unused_styles");
 
   // Menu - View
+
+  menuAct =
+      createToggle(MI_ToggleColorCalibration, QT_TR_NOOP("Toggle Active LUT"),
+                   "", Preferences::instance()->isColorCalibrationEnabled(),
+                   MenuViewCommandType);
+  connect(menuAct, &QAction::triggered, this, [](bool enabled) {
+    Preferences::instance()->setValue(colorCalibrationEnabled, enabled);
+    LutManager::instance()->update();
+    TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+        "ColorCalibration");
+  });
+  menuAct->setEnabled(true);
 
   createToggle(MI_ViewCamera, QT_TR_NOOP("&Camera Box"), "",
                ViewCameraToggleAction ? 1 : 0, MenuViewCommandType);
@@ -2762,6 +2863,8 @@ void MainWindow::defineActions() {
   createMenuHelpAction(MI_About, QT_TR_NOOP("&About OpenToonz..."), "", "info");
   createMenuWindowsAction(MI_StartupPopup, QT_TR_NOOP("&Startup Popup..."),
                           "Alt+S", "opentoonz");
+  createMenuWindowsAction(MI_OpenAlignmentPanel,
+                          QT_TR_NOOP("Align and Distribute Panel"), "", "");
   createMenuWindowsAction(MI_OpenGuidedDrawingControls,
                           QT_TR_NOOP("Guided Drawing Controls"), "",
                           "guided_drawing");
@@ -2784,10 +2887,15 @@ void MainWindow::defineActions() {
                        "F1", "manual");
   createMenuHelpAction(MI_OpenWhatsNew, QT_TR_NOOP("&What's New..."), "",
                        "web");
+  createMenuHelpAction(MI_Quicklink, QT_TR_NOOP("&Quicklink"), "", "web");
   createMenuHelpAction(MI_OpenCommunityForum, QT_TR_NOOP("&Community Forum..."),
                        "", "web");
   createMenuHelpAction(MI_OpenReportABug, QT_TR_NOOP("&Report a Bug..."), "",
                        "web");
+#ifdef ENABLE_CRASH_REPORTER_TEST
+  createMenuHelpAction(MI_TestCrashReporter,
+                       QT_TR_NOOP("Test Crash Reporter..."), "", "");
+#endif
 
   // Fill
 
@@ -2813,6 +2921,8 @@ void MainWindow::defineActions() {
   CommandManager::instance()->setToggleTexts(
       MI_FreezePreview, tr("Freeze Preview"), tr("Unfreeze Preview"));
   createRightClickMenuAction(MI_SavePreset, QT_TR_NOOP("&Save As Preset"), "");
+  createRightClickMenuAction(MI_SaveAsCustomVectorBrush,
+                             QT_TR_NOOP("Save as Custom Vector Brush..."), "");
   createRightClickMenuAction(MI_PreviewFx, QT_TR_NOOP("Preview Fx"), "");
   createRightClickMenuAction(MI_PasteValues, QT_TR_NOOP("&Paste Color && Name"),
                              "", "paste_color_and_name");

@@ -5,6 +5,7 @@
 
 #include "tcommon.h"
 #include "tpixelutils.h"
+#include "toonz/lut3d.h"
 
 #include <QOpenGLBuffer>
 #include <QMatrix4x4>
@@ -40,6 +41,8 @@ class DVAPI LutCalibrator : public QOpenGLFunctions {
     int texUniform                = -1;
     int lutUniform                = -1;
     int lutSizeUniform            = -1;
+    int domainMinUniform          = -1;
+    int domainMaxUniform          = -1;
     int vertexAttrib              = -1;
     int texCoordAttrib            = -1;
   } m_shader;
@@ -77,10 +80,7 @@ class DVAPI LutManager  // singleton
 
   LutManager();
 
-  struct Lut {
-    int meshSize;
-    float* data = nullptr;
-  } m_lut;
+  Lut3D m_lut;
 
 public:
   static LutManager* instance();
@@ -88,8 +88,10 @@ public:
   ~LutManager();
 
   bool isValid() { return m_isValid; }
-  int meshSize() const { return m_lut.meshSize; }
-  const float* data() const { return m_lut.data; }
+  int meshSize() const { return m_lut.meshSize(); }
+  const float* data() const { return m_lut.data(); }
+  const float* domainMin() const { return m_lut.domainMin(); }
+  const float* domainMax() const { return m_lut.domainMax(); }
 
   bool loadLutFile(const QString& fp);
 

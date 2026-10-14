@@ -227,6 +227,14 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
   renderButton->setIconSize(QSize(20, 20));
   renderButton->setFixedWidth(200);
 
+  QPushButton *saveAndRenderButton =
+      new QPushButton(tr("Save and Render"), this);
+  saveAndRenderButton->setIcon(createQIcon("render"));
+  saveAndRenderButton->setIconSize(QSize(20, 20));
+  saveAndRenderButton->setFixedWidth(200);
+  saveAndRenderButton->setToolTip(
+      tr("Save the scene and all its resources, then render."));
+
   m_topLayout->setContentsMargins(5, 5, 5, 5);
   {
     QHBoxLayout *presetLay = new QHBoxLayout();
@@ -252,10 +260,18 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
     m_topLayout->addLayout(middleLay, 1);
 
     m_topLayout->addSpacing(5);
-    m_topLayout->addWidget(renderButton, 0, Qt::AlignCenter);
+    QHBoxLayout *renderButtonsLayout = new QHBoxLayout();
+    renderButtonsLayout->addStretch();
+    renderButtonsLayout->addWidget(renderButton);
+    renderButtonsLayout->addWidget(saveAndRenderButton);
+    renderButtonsLayout->addStretch();
+    m_topLayout->addLayout(renderButtonsLayout);
   }
 
   bool ret = true;
+  ret = ret && connect(saveAndRenderButton, &QPushButton::clicked, this, []() {
+          CommandManager::instance()->execute(MI_SaveAndRender);
+        });
   ret      = ret &&
         connect(renderButton, SIGNAL(pressed()), this, SLOT(onRenderClicked()));
   ret = ret && connect(addPresetButton, SIGNAL(pressed()), this,

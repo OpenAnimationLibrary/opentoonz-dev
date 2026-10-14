@@ -38,7 +38,11 @@ set(HEADERS
     autopos.h
     cleanupcommon.h
     cleanuppalette.h
+    exrlevelloader.h
+    exrlevelsource.h
     imagebuilders.h
+    ../include/toonz/txshexrlevel.h
+    ../include/toonz/lut3d.h
     skeletonlut.h
     tcenterlinevectP.h
     texturemanager.h
@@ -76,6 +80,7 @@ set(HEADERS
     ../include/toonz/cleanupparameters.h
     ../include/toonz/columnfan.h
     ../include/toonz/controlpointobserver.h
+    ../include/toonz/customvectorbrushexporter.h
     ../include/toonz/currentimage.h
     ../include/toonz/doubleparamcmd.h
     ../include/toonz/dpiscale.h
@@ -178,7 +183,11 @@ set(SOURCES
     cleanupparameters.cpp
     columnfan.cpp
     convert2tlv.cpp
+    customvectorbrushexporter.cpp
     dpiscale.cpp
+    exrlevelloader.cpp
+    exrlevelsource.cpp
+    txshexrlevel.cpp
     fill.cpp
     fillutil.cpp
     fullcolorpalette.cpp
@@ -197,6 +206,7 @@ set(SOURCES
     levelproperties.cpp
     levelset.cpp
     levelupdater.cpp
+    lut3d.cpp
     logger.cpp
     movierenderer.cpp
     multimediarenderer.cpp
@@ -394,3 +404,5 @@ elseif(BUILD_ENV_UNIXLIKE)
 
     target_link_libraries(toonzlib Qt5::Core Qt5::Gui Qt5::OpenGL Qt5::Script Qt5::Multimedia ${GLUT_LIB} ${GL_LIB} ${GLEW_LIB} ${EXTRA_LIBS} ${MYPAINT_LIB_LDFLAGS})
 endif()
+
+target_link_libraries(toonzlib OpenEXR::OpenEXR)

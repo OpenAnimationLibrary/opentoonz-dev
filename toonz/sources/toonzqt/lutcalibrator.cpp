@@ -12,19 +12,23 @@
 #include <QOpenGLTexture>
 #include <QOpenGLContext>
 #include <QOffscreenSurface>
-#include <QFile>
 #include <QColor>
+#include <QStringList>
+
 
 namespace {
 inline bool execWarning(const QString& s) {
   DVGui::MsgBox(DVGui::WARNING, s);
   return false;
 }
-};  // namespace
+
+float clamp01(float value) {
+  return value < 0.0f ? 0.0f : value > 1.0f ? 1.0f : value;
+}
+}  // namespace
 
 #ifdef WIN32
 
-#include <QStringList>
 #include <QSettings>
 #include <QByteArray>
 
@@ -262,8 +266,11 @@ bool LutCalibrator::initializeLutTextureShader() {
       "uniform sampler2D tex; \n"
       "uniform sampler3D lut; \n"
       "uniform vec3 lutSize; \n"
+      "uniform vec3 domainMin; \n"
+      "uniform vec3 domainMax; \n"
       "void main() { \n"
-      "  vec3 rawColor = texture(tex,UV).rgb; \n"
+      "  vec3 rawColor = clamp((texture(tex,UV).rgb - domainMin) / "
+      "(domainMax - domainMin), 0.0, 1.0); \n"
       "  vec3 scale = (lutSize - 1.0) / lutSize; \n"
       "  vec3 offset = 1.0 / (2.0 * lutSize); \n"
       "  color = vec4(texture(lut, scale * rawColor + offset).rgb, 1.0); \n"
@@ -308,6 +315,14 @@ bool LutCalibrator::initializeLutTextureShader() {
   if (m_shader.lutSizeUniform == -1)
     return execWarning(QObject::tr("Failed to get uniform location of %1", "gl")
                            .arg("lutSize"));
+  m_shader.domainMinUniform = m_shader.program->uniformLocation("domainMin");
+  if (m_shader.domainMinUniform == -1)
+    return execWarning(QObject::tr("Failed to get uniform location of %1", "gl")
+                           .arg("domainMin"));
+  m_shader.domainMaxUniform = m_shader.program->uniformLocation("domainMax");
+  if (m_shader.domainMaxUniform == -1)
+    return execWarning(QObject::tr("Failed to get uniform location of %1", "gl")
+                           .arg("domainMax"));
 
   return true;
 }
@@ -350,6 +365,12 @@ void LutCalibrator::onEndDraw(QOpenGLFramebufferObject* fbo) {
                                     2);  // use texture unit 2
   GLfloat size = (GLfloat)LutManager::instance()->meshSize();
   m_shader.program->setUniformValue(m_shader.lutSizeUniform, size, size, size);
+  const float* domainMin = LutManager::instance()->domainMin();
+  const float* domainMax = LutManager::instance()->domainMax();
+  m_shader.program->setUniformValue(m_shader.domainMinUniform, domainMin[0],
+                                    domainMin[1], domainMin[2]);
+  m_shader.program->setUniformValue(m_shader.domainMaxUniform, domainMax[0],
+                                    domainMax[1], domainMax[2]);
 
   m_shader.program->enableAttributeArray(m_shader.vertexAttrib);
   m_shader.program->enableAttributeArray(m_shader.texCoordAttrib);
@@ -400,7 +421,13 @@ void LutCalibrator::assignLutTexture() {
 
 void LutCalibrator::update(bool textureChanged) {
   m_isValid = LutManager::instance()->isValid();
-  if (textureChanged) assignLutTexture();
+
+  // PreferencesPopup notifies each viewer immediately after
+  // LutManager::update(). The viewer then rebuilds the calibrator while its
+  // OpenGL context is current. Do not upload the texture here: this method runs
+  // from the preferences UI, where none of the viewers' OpenGL contexts is
+  // guaranteed to be current.
+  (void)textureChanged;
 }
 
 //=============================================================================
@@ -434,9 +461,7 @@ LutManager::LutManager() : m_isValid(false), m_currentLutPath() {
 
 //-----------------------------------------------------------------------------
 
-LutManager::~LutManager() {
-  if (m_lut.data) delete[] m_lut.data;
-}
+LutManager::~LutManager() = default;
 
 //-----------------------------------------------------------------------------
 
@@ -460,154 +485,26 @@ QString& LutManager::getMonitorName() const {
 //-----------------------------------------------------------------------------
 
 bool LutManager::loadLutFile(const QString& fp) {
-  struct locals {
-    // skip empty or comment lines
-    static inline QString readDataLine(QTextStream& stream) {
-      while (1) {
-        if (stream.atEnd()) return QString();
-        QString ret = stream.readLine();
-        if (!ret.isEmpty() && ret[0] != QChar('#')) return ret;
-      }
-    }
-
-    static inline int lutCoords(int r, int g, int b, int meshSize) {
-      return b * meshSize * meshSize * 3 + g * meshSize * 3 + r * 3;
-    }
-  };
-
-  QFile file(fp);
-  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    return execWarning(QObject::tr("Failed to Open 3DLUT File."));
-
-  QTextStream stream(&file);
-  QString line;
-
-  //---- read the 3DLUT files
-
-  // The first line should start from "3DMESH" keyword (case sensitive)
-  line = locals::readDataLine(stream);
-  if (line != "3DMESH") {
-    file.close();
+  QString error;
+  Lut3D loaded;
+  if (!loaded.load(fp, &error))
     return execWarning(
-        QObject::tr("Failed to Load 3DLUT File.\nIt should start with "
-                    "\"3DMESH\" keyword."));
-  }
-
-  // The second line is "Mesh [Input bit depth] [Output bit depth]"
-  // "Mesh" is a keyword (case sensitive) 
-  line             = locals::readDataLine(stream);
-  QStringList list = line.split(" ");
-  if (list.size() != 3 || list.at(0) != "Mesh") {
-    file.close();
-    return execWarning(
-        QObject::tr("Failed to Load 3DLUT File.\nThe second line should be "
-                    "\"Mesh [Input bit depth] [Output bit depth]\""));
-  }
-
-  int inputBitDepth  = list.at(1).toInt();
-  int outputBitDepth = list.at(2).toInt();
-
-  m_lut.meshSize = (int)pow(2.0, inputBitDepth) + 1;
-
-  float maxValue = pow(2.0, outputBitDepth) - 1.0f;
-
-  // The third line is corrections of values at each LUT grid
-  line = locals::readDataLine(stream);
-  list = line.split(" ", Qt::SkipEmptyParts);
-  if (list.size() != m_lut.meshSize) {
-    file.close();
-    return execWarning(QObject::tr("Failed to Load 3DLUT File."));
-  }
-
-  if (m_lut.data) delete[] m_lut.data;
-  m_lut.data = new float[m_lut.meshSize * m_lut.meshSize * m_lut.meshSize * 3];
-
-  for (int k = 0; k < m_lut.meshSize; ++k)  // r
-  {
-    for (int j = 0; j < m_lut.meshSize; ++j)  // g
-    {
-      for (int i = 0; i < m_lut.meshSize; ++i)  // b
-      {
-        line = locals::readDataLine(stream);
-        list = line.split(" ", Qt::SkipEmptyParts);
-        if (list.size() != 3) {
-          file.close();
-          delete[] m_lut.data;
-          return execWarning(QObject::tr("Failed to Load 3DLUT File."));
-        }
-        float* lut = m_lut.data + locals::lutCoords(k, j, i, m_lut.meshSize);
-        *lut       = (float)(list.at(0).toInt()) / maxValue;
-        lut++;
-        *lut = (float)(list.at(1).toInt()) / maxValue;
-        lut++;
-        *lut = (float)(list.at(2).toInt()) / maxValue;
-      }
-    }
-  }
-
-  file.close();
+        QObject::tr("Failed to Load 3D LUT File.\n%1").arg(error));
+  m_lut = std::move(loaded);
   return true;
 }
 //-----------------------------------------------------------------------------
 
 // input : 0-1
 void LutManager::convert(float& r, float& g, float& b) {
-  struct locals {
-    static inline float lerp(float val1, float val2, float ratio) {
-      return val1 * (1.0f - ratio) + val2 * ratio;
-    }
-    static inline int getCoord(int r, int g, int b, int meshSize) {
-      return b * meshSize * meshSize * 3 + g * meshSize * 3 + r * 3;
-    }
-  };
-
   if (!m_isValid) return;
+  m_lut.convert(r, g, b);
 
-  float ratio[3];   // RGB軸
-  int index[3][2];  // rgb インデックス
-  float rawVal[3] = {r, g, b};
-  // clamp values (for HDR image)
-  for (int c = 0; c < 3; c++)
-    rawVal[c] = (rawVal[c] < 0.f) ? 0.f : (rawVal[c] > 1.f) ? 1.f : rawVal[c];
-
-  float vertex_color[2][2][2][3];  // 補間用の１ボクセルの頂点色
-
-  for (int c = 0; c < 3; c++) {
-    float val   = rawVal[c] * (float)(m_lut.meshSize - 1);
-    index[c][0] = (int)val;
-    // boundary condition: if rawVal == 1 the value will not be interpolated
-    index[c][1] = (rawVal[c] >= 1.0f) ? index[c][0] : index[c][0] + 1;
-    ratio[c]    = val - (float)index[c][0];
-  }
-
-  for (int rr = 0; rr < 2; rr++)
-    for (int gg = 0; gg < 2; gg++)
-      for (int bb = 0; bb < 2; bb++) {
-        float* val = &m_lut.data[locals::getCoord(
-            index[0][rr], index[1][gg], index[2][bb], m_lut.meshSize)];
-        for (int chan = 0; chan < 3; chan++, val++)
-          vertex_color[rr][gg][bb][chan] = *val;
-      }
-  float result[3];
-
-  for (int chan = 0; chan < 3; chan++) {
-    result[chan] = locals::lerp(
-        locals::lerp(locals::lerp(vertex_color[0][0][0][chan],
-                                  vertex_color[0][0][1][chan], ratio[2]),
-                     locals::lerp(vertex_color[0][1][0][chan],
-                                  vertex_color[0][1][1][chan], ratio[2]),
-                     ratio[1]),
-        locals::lerp(locals::lerp(vertex_color[1][0][0][chan],
-                                  vertex_color[1][0][1][chan], ratio[2]),
-                     locals::lerp(vertex_color[1][1][0][chan],
-                                  vertex_color[1][1][1][chan], ratio[2]),
-                     ratio[1]),
-        ratio[0]);
-  }
-
-  r = result[0];
-  g = result[1];
-  b = result[2];
+  // CPU-converted UI colors use normalized integer-backed color types. Match
+  // the framebuffer's clipping when a floating-point .cube stores HDR values.
+  r = clamp01(r);
+  g = clamp01(g);
+  b = clamp01(b);
 }
 
 //-----------------------------------------------------------------------------
@@ -658,9 +555,12 @@ void LutManager::update() {
     // obtain 3dlut path associated to the monitor name
     QString lutPath =
         Preferences::instance()->getColorCalibrationLutPath(monitorName);
-    if (m_currentLutPath == lutPath)
+    // Enabling color calibration before selecting a LUT is a valid state.
+    // Do not mark the manager valid unless LUT data has actually been loaded:
+    // viewers use this flag to enter the OpenGL calibration path.
+    if (!lutPath.isEmpty() && m_currentLutPath == lutPath && m_lut.isValid())
       m_isValid = true;
-    else if (loadLutFile(lutPath)) {
+    else if (!lutPath.isEmpty() && loadLutFile(lutPath)) {
       m_isValid        = true;
       m_currentLutPath = lutPath;
       textureChanged   = true;

@@ -14,6 +14,9 @@
 #include "toonz/tstageobjectid.h"
 #include "toonzqt/colorfield.h"
 #include "toonzqt/functionviewer.h"
+
+#include <QToolBar>
+
 class PaletteViewer;
 class TPaletteHandle;
 class StyleEditor;
@@ -32,6 +35,7 @@ class VectorGuidedDrawingPane;
 class FxSelection;
 class StageObjectSelection;
 class LocatorPopup;
+class InsertFxPopup;
 
 //=========================================================
 // PaletteViewerPanel
@@ -242,8 +246,6 @@ public:
 class CommandBarPanel final : public TPanel {
   Q_OBJECT
 
-  // ToolOptions *m_toolOption;
-
 public:
   CommandBarPanel(QWidget *parent);
 };
@@ -359,6 +361,19 @@ class LocatorPanel final : public TPanel {
 
 public:
   LocatorPanel(QWidget *parent);
+};
+
+//=========================================================
+// FxBrowserPanel
+//---------------------------------------------------------
+
+class FxBrowserPanel final : public TPanel {
+  Q_OBJECT
+
+  InsertFxPopup *m_fxBrowser;
+
+public:
+  FxBrowserPanel(QWidget *parent);
 };
 
 #endif
