@@ -327,11 +327,15 @@ bool TXsheet::setCells(int row, int col, int rowCount, const TXshCell cells[]) {
   int i = 0;
   while (i < rowCount && cells[i].isEmpty()) i++;
 
-  // Added by Elisa around November 2009.
-  // The flaw is that if I assign empty cells, it does nothing.
-  // Commented out for now. Need to investigate if this breaks anything.
-  // if(i>=rowCount)
-  //  return false;
+  // Empty cells do not specify a column type. In particular, overwrite-drag
+  // previews restore empty buffers after clearing a mesh column. Retyping that
+  // column would discard its stage object, Plastic rig and animation.
+  if (i == rowCount) {
+    TXshColumn* column = getColumn(col);
+    if (!column || !column->getCellColumn() || column->isLocked()) return false;
+    clearCells(row, col, rowCount);
+    return true;
+  }
 
   TXshColumn::ColumnType type = TXshColumn::eLevelType;
   if (i < rowCount) {
