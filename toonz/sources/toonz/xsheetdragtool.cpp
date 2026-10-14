@@ -1086,9 +1086,12 @@ public:
     m_keyframeMoverTool = new KeyframeMoverTool(viewer, true);
   }
 
+  ~CellKeyframeMoverTool() override { delete m_keyframeMoverTool; }
+
   void onClick(const QMouseEvent *e) override {
-    LevelMoverTool::onClick(e);
+    // Capture the key state before the cell mover can change the live scene.
     m_keyframeMoverTool->onClick(e);
+    LevelMoverTool::onClick(e);
   }
 
   void onDrag(const QMouseEvent *e) override {

@@ -47,7 +47,8 @@ public:
                     Position startPos);
 
   // data -> xsh
-  bool getKeyframes(std::set<Position> &positions, TXsheet *xsh) const;
+  bool getKeyframes(std::set<Position>& positions, TXsheet* xsh,
+                    bool adjustInterpolation = true) const;
 
   // Reads data keyframes and fills in positions set. The first element
   // passed with the set is automatically added to stored positions.

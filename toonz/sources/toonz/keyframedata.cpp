@@ -85,8 +85,9 @@ void TKeyframeData::setKeyframes(std::set<Position> positions, TXsheet *xsh,
 //-----------------------------------------------------------------------------
 
 // data -> xsh
-bool TKeyframeData::getKeyframes(std::set<Position> &positions,
-                                 TXsheet *xsh) const {
+bool TKeyframeData::getKeyframes(std::set<Position>& positions, TXsheet* xsh,
+                                 bool adjustInterpolation) const {
+  if (positions.empty()) return false;
   std::set<TKeyframeSelection::Position>::iterator it2 = positions.begin();
   int r0                                               = it2->first;
   int c0                                               = it2->second;
@@ -105,8 +106,6 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     else
       itL->second = it2->first;
   }
-
-  XsheetViewer *viewer = TApp::instance()->getCurrentXsheetViewer();
 
   positions.clear();
   TStageObjectId cameraId =
@@ -139,7 +138,7 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     std::map<int, int>::iterator itL = lastRowCol.find(col);
     TStageObject::Keyframe newKey = pegbar->getKeyframe(row);
     // Process 1st key added in column
-    if (itF != firstRowCol.end() && itF->second == row) {
+    if (adjustInterpolation && itF != firstRowCol.end() && itF->second == row) {
       if (row > kL) {
         // If new key was added after the existing last one, create new
         // interpolation between them using preference setting
@@ -168,7 +167,7 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
       }
     }
     // Process last key added in column
-    if (itL != lastRowCol.end() && itL->second == row) {
+    if (adjustInterpolation && itL != lastRowCol.end() && itL->second == row) {
       if (row < kF) {
         // If new key was added before the existing 1st one, create new
         // interpolation between them using preference setting

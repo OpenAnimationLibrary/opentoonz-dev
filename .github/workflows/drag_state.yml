@@ -1,0 +1,25 @@
+name: Drag state regressions
+on:
+  pull_request:
+    paths:
+      - 'toonz/sources/toonz/keyframe*'
+      - 'toonz/sources/toonz/xshcellmover.*'
+      - 'toonz/sources/toonz/xsheetdragtool.cpp'
+      - 'toonz/sources/toonzlib/txsheet.cpp'
+      - 'toonz/sources/toonz/tests/**'
+      - '.github/workflows/drag_state.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-extracted:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test production drag functions with dependency doubles
+        env:
+          CXX: ${{ matrix.compiler }}
+        run: python3 toonz/sources/toonz/tests/test_drag_state.py
