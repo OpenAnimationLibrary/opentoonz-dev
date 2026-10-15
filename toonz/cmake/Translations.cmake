@@ -6,6 +6,10 @@ endif()
 if(NOT DEFINED OT_TRANSLATIONS_OUTPUT_DIR)
     set(OT_TRANSLATIONS_OUTPUT_DIR "${CMAKE_BINARY_DIR}/../../stuff/config/loc")
 endif()
+# Keep command and declared-output paths identical, including Windows short paths.
+file(MAKE_DIRECTORY "${OT_TRANSLATIONS_OUTPUT_DIR}")
+get_filename_component(OT_TRANSLATIONS_OUTPUT_DIR
+    "${OT_TRANSLATIONS_OUTPUT_DIR}" REALPATH)
 
 function(add_translation module)
     set(source_list "")

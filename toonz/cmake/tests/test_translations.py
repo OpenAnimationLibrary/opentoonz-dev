@@ -31,7 +31,7 @@ def main():
     args = parser.parse_args()
     helper = Path(__file__).resolve().parents[1] / "Translations.cmake"
     with tempfile.TemporaryDirectory(prefix="OT traducción ") as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve()
         source, build, output = root / "source files", root / "build", root / "loc"
         translations = source / "translations" / "spanish"
         translations.mkdir(parents=True)
