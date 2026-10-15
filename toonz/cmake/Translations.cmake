@@ -17,7 +17,10 @@ function(add_translation module)
         get_filename_component(source_path "${source}" ABSOLUTE)
         # Generated MOC/resource sources are not translation inputs.
         if(EXISTS "${source_path}" AND NOT IS_DIRECTORY "${source_path}")
-            string(APPEND source_list "${source_path}\n")
+            # Qt 5 reads response files using the Windows local code page.
+            # Relative paths keep Unicode checkout prefixes out of that file.
+            file(RELATIVE_PATH relative_source "${CMAKE_CURRENT_SOURCE_DIR}" "${source_path}")
+            string(APPEND source_list "${relative_source}\n")
         endif()
     endforeach()
     set(list_file "${CMAKE_CURRENT_BINARY_DIR}/${module}_translation_sources.txt")
@@ -45,6 +48,7 @@ function(add_translation module)
             -ts ${catalogs}
         ${release_commands}
         COMMENT "Explicitly update ${module} translation sources"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         VERBATIM)
     set_target_properties(translate_update_${module} PROPERTIES
         EXCLUDE_FROM_DEFAULT_BUILD TRUE)
