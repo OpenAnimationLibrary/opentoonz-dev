@@ -50,7 +50,14 @@ function(add_translation module)
         EXCLUDE_FROM_DEFAULT_BUILD TRUE)
 endfunction()
 
+set(OT_TRANSLATIONS_COMPILE_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/CompileTranslation.cmake")
+
 function(add_compile_translations_command module ts_name)
+    if(TARGET "${Qt5_LRELEASE_EXECUTABLE}")
+        set(release_command "$<TARGET_FILE:${Qt5_LRELEASE_EXECUTABLE}>")
+    else()
+        set(release_command "${Qt5_LRELEASE_EXECUTABLE}")
+    endif()
     list(LENGTH LANG_CODES language_count)
     list(LENGTH LANG_DISPLAY_NAMES display_count)
     if(NOT language_count EQUAL display_count OR language_count EQUAL 0)
@@ -71,10 +78,11 @@ function(add_compile_translations_command module ts_name)
         set(temporary "${temporary_dir}/${ts_name}.qm")
         add_custom_command(
             OUTPUT "${output}"
-            COMMAND "${CMAKE_COMMAND}" -E make_directory "${output_dir}" "${temporary_dir}"
-            COMMAND "${Qt5_LRELEASE_EXECUTABLE}" "${source}" -qm "${temporary}"
-            COMMAND "${CMAKE_COMMAND}" -E rename "${temporary}" "${output}"
+            COMMAND "${CMAKE_COMMAND}" "-DSOURCE=${source}" "-DOUTPUT=${output}"
+                "-DTEMPORARY=${temporary}" "-DLRELEASE=${release_command}"
+                -P "${OT_TRANSLATIONS_COMPILE_SCRIPT}"
             DEPENDS "${source}" "${Qt5_LRELEASE_EXECUTABLE}"
+                "${OT_TRANSLATIONS_COMPILE_SCRIPT}"
             COMMENT "lrelease ${display_name}/${ts_name}.qm"
             VERBATIM)
         list(APPEND outputs "${output}")
