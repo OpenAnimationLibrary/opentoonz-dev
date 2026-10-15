@@ -5513,7 +5513,7 @@ Please use the frame numbers for reference.</source>
     <message>
         <location filename="../../toonz/mainwindow.cpp" line="2291"/>
         <source>&amp;Timeline</source>
-        <translation type="unfinished"></translation>
+        <translation>&amp;Tidslinje</translation>
     </message>
     <message>
         <location filename="../../toonz/mainwindow.cpp" line="2296"/>
@@ -16293,6 +16293,17 @@ Please refer to the user guide for details.</source>
         <location filename="../../toonz/xsheetviewer.cpp" line="1660"/>
         <source> columns</source>
         <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>XsheetGUI::NoteArea</name>
+    <message>
+        <source>Toggle Xsheet/Timeline</source>
+        <translation>Bytt mellom eksponeringsark og tidslinje</translation>
+    </message>
+    <message>
+        <source>Add New Memo</source>
+        <translation>Legg til nytt notat</translation>
     </message>
 </context>
 </TS>

@@ -1,0 +1,54 @@
+name: UI Translation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'toonz/sources/**'
+      - 'toonz/cmake/Translations.cmake'
+      - 'doc/tools/audit_ui_translations.py'
+      - '.github/workflows/ui_translation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'toonz/sources/**'
+      - 'toonz/cmake/Translations.cmake'
+      - 'doc/tools/audit_ui_translations.py'
+      - '.github/workflows/ui_translation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  Translation:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - name: Install Qt translation test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ qtbase5-dev qttools5-dev qttools5-dev-tools fonts-dejavu-core
+      - name: Audit catalog coverage and placeholders
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE_SHA" ] && [ "$BASE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            python3 doc/tools/audit_ui_translations.py --base-ref "$BASE_SHA" --json translation-audit.json
+          else
+            python3 doc/tools/audit_ui_translations.py --json translation-audit.json
+          fi
+      - name: Configure and build translation tests
+        run: |
+          cmake -S toonz/sources/toonzqt/tests/ui_translation -B build-ui-translation -G Ninja
+          cmake --build build-ui-translation
+      - name: Run translation regressions
+        run: ctest --test-dir build-ui-translation --output-on-failure
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: UI-translation-audit
+          path: translation-audit.json

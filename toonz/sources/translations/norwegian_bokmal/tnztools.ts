@@ -1682,58 +1682,66 @@ moved to the end of the first page of the palette.</source>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1046"/>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1053"/>
         <source>Size</source>
-        <translation type="unfinished"></translation>
+        <translation>Størrelse</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1047"/>
         <source>Hardness:</source>
-        <translation type="unfinished"></translation>
+        <translation>Hardhet:</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1048"/>
         <source>Smooth:</source>
-        <translation type="unfinished"></translation>
+        <translation>Utjevning:</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1049"/>
         <source>Draw Order:</source>
-        <translation type="unfinished"></translation>
+        <translation>Tegnerekkefølge:</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1050"/>
         <source>Over All</source>
-        <translation type="unfinished"></translation>
+        <translation>Over alt</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1051"/>
         <source>Under All</source>
-        <translation type="unfinished"></translation>
+        <translation>Under alt</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1052"/>
         <source>Palette Order</source>
-        <translation type="unfinished"></translation>
+        <translation>Palettrekkefølge</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1056"/>
         <source>Preset:</source>
-        <translation type="unfinished"></translation>
+        <translation>Forvalg:</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1057"/>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="2015"/>
         <source>&lt;custom&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>&lt;egendefinert&gt;</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1058"/>
         <source>Pencil</source>
-        <translation type="unfinished"></translation>
+        <translation>Blyant</translation>
     </message>
     <message>
         <location filename="../../tnztools/toonzrasterbrushtool.cpp" line="1059"/>
         <source>Pressure</source>
-        <translation type="unfinished"></translation>
+        <translation>Trykk</translation>
+    </message>
+    <message>
+        <source>Lock Alpha</source>
+        <translation>Lås alfa</translation>
+    </message>
+    <message>
+        <source>Assistants</source>
+        <translation>Hjelpeverktøy</translation>
     </message>
 </context>
 <context>

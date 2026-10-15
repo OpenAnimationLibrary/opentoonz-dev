@@ -760,6 +760,7 @@ QPixmap DvDirModelDayNode::getPixmap(bool isOpen) const {
 DvDirModelHistoryNode::DvDirModelHistoryNode(DvDirModelNode *parent)
     : DvDirModelNode(parent, L"History") {
   m_nodeType = "History";
+  setDisplayLocation(DVGui::FileBrowserLocation::History);
 }
 
 void DvDirModelHistoryNode::refreshChildren() {
@@ -785,6 +786,7 @@ QPixmap DvDirModelHistoryNode::getPixmap(bool isOpen) const {
 DvDirModelMyComputerNode::DvDirModelMyComputerNode(DvDirModelNode *parent)
     : DvDirModelNode(parent, L"My Computer") {
   m_nodeType = "MyComputer";
+  setDisplayLocation(DVGui::FileBrowserLocation::Computer);
 }
 
 void DvDirModelMyComputerNode::refreshChildren() {
@@ -816,6 +818,7 @@ QPixmap DvDirModelMyComputerNode::getPixmap(bool isOpen) const {
 DvDirModelNetworkNode::DvDirModelNetworkNode(DvDirModelNode *parent)
     : DvDirModelNode(parent, L"Network") {
   m_nodeType = "Network";
+  setDisplayLocation(DVGui::FileBrowserLocation::Network);
 }
 
 void DvDirModelNetworkNode::refreshChildren() {
@@ -920,18 +923,21 @@ void DvDirModelRootNode::refreshChildren() {
     child = new DvDirModelSpecialFileFolderNode(this, L"My Documents",
                                                 getMyDocumentsPath());
     child->setIconName("my_documents");
+    child->setDisplayLocation(DVGui::FileBrowserLocation::Documents);
     m_specialNodes.push_back(child);
     addChild(child);
 
     child =
         new DvDirModelSpecialFileFolderNode(this, L"Desktop", getDesktopPath());
     child->setIconName("desktop");
+    child->setDisplayLocation(DVGui::FileBrowserLocation::Desktop);
     m_specialNodes.push_back(child);
     addChild(child);
 
     child = new DvDirModelSpecialFileFolderNode(
         this, L"Library", ToonzFolder::getLibraryFolder());
     child->setIconName("library");
+    child->setDisplayLocation(DVGui::FileBrowserLocation::Library);
     m_specialNodes.push_back(child);
     addChild(child);
 
@@ -982,6 +988,8 @@ void DvDirModelRootNode::refreshChildren() {
     m_sceneFolderNode =
         new DvDirModelSceneFolderNode(this, L"Scene Folder", TFilePath());
     m_sceneFolderNode->setIconName("clapboard");
+    m_sceneFolderNode->setDisplayLocation(
+        DVGui::FileBrowserLocation::SceneFolder);
     m_sceneFolderNode->setIconSize(QSize(16, 16));
   }
 }
@@ -1229,7 +1237,9 @@ bool DvDirModel::hasChildren(const QModelIndex &parent) const {
 QVariant DvDirModel::data(const QModelIndex &index, int role) const {
   if (!index.isValid()) return QVariant();
   DvDirModelNode *node = getNode(index);
-  if (role == Qt::DisplayRole || role == Qt::EditRole)
+  if (role == Qt::DisplayRole)
+    return node->getDisplayName();
+  else if (role == Qt::EditRole)
     return QString::fromStdWString(node->getName());
   else if (role == Qt::DecorationRole) {
     return QVariant();
