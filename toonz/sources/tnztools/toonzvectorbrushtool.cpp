@@ -463,6 +463,17 @@ static void addStrokeWithAutoOptions(TTool::Application *application,
                                      bool levelCreated, TXshSimpleLevel *level,
                                      const TFrameId &fid) {
   TVectorImageP before = cloneWithEnteredGroup(vi);
+
+  // Remember the entered-group path using existing strokes. group() can
+  // rearrange strokes, so indices are not stable across the operation.
+  std::vector<int> enteredGroups;
+  while (vi->isInsideGroup() > 0) {
+    int index = vi->exitGroup();
+    enteredGroups.push_back(vi->getStroke(index)->getId());
+  }
+  for (auto i = enteredGroups.rbegin(); i != enteredGroups.rend(); ++i)
+    vi->enterGroup(vi->getStrokeIndexById(*i));
+
   std::vector<double> corners;
   std::vector<TStroke *> pieces;
   if (breakAngles) findMaxCurvPoints(stroke, 1, 0.8, corners);
@@ -490,13 +501,17 @@ static void addStrokeWithAutoOptions(TTool::Application *application,
   for (int id : ids) index = std::min(index, vi->getStrokeIndexById(id));
   vi->group(index, (int)ids.size());
   index = vi->getStrokeIndexById(ids.front());
-  if (autoFill && stroke->isSelfLoop()) {
-    if (vi->enterGroup(index)) {
-      vi->selectFill(stroke->getBBox().enlarge(1, 1), 0, stroke->getStyle(),
-                     false, true, false);
-      vi->exitGroup();
-    }
+  // Follow the Geometry Tool convention: leave the current group before
+  // entering the newly grouped stroke for an isolated fill.
+  while (vi->isInsideGroup() > 0) vi->exitGroup();
+  if (autoFill && stroke->isSelfLoop() && vi->enterGroup(index)) {
+    vi->selectFill(stroke->getBBox().enlarge(1, 1), 0, stroke->getStyle(),
+                   false, true, false);
+    vi->exitGroup();
   }
+  for (auto i = enteredGroups.rbegin(); i != enteredGroups.rend(); ++i)
+    vi->enterGroup(vi->getStrokeIndexById(*i));
+
   vi->findRegions();
   TUndoManager::manager()->add(
       new UndoVectorAutoOptions(level, fid, frameCreated, levelCreated, before,
