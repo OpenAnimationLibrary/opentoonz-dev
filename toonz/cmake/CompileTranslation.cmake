@@ -2,7 +2,8 @@
 # lrelease unless its input/tool changed or the runtime output is missing/altered.
 file(SHA256 "${SOURCE}" source_hash)
 file(SHA256 "${LRELEASE}" tool_hash)
-set(signature "${source_hash}\n${tool_hash}\n")
+file(SHA256 "${CMAKE_CURRENT_LIST_FILE}" script_hash)
+set(signature "${source_hash}\n${tool_hash}\n${script_hash}\n")
 set(record "${TEMPORARY}.signature")
 if(EXISTS "${OUTPUT}" AND EXISTS "${record}")
     file(SHA256 "${OUTPUT}" output_hash)

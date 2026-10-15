@@ -12,6 +12,9 @@ Translation-enabled application targets compile committed `.ts` sources to `.qm`
 outputs with `lrelease`. Editing a catalog or deleting an output triggers its
 regeneration without requiring C++ relinking. Unchanged catalogs are not rewritten.
 Compilation failure stops the build and preserves the last valid runtime output.
+If MSBuild revisits a custom rule unnecessarily, a fingerprint guard checks the
+source, compiler, compilation script, and existing output before invoking
+`lrelease`; matching catalogs are left untouched.
 Temporary files are isolated by build directory, configuration, language, and
 module before being renamed into the existing runtime destination.
 
