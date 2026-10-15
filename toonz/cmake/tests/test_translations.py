@@ -73,7 +73,8 @@ endif()
         assert ts.read_bytes() == original, "Normal build rewrote .ts"
         assert not (build / "loc").exists(), "Normal build invoked extraction"
         stamp = qm.stat().st_mtime_ns
-        no_op = rebuild("--verbose", *(["--", "/verbosity:diagnostic"]\n                                        if args.generator.startswith("Visual Studio") else []))
+        no_op = rebuild("--verbose", *(["--", "/verbosity:diagnostic"]
+                                        if args.generator.startswith("Visual Studio") else []))
         assert qm.stat().st_mtime_ns == stamp, (
             "No-op build rewrote .qm\n" + no_op.stdout + no_op.stderr)
         before = qm.read_bytes()
