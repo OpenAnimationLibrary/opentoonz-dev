@@ -73,8 +73,9 @@ endif()
         assert ts.read_bytes() == original, "Normal build rewrote .ts"
         assert not (build / "loc").exists(), "Normal build invoked extraction"
         stamp = qm.stat().st_mtime_ns
-        rebuild()
-        assert qm.stat().st_mtime_ns == stamp, "No-op build rewrote .qm"
+        no_op = rebuild("--verbose")
+        assert qm.stat().st_mtime_ns == stamp, (
+            "No-op build rewrote .qm\n" + no_op.stdout + no_op.stderr)
         before = qm.read_bytes()
         time.sleep(1.1)  # Also cover filesystems with coarse timestamp precision.
         ts.write_text(catalog("Después"), encoding="utf-8")
