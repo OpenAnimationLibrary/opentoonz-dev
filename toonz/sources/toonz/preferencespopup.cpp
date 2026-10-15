@@ -49,6 +49,8 @@
 #include <QComboBox>
 #include <QFontComboBox>
 #include <QLabel>
+#include <QScreen>
+#include <QScrollArea>
 #include <QStackedWidget>
 #include <QLineEdit>
 #include <QFileDialog>
@@ -746,6 +748,11 @@ void PreferencesPopup::onShowKeyframesOnCellAreaChanged() {
   TApp::instance()->getCurrentScene()->notifyPreferenceChanged("XsheetCamera");
 }
 
+void PreferencesPopup::onCurrentCellColorChanged() {
+  TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+      "CurrentCellColor");
+}
+
 //-----------------------------------------------------------------------------
 
 void PreferencesPopup::onShowXSheetToolbarClicked() {
@@ -1118,7 +1125,8 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
   case QMetaType::QColor:  // create ColorField
   {
     ColorField* field =
-        new ColorField(this, false, colorToTPixel(item.value.value<QColor>()));
+        new ColorField(this, false, colorToTPixel(item.value.value<QColor>()),
+                       24, true, 44, true);
     connect(field, &ColorField::colorChanged, this,
             &PreferencesPopup::onColorFieldChanged);
     widget = field;
@@ -1311,6 +1319,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {viewerIndicatorEnabled, tr("Show Viewer Indicators")},
       {restoreViewerViewFromLastSession,
        tr("Restore Viewer Zoom and Pan from Last Session")},
+      {RestoreStyleEditorTab, tr("Remember Style Editor Tab")},
 
       // Visualization
       {show0ThickLines, tr("Show Lines with Thickness 0")},
@@ -1340,6 +1349,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       // Import / Export
       {ffmpegPath, tr("FFmpeg Path:")},
       {pdfRendererPath, tr("PDF Converter Path:")},
+      {otlutPath, tr("OTLUT Path:")},
       {ffmpegTimeout, tr("FFmpeg Timeout:")},
       {fastRenderPath, tr("Fast Render Path:")},
       {ffmpegMultiThread,
@@ -1378,6 +1388,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use higher DPI for calculations - Slower but more accurate")},
 
       // Tools
+      {compressInputEvents, tr("Compress Input Events*")},
       // {dropdownShortcutsCycleOptions, tr("Dropdown Shortcuts:")}, //
       // removed
       {FillOnlysavebox,
@@ -1434,7 +1445,11 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {syncLevelRenumberWithXsheet,
        tr("Sync Level Strip Drawing Number Changes with the Xsheet")},
       {currentTimelineEnabled, tr("Show Current Time Indicator")},
-      {currentColumnColor, tr("Current Column Color:")},
+      {currentColumnColor, tr("Current Column Text Color:")},
+      {customCurrentCellColorEnabled, tr("Custom")},
+      {currentCellColor, tr("Current Cell Outline:")},
+      {customCurrentColumnOutlineColorEnabled, tr("Custom")},
+      {currentColumnOutlineColor, tr("Current Header Outline:")},
       //{ levelNameOnEachMarkerEnabled, tr("Display Level Name on Each
       // Marker")
       //},
@@ -1702,24 +1717,33 @@ PreferencesPopup::PreferencesPopup()
   categoryList->setAlternatingRowColors(true);
 
   QStackedWidget* stackedWidget = new QStackedWidget(this);
-  stackedWidget->addWidget(createGeneralPage());
-  stackedWidget->addWidget(createInterfacePage());
-  stackedWidget->addWidget(createPreviewPage());
-  stackedWidget->addWidget(createLoadingPage());
-  stackedWidget->addWidget(createSavingPage());
-  stackedWidget->addWidget(createCodecPage());
-  stackedWidget->addWidget(createDrawingPage());
-  stackedWidget->addWidget(createToolsPage());
-  stackedWidget->addWidget(createXsheetPage());
-  stackedWidget->addWidget(createOnionSkinPage());
-  stackedWidget->addWidget(createAnimationPage());
-  stackedWidget->addWidget(createAutoLipSyncPage());
-  stackedWidget->addWidget(createColorsPage());
-  stackedWidget->addWidget(createVisualizationPage());
-  stackedWidget->addWidget(createVersionControlPage());
-  stackedWidget->addWidget(createTouchTabletPage());
+  auto addPage                  = [stackedWidget](QWidget* page) {
+    QScrollArea* scrollArea = new QScrollArea(stackedWidget);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scrollArea->setWidget(page);
+    stackedWidget->addWidget(scrollArea);
+  };
+  addPage(createGeneralPage());
+  addPage(createInterfacePage());
+  addPage(createPreviewPage());
+  addPage(createLoadingPage());
+  addPage(createSavingPage());
+  addPage(createCodecPage());
+  addPage(createDrawingPage());
+  addPage(createToolsPage());
+  addPage(createXsheetPage());
+  addPage(createOnionSkinPage());
+  addPage(createAnimationPage());
+  addPage(createAutoLipSyncPage());
+  addPage(createColorsPage());
+  addPage(createVisualizationPage());
+  addPage(createVersionControlPage());
+  addPage(createTouchTabletPage());
 #ifdef _WIN32
-  stackedWidget->addWidget(createAddonsPage());
+  addPage(createAddonsPage());
 #endif  // WIN32
 
   QHBoxLayout* mainLayout = new QHBoxLayout();
@@ -1736,6 +1760,12 @@ PreferencesPopup::PreferencesPopup()
   }
   setLayout(mainLayout);
 
+  // Keep the dialog within the current screen so overflowing pages can scroll.
+  QSize preferredSize = sizeHint().expandedTo(QSize(1060, 860));
+  if (QScreen* currentScreen = parentWidget()->screen())
+    preferredSize = preferredSize.boundedTo(
+        currentScreen->availableGeometry().size() - QSize(40, 60));
+  resize(preferredSize);
 
   connect(categoryList, &QListWidget::currentRowChanged, stackedWidget,
           &QStackedWidget::setCurrentIndex);
@@ -1921,6 +1951,7 @@ QWidget* PreferencesPopup::createInterfacePage() {
   lay->addWidget(check30bitBtn, row - 1, 2, Qt::AlignRight);
   insertUI(showIconsInMenu, lay);
   insertUI(showRoomBindButtons, lay);
+  insertUI(RestoreStyleEditorTab, lay);
   insertUI(customHelpLink, lay);
   getUI<FileField*>(customHelpLink)
       ->setToolTip(
@@ -2098,6 +2129,12 @@ QWidget* PreferencesPopup::createCodecPage() {
            lay);
   insertUI(pdfRendererPath, lay);
 
+  putLabel(tr("OpenToonz can use OTLUT to create 3D LUT files from paired raster images.\n") +
+               tr("OpenToonz first looks for otlut next to the OpenToonz executable.\n") +
+               tr("If it is not found there, specify the folder containing OTLUT below."),
+           lay);
+  insertUI(otlutPath, lay);
+
   putLabel(tr("Number of seconds to wait for FFmpeg to complete processing the "
               "output:"),
            lay);
@@ -2250,12 +2287,22 @@ QWidget* PreferencesPopup::createToolsPage() {
   insertUI(useCtrlAltToResizeBrush, lay);
   insertUI(clickTwiceToCreateArcs, lay);
   insertUI(tempToolSwitchTimer, lay);
+  insertUI(compressInputEvents, lay);
+  getUI<CheckBox*>(compressInputEvents)
+      ->setToolTip(
+          tr("Combines frequent input events to reduce processing load. "
+             "Disabling may improve stroke tracking but can affect "
+             "responsiveness and brush behavior. Support varies by platform; "
+             "ordinary mouse movement on Windows is unaffected. "
+             "Separate tool-level input limits remain in effect. "
+             "Changes take effect after restarting OpenToonz."));
 
   QGridLayout* animateToolLay = insertGroupBox(tr("Animate Tool"), lay);
   {
     // Use IntField to display 100% instead of 1.0
     IntField* handleSizeSlider = new IntField(this);
     handleSizeSlider->setRange(100, 600);  // scale range: 100% to 600%
+    handleSizeSlider->setInputRange(1, 600);
 
     // Get the decimal value (e.g., 1.0) and multiply by 100 for the slider
     double currentVal = Preferences::instance()->getAnimateToolHandleSize();
@@ -2300,6 +2347,25 @@ QWidget* PreferencesPopup::createXsheetPage() {
   QGridLayout* lay = new QGridLayout();
   setupLayout(lay);
 
+  auto createOutlineControls = [this](PreferencesItemId enabledId,
+                                      PreferencesItemId colorId,
+                                      const QString& label) {
+    QCheckBox* customCheck = qobject_cast<QCheckBox*>(createUI(enabledId));
+    QWidget* colorField    = createUI(colorId);
+    colorField->setEnabled(customCheck->isChecked());
+    connect(customCheck, &QCheckBox::toggled, colorField, &QWidget::setEnabled);
+    customCheck->setToolTip(tr("When unchecked, use the theme color."));
+
+    QHBoxLayout* controls = new QHBoxLayout();
+    controls->setContentsMargins(0, 0, 0, 0);
+    controls->setSpacing(5);
+    controls->addWidget(new QLabel(label, this));
+    controls->addWidget(customCheck);
+    controls->addWidget(colorField);
+    controls->addStretch(1);
+    return controls;
+  };
+
   insertUI(xsheetLayoutPreference, lay,
            getComboItemList(xsheetLayoutPreference));
   insertUI(levelNameDisplayType, lay, getComboItemList(levelNameDisplayType));
@@ -2317,6 +2383,14 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(showColumnNumbers, xshColHeaderLay);
     insertUI(unifyColumnVisibilityToggles, xshColHeaderLay);
     insertUI(parentColorsInXsheetColumn, xshColHeaderLay);
+    insertUI(currentColumnColor, xshColHeaderLay);
+
+    // The header outline control shares the existing column text color row.
+    xshColHeaderLay->addLayout(
+        createOutlineControls(customCurrentColumnOutlineColorEnabled,
+                              currentColumnOutlineColor,
+                              tr("Current Header Outline:")),
+        xshColHeaderLay->rowCount() - 1, 2);
   }
   QGridLayout* xshCellAreaLay = insertGroupBox(tr("Xsheet Cell Area"), lay);
   {
@@ -2324,6 +2398,10 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(currentTimelineEnabled, xshCellAreaLay);
     insertUI(showFrameNumberWithLetters, xshCellAreaLay);
     insertUI(xsheetHoverFramePreviewEnabled, xshCellAreaLay);
+    xshCellAreaLay->addLayout(
+        createOutlineControls(customCurrentCellColorEnabled, currentCellColor,
+                              tr("Current Cell Outline:")),
+        xshCellAreaLay->rowCount(), 0, 1, 3);
   }
 
   QGridLayout* showKeyLay =
@@ -2340,7 +2418,6 @@ QWidget* PreferencesPopup::createXsheetPage() {
   insertUI(useArrowKeyToShiftCellSelection, lay);
   insertUI(shortcutCommandsWhileRenamingCellEnabled, lay);
   insertUI(syncLevelRenumberWithXsheet, lay);
-  insertUI(currentColumnColor, lay);
 
   lay->setRowStretch(lay->rowCount(), 1);
   insertFootNote(lay);
@@ -2350,6 +2427,14 @@ QWidget* PreferencesPopup::createXsheetPage() {
                            &PreferencesPopup::onShowKeyframesOnCellAreaChanged);
   m_onEditedFuncMap.insert(showXsheetCameraColumn,
                            &PreferencesPopup::onShowKeyframesOnCellAreaChanged);
+  m_onEditedFuncMap.insert(customCurrentCellColorEnabled,
+                           &PreferencesPopup::onCurrentCellColorChanged);
+  m_onEditedFuncMap.insert(currentCellColor,
+                           &PreferencesPopup::onCurrentCellColorChanged);
+  m_onEditedFuncMap.insert(customCurrentColumnOutlineColorEnabled,
+                           &PreferencesPopup::onCurrentCellColorChanged);
+  m_onEditedFuncMap.insert(currentColumnOutlineColor,
+                           &PreferencesPopup::onCurrentCellColorChanged);
   m_onEditedFuncMap.insert(
       unifyColumnVisibilityToggles,
       &PreferencesPopup::onUnifyColumnVisibilityTogglesChanged);
