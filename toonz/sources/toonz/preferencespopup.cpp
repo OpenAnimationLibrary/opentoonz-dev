@@ -1417,6 +1417,8 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {xsheetLayoutPreference, tr("Column Header Layout*:")},
       {xsheetStep, tr("Next/Previous Step Frames:")},
       {xsheetAutopanEnabled, tr("Xsheet Autopan during Playback")},
+      {xsheetHoverFramePreviewEnabled,
+       tr("Show Frame Preview When Hovering Over Xsheet Cells")},
       {alwaysDragFrameCell, tr("Always Drag Frame Cell")},
       {DragCellsBehaviour, tr("Cell-dragging Behaviour:")},
       {deleteCommandBehavior, tr("Delete Command Behaviour:")},
@@ -2395,6 +2397,7 @@ QWidget* PreferencesPopup::createXsheetPage() {
     insertUI(highlightLineEverySecond, xshCellAreaLay);
     insertUI(currentTimelineEnabled, xshCellAreaLay);
     insertUI(showFrameNumberWithLetters, xshCellAreaLay);
+    insertUI(xsheetHoverFramePreviewEnabled, xshCellAreaLay);
     xshCellAreaLay->addLayout(
         createOutlineControls(customCurrentCellColorEnabled, currentCellColor,
                               tr("Current Cell Outline:")),
