@@ -31,6 +31,11 @@ on:
       - '.github/workflows/workflow_windows.yml'
       - '.github/ot-dev/**'
   workflow_dispatch:
+    inputs:
+      with_translation:
+        description: 'Generate translation catalogs for this Windows build'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +86,7 @@ jobs:
     needs: RecorderEncoder
     runs-on: windows-2025
     env:
+      OT_CI_TRANSLATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.with_translation && 'ON' || 'OFF' }}
       # QT related variable
       QT_PATH: ${{ github.workspace }}\thirdparty\qt\5.15.2_wintab\msvc2019_64  # Path to custom Qt
 
@@ -291,7 +297,8 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
+          echo Translation generation: %OT_CI_TRANSLATIONS%
+          cmake ..\sources -DWITH_TRANSLATION=%OT_CI_TRANSLATIONS% -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
         shell: cmd
 
       - name: Build and test OpenEXR image I/O and level source
@@ -430,5 +437,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          name: Opentoonz-${{ runner.os }}-${{ github.sha }}-translations-${{ env.OT_CI_TRANSLATIONS }}
           path: artifact
