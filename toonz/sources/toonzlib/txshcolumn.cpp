@@ -702,3 +702,10 @@ void TXshColumn::resetColumnProperties() {
   setColorTag(0);
   setColorFilterId(0);  // None
 }
+
+void TXshColumn::setXsheetColumnWidth(int width) {
+  width = width == 0 ? 0 : std::max(50, std::min(width, 2048));
+  if (width == m_xsheetColumnWidth) return;
+  m_xsheetColumnWidth = width;
+  if (getXsheet()) getXsheet()->invalidateColumnWidths();
+}

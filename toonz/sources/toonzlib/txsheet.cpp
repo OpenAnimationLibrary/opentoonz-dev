@@ -43,6 +43,7 @@
 #include <memory>
 #include <vector>
 #include <cmath>  // for std::round
+#include <sstream>
 
 using namespace std;
 
@@ -107,6 +108,7 @@ struct TXsheet::TXsheetImp {
 
   TSoundTrackP m_mixedSound;
   ColumnFan m_columnFans[Orientations::COUNT];
+  bool m_columnWidthsDirty = true;
   ToonzScene *m_scene;
 
 public:
@@ -441,6 +443,7 @@ void TXsheet::clearCells(int row, int col, int rowCount) {
 //-----------------------------------------------------------------------------
 
 void TXsheet::clearAll() {
+  invalidateColumnWidths();
   // unused variables removed
   m_imp->m_columnSet.clear();
 
@@ -1169,9 +1172,18 @@ void TXsheet::loadData(TIStream &is) {
   m_imp->m_pegTree->removeStageObject(cameraId);
 
   int col = 0;
+  std::map<int, int> widths;
   string tagName;
   while (is.openChild(tagName)) {
     if (tagName == "columns") {
+      std::string value;
+      if (is.getTagParam("widths", value)) {
+        std::istringstream values(value);
+        int index, width;
+        while (values >> index >> width)
+          if (index >= 0 && index < 100000 && width >= 50 && width <= 2048)
+            widths[index] = width;
+      }
       while (!is.eos()) {
         TPersist *p = nullptr;
         is >> p;
@@ -1258,13 +1270,24 @@ void TXsheet::loadData(TIStream &is) {
     }
     is.closeChild();
   }
+  for (const auto &entry : widths)
+    setColumnWidthOverride(entry.first, entry.second);
+  invalidateColumnWidths();
   updateFrameCount();
 }
 
 //-----------------------------------------------------------------------------
 
 void TXsheet::saveData(TOStream &os) {
-  os.openChild("columns");
+  // Attributes are ignored by older readers, preserving scene compatibility.
+  // Save overrides even for empty trailing columns, omitted from column data.
+  std::ostringstream widths;
+  for (int c = 0; c < getColumnCount(); ++c)
+    if (getColumnWidthOverride(c))
+      widths << c << ' ' << getColumnWidthOverride(c) << ' ';
+  std::map<std::string, std::string> attributes;
+  if (!widths.str().empty()) attributes["widths"] = widths.str();
+  os.openChild("columns", attributes);
   for (int c = 0; c < m_imp->m_columnSet.getColumnCount(); ++c) {
     TXshColumnP column = m_imp->m_columnSet.getColumn(c);
     if (column && c < getFirstFreeColumnIndex()) os << column.getPointer();
@@ -1323,6 +1346,7 @@ void TXsheet::insertColumn(int col, TXshColumn::ColumnType type) {
 //-----------------------------------------------------------------------------
 
 void TXsheet::insertColumn(int col, TXshColumn *column) {
+  invalidateColumnWidths();
   if (col < 0) col = 0;
   column->setXsheet(this);
   m_imp->m_columnSet.insertColumn(col, column);
@@ -1345,6 +1369,7 @@ void TXsheet::insertColumn(int col, TXshColumn *column) {
 //-----------------------------------------------------------------------------
 
 void TXsheet::removeColumn(int col) {
+  invalidateColumnWidths();
   TXshColumn *column = getColumn(col);
   if (column) {
     TFx *fx = column->getFx();
@@ -1370,6 +1395,7 @@ void TXsheet::removeColumn(int col) {
 //-----------------------------------------------------------------------------
 
 void TXsheet::moveColumn(int srcIndex, int dstIndex) {
+  invalidateColumnWidths();
   if (srcIndex == dstIndex) return;
   assert(srcIndex >= 0);
   assert(dstIndex >= 0);
@@ -1438,12 +1464,14 @@ TXshColumn *TXsheet::touchColumn(int index, TXshColumn::ColumnType type) {
   // NOTE (Daniele): The following && should be a bug... but I fear I'd break
   // something changing it. Observe that the implied behavior is
   // that of REPLACING AN EXISTING LEGITIMATE COLUMN!
-   // Please, Inquire further if you're not upon release!
+  // Please, Inquire further if you're not upon release!
 
   if (column->isEmpty() && column->getColumnType() != type) {
+    int width = column->getXsheetColumnWidth();
     removeColumn(index);
     insertColumn(index, type);
     column = getColumn(index);
+    column->setXsheetColumnWidth(width);
   }
 
   return column;
@@ -1547,9 +1575,40 @@ FxDag *TXsheet::getFxDag() const { return m_imp->m_fxDag.get(); }
 
 //-----------------------------------------------------------------------------
 
+void TXsheet::invalidateColumnWidths() { m_imp->m_columnWidthsDirty = true; }
+
+int TXsheet::getColumnWidthOverride(int col) const {
+  TXshColumn *column = col >= 0 ? getColumn(col) : nullptr;
+  return column ? column->getXsheetColumnWidth() : 0;
+}
+
+void TXsheet::setColumnWidthOverride(int col, int width) {
+  if (col < 0) return;
+  TXshColumn *column = getColumn(col);
+  if (!column && width == 0) return;
+  if (!column) column = touchColumn(col, TXshColumn::eLevelType);
+  column->setXsheet(this);
+  column->setXsheetColumnWidth(width);
+  invalidateColumnWidths();
+}
+
 ColumnFan *TXsheet::getColumnFan(const Orientation *o) const {
-  int index = o->dimension(PredefinedDimension::INDEX);
-  return &m_imp->m_columnFans[index];
+  // A per-column orientation supplies drawing geometry, never the fan default.
+  int index               = o->dimension(PredefinedDimension::INDEX);
+  const Orientation *base = Orientations::all()[index];
+  ColumnFan &fan          = m_imp->m_columnFans[index];
+  fan.setDimensions(base->dimension(PredefinedDimension::LAYER),
+                    base->dimension(PredefinedDimension::CAMERA_LAYER));
+  if (m_imp->m_columnWidthsDirty) {
+    std::vector<int> widths;
+    if (Orientations::xsheetLayout() == "Adjustable") {
+      for (int c = 0; c < getColumnCount(); ++c)
+        widths.push_back(getColumnWidthOverride(c));
+    }
+    m_imp->m_columnFans[0].setWidths(widths);
+    m_imp->m_columnWidthsDirty = false;
+  }
+  return &fan;
 }
 
 //-----------------------------------------------------------------------------

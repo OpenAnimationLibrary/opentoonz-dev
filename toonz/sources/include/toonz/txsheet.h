@@ -526,6 +526,9 @@ in TXsheetImp.
           TXsheet maintains one column fan per each orientation.
   */
   ColumnFan *getColumnFan(const Orientation *o) const;
+  void invalidateColumnWidths();
+  int getColumnWidthOverride(int col) const;
+  void setColumnWidthOverride(int col, int width);
   /*! Returns a pointer to \b ToonzScene contained in \b TXsheetImp, that is the
      scene to
           which the xsheet refers.

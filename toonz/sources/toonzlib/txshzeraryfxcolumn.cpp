@@ -35,6 +35,7 @@ TXshZeraryFxColumn::TXshZeraryFxColumn(const TXshZeraryFxColumn &src)
   m_zeraryColumnFx->setColumn(this);
   m_zeraryFxLevel->addRef();
   m_zeraryFxLevel->setColumn(this);
+  setXsheetColumnWidth(src.getXsheetColumnWidth());
   m_first = src.m_first;
   int i;
   for (i = 0; i < (int)src.m_cells.size(); i++)

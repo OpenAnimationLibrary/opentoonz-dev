@@ -14,6 +14,7 @@
 
 ColumnFan::ColumnFan()
     : m_firstFreePos(0)
+    , m_firstFreeCol(0)
     , m_unfolded(74)
     , m_folded(9)
     , m_cameraActive(true)
@@ -22,6 +23,7 @@ ColumnFan::ColumnFan()
 //-----------------------------------------------------------------------------
 
 void ColumnFan::setDimensions(int unfolded, int cameraColumn) {
+  if (m_unfolded == unfolded && m_cameraColumnDim == cameraColumn) return;
   m_unfolded        = unfolded;
   m_cameraColumnDim = cameraColumn;
   // folded always 9
@@ -30,29 +32,37 @@ void ColumnFan::setDimensions(int unfolded, int cameraColumn) {
 
 //-----------------------------------------------------------------------------
 
+int ColumnFan::unfoldedSize(int col) const {
+  return col >= 0 && col < (int)m_widths.size() && m_widths[col] > 0
+             ? m_widths[col]
+             : m_unfolded;
+}
+
+void ColumnFan::setWidths(const std::vector<int> &widths) {
+  if (m_widths == widths) return;
+  m_widths = widths;
+  while (!m_widths.empty() && m_widths.back() == 0) m_widths.pop_back();
+  update();
+}
+
 void ColumnFan::update() {
-  int lastPos     = -m_unfolded;
-  bool lastActive = true;
-  int m           = m_columns.size();
-  int i;
-  for (i = 0; i < m; i++) {
-    bool active = m_columns[i].m_active;
-    if (lastActive)
-      lastPos += m_unfolded;
-    else if (active)
-      lastPos += m_folded;
-    m_columns[i].m_pos = lastPos;
-    lastActive         = active;
-  }
-  m_firstFreePos = lastPos + (lastActive ? m_unfolded : m_folded);
+  int pos = 0;
   m_table.clear();
-  for (i = 0; i < m; i++)
-    if (m_columns[i].m_active)
-      m_table[m_columns[i].m_pos + m_unfolded - 1] = i;
-    else if (i + 1 < m && m_columns[i + 1].m_active)
-      m_table[m_columns[i + 1].m_pos - 1] = i;
-    else if (i + 1 == m)
-      m_table[m_firstFreePos - 1] = i;
+  m_firstFreeCol = std::max(m_columns.size(), m_widths.size());
+  m_positions.resize(m_firstFreeCol);
+  for (int i = 0; i < m_firstFreeCol; ++i) {
+    m_positions[i] = pos;
+    if (i < (int)m_columns.size()) m_columns[i].m_pos = pos;
+    if (isActive(i)) {
+      pos += unfoldedSize(i);
+      m_table[pos - 1] = i;
+    } else if (i + 1 == m_firstFreeCol || isActive(i + 1)) {
+      // Adjacent folded columns share one narrow fan.
+      pos += m_folded;
+      m_table[pos - 1] = i;
+    }
+  }
+  m_firstFreePos = pos;
 }
 
 //-----------------------------------------------------------------------------
@@ -72,13 +82,12 @@ int ColumnFan::layerAxisToCol(int coord) const {
     assert(it != m_table.end());
     return it->second;
   } else
-    return m_columns.size() + (coord - m_firstFreePos) / m_unfolded;
+    return m_firstFreeCol + (coord - m_firstFreePos) / m_unfolded;
 }
 
 //-----------------------------------------------------------------------------
 
 int ColumnFan::colToLayerAxis(int col) const {
-  int m        = m_columns.size();
   int firstCol = 0;
   if (Preferences::instance()->isXsheetCameraColumnVisible()) {
     if (col < -1) return -m_cameraColumnDim;
@@ -88,10 +97,8 @@ int ColumnFan::colToLayerAxis(int col) const {
             ? m_cameraColumnDim
             : ((m_columns.size() > 0 && !m_columns[0].m_active) ? 0 : m_folded);
   }
-  if (col >= 0 && col < m)
-    return firstCol + m_columns[col].m_pos;
-  else
-    return firstCol + m_firstFreePos + (col - m) * m_unfolded;
+  if (col >= 0 && col < m_firstFreeCol) return firstCol + m_positions[col];
+  return firstCol + m_firstFreePos + (col - m_firstFreeCol) * m_unfolded;
 }
 
 //-----------------------------------------------------------------------------
@@ -131,9 +138,9 @@ void ColumnFan::deactivate(int col) {
 //-----------------------------------------------------------------------------
 
 bool ColumnFan::isActive(int col) const {
-  return 0 <= col && col < (int)m_columns.size()
-             ? m_columns[col].m_active
-             : col < 0 ? m_cameraActive : true;
+  return 0 <= col && col < (int)m_columns.size() ? m_columns[col].m_active
+         : col < 0                               ? m_cameraActive
+                                                 : true;
 }
 
 //-----------------------------------------------------------------------------
@@ -171,6 +178,8 @@ void ColumnFan::loadData(TIStream &is) {
   m_columns.clear();
   m_table.clear();
   m_firstFreePos = 0;
+  m_firstFreeCol = 0;
+  m_positions.clear();
   while (!is.eos()) {
     int index = 0, count = 0;
     is >> index >> count;
