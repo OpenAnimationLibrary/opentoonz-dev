@@ -24,6 +24,7 @@ TKeyframeData::TKeyframeData() {}
 
 TKeyframeData::TKeyframeData(const TKeyframeData *src)
     : m_keyData(src->m_keyData)
+    , m_centerData(src->m_centerData)
     , m_isPegbarsCycleEnabled(src->m_isPegbarsCycleEnabled)
     , m_offset(src->m_offset) {}
 
@@ -73,7 +74,10 @@ void TKeyframeData::setKeyframes(std::set<Position> positions, TXsheet *xsh,
     if (pegbar->isKeyframe(row)) {
       Position p(row - r0, col - c0);
       TStageObject::Keyframe k = pegbar->getKeyframe(row);
-      m_keyData[p]             = k;
+      TPointD center, offset;
+      pegbar->getCenterAndOffset(center, offset);
+      m_keyData[p]    = k;
+      m_centerData[p] = CenterInfo(center, offset);
     }
   }
 }
@@ -81,8 +85,9 @@ void TKeyframeData::setKeyframes(std::set<Position> positions, TXsheet *xsh,
 //-----------------------------------------------------------------------------
 
 // data -> xsh
-bool TKeyframeData::getKeyframes(std::set<Position> &positions,
-                                 TXsheet *xsh) const {
+bool TKeyframeData::getKeyframes(std::set<Position>& positions, TXsheet* xsh,
+                                 bool adjustInterpolation) const {
+  if (positions.empty()) return false;
   std::set<TKeyframeSelection::Position>::iterator it2 = positions.begin();
   int r0                                               = it2->first;
   int c0                                               = it2->second;
@@ -99,10 +104,8 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     if (itL == lastRowCol.end())
       lastRowCol.insert(std::pair<int, int>(it2->second, it2->first));
     else
-      itL->second = c0;
+      itL->second = it2->first;
   }
-
-  XsheetViewer *viewer = TApp::instance()->getCurrentXsheetViewer();
 
   positions.clear();
   TStageObjectId cameraId =
@@ -126,12 +129,16 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
     double e0, e1;
     pegbar->getKeyframeRange(kF, kL);
     pegbar->setKeyframeWithoutUndo(row, it->second);
+    CenterData::const_iterator centerIt = m_centerData.find(pos);
+    if (centerIt != m_centerData.end())
+      pegbar->setCenterAndOffset(centerIt->second.first,
+                                 centerIt->second.second);
 
     std::map<int, int>::iterator itF = firstRowCol.find(col);
     std::map<int, int>::iterator itL = lastRowCol.find(col);
     TStageObject::Keyframe newKey = pegbar->getKeyframe(row);
     // Process 1st key added in column
-    if (itF != firstRowCol.end() && itF->second == row) {
+    if (adjustInterpolation && itF != firstRowCol.end() && itF->second == row) {
       if (row > kL) {
         // If new key was added after the existing last one, create new
         // interpolation between them using preference setting
@@ -160,7 +167,7 @@ bool TKeyframeData::getKeyframes(std::set<Position> &positions,
       }
     }
     // Process last key added in column
-    if (itL != lastRowCol.end() && itL->second == row) {
+    if (adjustInterpolation && itL != lastRowCol.end() && itL->second == row) {
       if (row < kF) {
         // If new key was added before the existing 1st one, create new
         // interpolation between them using preference setting

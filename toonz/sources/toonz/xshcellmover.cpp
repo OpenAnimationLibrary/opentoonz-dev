@@ -428,8 +428,8 @@ public:
     int cb       = m_cellsMover.getPos().x;
     int colCount = m_cellsMover.getColumnCount();
     if (!m_cellsMover.getOrientation()->isVerticalTimeline()) {
-      int ca = m_cellsMover.getStartPos().y;
-      int cb = m_cellsMover.getPos().y;
+      ca = m_cellsMover.getStartPos().y;
+      cb = m_cellsMover.getPos().y;
     }
 
     if (ca != cb) {
@@ -440,8 +440,9 @@ public:
     if ((m_cellsMover.getQualifiers() & CellsMover::eCopyCells) == 0 &&
         (m_cellsMover.getQualifiers() & CellsMover::eOverwriteCells) == 0)
       m_cellsMover.undoMoveCells(m_cellsMover.getStartPos());
-    if (m_cellsMover.getQualifiers() &
-        CellsMover::eOverwriteCells) {  // rimuove le celle vecchie
+    if ((m_cellsMover.getQualifiers() & CellsMover::eOverwriteCells) &&
+        !(m_cellsMover.getQualifiers() &
+          CellsMover::eCopyCells)) {  // rimuove le celle vecchie
       int c, ra = m_cellsMover.getStartPos().y,
              rowCount = m_cellsMover.getRowCount();
       if (!m_cellsMover.getOrientation()->isVerticalTimeline())
@@ -465,7 +466,7 @@ public:
 
 //=============================================================================
 
-LevelMoverTool::LevelMoverTool(XsheetViewer *viewer)
+LevelMoverTool::LevelMoverTool(XsheetViewer* viewer)
     : XsheetGUI::DragTool(viewer)
     , m_range(0, 0)
     , m_qualifiers(0)
@@ -473,9 +474,26 @@ LevelMoverTool::LevelMoverTool(XsheetViewer *viewer)
     , m_validPos(false)
     , m_undo(0)
     , m_moved(false)
+    , m_hasPreview(false)
     , m_columnsMoved(false) {}
 
-LevelMoverTool::~LevelMoverTool() {}
+LevelMoverTool::~LevelMoverTool() {
+  if (!m_undo) return;
+  if (m_hasPreview) {
+    m_undo->undo();
+    CellsMover* mover   = m_undo->getCellsMover();
+    const TPoint start  = mover->getStartPos();
+    const bool vertical = mover->getOrientation()->isVerticalTimeline();
+    const int row       = vertical ? start.y : start.x;
+    const int col       = vertical ? start.x : start.y;
+    getViewer()->getCellSelection()->selectCells(
+        row, col, row + mover->getRowCount() - 1,
+        col + mover->getColumnCount() - 1);
+  }
+  delete m_undo;
+  if (!getViewer()->orientation()->isVerticalTimeline())
+    TUndoManager::manager()->endBlock();
+}
 
 // isTotallyEmptyColumn == column empty, no fx
 bool LevelMoverTool::isTotallyEmptyColumn(int col) const {
@@ -585,10 +603,12 @@ void LevelMoverTool::onClick(const QMouseEvent *e) {
   m_undo->m_columnsChanges.resize(c1 - c0 + 1, 0);
 
   m_moved = true;
+  m_hasPreview = false;
   if (m_qualifiers & CellsMover::eCopyCells) {
     if (m_qualifiers & CellsMover::eInsertCells) {
       cellsMover->moveCells();
       m_moved = true;
+      m_hasPreview = true;
     } else
       m_moved = false;
   }
@@ -651,6 +671,7 @@ void LevelMoverTool::onCellChange(int row, int col) {
   m_validPos = canMoveColumns(pos);
   if (!m_validPos) return;
   if (m_moved) {
+    m_hasPreview = true;
     cellsMover->undoMoveCells();
   }
   m_validPos = canMove(pos);
@@ -715,6 +736,7 @@ void LevelMoverTool::onCellChange(int row, int col) {
     cellsMover->saveCells();
     cellsMover->moveCells();
     m_moved = true;
+    m_hasPreview = true;
   } else {
     cellsMover->moveCells();
   }
@@ -754,6 +776,8 @@ void LevelMoverTool::onRelease(const CellPosition &pos) {
                       m_qualifiers & CellsMover::eInsertCells;
   if (m_lastPos != m_startPos || copyInserted)
     TUndoManager::manager()->add(m_undo);
+  else
+    delete m_undo;
   m_undo = 0;
 
   if (!getViewer()->orientation()->isVerticalTimeline())

@@ -110,6 +110,7 @@ protected:
   bool m_validPos;
   LevelMoverUndo *m_undo;
   bool m_moved;
+  bool m_hasPreview;
   bool m_columnsMoved;
 
   bool isTotallyEmptyColumn(int col) const;
