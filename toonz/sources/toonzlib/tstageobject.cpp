@@ -30,6 +30,8 @@
 #include <QMetaObject>
 
 // STD includes
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <set>
 
@@ -82,6 +84,7 @@ TStageObjectParams::TStageObjectParams(TStageObjectParams *data)
     : m_id(data->m_id)
     , m_parentId(data->m_parentId)
     , m_children(data->m_children)
+    , m_constraints(data->m_constraints)
     , m_keyframes(data->m_keyframes)
     , m_cycleEnabled(data->m_cycleEnabled)
     , m_spline(data->m_spline)
@@ -518,6 +521,46 @@ void TStageObject::onChange(const class TParamChange &c) {
 //-----------------------------------------------------------------------------
 
 TStageObjectId TStageObject::getId() const { return m_id; }
+
+bool TStageObject::addConstraint(const Constraint &constraint) {
+  if (!m_tree || !m_tree->getStageObject(constraint.target, false))
+    return false;
+
+  // A target must not depend on an affected object through parenting or links.
+  std::set<TStageObjectId> affected;
+  if (constraint.scope == Constraint::Self)
+    affected.insert(m_id);
+  else
+    for (TStageObject *child : m_children) affected.insert(child->m_id);
+  std::set<TStageObjectId> visited;
+  std::vector<TStageObjectId> pending(1, constraint.target);
+  while (!pending.empty()) {
+    TStageObjectId id = pending.back();
+    pending.pop_back();
+    if (affected.count(id)) return false;
+    if (!visited.insert(id).second) continue;
+    TStageObject *object = m_tree->getStageObject(id, false);
+    if (!object) continue;
+    if (object->m_parent) pending.push_back(object->m_parent->m_id);
+    for (const Constraint &link : object->m_constraints)
+      if (link.enabled) pending.push_back(link.target);
+  }
+  m_constraints.push_back(constraint);
+  invalidate();
+  return true;
+}
+
+bool TStageObject::removeConstraint(int index) {
+  if (index < 0 || index >= (int)m_constraints.size()) return false;
+  m_constraints.erase(m_constraints.begin() + index);
+  invalidate();
+  return true;
+}
+
+void TStageObject::clearConstraints() {
+  m_constraints.clear();
+  invalidate();
+}
 
 //-----------------------------------------------------------------------------
 
@@ -1219,6 +1262,7 @@ TStageObject *TStageObject::clone() {
   cloned->m_localPlacement  = m_localPlacement;
   cloned->m_absPlacement    = m_absPlacement;
   cloned->m_status          = m_status;
+  cloned->m_constraints     = m_constraints;
   cloned->doSetSpline(m_spline);
 
   cloned->m_x       = static_cast<TDoubleParam *>(m_x->clone());
@@ -1396,10 +1440,30 @@ TAffine TStageObject::computeLocalPlacement(double frame) {
 //-----------------------------------------------------------------------------
 
 TAffine TStageObject::getPlacement(double t) {
+  // A malformed or externally edited scene can contain a dependency cycle.
+  // The normal UI rejects it; this guard keeps such scenes renderable.
+  static thread_local std::set<TStageObjectId> evaluating;
+  if (evaluating.count(m_id)) return computeLocalPlacement(paramsTime(t));
+  evaluating.insert(m_id);
+  struct EvaluationGuard {
+    std::set<TStageObjectId> &active;
+    TStageObjectId id;
+    ~EvaluationGuard() { active.erase(id); }
+  } guard{evaluating, m_id};
+
   double &time = lazyData().m_time;
 
-  if (time == t) return m_absPlacement;
-  if (time != -1) {
+  // Constraint targets may change independently of the parent hierarchy.
+  // Recompute constrained objects and their descendants on every request.
+  bool hasConstraints = false;
+  for (TStageObject *object = this; object; object = object->m_parent)
+    if (!object->m_constraints.empty()) {
+      hasConstraints = true;
+      break;
+    }
+
+  if (!hasConstraints && time == t) return m_absPlacement;
+  if (time != -1 && time != t) {
     if (!m_parent)
       invalidate();
     else
@@ -1413,6 +1477,59 @@ TAffine TStageObject::getPlacement(double t) {
     place = m_parent->getPlacement(t) * computeLocalPlacement(tt);
   else
     place = computeLocalPlacement(tt);
+
+  std::vector<const Constraint *> links;
+  for (const Constraint &link : m_constraints)
+    if (link.scope == Constraint::Self) links.push_back(&link);
+  if (m_parent)
+    for (const Constraint &link : m_parent->m_constraints)
+      if (link.scope == Constraint::Children) links.push_back(&link);
+
+  // Move first, then aim from the final position, regardless of link owner.
+  std::stable_sort(
+      links.begin(), links.end(), [](const Constraint *a, const Constraint *b) {
+        return a->type == Constraint::Buffer && b->type == Constraint::AimAt;
+      });
+  for (const Constraint *linkPtr : links) {
+    const Constraint &link = *linkPtr;
+    if (!link.enabled || link.influence <= 0.0) continue;
+    TStageObject *target = m_tree->getStageObject(link.target, false);
+    if (!target) continue;  // Preserve links to temporarily missing objects.
+    // Reparenting can make an automatic child its own target later on.
+    bool targetDependsOnThis = false;
+    for (TStageObject *ancestor = target; ancestor;
+         ancestor               = ancestor->m_parent)
+      if (ancestor == this) {
+                      targetDependsOnThis = true;
+                      break;
+      }
+    if (targetDependsOnThis) continue;
+    TPointD source      = place * TPointD();
+    TPointD destination = target->getPlacement(t) * TPointD();
+    double dx           = destination.x - source.x;
+    double dy           = destination.y - source.y;
+    double distance     = std::sqrt(dx * dx + dy * dy);
+    if (link.type == Constraint::AimAt) {
+      if (distance < 1e-8) continue;
+      double desired =
+          std::atan2(dy, dx) * 180.0 / 3.141592653589793 + link.angleOffset;
+      double current =
+          std::atan2(place.a21, place.a11) * 180.0 / 3.141592653589793;
+      double delta = std::remainder(desired - current, 360.0) *
+                     std::min(1.0, link.influence);
+      place = TTranslation(source) * TRotation(delta) * TTranslation(-source) *
+              place;
+    } else if (link.type == Constraint::Buffer && link.radius > 0.0 &&
+               distance < link.radius) {
+      double falloff = 1.0 - distance / link.radius;
+      double shift   = link.strength * falloff * std::min(1.0, link.influence);
+      // Coincident centers have no direction. Pick a stable axis so the field
+      // still has an effect and frame evaluation remains deterministic.
+      double nx = distance > 1e-8 ? dx / distance : 1.0;
+      double ny = distance > 1e-8 ? dy / distance : 0.0;
+      place     = TTranslation(nx * shift, ny * shift) * place;
+    }
+  }
   m_absPlacement = place;
   time           = t;
   return place;
@@ -1625,6 +1742,15 @@ void TStageObject::saveData(TOStream &os) {
 
   os.child("center") << m_center.x << m_center.y << -m_offset.x << -m_offset.y;
   os.child("status") << (int)m_status;
+  for (const Constraint &link : m_constraints) {
+    std::map<std::string, std::string> attrs;
+    attrs["target"] = link.target.toString();
+    attrs["scope"]  = link.scope == Constraint::Children ? "children" : "self";
+    os.openChild("constraint", attrs);
+    os << (int)link.type << (int)link.enabled << link.influence << link.radius
+       << link.strength << link.angleOffset;
+    os.closeChild();
+  }
   if (m_noScaleZ != 0) os.child("noScaleZ") << m_noScaleZ;
 
   if (m_spline) os.child("splinep") << m_spline;
@@ -1695,6 +1821,18 @@ void TStageObject::loadData(TIStream &is) {
     } else if (tagName == "center") {
       is >> m_center.x >> m_center.y >> m_offset.x >> m_offset.y;
       m_offset = -m_offset;
+    } else if (tagName == "constraint") {
+      Constraint link;
+      link.target = toStageObjectId(is.getTagAttribute("target"));
+      link.scope  = is.getTagAttribute("scope") == "children"
+                        ? Constraint::Children
+                        : Constraint::Self;
+      int type = 0, enabled = 0;
+      is >> type >> enabled >> link.influence >> link.radius >> link.strength >>
+          link.angleOffset;
+      link.type    = type == 1 ? Constraint::Buffer : Constraint::AimAt;
+      link.enabled = enabled != 0;
+      if (link.target != m_id) m_constraints.push_back(link);
     } else if (tagName == "name")
       is >> m_name;
     else if (tagName == "x")
@@ -1833,10 +1971,11 @@ TStageObjectParams *TStageObject::getParams() const {
   data->m_center           = m_center;
   data->m_noScaleZ         = m_noScaleZ;
 
-  data->m_id       = m_id;
-  data->m_parentId = getParent();
-  data->m_offset   = m_offset;
-  data->m_status   = m_status;
+  data->m_id          = m_id;
+  data->m_parentId    = getParent();
+  data->m_offset      = m_offset;
+  data->m_status      = m_status;
+  data->m_constraints = m_constraints;
 
   data->m_x       = m_x;
   data->m_y       = m_y;
@@ -1866,11 +2005,12 @@ TStageObjectParams *TStageObject::getParams() const {
 
 void TStageObject::assignParams(const TStageObjectParams *src,
                                 bool doParametersClone) {
-  m_name     = src->m_name;
-  m_center   = src->m_center;
-  m_noScaleZ = src->m_noScaleZ;
-  m_offset   = src->m_offset;
-  m_status   = src->m_status;
+  m_name        = src->m_name;
+  m_center      = src->m_center;
+  m_noScaleZ    = src->m_noScaleZ;
+  m_offset      = src->m_offset;
+  m_status      = src->m_status;
+  m_constraints = src->m_constraints;
   if (m_spline) m_spline->release();
   m_spline = src->m_spline;
   if (m_spline) m_spline->addRef();
