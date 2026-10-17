@@ -887,10 +887,18 @@ void FxPainter::contextMenuEvent(QGraphicsSceneContextMenuEvent *cme) {
     if (compatible) {
       QAction *resetFx = menu.addAction(tr("Reset FX"));
       resetFx->setToolTip(tr(
-          "Replace this FX with its defaults, removing parameter keyframes."));
+          "Reset all FX settings. Hold Shift when triggering to reset animated "
+          "values at the current frame only."));
       TFxP target = fx;
       connect(resetFx, &QAction::triggered, fxScene,
               [fxScene, target, defaults]() {
+                if (QApplication::keyboardModifiers() & Qt::ShiftModifier) {
+                  TFxCommand::resetFxFrame(
+                      target.getPointer(), defaults.getPointer(),
+                      fxScene->getFrameHandle()->getFrameIndex(),
+                      fxScene->getXsheetHandle(), fxScene->getFxHandle());
+                  return;
+                }
                 defaults->setName(target->getName());
                 QList<TFxP> fxs;
                 fxs.append(target);
