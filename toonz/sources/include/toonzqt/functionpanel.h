@@ -175,6 +175,18 @@ public:
   int findClosestGadget(const QPoint &winPos, Handle &handle,
                         int maxWinDistance);
 
+  //! The active channel having a KEYFRAME under \p winPos, nearest first, or
+  //! null. Distinct from findClosestChannel, which answers "whose line passes
+  //! closest": when curves cross, the line nearest the cursor is often not the
+  //! one whose keyframe was aimed at.
+  FunctionTreeModel::Channel *findChannelWithKeyframeAt(const QPoint &winPos,
+                                                        int maxWinDistance);
+
+  //! Dash pattern identifying the column \p channel belongs to, empty for the
+  //! first column drawn (which stays a solid line). Colour tells channels
+  //! apart, the pattern tells columns apart.
+  QVector<qreal> columnDashPattern(FunctionTreeModel::Channel *channel) const;
+
   // creates a QPainterPath representing a curve segment, limited in [x0,x1]
   // segmentIndex = -1 => ]-inf,first keyframe]
   // segmentIndex = segmentCount => [last keyframe, inf[
