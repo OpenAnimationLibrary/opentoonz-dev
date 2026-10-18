@@ -16,15 +16,16 @@ bool finite(const TAffine &a) {
     if (!std::isfinite(v) || std::abs(v) > 1e10) return false;
   return std::abs(a.det()) > 1e-10;
 }
-bool near(double a, double b) {
+bool nearlyEqual(double a, double b) {
   return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
 }
 bool sameLinear(const TAffine &a, const TAffine &b) {
-  return near(a.a11, b.a11) && near(a.a12, b.a12) && near(a.a21, b.a21) &&
-         near(a.a22, b.a22);
+  return nearlyEqual(a.a11, b.a11) && nearlyEqual(a.a12, b.a12) &&
+         nearlyEqual(a.a21, b.a21) && nearlyEqual(a.a22, b.a22);
 }
 bool same(const TAffine &a, const TAffine &b) {
-  return sameLinear(a, b) && near(a.a13, b.a13) && near(a.a23, b.a23);
+  return sameLinear(a, b) && nearlyEqual(a.a13, b.a13) &&
+         nearlyEqual(a.a23, b.a23);
 }
 TDoubleParamP clone(TDoubleParam *parameter) {
   return TDoubleParamP(new TDoubleParam(*parameter));
