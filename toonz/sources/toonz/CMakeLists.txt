@@ -457,6 +457,11 @@ if(BUILD_ENV_APPLE)
     set_source_files_properties(${OBJCSOURCES} PROPERTIES COMPILE_FLAGS "-x objective-c++")
 endif()
 
+if(WITH_BULLET)
+    list(APPEND MOC_HEADERS bulletphysicspopup.h)
+    list(APPEND SOURCES bulletphysicspopup.cpp)
+endif()
+
 qt5_wrap_cpp(SOURCES ${MOC_HEADERS})
 
 if(BUILD_ENV_MSVC)
@@ -474,6 +479,11 @@ else()
     #    -DTAPPTOOLS_EXPORTS
     #    -DTTEST_EXPORTS
     #)
+endif()
+
+if(WITH_BULLET)
+    target_compile_definitions(OpenToonz PRIVATE WITH_BULLET)
+    target_link_libraries(OpenToonz ot_bullet_stage)
 endif()
 
 if(WITH_TRANSLATION)

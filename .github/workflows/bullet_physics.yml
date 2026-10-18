@@ -1,0 +1,44 @@
+name: Bullet Physics Exploration
+
+on:
+  pull_request:
+    paths:
+      - 'toonz/sources/physics/**'
+      - 'toonz/sources/toonz/bulletphysicspopup.*'
+      - '.github/workflows/bullet_physics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connections:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - name: Get the tested Bullet CPU SDK
+        uses: actions/checkout@v6
+        with:
+          repository: bulletphysics/bullet3
+          ref: 2c204c49e56ed15ec5fcfa71d199ab6d6570b3f5
+          path: bullet-sdk
+          sparse-checkout: src
+          lfs: false
+      - name: Configure
+        run: cmake -S toonz/sources/physics -B bullet-build -DCMAKE_BUILD_TYPE=Release -DOT_BULLET_SOURCE_DIR=${{ github.workspace }}/bullet-sdk
+      - name: Build
+        run: cmake --build bullet-build --config Release --parallel 2
+      - name: Test connections and replay
+        run: ctest --test-dir bullet-build -C Release --output-on-failure
+      - name: Address and undefined behavior sanitizers
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S toonz/sources/physics -B bullet-sanitize -DCMAKE_BUILD_TYPE=Debug -DOT_BULLET_SOURCE_DIR=${{ github.workspace }}/bullet-sdk -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+          cmake --build bullet-sanitize --parallel 2
+          ctest --test-dir bullet-sanitize --output-on-failure
