@@ -44,14 +44,15 @@ std::vector<VectorAssistants::Guide> scanVectorGuides(TTool *tool,
   TXshSimpleLevel *level = app->getCurrentLevel()->getSimpleLevel();
   TXsheet *xsheet        = app->getCurrentXsheet()->getXsheet();
   if (!level || !xsheet ||
-      (level->getType() != TZP_XSHLEVEL && level->getType() != OVL_XSHLEVEL))
+      (level->getType() != TZP_XSHLEVEL && level->getType() != OVL_XSHLEVEL &&
+       level->getType() != PLI_XSHLEVEL))
     return guides;
   int column  = app->getCurrentColumn()->getColumnIndex();
   TPointD dpi = getCurrentDpiScale(level, tool->getCurrentFid());
   if (column < 0 || dpi.x <= TConsts::epsilon || dpi.y <= TConsts::epsilon ||
       std::abs(tool->getMatrix().det()) <= TConsts::epsilon)
     return guides;
-  // Mouse tracks are in current-level pixels, not scene/world coordinates.
+  // Mouse tracks use current-level coordinates: raster pixels or vector units.
   TAffine worldToTrack =
       TScale(1.0 / dpi.x, 1.0 / dpi.y) * tool->getMatrix().inv();
   int frame = app->getCurrentFrame()->getFrame();

@@ -10,7 +10,7 @@
 #include <limits>
 #include <vector>
 
-// Geometry in destination raster pixels; no viewer or application state.
+// Geometry in destination drawing coordinates; no viewer or application state.
 namespace VectorAssistants {
 
 inline double length(const TPointD &p) { return std::hypot(p.x, p.y); }
