@@ -6,6 +6,11 @@ on:
       - 'toonz/sources/include/toonz/trig*'
       - 'toonz/sources/toonzlib/trig*'
       - 'toonz/sources/toonzlib/tests/rig/**'
+      - 'toonz/sources/toonzlib/tests/rig_stage_test.cpp'
+      - 'toonz/sources/include/toonz/tstageobject*.h'
+      - 'toonz/sources/toonzlib/tstageobject*.cpp'
+      - 'toonz/sources/tnztools/skeleton*'
+      - 'toonz/sources/toonzqt/stageobjectsdata.cpp'
       - '.github/workflows/skeleton_rig_tests.yml'
   workflow_dispatch:
 

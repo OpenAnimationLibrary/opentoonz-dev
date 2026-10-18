@@ -93,7 +93,25 @@ class SkeletonRigDialog final : public QDialog {
   QListWidget *m_list;
   QComboBox *m_kind, *m_target, *m_endpoint;
   QGroupBox *m_properties;
+  QFormLayout *m_form;
+  QPushButton *m_capture;
   QLabel *m_status;
+
+  void showField(QWidget *field, bool visible) {
+    field->setVisible(visible);
+    if (auto *label = m_form->labelForField(field)) label->setVisible(visible);
+  }
+
+  void updateStatus() {
+    if (m_loading || !current()) return;
+    saveCurrent();
+    QString problem =
+        QString::fromStdString(m_object->rigConstraintProblem(*current()));
+    m_status->setText(tr("Frame %1. %2 enforcement keys. %3")
+                          .arg(m_frame + 1)
+                          .arg(current()->enforcementKeys.size())
+                          .arg(problem.isEmpty() ? tr("Ready") : problem));
+  }
 
   static QDoubleSpinBox *number(double low = -10000, double high = 10000) {
     auto *spin = new QDoubleSpinBox;
@@ -182,8 +200,10 @@ class SkeletonRigDialog final : public QDialog {
       }
       m_target->setCurrentIndex(index);
       m_target->setEnabled(c->hasTarget());
+      showField(m_target, c->hasTarget());
       m_endpoint->setCurrentIndex(c->endpoint);
       m_endpoint->setEnabled(c->hasTarget());
+      showField(m_endpoint, c->hasTarget());
       m_weight->setValue(c->weight(m_frame) * 100);
       // Show the editable enforcement even when muted or outside its range.
       TRigConstraint active = *c;
@@ -215,6 +235,14 @@ class SkeletonRigDialog final : public QDialog {
       m_angle->setEnabled(c->type == TRigConstraint::AimAt ||
                           c->type == TRigConstraint::OrientLike ||
                           c->type == TRigConstraint::ParentLike);
+      for (auto *field : {m_minX, m_minY, m_maxX, m_maxY})
+        showField(field, position);
+      showField(m_min, scalar);
+      showField(m_max, scalar);
+      showField(m_offsetX, m_offsetX->isEnabled());
+      showField(m_offsetY, m_offsetY->isEnabled());
+      showField(m_angle, m_angle->isEnabled());
+      m_capture->setVisible(c->type <= TRigConstraint::ParentLike);
       QString problem =
           QString::fromStdString(m_object->rigConstraintProblem(*c));
       m_status->setText(tr("Frame %1. %2 enforcement keys. %3")
@@ -361,7 +389,9 @@ public:
     columns->addLayout(stack, 1);
     m_properties = new QGroupBox(tr("Constraint"));
     auto *form   = new QFormLayout(m_properties);
-    m_enabled    = new QCheckBox(tr("Enabled"));
+    m_form       = form;
+    form->setSizeConstraint(QLayout::SetMinAndMaxSize);
+    m_enabled = new QCheckBox(tr("Enabled"));
     form->addRow(m_enabled);
     m_target = new QComboBox;
     form->addRow(tr("Target:"), m_target);
@@ -395,6 +425,7 @@ public:
     form->addRow(tr("Offset Y (inches):"), m_offsetY);
     form->addRow(tr("Angle offset (degrees):"), m_angle);
     auto *capture = new QPushButton(tr("Capture Current Offset"));
+    m_capture     = capture;
     capture->setToolTip(
         tr("Keep the pose currently visible in the viewer when following the "
            "selected target."));
@@ -432,6 +463,10 @@ public:
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_list, &QListWidget::currentRowChanged, this,
             [this](int row) { selectRow(row); });
+    connect(m_target, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) { updateStatus(); });
+    connect(m_endpoint, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { updateStatus(); });
     connect(m_weight, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             this, [this](double) {
               if (!m_loading) m_weightEdited = true;

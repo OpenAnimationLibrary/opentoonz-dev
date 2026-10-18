@@ -622,8 +622,11 @@ std::string TStageObject::rigConstraintProblem(const TRigConstraint &c) const {
   if (!c.hasTarget()) return std::string();
   TStageObject *target = m_tree->getRigObject(c.targetId);
   if (!target) return "Missing or ambiguous target";
-  if (c.endpoint == TRigConstraint::Tip && !target->getRigBone().enabled &&
-      target->getRigBone().constraints.empty())
+  bool needsBoneDirection = c.type == TRigConstraint::OrientLike ||
+                            c.type == TRigConstraint::ParentLike;
+  if ((c.endpoint == TRigConstraint::Tip ||
+       (needsBoneDirection && target->getId().isColumn())) &&
+      !target->getRigBone().enabled && target->getRigBone().constraints.empty())
     return "Set a bone tip on the target first";
   if (usesLegacyIK(m_tree, target)) return "Target uses legacy IK pins";
   if (rigDependsOn(m_tree->rigDependencies(), c.targetId, m_rigId))

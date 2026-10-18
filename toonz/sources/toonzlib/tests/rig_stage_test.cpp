@@ -188,6 +188,27 @@ void persistence(const QString &directory) {
     point(pivot(copy, frame), pivot(source, frame),
           "reopen matches original at arbitrary frames");
 }
+
+void persistentTargetDirection() {
+  TStageObjectTree tree;
+  auto *target             = tree.getStageObject(TStageObjectId::ColumnId(0));
+  auto *source             = tree.getStageObject(TStageObjectId::ColumnId(1));
+  TRigBone bone            = follower(target);
+  bone.constraints[0].type = TRigConstraint::OrientLike;
+  check(source->setRigBone(bone), "assign orient constraint");
+  check(!source->rigConstraintProblem(bone.constraints[0]).empty(),
+        "implicit visual endpoint is not a persistent direction");
+  TRigBone targetBone;
+  targetBone.enabled = true;
+  targetBone.tip     = TPointD(2, 0);
+  check(target->setRigBone(targetBone), "define target bone direction");
+  check(source->rigConstraintProblem(bone.constraints[0]).empty(),
+        "persistent direction resolves orient constraint");
+  TAffine placement = source->getPlacement(0);
+  TPointD axis      = placement * TPointD(0, 1) - placement * TPointD();
+  point(normalize(axis), TPointD(1, 0),
+        "oriented bone matches target tip direction");
+}
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -197,6 +218,7 @@ int main(int argc, char **argv) {
     check(directory.isValid(), "temporary fixture directory");
     legacyAndLiveCache();
     cyclesAndIdentity();
+    persistentTargetDirection();
     persistence(directory.path());
     std::cout << "Skeleton stage-object tests passed\n";
   } catch (const std::exception &error) {

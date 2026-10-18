@@ -31,8 +31,9 @@ or a complete Animation:Master rig implementation.
    drawing browser continue to be used. In **Inverse Kinematics**, body/tip
    dragging uses the existing IK solver and pin controls.
 
-Bone tip edits and dialog edits support Undo/Redo. Tip editing does not create
-animation keys. Turn off active constraints before dragging a rest tip.
+Bone tip edits and dialog edits support Undo/Redo. Escape cancels an active
+tip drag; switching tools or frames also cancels it. Tip editing does not
+create animation keys. Turn off active constraints before dragging a rest tip.
 
 ## Try constraints
 
@@ -57,6 +58,10 @@ Target points are **Pivot** or **Bone Tip**. The pivot includes the object's
 current hook/pivot selection. Set a persistent tip on a target before using
 its Bone Tip as an endpoint. A dedicated arbitrary-hook target selector is
 deferred.
+
+Orient Like and Parent Like also need a persistent tip on a target drawing
+column, so its evaluated bone direction matches the displayed bone. A pegbar,
+table, or camera target uses its local Y direction.
 
 Use **Capture Current Offset** before accepting a new Translate To, Orient
 Like, Aim At, or Parent Like constraint when the currently visible pose should
