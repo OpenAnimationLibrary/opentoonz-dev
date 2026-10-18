@@ -23,9 +23,8 @@ TPersistSet::~TPersistSet() {
 //------------------------------------------------------------------
 
 void TPersistSet::insert(std::unique_ptr<TPersist> object) {
-  TPersist *objectPtr = object.get();
-  auto const sameType = [objectPtr](TPersist *x) {
-    return typeid(*objectPtr) == typeid(*x);
+  auto const sameType = [&object](TPersist *x) {
+    return typeid(*object.get()) == typeid(*x);
   };
 
   // Remove any object with the same type id
