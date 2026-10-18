@@ -38,6 +38,7 @@
 #include "toonz/navigationtags.h"
 #include "toonz/txshlevelcolumn.h"
 #include "toonz/txshpalettecolumn.h"
+#include "toonz/xsheetengine.h"
 
 #include "tenv.h"
 
@@ -1306,39 +1307,29 @@ void XsheetViewer::keyPressEvent(QKeyEvent *event) {
     int rowA, colA, rowB, colB;
     cellSel->getSelectedCells(rowA, colA, rowB, colB);
     stride.setFrame(cellSel->getSelectedCells().getRowCount());
+    const CellRange range(CellPosition(rowA, colA), CellPosition(rowB, colB));
 
     if (m_cellArea->isControlPressed()) {  // resize
 
-      // resize selection of frames/rows forward or backwards
       assert(cellSel->getResizePivotRow() >= 0);
-      if (rowA < cellSel->getResizePivotRow())
-        rowA += shift.frame();
-      else
-        rowB += shift.frame();
-
-      // resize selection of layers/columns "up" or "down"
-      if (colA < getCurrentColumn())
-        colA += shift.layer();
-      else
-        colB += shift.layer();
-
-      // keep selection inside the xsheet/timeline
-      if (colA < firstCol || colB < firstCol || rowA < 0 || rowB < 0) return;
-
-      // apply new selection rectangle
-      cellSel->selectCells(rowA, colA, rowB, colB);
+      CellRange resized;
+      if (!XsheetEngine::resizeCellRange(
+              range, shift,
+              CellPosition(cellSel->getResizePivotRow(), getCurrentColumn()),
+              firstCol, resized))
+        return;
+      cellSel->selectCells(resized.from().frame(), resized.from().layer(),
+                           resized.to().frame(), resized.to().layer());
       updateCells();
       TApp::instance()->getCurrentSelection()->notifySelectionChanged();
       return;
 
     } else {  // shift
       CellPosition offset(shift * stride);
-      int movedRow0 = std::max(0, rowA + offset.frame());
-      int movedCol0 = std::max(firstCol, colA + offset.layer());
-      int diffRow   = movedRow0 - rowA;
-      int diffCol   = movedCol0 - colA;
-      cellSel->selectCells(rowA + diffRow, colA + diffCol, rowB + diffRow,
-                           colB + diffCol);
+      const CellRange moved =
+          XsheetEngine::shiftCellRange(range, offset, firstCol);
+      cellSel->selectCells(moved.from().frame(), moved.from().layer(),
+                           moved.to().frame(), moved.to().layer());
       TApp::instance()->getCurrentSelection()->notifySelectionChanged();
     }
   }
