@@ -133,10 +133,6 @@ public:
   };
 
   void doCompute(TTile &tile, double frame, const TRenderSettings &ri) override;
-
-  bool canHandle(const TRenderSettings &info, double frame) override {
-    return true;
-  }
 };
 
 static double normalize_h(double h) {
