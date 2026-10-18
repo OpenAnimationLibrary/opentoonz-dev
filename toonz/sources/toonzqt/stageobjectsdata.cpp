@@ -1012,6 +1012,25 @@ std::vector<TStageObjectId> StageObjectsData::restoreObjects(
     restoredIds.push_back(restoredId);
   }
 
+  // Remap internal rig links as a group. Repeated pastes get fresh identities.
+  std::map<std::string, std::string> rigIds;
+  for (i = 0; i < elementsCount; ++i) {
+    const auto *params = m_elements[i]->m_params;
+    if (!params->m_rigId.empty())
+      rigIds[params->m_rigId] =
+          xsh->getStageObject(idTable[params->m_id])->getRigId();
+  }
+  for (const auto &id : restoredIds) {
+    auto *object  = xsh->getStageObject(id);
+    TRigBone bone = object->getRigBone();
+    if (bone.constraints.empty()) continue;
+    for (auto &constraint : bone.constraints) {
+      auto target = rigIds.find(constraint.targetId);
+      if (target != rigIds.end()) constraint.targetId = target->second;
+    }
+    object->assignRigBone(bone);
+  }
+
   // Apply stage object-parental relationships
   for (i = 0; i < elementsCount; ++i) {
     TStageObjectDataElement *element = m_elements[i];

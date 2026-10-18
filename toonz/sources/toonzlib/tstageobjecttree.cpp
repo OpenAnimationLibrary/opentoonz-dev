@@ -42,6 +42,7 @@ struct TStageObjectTree::TStageObjectTreeImp {
   int m_groupIdCount;
   int m_splineCount;
   int m_dagGridDimension;
+  bool m_hasRigConstraints = false;
 
   Grammar *m_grammar;
 
@@ -113,8 +114,8 @@ TStageObjectTree::~TStageObjectTree() {}
 void TStageObjectTree::checkIntegrity() {
   std::map<TStageObjectId, TStageObject *> &pegbars     = m_imp->m_pegbarTable;
   std::map<TStageObjectId, TStageObject *>::iterator it = pegbars.begin();
-  int minColumnIndex = 0;
-  int maxColumnIndex = -1;
+  int minColumnIndex                                    = 0;
+  int maxColumnIndex                                    = -1;
   std::set<int> columnIndexTable;
 
   int cameraCount = 0;
@@ -232,6 +233,7 @@ void TStageObjectTree::insertColumn(int index) {
 
   pegbars[id] = pegbar;
   pegbar->addRef();
+  refreshRig();
 
 #ifndef NDEBUG
   checkIntegrity();
@@ -246,8 +248,8 @@ void TStageObjectTree::removeColumn(int index) {
   TStageObjectId id = TStageObjectId::ColumnId(index);
   std::map<TStageObjectId, TStageObject *> &pegbars = m_imp->m_pegbarTable;
   std::map<TStageObjectId, TStageObject *>::iterator pit;
-  pit                           = pegbars.find(id);
-  TStageObject *imp             = 0;
+  pit               = pegbars.find(id);
+  TStageObject *imp = 0;
   if (pit != pegbars.end()) imp = pit->second;
 
   if (imp) {
@@ -278,6 +280,7 @@ son->setParent(parentId);
 
   pegbars.clear();
   pegbars.insert(tmp.begin(), tmp.end());
+  refreshRig();
 
 #ifndef NDEBUG
   checkIntegrity();
@@ -295,6 +298,7 @@ void TStageObjectTree::removeStageObject(const TStageObjectId &id) {
   obj->release();
   pegbars.erase(id);
   if (id.isCamera()) m_imp->m_cameraCount--;
+  refreshRig();
 #ifndef NDEBUG
   checkIntegrity();
 #endif
@@ -305,13 +309,14 @@ void TStageObjectTree::removeStageObject(const TStageObjectId &id) {
 void TStageObjectTree::insertStageObject(TStageObject *pegbar) {
   TStageObject *imp = dynamic_cast<TStageObject *>(pegbar);
   assert(imp);
-  TStageObjectId id = imp->getId();
+  TStageObjectId id                                 = imp->getId();
   std::map<TStageObjectId, TStageObject *> &pegbars = m_imp->m_pegbarTable;
   assert(pegbars.count(id) == 0);
   pegbars[id] = imp;
   imp->addRef();
   imp->setParent(imp->getParent());
   if (id.isCamera()) m_imp->m_cameraCount++;
+  refreshRig();
 #ifndef NDEBUG
   checkIntegrity();
 #endif
@@ -537,6 +542,53 @@ void TStageObjectTree::invalidateAll() {
        ++it) {
     it->second->invalidate();
   }
+}
+
+TStageObject *TStageObjectTree::getRigObject(const std::string &id) const {
+  if (id.empty()) return nullptr;
+  TStageObject *found = nullptr;
+  for (const auto &entry : m_imp->m_pegbarTable) {
+    if (entry.second->getRigId() != id) continue;
+    // A malformed scene with duplicate identities must not silently retarget.
+    if (found) return nullptr;
+    found = entry.second;
+  }
+  return found;
+}
+
+TRigDependencies TStageObjectTree::rigDependencies(
+    const TStageObject *owner, const TRigBone *replacement) const {
+  TRigDependencies graph;
+  for (const auto &entry : m_imp->m_pegbarTable) {
+    const TStageObject *object = entry.second;
+    auto &edges                = graph[object->getRigId()];
+    if (object->m_parent) edges.push_back(object->m_parent->getRigId());
+    const TRigBone &bone =
+        object == owner && replacement ? *replacement : object->getRigBone();
+    for (const auto &c : bone.constraints)
+      if (c.hasTarget() && !c.targetId.empty()) edges.push_back(c.targetId);
+  }
+  return graph;
+}
+
+void TStageObjectTree::refreshRig() {
+  m_imp->m_hasRigConstraints = false;
+  for (const auto &entry : m_imp->m_pegbarTable)
+    if (!entry.second->getRigBone().constraints.empty()) {
+      m_imp->m_hasRigConstraints = true;
+      break;
+    }
+  // Also invalidate after removing the final constraint.
+  for (const auto &entry : m_imp->m_pegbarTable)
+    entry.second->m_lazyData(tcg::direct_access).m_time = -1;
+}
+
+void TStageObjectTree::invalidateRigPlacements() {
+  if (!m_imp->m_hasRigConstraints) return;
+  // Clear placements directly. Calling invalidate() here would recurse through
+  // the rig dependency invalidation hook. Keyframe maps remain lazy.
+  for (const auto &entry : m_imp->m_pegbarTable)
+    entry.second->m_lazyData(tcg::direct_access).m_time = -1;
 }
 
 //-----------------------------------------------------------------------------

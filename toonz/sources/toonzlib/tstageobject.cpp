@@ -1,6 +1,7 @@
 
 
 #include "toonz/tstageobject.h"
+#include "toonz/trigserialization.h"
 
 // TnzLib includes
 #include "toonz/tstageobjecttree.h"
@@ -28,6 +29,7 @@
 
 // Qt includes
 #include <QMetaObject>
+#include <QUuid>
 
 // STD includes
 #include <fstream>
@@ -105,6 +107,8 @@ TStageObjectParams::TStageObjectParams(TStageObjectParams *data)
     , m_offset(data->m_offset)
     , m_name(data->m_name)
     , m_isOpened(data->m_isOpened)
+    , m_rigId(data->m_rigId)
+    , m_rigBone(data->m_rigBone)
     , m_pinnedRangeSet(data->m_pinnedRangeSet->clone()) {}
 
 //---------------------------------------------------------------------------
@@ -355,6 +359,7 @@ TStageObject::LazyData::LazyData() : m_time(-1.0) {}
 
 TStageObject::TStageObject(TStageObjectTree *tree, TStageObjectId id)
     : m_tree(tree)
+    , m_rigId(QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString())
     , m_id(id)
     , m_parent(0)
     , m_name("")
@@ -513,6 +518,7 @@ void TStageObject::onChange(const class TParamChange &c) {
     m_lazyData.invalidate();  // Both invalidate placement AND keyframes
   else
     invalidate();  // Invalidate placement only
+  m_tree->invalidateRigPlacements();
 }
 
 //-----------------------------------------------------------------------------
@@ -565,6 +571,86 @@ string TStageObject::getFullName() const {
     return name;
 }
 
+namespace {
+bool usesLegacyIK(const TStageObjectTree *tree, const TStageObject *object) {
+  while (object) {
+    if (object->isLegacyIKActive()) return true;
+    object = const_cast<TStageObjectTree *>(tree)->getStageObject(
+        object->getParent(), false);
+  }
+  return false;
+}
+}  // namespace
+
+bool TStageObject::setRigBone(const TRigBone &bone, std::string *error) {
+  if (!bone.isValid()) {
+    if (error) *error = "Invalid bone or constraint settings.";
+    return false;
+  }
+  TRigDependencies graph = m_tree->rigDependencies(this, &bone);
+  for (const auto &c : bone.constraints) {
+    if (c.hasTarget() && !c.targetId.empty() &&
+        rigDependsOn(graph, c.targetId, m_rigId)) {
+      if (error) *error = "This target creates a dependency cycle.";
+      return false;
+    }
+  }
+  assignRigBone(bone);
+  return true;
+}
+
+void TStageObject::assignRigBone(const TRigBone &bone) {
+  if (!bone.isValid()) return;
+  m_rigBone   = bone;
+  m_rigIdUsed = m_rigIdUsed || bone.enabled || !bone.constraints.empty();
+  for (const auto &c : bone.constraints)
+    if (c.hasTarget())
+      if (TStageObject *target = m_tree->getRigObject(c.targetId))
+        target->m_rigIdUsed = true;
+  m_tree->refreshRig();
+  invalidate();
+}
+
+std::string TStageObject::rigConstraintProblem(const TRigConstraint &c) const {
+  if (!c.isValid()) return "Invalid settings";
+  if (usesLegacyIK(m_tree, this)) return "Release legacy IK pins first";
+  if (!c.hasTarget()) return std::string();
+  TStageObject *target = m_tree->getRigObject(c.targetId);
+  if (!target) return "Missing or ambiguous target";
+  if (c.endpoint == TRigConstraint::Tip && !target->getRigBone().enabled &&
+      target->getRigBone().constraints.empty())
+    return "Set a bone tip on the target first";
+  if (usesLegacyIK(m_tree, target)) return "Target uses legacy IK pins";
+  if (rigDependsOn(m_tree->rigDependencies(), c.targetId, m_rigId))
+    return "Dependency cycle";
+  return std::string();
+}
+
+TAffine TStageObject::applyRig(double frame, const TAffine &placement) {
+  TAffine result = placement;
+  if (m_rigBone.constraints.empty() || usesLegacyIK(m_tree, this))
+    return result;
+  TRigContext context;
+  context.parentPlacement = getParentPlacement(frame);
+  context.pivot           = getCenter(frame) * Stage::inch;
+  context.axis            = m_rigBone.tip;
+  context.unitsPerInch    = Stage::inch;
+  for (const auto &c : m_rigBone.constraints) {
+    if (c.weight(frame) <= 0 || !rigConstraintProblem(c).empty()) continue;
+    if (c.hasTarget()) {
+      TStageObject *target    = m_tree->getRigObject(c.targetId);
+      TAffine targetPlacement = target->getPlacement(frame);
+      TPointD pivot           = target->getCenter(frame) * Stage::inch;
+      TPointD tip             = pivot + target->getRigBone().tip * Stage::inch;
+      context.targetPosition =
+          targetPlacement * (c.endpoint == TRigConstraint::Tip ? tip : pivot);
+      context.targetAxis = targetPlacement * tip - targetPlacement * pivot;
+    }
+    result = applyRigConstraint(result, c, context, frame);
+  }
+  return result;
+}
+
 //-----------------------------------------------------------------------------
 
 void TStageObject::setParent(const TStageObjectId &parentId) {
@@ -573,6 +659,9 @@ void TStageObject::setParent(const TStageObjectId &parentId) {
   if (parentId != TStageObjectId::NoneId) {
     newParent = m_tree->getStageObject(parentId);
     assert(newParent);
+
+    if (rigDependsOn(m_tree->rigDependencies(), newParent->getRigId(), m_rigId))
+      return;
 
     // cerco di evitare i cicli
     TStageObject *p = newParent;
@@ -1242,6 +1331,10 @@ TStageObject *TStageObject::clone() {
   cloned->m_offset     = m_offset;
   cloned->m_name       = m_name;
   cloned->m_dagNodePos = m_dagNodePos;
+  cloned->m_rigBone    = m_rigBone;
+  cloned->m_rigIdUsed  = m_rigIdUsed;
+  // A clone gets a fresh identity. Existing target links retain their meaning.
+  m_tree->refreshRig();
 
   return cloned;
 }
@@ -1284,6 +1377,12 @@ TStageObject *TStageObject::getPinnedDescendant(int frame) {
 
 TAffine TStageObject::computeIkRootOffset(int t) {
   if (m_ikflag > 0) return TAffine();
+  struct ComputingIK {
+    bool &flag;
+    bool old;
+    ComputingIK(bool &value) : flag(value), old(value) { flag = true; }
+    ~ComputingIK() { flag = old; }
+  } computing(m_computingIk);
 
   // get normal movement (which will be left-multiplied to the IK-part)
   setStatus(XY);
@@ -1413,6 +1512,7 @@ TAffine TStageObject::getPlacement(double t) {
     place = m_parent->getPlacement(t) * computeLocalPlacement(tt);
   else
     place = computeLocalPlacement(tt);
+  place          = applyRig(t, place);
   m_absPlacement = place;
   time           = t;
   return place;
@@ -1463,6 +1563,7 @@ void TStageObject::invalidate(LazyData &ld) const {
   // should
   // not trigger a data update
   ld.m_time = -1;
+  m_tree->invalidateRigPlacements();
 
   std::list<TStageObject *>::const_iterator cit = m_children.begin();
   for (; cit != m_children.end(); ++cit) (*cit)->invalidate();
@@ -1610,6 +1711,14 @@ void TStageObject::saveData(TOStream &os) {
   os.openChild("parent", attr);
   os.closeChild();
   if (m_name != "") os.child("name") << m_name;
+  if (m_rigIdUsed) {
+    std::map<std::string, std::string> attributes;
+    attributes["id"]      = m_rigId;
+    attributes["version"] = "1";
+    os.openChild("rig", attributes);
+    saveRigBone(os, m_rigBone);
+    os.closeChild();
+  }
   os.child("isOpened") << (int)m_isOpened;
   if (isGrouped()) {
     os.openChild("groupIds");
@@ -1692,6 +1801,15 @@ void TStageObject::loadData(TIStream &is) {
       }
       if (handle != "") setHandle(handle);
       if (parentHandle != "") setParentHandle(parentHandle);
+    } else if (tagName == "rig") {
+      if (is.getTagAttribute("version") != "1")
+        throw TException("Unsupported rig data version");
+      std::string id = is.getTagAttribute("id");
+      if (QUuid(QString::fromStdString(id)).isNull())
+        throw TException("Invalid rig identity");
+      m_rigId     = id;
+      m_rigIdUsed = true;
+      m_rigBone   = loadRigBone(is);
     } else if (tagName == "center") {
       is >> m_center.x >> m_center.y >> m_offset.x >> m_offset.y;
       m_offset = -m_offset;
@@ -1820,6 +1938,7 @@ void TStageObject::loadData(TIStream &is) {
   // function while loading scene process. So I will skip it assuming that
   // updateKeyframes() will be called when it is actually needed.
   // updateKeyframes();
+  m_tree->refreshRig();
   if (m_spline != 0 && isUppkEnabled())
     m_spline->addParam(m_posPath.getPointer());
   invalidate();
@@ -1830,6 +1949,8 @@ void TStageObject::loadData(TIStream &is) {
 TStageObjectParams *TStageObject::getParams() const {
   TStageObjectParams *data = new TStageObjectParams();
   data->m_name             = m_name;
+  data->m_rigId            = m_rigIdUsed ? m_rigId : std::string();
+  data->m_rigBone          = m_rigBone;
   data->m_center           = m_center;
   data->m_noScaleZ         = m_noScaleZ;
 
@@ -1866,6 +1987,15 @@ TStageObjectParams *TStageObject::getParams() const {
 
 void TStageObject::assignParams(const TStageObjectParams *src,
                                 bool doParametersClone) {
+  if (!src->m_rigId.empty()) {
+    TStageObject *existing = m_tree->getRigObject(src->m_rigId);
+    // Restore deleted objects and whole-xsheet copies with their identities;
+    // copying within the same tree must not create duplicate identities.
+    if (!existing || existing == this) m_rigId = src->m_rigId;
+    m_rigIdUsed = true;
+  }
+  m_rigBone = src->m_rigBone;
+  m_tree->refreshRig();
   m_name     = src->m_name;
   m_center   = src->m_center;
   m_noScaleZ = src->m_noScaleZ;

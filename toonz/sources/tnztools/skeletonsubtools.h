@@ -52,6 +52,20 @@ public:
   void leftButtonUp(const TPointD &pos, const TMouseEvent &) override;
 };
 
+class DragBoneTipTool final : public DragTool {
+  TStageObjectP m_object;
+  TRigBone m_before, m_after;
+  TAffine m_toLocal;
+  TPointD m_pivot;
+  bool m_dragged = false;
+
+public:
+  explicit DragBoneTipTool(SkeletonTool *tool);
+  void leftButtonDown(const TPointD &pos, const TMouseEvent &) override;
+  void leftButtonDrag(const TPointD &pos, const TMouseEvent &event) override;
+  void leftButtonUp(const TPointD &pos, const TMouseEvent &) override;
+};
+
 //---------------------------------------------------------
 
 class DragChannelTool : public DragTool {

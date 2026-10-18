@@ -21,6 +21,7 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    skeletonrig.h
     autofill.h
     bluredbrush.h
     hookselection.h
@@ -110,6 +111,7 @@ set(SOURCES
     setsaveboxtool.cpp
     skeletonsubtools.cpp
     skeletontool.cpp
+    skeletonrig.cpp
     stylepickertool.cpp
     trackertool.cpp
     typetool.cpp

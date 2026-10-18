@@ -49,11 +49,14 @@
 
 #include "skeletonsubtools.h"
 #include "skeletontool.h"
+#include "skeletonrig.h"
 
 using namespace SkeletonSubtools;
 
 TEnv::IntVar SkeletonGlobalKeyFrame("SkeletonToolGlobalKeyFrame", 0);
 TEnv::IntVar SkeletonInverseKinematics("SkeletonToolInverseKinematics", 0);
+TEnv::IntVar SkeletonModernBones("SkeletonToolModernBones", 0);
+TEnv::IntVar SkeletonBoneNames("SkeletonToolBoneNames", 1);
 
 #define BUILD_SKELETON L"Build Skeleton"
 #define ANIMATE L"Animate"
@@ -219,7 +222,10 @@ enum ToolDevice {
   TD_LockStageObject = 20000,
   TD_MagicLink       = 30000,
 
-  TD_Test = 100000
+  TD_Test     = 100000,
+  TD_BoneBody = 0x100000,
+  TD_BoneTip  = 0x200000,
+  TD_BoneRoot = 0x300000
 };
 
 //============================================================
@@ -239,6 +245,8 @@ SkeletonTool::SkeletonTool()
     , m_mode("Mode:")
     , m_showOnlyActiveSkeleton("Show Only Active Skeleton", false)
     , m_globalKeyframes("Global Key", false)
+    , m_modernBones("Modern Bones", false)
+    , m_boneNames("Bone Names", true)
     , m_dragTool(0)
     , m_firstTime(true)
     , m_currentFrame(-1)
@@ -253,9 +261,13 @@ SkeletonTool::SkeletonTool()
   m_prop.bind(m_mode);
   m_prop.bind(m_globalKeyframes);
   m_prop.bind(m_showOnlyActiveSkeleton);
+  m_prop.bind(m_modernBones);
+  m_prop.bind(m_boneNames);
   m_mode.setId("SkeletonMode");
   m_globalKeyframes.setId("GlobalKey");
   m_showOnlyActiveSkeleton.setId("ShowOnlyActiveSkeleton");
+  m_modernBones.setId("ModernBones");
+  m_boneNames.setId("BoneNames");
 
   m_mode.addValue(BUILD_SKELETON);
   m_mode.addValue(ANIMATE);
@@ -273,6 +285,8 @@ SkeletonTool::~SkeletonTool() { delete m_dragTool; }
 
 bool SkeletonTool::onPropertyChanged(std::string propertyName) {
   SkeletonGlobalKeyFrame = (int)(m_globalKeyframes.getValue());
+  SkeletonModernBones    = int(m_modernBones.getValue());
+  SkeletonBoneNames      = int(m_boneNames.getValue());
   // SkeletonInverseKinematics=(int)(m_ikEnabled.getValue());
   invalidate();
   return false;
@@ -290,6 +304,8 @@ void SkeletonTool::updateTranslation() {
   // m_ikEnabled.setQStringName(tr("Inverse Kinematics"));
   m_showOnlyActiveSkeleton.setQStringName(tr("Show Only Active Skeleton"));
   m_globalKeyframes.setQStringName(tr("Global Key"));
+  m_modernBones.setQStringName(tr("Modern Bones"));
+  m_boneNames.setQStringName(tr("Bone Names"));
   m_mode.setQStringName(tr("Mode:"));
   m_mode.setItemUIName(BUILD_SKELETON, tr("Build Skeleton"));
   m_mode.setItemUIName(ANIMATE, tr("Animate"));
@@ -337,7 +353,7 @@ void SkeletonTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
 
   TTool::Application *app = TTool::getApplication();
   int currentColumnIndex  = app->getCurrentColumn()->getColumnIndex();
-  TXsheet *xsh            = app->getCurrentScene()->getScene()->getXsheet();
+  TXsheet *xsh            = app->getCurrentXsheet()->getXsheet();
   TPointD pos             = ppos;
 
   int selectedDevice = pick(e.m_pos);
@@ -375,6 +391,51 @@ void SkeletonTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
     magicLink(selectedDevice - TD_MagicLink);
     app->getCurrentXsheet()->notifyXsheetChanged();
     return;
+  }
+
+  bool bonePicked = m_modernBones.getValue() && selectedDevice >= TD_BoneBody &&
+                    selectedDevice < TD_BoneRoot + 0x100000;
+  if (bonePicked) {
+    int kind        = selectedDevice / 0x100000;
+    int columnIndex = selectedDevice % 0x100000;
+    if (isColumnLocked(columnIndex)) {
+      m_label    = "Column is locked";
+      m_labelPos = pos;
+      return;
+    }
+    pos = getMatrix() * pos;
+    app->getCurrentColumn()->setColumnIndex(columnIndex);
+    updateMatrix();
+    pos                = getMatrix().inv() * pos;
+    currentColumnIndex = columnIndex;
+    if (m_mode.getValue() == BUILD_SKELETON) {
+      if (kind == TD_BoneTip / 0x100000) {
+        TStageObject *object =
+            xsh->getStageObject(TStageObjectId::ColumnId(columnIndex));
+        for (const auto &c : object->getRigBone().constraints)
+          if (c.weight(app->getCurrentFrame()->getFrame()) > 0) {
+            m_label    = "Disable constraints before editing the bone tip";
+            m_labelPos = pos;
+            return;
+          }
+        m_dragTool = new DragBoneTipTool(this);
+        m_dragTool->leftButtonDown(pos, e);
+        return;
+      }
+      if (kind == TD_BoneRoot / 0x100000)
+        selectedDevice = TD_Center;
+      else if (e.isCtrlPressed())
+        selectedDevice = TD_ChangeParent;
+      else {
+        invalidate();
+        return;
+      }
+    } else if (e.isCtrlPressed())
+      selectedDevice = TD_Translation;
+    else
+      selectedDevice = m_mode.getValue() == INVERSE_KINEMATICS
+                           ? TD_InverseKinematics
+                           : TD_Rotation;
   }
 
   m_device          = selectedDevice;
@@ -423,10 +484,9 @@ void SkeletonTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
       m_dragTool = 0;
       return;
     }
-    Skeleton *skeleton = new Skeleton();
-    buildSkeleton(*skeleton, currentColumnIndex);
-    if (skeleton->getBoneByColumnIndex(columnIndex) ==
-        skeleton->getRootBone()) {
+    Skeleton skeleton;
+    buildSkeleton(skeleton, currentColumnIndex);
+    if (skeleton.getBoneByColumnIndex(columnIndex) == skeleton.getRootBone()) {
       app->getCurrentColumn()->setColumnIndex(columnIndex);
       m_device = TD_Translation;
     } else
@@ -734,6 +794,10 @@ void SkeletonTool::togglePinnedStatus(int columnIndex, int frame,
 //-------------------------------------------------------------------
 
 void SkeletonTool::drawSkeleton(const Skeleton &skeleton, int row) {
+  if (m_modernBones.getValue()) {
+    drawModernSkeleton(skeleton, row);
+    return;
+  }
   bool buildingSkeleton = m_mode.getValue() == BUILD_SKELETON;
   bool ikEnabled        = m_mode.getValue() == INVERSE_KINEMATICS;
 
@@ -813,6 +877,117 @@ void SkeletonTool::drawSkeleton(const Skeleton &skeleton, int row) {
       drawJoint(bone->getCenter(),
                 currentObjectId == bone->getStageObject()->getId() &&
                     currentHandle.find("H") != 0);
+  }
+}
+
+TPointD SkeletonTool::getBoneTip(const Skeleton::Bone *bone, int row) const {
+  TStageObject *object = bone->getStageObject();
+  if (!object->getRigBone().enabled &&
+      object->getRigBone().constraints.empty() && bone->getChildCount()) {
+    TPointD child = bone->getChild(0)->getCenter();
+    if (norm2(child - bone->getCenter()) > 1e-8) return child;
+  }
+  TAffine placement = object->getPlacement(row);
+  return placement * (object->getCenter(row) * Stage::inch +
+                      object->getRigBone().tip * Stage::inch);
+}
+
+void SkeletonTool::drawModernSkeleton(const Skeleton &skeleton, int row) {
+  auto app               = TTool::getApplication();
+  TStageObjectId current = app->getCurrentObject()->getObjectId();
+  double pixel  = getPixelSize() * std::sqrt(std::abs(getMatrix().det()));
+  bool building = m_mode.getValue() == BUILD_SKELETON;
+  bool ik       = m_mode.getValue() == INVERSE_KINEMATICS;
+  for (int i = 0; i < skeleton.getBoneCount(); ++i) {
+    const auto *bone     = skeleton.getBone(i);
+    TStageObject *object = bone->getStageObject();
+    if (!canShowBone(skeleton.getBone(i), getXsheet(), row) ||
+        (m_showOnlyActiveSkeleton.getValue() && !bone->isSelected()))
+      continue;
+    int column    = object->getId().getIndex();
+    bool selected = object->getId() == current;
+    TPointD root = bone->getCenter(), tip = getBoneTip(bone, row);
+    TPointD delta = tip - root;
+    if (!rigFinite(object->getPlacement(row)) || norm2(delta) < 1e-8) continue;
+    TPointD side =
+        normalize(rotate90(delta)) * std::min(9 * pixel, norm(delta) * 0.22);
+    TPointD shoulder = root + delta * 0.22;
+    if (!isPicking() && selected && building && m_parentProbeEnabled) {
+      glColor3d(1.0, 0.75, 0.2);
+      tglDrawSegment(root, m_parentProbe);
+    }
+    if (!isPicking() && bone->getParent()) {
+      glColor4d(0.6, 0.7, 0.8, 0.7);
+      glEnable(GL_LINE_STIPPLE);
+      glLineStipple(1, 0x3333);
+      tglDrawSegment(bone->getParent()->getCenter(), root);
+      glDisable(GL_LINE_STIPPLE);
+    }
+    glPushName(TD_BoneBody + column);
+    if (selected)
+      glColor4d(1.0, 0.65, 0.18, 0.9);
+    else
+      glColor4d(0.4, 0.7, 0.95, 0.7);
+    glBegin(GL_POLYGON);
+    tglVertex(root);
+    tglVertex(shoulder + side);
+    tglVertex(tip);
+    tglVertex(shoulder - side);
+    glEnd();
+    glColor3d(0.12, 0.18, 0.25);
+    glBegin(GL_LINE_LOOP);
+    tglVertex(root);
+    tglVertex(shoulder + side);
+    tglVertex(tip);
+    tglVertex(shoulder - side);
+    glEnd();
+    tglDrawSegment(root, tip);
+    glPopName();
+    glPushName(TD_BoneTip + column);
+    glColor3d(selected ? 1.0 : 0.65, selected ? 0.85 : 0.85, 0.35);
+    if (building)
+      tglDrawRect(tip.x - 4 * pixel, tip.y - 4 * pixel, tip.x + 4 * pixel,
+                  tip.y + 4 * pixel);
+    else
+      tglDrawDisk(tip, 4 * pixel);
+    if (isPicking() && building) tglDrawDisk(tip, 6 * pixel);
+    glPopName();
+    if (!ik) {
+      glPushName(TD_BoneRoot + column);
+      glColor3d(0.95, 0.7, 0.2);
+      tglDrawDisk(root, 5 * pixel);
+      glColor3d(0.12, 0.18, 0.25);
+      tglDrawCircle(root, 5 * pixel);
+      glPopName();
+    }
+    if (!isPicking() && m_boneNames.getValue())
+      ToolUtils::drawBalloon(
+          (root + tip) * 0.5, object->getName(),
+          selected ? TPixel32(255, 210, 100) : TPixel32(200, 220, 245),
+          TPoint(12, -12), pixel, false);
+    if (!isPicking() && selected) {
+      for (const auto &c : object->getRigBone().constraints) {
+        if (!c.hasTarget() || c.weight(row) <= 0) continue;
+        bool valid = object->rigConstraintProblem(c).empty();
+        if (!valid) {
+          glColor3d(1, 0.2, 0.2);
+          tglDrawCircle(root, 10 * pixel);
+          continue;
+        }
+        auto *target =
+            getXsheet()->getStageObjectTree()->getRigObject(c.targetId);
+        TPointD p = target->getCenter(row) * Stage::inch;
+        if (c.endpoint == TRigConstraint::Tip)
+          p += target->getRigBone().tip * Stage::inch;
+        p = target->getPlacement(row) * p;
+        glColor3d(0.25, 0.95, 0.85);
+        glEnable(GL_LINE_STIPPLE);
+        glLineStipple(1, 0x0f0f);
+        tglDrawSegment(root, p);
+        glDisable(GL_LINE_STIPPLE);
+        tglDrawCircle(p, 6 * pixel);
+      }
+    }
   }
 }
 
@@ -1520,6 +1695,8 @@ void SkeletonTool::onActivate() {
   TTool::Application *app = TTool::getApplication();
   if (m_firstTime) {
     m_globalKeyframes.setValue(SkeletonGlobalKeyFrame ? 1 : 0);
+    m_modernBones.setValue(SkeletonModernBones ? 1 : 0);
+    m_boneNames.setValue(SkeletonBoneNames ? 1 : 0);
     m_mode.setValue(BUILD_SKELETON);
     // m_ikEnabled.setValue(SkeletonInverseKinematics ? 1 : 0);
     m_firstTime = false;
@@ -1580,6 +1757,9 @@ void SkeletonTool::magicLink(int index) {
 //-------------------------------------------------------------------
 
 int SkeletonTool::getCursorId() const {
+  if (m_modernBones.getValue() && m_device >= TD_BoneBody)
+    return m_mode.getValue() == BUILD_SKELETON ? ToolCursor::MoveCursor
+                                               : ToolCursor::RotCursor;
   switch (m_device) {
   case TD_None:
     if (m_mode.getValue() == BUILD_SKELETON)
@@ -1599,6 +1779,26 @@ int SkeletonTool::getCursorId() const {
 //-------------------------------------------------------------------
 
 void SkeletonTool::addContextMenuItems(QMenu *menu) {
+  auto app     = TTool::getApplication();
+  auto *xsheet = app->getCurrentXsheet()->getXsheet();
+  auto id      = app->getCurrentObject()->getObjectId();
+  if (id.isColumn() && xsheet->getColumn(id.getIndex()) &&
+      !isColumnLocked(id.getIndex())) {
+    auto *editBone = menu->addAction(tr("Bone and Constraints..."));
+    QObject::connect(editBone, &QAction::triggered, [this, xsheet, id, menu] {
+      SkeletonRig::edit(xsheet, xsheet->getStageObject(id),
+                        menu->parentWidget());
+      invalidate();
+    });
+    auto *modern = menu->addAction(tr("Modern Bones"));
+    modern->setCheckable(true);
+    modern->setChecked(m_modernBones.getValue());
+    QObject::connect(modern, &QAction::triggered, [this](bool value) {
+      m_modernBones.setValue(value);
+      onPropertyChanged("Modern Bones");
+    });
+    menu->addSeparator();
+  }
   bool ikEnabled = m_mode.getValue() == INVERSE_KINEMATICS;
 
   if (ikEnabled) {

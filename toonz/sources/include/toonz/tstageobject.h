@@ -14,6 +14,7 @@
 
 // TnzLib includes
 #include "tstageobjectid.h"
+#include "trig.h"
 
 // tcg includes
 #include "tcg/tcg_controlled_access.h"
@@ -182,6 +183,17 @@ the tree or
   //! Returns the id's full name, ie the name of the object with its id
   //! appended.
   std::string getFullName() const;
+
+  const std::string &getRigId() const { return m_rigId; }
+  const TRigBone &getRigBone() const { return m_rigBone; }
+  bool setRigBone(const TRigBone &bone, std::string *error = nullptr);
+  // Restore an already validated snapshot for Undo/Redo and scene operations.
+  void assignRigBone(const TRigBone &bone);
+  // Missing/cyclic/legacy-IK endpoints stay stored and are not evaluated.
+  std::string rigConstraintProblem(const TRigConstraint &constraint) const;
+  bool isLegacyIKActive() const {
+    return (m_status & STATUS_MASK) == IK || m_computingIk || m_ikflag > 0;
+  }
 
   //! Returns whether this object is already in use.
   bool isOpened() const { return m_isOpened; }
@@ -510,6 +522,12 @@ private:
 private:
   tcg::invalidable<LazyData> m_lazyData;
 
+  friend class TStageObjectTree;
+  std::string m_rigId;
+  bool m_rigIdUsed = false;
+  TRigBone m_rigBone;
+  TAffine applyRig(double frame, const TAffine &placement);
+
   TStageObjectId m_id;
   TStageObjectTree *m_tree;
   TStageObject *m_parent;
@@ -537,6 +555,7 @@ private:
 
   TAffine computeIkRootOffset(int t);
   int m_ikflag;
+  bool m_computingIk = false;
   // ----
 
   double m_noScaleZ;
@@ -614,6 +633,8 @@ public:
   double m_noScaleZ;
   TPointD m_center, m_offset;
   std::string m_name;
+  std::string m_rigId;
+  TRigBone m_rigBone;
 
   TStageObjectParams();
   TStageObjectParams(TStageObjectParams *data);
