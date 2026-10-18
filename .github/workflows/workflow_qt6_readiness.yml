@@ -40,7 +40,7 @@ jobs:
             libqt5svg5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5serialport5-dev \
             libsuperlu-dev liblz4-dev libusb-1.0-0-dev liblzo2-dev libpng-dev \
             libjpeg-dev libglew-dev freeglut3-dev libfreetype6-dev libjson-c-dev \
-            libmypaint-dev libopencv-dev libturbojpeg-dev libomp-dev
+            libmypaint-dev libopencv-dev libturbojpeg-dev libomp-15-dev
           dpkg-query -W -f='${Package} ${Version}\n' clazy clang-15 qtbase5-dev \
             | tee "$RUNNER_TEMP/qt6-readiness/toolchain.txt"
           clazy --list > "$RUNNER_TEMP/qt6-readiness/checks.txt"
