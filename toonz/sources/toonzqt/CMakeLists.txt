@@ -77,6 +77,7 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    ../include/toonzqt/constraintsimulationpopup.h
     ../include/tools/cursormanager.h
     docklayout.h
     functionpaneltools.h
@@ -109,6 +110,7 @@ set(HEADERS
 )
 
 set(SOURCES
+    constraintsimulationpopup.cpp
     ../tnztools/cursormanager.cpp
     checkbox.cpp
     colorfield.cpp

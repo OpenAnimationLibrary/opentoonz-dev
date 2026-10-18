@@ -745,8 +745,9 @@ set(CMAKE_CXX_FLAGS "${CXX_WARNINGS} ${CMAKE_CXX_FLAGS}")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OpenEXR.cmake")
 
 option(BUILD_EXR_TESTS "Build the OpenEXR image I/O and level source regression tests" OFF)
+option(BUILD_CONSTRAINT_TESTS "Build the constraint gravity simulation regression test" OFF)
 option(BUILD_EXR_AOV_FX_TESTS "Build the OpenEXR AOV FX regression test" OFF)
-if(BUILD_EXR_TESTS OR BUILD_EXR_AOV_FX_TESTS)
+if(BUILD_EXR_TESTS OR BUILD_EXR_AOV_FX_TESTS OR BUILD_CONSTRAINT_TESTS)
     enable_testing()
 endif()
 

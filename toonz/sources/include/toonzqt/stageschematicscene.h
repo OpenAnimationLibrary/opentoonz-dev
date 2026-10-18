@@ -117,6 +117,7 @@ public:
   void reorderScene() override;
   TXsheet *getXsheet();
   TXsheetHandle *getXsheetHandle() { return m_xshHandle; }
+  TSceneHandle *getSceneHandle() const { return m_sceneHandle; }
 
   void setXsheetHandle(TXsheetHandle *xshHandle);
   void setObjectHandle(TObjectHandle *objHandle);
