@@ -279,6 +279,7 @@ jobs:
 
       # CMake configuration step
       - name: CMake configuration
+        shell: cmd
         run: |
           @echo on
           cd thirdparty
@@ -302,7 +303,6 @@ jobs:
           set "PATH=%QT_PATH%\bin;%GITHUB_WORKSPACE%\thirdparty\glut\3.7.6\lib;%GITHUB_WORKSPACE%\thirdparty\glew\glew-1.9.0\bin\64bit;%GITHUB_WORKSPACE%\thirdparty\libmypaint\dist\64;C:\tools\opencv\build\x64\vc16\bin;%PATH%"
           ctest -C RelWithDebInfo --output-on-failure -R "^skeleton_(rig|stage)$"
           if %errorlevel% neq 0 exit /b %errorlevel%
-        shell: cmd
 
       - name: Build and test OpenEXR image I/O and level source
         shell: cmd
