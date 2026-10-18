@@ -106,8 +106,7 @@
 #include <dlfcn.h>
 
 // macOS-specific headers
-#include <QDir>
-#include <QFileInfo>
+#include "Carbon/Carbon.h"
 #endif
 
 #ifdef __sgi
@@ -538,15 +537,27 @@ void TSystem::moveFileToRecycleBin(const TFilePath &fp) {
   int ret = SHFileOperationW(&data);  // do it!
 
 #elif defined(MACOSX)
-  const QDir trashDir(QDir::homePath() + "/.Trash");
-  const QString fileName = QFileInfo(fp.getQString()).fileName();
-  if (!trashDir.exists() || fileName.isEmpty()) {
+  FSRef foundRef;
+  OSErr err = FSFindFolder(kOnSystemDisk, kTrashFolderType, kDontCreateFolder,
+                           &foundRef);
+
+  if (err) {
     assert(false);
     deleteFile(fp);
     return;
   }
-
-  TFilePath dest(trashDir.filePath(fileName).toStdWString());
+  UInt8 path[255];
+  err = FSRefMakePath(&foundRef, path, 254);
+  if (err) {
+    assert(false);
+    deleteFile(fp);
+    return;
+  }
+  // TFilePath dest = TFilePath(path)+(fp.getName()+fp.getDottedType());
+  string fullNameWithExt = ::to_string(fp);
+  int i                  = fullNameWithExt.rfind("/");
+  string nameWithExt     = fullNameWithExt.substr(i + 1);
+  TFilePath dest         = TFilePath((char *)path) + nameWithExt;
 
   try {
     renameFile(dest, fp);
@@ -593,10 +604,7 @@ void TSystem::moveFileToRecycleBin(const TFilePath &fp) {
   // create file for the "Trash/info" folder
   QFile infoFile(trashInfoPath + FileName.completeBaseName() + "." + FileName.completeSuffix() + ".trashinfo");     // filename+extension+.trashinfo
 
-  if (!infoFile.open(QIODevice::ReadWrite)) {
-    outputDebug("Could not create recycle bin metadata file.");
-    return;
-  }
+  infoFile.open(QIODevice::ReadWrite);
 
   QTextStream stream(&infoFile);
 
