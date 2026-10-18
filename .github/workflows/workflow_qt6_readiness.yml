@@ -3,18 +3,28 @@ name: Qt6 Readiness Report
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - '.github/workflows/workflow_qt6_readiness.yml'
+  push:
+    branches:
+      - main
+  # Upstream-based proposals may not contain this OT-Dev workflow.
+  workflow_run:
+    workflows: ['Linux Build']
+    types: [completed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: qt6-readiness-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  group: qt6-readiness-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   PortingReport:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.event == 'pull_request' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'upstream/master')
     name: Qt6 porting diagnostics (Qt5/Clazy)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -22,11 +32,18 @@ jobs:
       run:
         shell: bash
     env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      SOURCE_BUILD_URL: ${{ github.event.workflow_run.html_url }}
       CLANGXX: clang++-15
       CLAZY_CHECKS: qt6-deprecated-api-fixes,qt6-header-fixes,qt6-qhash-signature,qt6-fwd-fixes
       CLAZY_IGNORE_DIRS: '(^|/)(thirdparty|build)/|/usr/(include|lib)/'
     steps:
+      # Follow-up builds also execute proposal code: keep permissions read-only,
+      # expose no secrets, persist no checkout credentials, and use no caches.
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
 
       - name: Prepare report
         run: mkdir -p "$RUNNER_TEMP/qt6-readiness"
@@ -106,12 +123,15 @@ jobs:
               'Qt5/Clazy porting diagnostics; this is not a Qt6 build or compatibility verdict.',
               'Scope: Linux OpenToonz target and dependencies, using selected Clazy checks.',
               '',
-              'Source commit: `' + os.environ.get('GITHUB_SHA', 'unknown') + '`.',
+              'Source commit: `' + os.environ.get('SOURCE_SHA', 'unknown') + '`.',
               'Analysis: ' + ('completed.' if complete else 'incomplete (' + outcome + ').'),
               'Findings are informational and require review; no fixits are applied.',
               '',
               f'Unique diagnostics: {len(findings)}.',
           ]
+          source_build = os.environ.get('SOURCE_BUILD_URL')
+          if source_build:
+              lines += ['', 'Triggering Linux build: ' + source_build]
           if not complete:
               lines += ['', 'Resolve the analysis failure before interpreting missing diagnostics.']
           if counts:
@@ -138,4 +158,4 @@ jobs:
         with:
           name: qt6-readiness-report
           path: ${{ runner.temp }}/qt6-readiness
-          retention-days: 14
+          retention-days: 90
