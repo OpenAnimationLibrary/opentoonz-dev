@@ -9,8 +9,11 @@
 #include "toonz/txshsoundtextlevel.h"
 #include "tconvert.h"
 #include "texception.h"
+#include "tnzsound.h"
+#include "tsound_io.h"
 
 #include <QApplication>
+#include <QTemporaryDir>
 #include <iostream>
 #include <stdexcept>
 
@@ -62,6 +65,7 @@ void levelQueries() {
 }
 
 struct Columns {
+  QTemporaryDir directory;
   TXsheetP sheet            = new TXsheet;
   TXshSimpleLevelP drawing  = new TXshSimpleLevel(L"drawing");
   TXshPaletteLevelP palette = new TXshPaletteLevel(L"palette");
@@ -70,14 +74,33 @@ struct Columns {
 
   Columns() {
     drawing->setType(PLI_XSHLEVEL);
+    text->setType(SND_TXT_XSHLEVEL);
+    sound->setType(SND_XSHLEVEL);
     text->setFrameText(0, "text");
+    require(directory.isValid(), "temporary sound fixture directory");
+    const TFilePath path((directory.path() + "/sound.wav").toStdWString());
+    require(TSoundTrackWriter::save(
+                path, TSoundTrack::create(48000, 16, 1, 4800, TSound::INT)),
+            "write sound fixture");
     sound->setFrameRate(24);
-    sound->setSoundTrack(TSoundTrack::create(48000, 16, 1, 4800, TSound::INT));
-    sheet->setCell(0, 0, TXshCell(drawing.getPointer(), TFrameId(1)));
+    sound->loadSoundTrack(path);
+    require(sound->getFrameCount() >= 2, "sound fixture spans multiple frames");
+    require(sheet->setCell(0, 0, TXshCell(drawing.getPointer(), TFrameId(1))),
+            "create drawing exposure");
     sheet->insertColumn(1, new TXshLevelColumn);
-    sheet->setCell(0, 2, TXshCell(palette.getPointer(), TFrameId(1)));
-    sheet->setCell(0, 3, TXshCell(text.getPointer(), TFrameId(1)));
-    sheet->setCell(0, 4, TXshCell(sound.getPointer(), TFrameId(1)));
+    require(sheet->setCell(0, 2, TXshCell(palette.getPointer(), TFrameId(1))),
+            "create palette exposure");
+    require(sheet->setCell(0, 3, TXshCell(text.getPointer(), TFrameId(1))),
+            "create sound-text exposure");
+    require(sheet->setCell(0, 4, TXshCell(sound.getPointer(), TFrameId(0))) &&
+                sheet->setCell(1, 4, TXshCell(sound.getPointer(), TFrameId(1))),
+            "create sound exposures");
+    require(sheet->getColumn(2)->getPaletteColumn() && !sheet->isColumnEmpty(2),
+            "palette fixture is a populated palette column");
+    require(
+        sheet->getColumn(3)->getSoundTextColumn() && !sheet->isColumnEmpty(3),
+        "text fixture is a populated sound-text column");
+    require(!sheet->isColumnEmpty(4), "sound fixture is a populated column");
     for (int col = -1; col < sheet->getColumnCount(); ++col) {
       auto* column = sheet->getColumn(col);
       column->setPreviewVisible(true);
@@ -197,6 +220,7 @@ void selectionRanges() {
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
   try {
+    initSoundIo();
     levelQueries();
     columnToggles();
     selectionRanges();

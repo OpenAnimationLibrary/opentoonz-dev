@@ -409,7 +409,7 @@ target_link_libraries(toonzlib OpenEXR::OpenEXR)
 
 if(BUILD_XSHEET_ENGINE_TESTS)
     add_executable(xsheetengine_test tests/xsheetengine_test.cpp)
-    target_link_libraries(xsheetengine_test PRIVATE toonzlib tnzcore Qt5::Widgets)
+    target_link_libraries(xsheetengine_test PRIVATE toonzlib tnzcore sound Qt5::Widgets)
     add_test(NAME xsheetengine COMMAND xsheetengine_test)
     set_tests_properties(xsheetengine PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
