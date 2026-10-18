@@ -69,7 +69,7 @@ void joints() {
 }
 void chainAndRepeat() {
   Body root, child, leaf;
-  root.pinned      = true;
+  root.motion      = Body::Pinned;
   child.pose.pivot = {0, 1};
   child.pose.angle = 1.5707963267948966;
   leaf.pose.pivot  = {-1, 1};
@@ -100,6 +100,118 @@ void chainAndRepeat() {
         check(std::abs(clip[f][i].angle - clip[f - 1][i].angle) < 3.1416,
               "angle continuity");
     }
+  }
+}
+void animatedControllers() {
+  constexpr double pi = 3.141592653589793;
+  Settings s;
+  s.frames   = 97;
+  s.substeps = 8;
+  Body controller, child;
+  controller.motion = Body::Kinematic;
+  controller.pose   = {{2, 3}, 0.35};
+  child.pose        = {{3, 3}, 0.35};
+  child.length      = 0.5;
+  for (int step = 0; step <= (s.frames - 1) * s.substeps; ++step) {
+    double t = double(step) / ((s.frames - 1) * s.substeps);
+    controller.animation.push_back(
+        {{2 + t, 3 + 0.2 * std::sin(t * 2 * pi)}, 0.35 + t * 4 * pi});
+  }
+  Connection link;
+  link.body   = 1;
+  link.target = 0;
+  link.anchor = child.pose.pivot;
+  link.type   = Connection::Fixed;
+  auto clip   = run({controller, child}, {link}, s);
+  auto again  = run({controller, child}, {link}, s);
+  for (size_t f = 0; f < clip.size(); ++f) {
+    const auto &p = controller.animation[f * s.substeps];
+    check(
+        distance(clip[f][0].pivot, p.pivot) == 0 && clip[f][0].angle == p.angle,
+        "controller output retains exact authored frame poses");
+    Point tip{p.pivot.x + std::cos(p.angle - controller.pose.angle),
+              p.pivot.y + std::sin(p.angle - controller.pose.angle)};
+    check(
+        distance(clip[f][1].pivot, tip) < 0.045 &&
+            std::abs(clip[f][1].angle - p.angle) < 0.025,
+        "fixed follower responds to controller translation and complete turns");
+    check(distance(clip[f][1].pivot, again[f][1].pivot) == 0 &&
+              clip[f][1].angle == again[f][1].angle,
+          "animated controller replay is repeatable");
+  }
+  check(clip.back()[1].angle > 4 * pi,
+        "dynamic rotation retains full turns across matrix wrapping");
+
+  link.type       = Connection::SpringHinge;
+  link.lowerAngle = -0.5;
+  link.upperAngle = 0.5;
+  auto sprung     = run({controller, child}, {link}, s);
+  bool lagged     = false;
+  for (size_t f = 0; f < sprung.size(); ++f) {
+    const auto &p = sprung[f][0];
+    Point anchor{p.pivot.x + std::cos(p.angle - controller.pose.angle),
+                 p.pivot.y + std::sin(p.angle - controller.pose.angle)};
+    check(distance(sprung[f][1].pivot, anchor) < 0.06,
+          "spring attachment follows an animated controller");
+    lagged = lagged || std::abs(sprung[f][1].angle - p.angle) > 0.03;
+  }
+  check(lagged,
+        "spring follower permits secondary rotation under authored motion");
+
+  s.frames        = 49;
+  s.gravity       = 0;
+  controller.pose = {{-1, 0}, 0};
+  controller.animation.clear();
+  for (int step = 0; step <= (s.frames - 1) * s.substeps; ++step)
+    controller.animation.push_back(
+        {{-1 + 2.0 * step / ((s.frames - 1) * s.substeps), 0}, 0});
+  Body prop;
+  auto pushed = run({controller, prop}, {}, s);
+  check(pushed.back()[1].pivot.x > 0.7,
+        "animated collider transfers velocity to an unconnected dynamic prop");
+}
+void springConnections() {
+  Body body;
+  body.pose.angle = 1.5707963267948966;
+  Settings s;
+  s.frames = 241;
+  Connection link;
+  link.body       = 0;
+  link.type       = Connection::SpringHinge;
+  link.lowerAngle = -0.4;
+  link.upperAngle = 0.4;
+  link.stiffness  = 40;
+  link.damping    = 3;
+  auto clip       = run({body}, {link}, s);
+  for (const auto &frame : clip) {
+    check(distance(frame[0].pivot, body.pose.pivot) < 0.025,
+          "spring hinge keeps its shared anchor attached");
+    check(std::abs(frame[0].angle - body.pose.angle) < 0.42,
+          "spring hinge respects angular limits");
+  }
+  check(
+      std::abs(clip.back()[0].angle - body.pose.angle) < 0.18 &&
+          std::abs(clip.back()[0].angle - clip[clip.size() - 2][0].angle) <
+              0.005,
+      "spring torque restores the initial relative angle and damping settles");
+  link.stiffness = 0;
+  link.damping   = 0;
+  auto loose     = run({body}, {link}, s);
+  check(std::abs(loose.back()[0].angle - body.pose.angle) > 0.35,
+        "zero stiffness permits gravity to reach the hinge stop");
+  for (auto type : {Connection::Hinge, Connection::SpringHinge}) {
+    link.type       = type;
+    link.lowerAngle = 0;
+    link.upperAngle = 0.3;
+    auto positive   = run({body}, {link}, s);
+    check(positive.back()[0].angle - body.pose.angle > 0.25 &&
+              positive.back()[0].angle - body.pose.angle < 0.32,
+          "both hinge types use positive counterclockwise angular limits");
+    link.lowerAngle = -0.3;
+    link.upperAngle = 0;
+    auto negative   = run({body}, {link}, s);
+    check(std::abs(negative.back()[0].angle - body.pose.angle) < 0.02,
+          "asymmetric opposite limit blocks gravity-driven rotation");
   }
 }
 void floorAndValidation() {
@@ -142,7 +254,24 @@ void floorAndValidation() {
   reject({body}, {link}, s);
   link.target = -1;
   reject({body}, {link, link}, s);
-  body.pinned = true;
+  body.motion = Body::Pinned;
+  reject({body}, {link}, s);
+  body.motion = Body::Kinematic;
+  reject({body}, {}, s);
+  body.animation.assign(1 + (s.frames - 1) * s.substeps, body.pose);
+  reject({body}, {link}, s);
+  body.animation[1].angle = 4;
+  reject({body}, {}, s);
+  body.animation[1] = body.pose;
+  body.animation[0].pivot.x += 1;
+  reject({body}, {}, s);
+  body.animation[0]         = body.pose;
+  body.animation[1].pivot.x = std::numeric_limits<double>::infinity();
+  reject({body}, {}, s);
+  body.animation.clear();
+  body.motion    = Body::Dynamic;
+  link.type      = Connection::SpringHinge;
+  link.stiffness = -1;
   reject({body}, {link}, s);
 }
 }  // namespace
@@ -151,6 +280,8 @@ int main() {
     freeFallAndTime();
     joints();
     chainAndRepeat();
+    animatedControllers();
+    springConnections();
     floorAndValidation();
     std::cout << "Bullet world tests passed\n";
   } catch (const std::exception &e) {

@@ -78,9 +78,12 @@ a static world anchor. The column hierarchy itself is never reparented.
 | --- | --- |
 | Dynamic | Bullet determines the body's motion from its starting pose. Later authored X/Y/rotation motion is replaced when baked. Initial velocity is zero. |
 | Pinned | Static body at the starting pose. Its authored world placement must remain stationary throughout the bake range. Its channels are not baked. |
-| Hinge | Attachment allowing rotation about the drawing-plane normal, with angular limits relative to the starting connection. |
+| Kinematic | Follow authored world motion at every physics substep. The body drives joints and collisions but does not respond to forces. Its keys and interpolation are retained. |
+| Hinge | Attachment allowing rotation about the drawing-plane normal, with angular limits relative to the starting connection; positive angles are counterclockwise. |
 | Point | Shared attachment point with free planar rotation. |
 | Fixed | Preserve the initial relative position and orientation. |
+| Spring Hinge | Hinge with a torsional spring restoring its initial relative angle, angular limits, stiffness and damping. |
+| Spring stiffness / damping | Common settings for spring hinges, in N·m/rad and N·m·s/rad. Zero stiffness removes the restoring torque. Bullet may limit these settings for the chosen timestep to maintain stability. |
 | Length / Direction | Rectangular proxy extending from the column pivot along its chosen world direction; zero degrees extends upward. |
 | Proxy width / Dynamic mass | Common width and mass for this simulation; these are approximations of the artwork. |
 | Meters per OT inch | Simulation scale, initially 1. This is deliberately explicit: one displayed OT inch represents one simulation meter by default. |
@@ -91,8 +94,33 @@ Each connection starts at the driven column's pivot. That shared world anchor
 is converted to local coordinates on both bodies. Adjacent connected proxies do
 not collide with each other; other proxies and the optional floor do collide.
 Duplicate connections, self-connections, missing endpoints and connections
-between two pinned endpoints are rejected. Physical loops involving distinct
+without a dynamic endpoint are rejected. Physical loops involving distinct
 connections are permitted; they do not add recursive stage-object dependencies.
+
+## Try authored secondary motion
+
+Animate a root column with ordinary position/rotation keys, parent a second
+drawing column to it, then select both. In the dialog, change the root to
+**Kinematic** and leave its connection **Free**. Set the second column to
+**Dynamic**, connect it to the root, and choose **Spring Hinge**. Simulate and
+adjust stiffness, damping and limits before baking. The root's authored keys
+remain editable; the second column receives the simulated motion as native keys.
+Rerun the simulation after changing the controller animation.
+
+Kinematic controllers use the actual authored interpolation at every substep,
+including holds, rather than interpolating only between integer-frame endpoints.
+They can also push unconnected dynamic props through collision. Keep controller
+scale and pivots fixed. Very fast rotations need more **Steps per Frame** to
+resolve less than half a turn per physics step. Held position changes act as
+instantaneous moves and can produce large impulses; use smooth motion when that
+is the desired effect.
+
+Pinned and kinematic columns cannot descend from a selected dynamic column,
+including through an unselected intermediate column. Their retained local keys
+would otherwise inherit newly baked ancestor motion and cease matching the
+controller world poses. Place controllers above the driven rig or in a separate
+branch. Dynamic bodies can have selected dynamic ancestors through unselected
+intermediates; baking accounts for those authored relative transforms.
 
 ## Evaluation and baking
 
@@ -101,12 +129,18 @@ connections are permitted; they do not add recursive stage-object dependencies.
   advances one scene frame through a fixed number of explicit Bullet steps.
 - Scrubbing the proxy preview reads the completed clip in arbitrary order;
   it never advances a live physics world from the viewer or renderer.
+- Controller world poses are sampled from the frozen authored scene before the
+  simulation starts. Dynamic rotation is unwrapped at each physics step.
 - The first pass supports 1–64 drawing bodies and 1–1200 frames. Positions and
   sizes have finite bounds; invalid input or divergent motion fails cleanly.
 - Baking preflights every sample and creates a complete patch before writing
   channels. It converts world motion through each actual or simulated parent,
   respecting the original column center and offset. An affine result requiring
   scale, shear or pivot changes is rejected with a diagnostic.
+- The integer-frame bake conservatively requires combined body/parent rotation
+  changes below half a turn per frame. Faster relative motion remains available
+  in the proxy preview but is rejected for baking, avoiding ambiguous full turns.
+  Use a higher scene frame rate or slower controller motion for those cases.
 - X/Y/rotation keys, including fractional keys, inside the chosen range are
   replaced by integer-frame Linear keys. Keys outside the range retain their
   data, although interpolation adjoining the baked interval can change.
@@ -127,11 +161,11 @@ connections are permitted; they do not add recursive stage-object dependencies.
 This pass uses rectangular proxies and planar translation/rotation; it does not
 extract artwork collision contours or simulate 3D stage placement. Paths,
 legacy pinned IK, stage-object cycling and drawing-hook pivots are excluded.
-Animated pinned bodies need a future kinematic mode. Use constant body scale
-and rigid or uniformly scaled parents for the first bake tests.
+Use kinematic mode for animated controllers. Use constant body scale and rigid
+or uniformly scaled parents for the first bake tests.
 
 There is no automatic simulation during playback, persistent physics graph,
-spring/motor control, rest-pose blending, force field, cloth, Plastic deformation,
+motor control, rest-pose blending, force field, cloth, Plastic deformation,
 or named vector CP binding in this pass. The proxy preview does not display
 artwork. Viewport interaction and rendered results still require application
 testing on representative production rigs.
@@ -152,9 +186,9 @@ named vector-group bindings, with explicit ownership and dependency checks.
 
 Keep Aim At, Orient Like, ordinary parenting and IK in the artist rig system.
 Add physics as a separately controlled source of motion, with a defined order
-relative to those constraints. Next experiments should compare kinematic
-controllers, spring joints, enforcement blending, persistent connections and
-cache invalidation before attempting live playback integration.
+relative to those constraints. Next experiments should compare enforcement
+blending, persistent connections and cache invalidation before attempting live
+playback integration.
 
 ## Verification
 
@@ -175,16 +209,18 @@ ctest --test-dir toonz/build -C RelWithDebInfo --output-on-failure -R '^bullet_(
 
 Kernel tests exercise free fall at two frame rates, frame-zero semantics, world
 and body joints, hinge limits, fixed links, a two-link chain, pinned roots,
-planar motion, a floor, repeatable replay and invalid input. Native stage tests
-exercise parented world/local conversion, scaled/rotated parents, nonzero
-centers/offsets, arbitrary-order scrubbing, fractional keys, outside keys,
+planar motion, a floor, repeatable replay and invalid input. They also exercise
+animated colliders, fixed followers through complete turns, spring restoring torque, damping, angular limits and invalid controller tracks.
+Native stage tests exercise parented world/local conversion, scaled/rotated
+parents, nonzero centers/offsets, arbitrary-order scrubbing, fractional keys, outside keys,
 repeated snapshot Undo/Redo, rejection before mutation and an actual Bullet
-free-fall bake.
+free-fall bake, authored substep holds, retained controller keys, animated-parent
+baking across unselected intermediates and conflicting controller ownership.
 
 Manual checks: single-column pendulum; three-column chain; free prop and floor;
-all three joint types; rotated/translated/scaled parents; locked columns;
-invalid/duplicate links; scene save/reopen; playback and render after baking;
-Undo/Redo; existing room menus; and a default build with Bullet disabled.
+all four joint types; keyed kinematic roots with spring followers;
+rotated/translated/scaled parents; locked columns; invalid/duplicate links;
+scene save/reopen; playback and render after baking; Undo/Redo; existing room menus; and a default build with Bullet disabled.
 
 Requested by Rodney Baker. Implementation and documentation prepared with
 AI assistance from OpenAI Codex. Bullet source remains unmodified; no

@@ -13,17 +13,23 @@ struct Pose {
   double angle = 0;  // Radians; the body extends along its local +Y axis.
 };
 struct Body {
+  enum Motion { Dynamic, Pinned, Kinematic };
   Pose pose;
   double length = 1, width = 0.2, mass = 1;
-  bool pinned = false;
+  Motion motion = Dynamic;
+  // Kinematic world poses, including the starting sample, at every physics
+  // substep: 1 + (frames - 1) * substeps. Angles retain complete turns.
+  std::vector<Pose> animation;
 };
 struct Connection {
-  enum Type { Hinge, PointJoint, Fixed };
+  enum Type { Hinge, PointJoint, Fixed, SpringHinge };
   int body = -1, target = -1;  // -1 target means the static world.
   Type type = Hinge;
   Point anchor;  // Shared world-space anchor at the initial pose.
+  // Body relative to target, counterclockwise from the initial connection.
   double lowerAngle = -3.141592653589793;
   double upperAngle = 3.141592653589793;
+  double stiffness = 20, damping = 1;  // Spring hinge: N*m/rad, N*m*s/rad.
 };
 struct Settings {
   double fps = 24;

@@ -145,8 +145,10 @@ protected:
         polygon << point(pose.pivot.x + c * corner.x() - s * corner.y(),
                          pose.pivot.y + s * corner.x() + c * corner.y());
       painter.setPen(QPen(Qt::white, 1));
-      painter.setBrush(body.pinned ? QColor(170, 120, 65)
-                                   : QColor(65, 130, 190));
+      painter.setBrush(
+          body.motion == OTBullet::Body::Pinned      ? QColor(170, 120, 65)
+          : body.motion == OTBullet::Body::Kinematic ? QColor(90, 185, 130)
+                                                     : QColor(65, 130, 190));
       painter.drawPolygon(polygon);
       painter.setBrush(Qt::white);
       auto root = point(pose.pivot.x, pose.pivot.y);
@@ -182,7 +184,9 @@ BulletPhysicsPopup::BulletPhysicsPopup()
   auto *intro =
       new QLabel(tr("Select drawing columns, then connect their body proxies. "
                     "Connections start at each driven column's pivot. "
-                    "Pinned bodies stay at their starting pose."),
+                    "Pinned bodies stay at their starting pose. Kinematic "
+                    "controllers follow authored animation and drive dynamic "
+                    "bodies without changing their own keys."),
                  this);
   intro->setWordWrap(true);
   layout->addWidget(intro);
@@ -203,19 +207,23 @@ BulletPhysicsPopup::BulletPhysicsPopup()
   m_substeps = new QSpinBox(this);
   m_substeps->setRange(1, 32);
   m_substeps->setValue(5);
-  m_gravity = number(this, -100, 100, -9.81);
-  m_width   = number(this, 0.1, 100, 0.25);
-  m_mass    = number(this, 0.01, 1000, 1);
-  m_scale   = number(this, 0.1, 10, 1);
-  m_lower   = number(this, -180, 180, -180);
-  m_upper   = number(this, -180, 180, 180);
-  m_floor   = new QCheckBox(tr("Floor"), this);
-  m_floorY  = number(this, -1000, 1000, -4);
+  m_gravity       = number(this, -100, 100, -9.81);
+  m_width         = number(this, 0.1, 100, 0.25);
+  m_mass          = number(this, 0.01, 1000, 1);
+  m_scale         = number(this, 0.1, 10, 1);
+  m_lower         = number(this, -180, 180, -180);
+  m_upper         = number(this, -180, 180, 180);
+  m_stiffness     = number(this, 0, 1000, 20);
+  m_springDamping = number(this, 0, 100, 1);
+  m_floor         = new QCheckBox(tr("Floor"), this);
+  m_floorY        = number(this, -1000, 1000, -4);
   left->addRow(tr("First frame:"), m_first);
   left->addRow(tr("Last frame:"), m_last);
   left->addRow(tr("Steps per frame:"), m_substeps);
   left->addRow(tr("Gravity (m/s²):"), m_gravity);
   left->addRow(tr("Meters per OT inch:"), m_scale);
+  left->addRow(tr("Spring stiffness (N·m/rad):"), m_stiffness);
+  left->addRow(tr("Spring damping (N·m·s/rad):"), m_springDamping);
   right->addRow(tr("Proxy width (in):"), m_width);
   right->addRow(tr("Dynamic mass (kg):"), m_mass);
   right->addRow(tr("Hinge lower limit (deg):"), m_lower);
@@ -249,8 +257,8 @@ BulletPhysicsPopup::BulletPhysicsPopup()
   for (auto *f : {m_first, m_last, m_substeps})
     connect(f, qOverload<int>(&QSpinBox::valueChanged), this,
             [this] { invalidate(); });
-  for (auto *f :
-       {m_gravity, m_width, m_mass, m_scale, m_floorY, m_lower, m_upper})
+  for (auto *f : {m_gravity, m_width, m_mass, m_scale, m_floorY, m_lower,
+                  m_upper, m_stiffness, m_springDamping})
     connect(f, qOverload<double>(&QDoubleSpinBox::valueChanged), this,
             [this] { invalidate(); });
   connect(m_floor, &QCheckBox::toggled, this, [this] { invalidate(); });
@@ -336,7 +344,7 @@ void BulletPhysicsPopup::reloadSelection() {
     name->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
     m_table->setItem(int(i), 0, name);
     auto *motion = new QComboBox(m_table);
-    motion->addItems({tr("Dynamic"), tr("Pinned")});
+    motion->addItems({tr("Dynamic"), tr("Pinned"), tr("Kinematic")});
     auto *target = new QComboBox(m_table);
     target->addItem(tr("Free"), -2);
     target->addItem(tr("World"), -1);
@@ -345,7 +353,8 @@ void BulletPhysicsPopup::reloadSelection() {
         target->addItem(QString::fromStdString(objects[j]->getFullName()),
                         int(j));
     auto *joint = new QComboBox(m_table);
-    joint->addItems({tr("Hinge"), tr("Point"), tr("Fixed")});
+    joint->addItems(
+        {tr("Hinge"), tr("Point"), tr("Fixed"), tr("Spring Hinge")});
     TAffine placement = object->getPlacement(m_first->value() - 1);
     TPointD pivot =
         placement * (object->getCenter(m_first->value() - 1) * Stage::inch);
@@ -410,19 +419,6 @@ void BulletPhysicsPopup::simulate() {
       return;
     }
     auto *object = xsheet->getStageObject(TStageObjectId::ColumnId(c));
-    std::set<TStageObject *> visited;
-    for (auto *ancestor = object; ancestor;) {
-      if (!visited.insert(ancestor).second ||
-          ancestor->getStatus() != TStageObject::XY ||
-          ancestor->isCycleEnabled()) {
-        fail(
-            tr("This exploration requires XY parenting without paths, IK "
-               "or cyclic animation throughout the selected hierarchy."));
-        return;
-      }
-      ancestor = xsheet->getStageObjectTree()->getStageObject(
-          ancestor->getParent(), false);
-    }
     objects.push_back(object);
   }
   OTBullet::Settings settings;
@@ -438,8 +434,9 @@ void BulletPhysicsPopup::simulate() {
   settings.floorY   = m_floorY->value() * m_scale->value();
   std::string error;
   std::vector<OTBullet::Binding> bindings;
-  if (!OTBullet::capture(objects, m_first->value() - 1, settings.frames,
-                         bindings, error)) {
+  if (!OTBullet::capture(*xsheet->getStageObjectTree(), objects,
+                         m_first->value() - 1, settings.frames, bindings,
+                         error)) {
     fail(QString::fromStdString(error));
     return;
   }
@@ -457,11 +454,10 @@ void BulletPhysicsPopup::simulate() {
     body.length =
         static_cast<QDoubleSpinBox *>(m_table->cellWidget(i, 4))->value() *
         m_scale->value();
-    body.width = m_width->value() * m_scale->value();
-    body.mass  = m_mass->value();
-    body.pinned =
-        static_cast<QComboBox *>(m_table->cellWidget(i, 1))->currentIndex() ==
-        1;
+    body.width  = m_width->value() * m_scale->value();
+    body.mass   = m_mass->value();
+    body.motion = static_cast<OTBullet::Body::Motion>(
+        static_cast<QComboBox *>(m_table->cellWidget(i, 1))->currentIndex());
     bodies.push_back(body);
     int target = static_cast<QComboBox *>(m_table->cellWidget(i, 2))
                      ->currentData()
@@ -475,30 +471,41 @@ void BulletPhysicsPopup::simulate() {
         static_cast<QComboBox *>(m_table->cellWidget(i, 3))->currentIndex());
     connection.lowerAngle = m_lower->value() * pi / 180;
     connection.upperAngle = m_upper->value() * pi / 180;
+    connection.stiffness  = m_stiffness->value();
+    connection.damping    = m_springDamping->value();
     connections.push_back(connection);
   }
   OTBullet::Clip clip;
   QApplication::setOverrideCursor(Qt::WaitCursor);
-  bool ok = OTBullet::simulate(bodies, connections, settings, clip, error);
+  bool ok =
+      OTBullet::prepareControllers(bindings, settings, m_first->value() - 1,
+                                   m_scale->value(), bodies, error) &&
+      OTBullet::simulate(bodies, connections, settings, clip, error);
   QApplication::restoreOverrideCursor();
   if (!ok) {
     fail(QString::fromStdString(error));
     return;
   }
-  m_preview->bodies      = bodies;
-  m_preview->connections = connections;
-  m_preview->clip        = clip;
+  bool bakeable =
+      OTBullet::makeBake(bindings, bodies, clip, m_first->value() - 1,
+                         m_scale->value(), m_bake, error);
+  // The preview needs frame poses only, not the larger substep controller
+  // tracks.
+  for (auto &body : bodies) std::vector<OTBullet::Pose>().swap(body.animation);
+  m_preview->bodies      = std::move(bodies);
+  m_preview->connections = std::move(connections);
+  m_preview->clip        = std::move(clip);
   m_preview->settings    = settings;
   m_preview->fit();
   m_frame->setRange(0, settings.frames - 1);
-  if (!OTBullet::makeBake(bindings, bodies, clip, m_first->value() - 1,
-                          m_scale->value(), m_bake, error)) {
+  if (!bakeable) {
     fail(tr("Preview only: %1").arg(QString::fromStdString(error)));
     return;
   }
   m_bakeButton->setEnabled(!m_bake.empty());
   m_status->setText(tr("Preview frames %1–%2. Bake will replace X/Y/rotation "
-                       "keys on dynamic columns; adjacent interpolation may "
+                       "keys on dynamic columns and retain controller keys; "
+                       "adjacent interpolation may "
                        "change. Connections are kept for this dialog session.")
                         .arg(m_first->value())
                         .arg(m_last->value()));

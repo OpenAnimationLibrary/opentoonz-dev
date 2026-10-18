@@ -18,7 +18,7 @@ class BulletPhysicsPopup final : public QDialog {
   QTableWidget *m_table;
   QSpinBox *m_first, *m_last, *m_substeps;
   QDoubleSpinBox *m_gravity, *m_width, *m_mass, *m_scale, *m_floorY;
-  QDoubleSpinBox *m_lower, *m_upper;
+  QDoubleSpinBox *m_lower, *m_upper, *m_stiffness, *m_springDamping;
   QCheckBox *m_floor;
   QPushButton *m_bakeButton;
   QLabel *m_status;
