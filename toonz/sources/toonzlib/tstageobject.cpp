@@ -496,7 +496,10 @@ TStageObject::LazyData &TStageObject::lazyData() {
 //-----------------------------------------------------------------------------
 
 void TStageObject::update(LazyData &ld) const {
-  if (ld.m_time >= 0.0) invalidate(ld);
+  if (ld.m_time >= 0.0) {
+    m_tree->invalidateRigPlacements();
+    invalidate(ld);
+  }
 
   updateKeyframes(ld);
 }
@@ -1573,15 +1576,19 @@ void TStageObject::invalidate(LazyData &ld) const {
   // should
   // not trigger a data update
   ld.m_time = -1;
-  m_tree->invalidateRigPlacements();
 
   std::list<TStageObject *>::const_iterator cit = m_children.begin();
-  for (; cit != m_children.end(); ++cit) (*cit)->invalidate();
+  for (; cit != m_children.end(); ++cit)
+    (*cit)->invalidate((*cit)->m_lazyData(tcg::direct_access));
 }
 
 //-----------------------------------------------------------------------------
 
-void TStageObject::invalidate() { invalidate(m_lazyData(tcg::direct_access)); }
+void TStageObject::invalidate() {
+  // Clear cross-rig dependencies once, rather than once per descendant.
+  m_tree->invalidateRigPlacements();
+  invalidate(m_lazyData(tcg::direct_access));
+}
 
 //-----------------------------------------------------------------------------
 
