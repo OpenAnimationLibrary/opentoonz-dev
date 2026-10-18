@@ -32,6 +32,11 @@ void initialize() {
     if (!path.isEmpty()) ThirdParty::setPdfRendererDir(path);
   }
 
+  if (!ThirdParty::checkOtlut()) {
+    QString path = ThirdParty::autodetectOtlut();
+    if (!path.isEmpty()) ThirdParty::setOtlutDir(path);
+  }
+
   // Auto detect Rhubarb
   if (!ThirdParty::checkRhubarb()) {
     QString path = ThirdParty::autodetectRhubarb();
@@ -244,6 +249,67 @@ void runPdfRenderer(QProcess &process, const QStringList &arguments) {
   if (dir.isEmpty() || dir.at(0) == '.')
     dir = QCoreApplication::applicationDirPath() + "/" + dir;
   process.start(dir + PDFTOPPM_EXE, arguments);
+}
+
+//=============================================================================
+// OTLUT interface
+//-----------------------------------------------------------------------------
+
+#ifdef _WIN32
+#define OTLUT_EXE "/otlut.exe"
+#else
+#define OTLUT_EXE "/otlut"
+#endif
+
+bool findOtlut(QString dir) {
+  if (dir.isEmpty() || dir.at(0) == '.')
+    dir = QCoreApplication::applicationDirPath() + "/" + dir;
+  return TSystem::doesExistFileOrLevel(TFilePath(dir + OTLUT_EXE));
+}
+
+bool checkOtlut() {
+  return findOtlut(Preferences::instance()->getOtlutPath());
+}
+
+QString autodetectOtlut() {
+  // Prefer a portable/bundled helper next to the OpenToonz executable.
+  if (findOtlut(".")) return ".";
+
+  const QString configured = Preferences::instance()->getOtlutPath();
+  if (findOtlut(configured)) return configured;
+
+  const QString executable = QStandardPaths::findExecutable(
+#ifdef _WIN32
+      "otlut.exe"
+#else
+      "otlut"
+#endif
+  );
+  if (!executable.isEmpty()) return QFileInfo(executable).dir().path();
+
+#ifndef _WIN32
+  if (findOtlut("/usr/local/bin")) return "/usr/local/bin";
+  if (findOtlut("/usr/bin")) return "/usr/bin";
+  if (findOtlut("/bin")) return "/bin";
+#endif
+
+  return "";
+}
+
+QString getOtlutDir() {
+  return Preferences::instance()->getStringValue(otlutPath);
+}
+
+void setOtlutDir(const QString &dir) {
+  if (Preferences::instance()->getOtlutPath() != dir)
+    Preferences::instance()->setValue(otlutPath, dir);
+}
+
+void runOtlut(QProcess &process, const QStringList &arguments) {
+  QString dir = Preferences::instance()->getOtlutPath();
+  if (dir.isEmpty() || dir.at(0) == '.')
+    dir = QCoreApplication::applicationDirPath() + "/" + dir;
+  process.start(dir + OTLUT_EXE, arguments);
 }
 
 //-----------------------------------------------------------------------------

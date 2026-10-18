@@ -89,13 +89,15 @@ class ThreePointLightFx final : public TStandardRasterFx {
   }
 
   std::shared_ptr<const otglb::RenderScene> scene(
-      double frame, const int *canceled) const {
+      double frame, const int *canceled,
+      const TRenderSettings *renderSettings = nullptr) const {
     if (!m_source.isConnected()) return {};
     auto *source = m_source.source();
     if (!source)
       throw std::runtime_error("Three-Point Light input is not a compatible 3D source.");
     const auto rig = lighting(frame);
-    return source->get3DRenderScene(frame, canceled, &rig);
+    return source->get3DRenderScene(frame, canceled, &rig, nullptr,
+                                    renderSettings);
   }
 
 public:
@@ -156,7 +158,8 @@ public:
     bbox = TRectD();
     if (!m_source.isConnected()) return false;
     try {
-      const auto rendered = scene(frame, info.m_isCanceled);
+      const auto rendered = m_source.source()->get3DRenderGeometry(
+          frame, info.m_isCanceled, nullptr, &info);
       if (!rendered || rendered->triangles.empty()) return false;
       const auto &b = rendered->bounds;
       bbox = TRectD(b[0], b[1], b[2], b[3]);
@@ -187,7 +190,7 @@ public:
     tile.getRaster()->clear();
     if (!m_source.isConnected()) return;
     try {
-      const auto rendered = scene(frame, info.m_isCanceled);
+      const auto rendered = scene(frame, info.m_isCanceled, &info);
       if (!rendered || rendered->triangles.empty()) return;
 
       otglb::RenderTile request;

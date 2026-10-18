@@ -97,7 +97,7 @@ class DVAPI TStageObject final : public TSmartObject, public TParamObserver {
 
 public:
   struct Constraint {
-    enum Type { AimAt, Buffer };
+    enum Type { AimAt, Buffer, Fixed, Mobile };
     enum Scope { Self, Children };
     Type type   = AimAt;
     Scope scope = Self;  // Children applies once to each direct child root.
@@ -107,12 +107,16 @@ public:
     double radius      = 100.0;  // Stage units; Buffer only.
     double strength    = 0.0;    // Positive attracts, negative repels.
     double angleOffset = 0.0;    // Degrees; Aim At only.
+    bool isMotionAssignment() const { return type == Fixed || type == Mobile; }
   };
 
   const std::vector<Constraint> &getConstraints() const {
     return m_constraints;
   }
   bool addConstraint(const Constraint &constraint);
+  // Restores a complete snapshot for Undo/Redo. New links use addConstraint.
+  void setConstraints(const std::vector<Constraint> &constraints);
+  Constraint::Type getSimulationMotion() const;
   bool removeConstraint(int index);
   void clearConstraints();
 

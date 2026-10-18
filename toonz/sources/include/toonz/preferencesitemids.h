@@ -45,6 +45,7 @@ enum PreferencesItemId {
   displayIn30bit,
   viewerIndicatorEnabled,
   restoreViewerViewFromLastSession,
+  RestoreStyleEditorTab,
 
   //----------
   // Visualization
@@ -83,6 +84,7 @@ enum PreferencesItemId {
   // Import / Export
   ffmpegPath,
   pdfRendererPath,
+  otlutPath,
   ffmpegTimeout,
   fastRenderPath,
   ffmpegMultiThread,
@@ -129,6 +131,7 @@ enum PreferencesItemId {
   useStrokeEndCursor,
   clickTwiceToCreateArcs,
   tempToolSwitchTimer,
+  compressInputEvents,
   animateToolHandleSize,
   animateToolColor,
   defaultStartupTool,
@@ -159,6 +162,10 @@ enum PreferencesItemId {
   syncLevelRenumberWithXsheet,
   currentTimelineEnabled,
   currentColumnColor,
+  customCurrentCellColorEnabled,
+  currentCellColor,
+  customCurrentColumnOutlineColorEnabled,
+  currentColumnOutlineColor,
   levelNameDisplayType,
   showFrameNumberWithLetters,
   linkColumnNameWithLevel,

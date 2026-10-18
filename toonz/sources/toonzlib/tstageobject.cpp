@@ -523,6 +523,25 @@ void TStageObject::onChange(const class TParamChange &c) {
 TStageObjectId TStageObject::getId() const { return m_id; }
 
 bool TStageObject::addConstraint(const Constraint &constraint) {
+  if (constraint.isMotionAssignment()) {
+    if (constraint.scope != Constraint::Self ||
+        (constraint.type == Constraint::Mobile && !m_id.isColumn() &&
+         !m_id.isPegbar()))
+      return false;
+    m_constraints.erase(
+        std::remove_if(
+            m_constraints.begin(), m_constraints.end(),
+            [](const Constraint &c) { return c.isMotionAssignment(); }),
+        m_constraints.end());
+    Constraint assignment = constraint;
+    assignment.target     = TStageObjectId::NoneId;
+    m_constraints.push_back(assignment);
+    invalidate();
+    return true;
+  }
+  if (constraint.type != Constraint::AimAt &&
+      constraint.type != Constraint::Buffer)
+    return false;
   if (!m_tree || !m_tree->getStageObject(constraint.target, false))
     return false;
 
@@ -543,11 +562,24 @@ bool TStageObject::addConstraint(const Constraint &constraint) {
     if (!object) continue;
     if (object->m_parent) pending.push_back(object->m_parent->m_id);
     for (const Constraint &link : object->m_constraints)
-      if (link.enabled) pending.push_back(link.target);
+      if (link.enabled && !link.isMotionAssignment())
+        pending.push_back(link.target);
   }
   m_constraints.push_back(constraint);
   invalidate();
   return true;
+}
+
+void TStageObject::setConstraints(const std::vector<Constraint> &constraints) {
+  m_constraints = constraints;
+  invalidate();
+}
+
+TStageObject::Constraint::Type TStageObject::getSimulationMotion() const {
+  for (auto i = m_constraints.rbegin(); i != m_constraints.rend(); ++i)
+    if (i->enabled && i->scope == Constraint::Self && i->isMotionAssignment())
+      return i->type;
+  return Constraint::Fixed;
 }
 
 bool TStageObject::removeConstraint(int index) {
@@ -1457,10 +1489,11 @@ TAffine TStageObject::getPlacement(double t) {
   // Recompute constrained objects and their descendants on every request.
   bool hasConstraints = false;
   for (TStageObject *object = this; object; object = object->m_parent)
-    if (!object->m_constraints.empty()) {
-      hasConstraints = true;
-      break;
-    }
+    for (const auto &link : object->m_constraints)
+      if (link.enabled && !link.isMotionAssignment()) {
+        hasConstraints = true;
+        break;
+      }
 
   if (!hasConstraints && time == t) return m_absPlacement;
   if (time != -1 && time != t) {
@@ -1480,10 +1513,12 @@ TAffine TStageObject::getPlacement(double t) {
 
   std::vector<const Constraint *> links;
   for (const Constraint &link : m_constraints)
-    if (link.scope == Constraint::Self) links.push_back(&link);
+    if (link.scope == Constraint::Self && !link.isMotionAssignment())
+      links.push_back(&link);
   if (m_parent)
     for (const Constraint &link : m_parent->m_constraints)
-      if (link.scope == Constraint::Children) links.push_back(&link);
+      if (link.scope == Constraint::Children && !link.isMotionAssignment())
+        links.push_back(&link);
 
   // Move first, then aim from the final position, regardless of link owner.
   std::stable_sort(
@@ -1789,6 +1824,7 @@ os.child("xPrevalence") << (int)isXPrevalence;*/
 //-----------------------------------------------------------------------------
 
 void TStageObject::loadData(TIStream &is) {
+  m_constraints.clear();
   VersionNumber tnzVersion = is.getVersion();
   string tagName;
   QList<int> groupIds;
@@ -1830,9 +1866,20 @@ void TStageObject::loadData(TIStream &is) {
       int type = 0, enabled = 0;
       is >> type >> enabled >> link.influence >> link.radius >> link.strength >>
           link.angleOffset;
-      link.type    = type == 1 ? Constraint::Buffer : Constraint::AimAt;
+      if (type < Constraint::AimAt || type > Constraint::Mobile) {
+        is.matchEndTag();
+        continue;
+      }
+      link.type    = static_cast<Constraint::Type>(type);
       link.enabled = enabled != 0;
-      if (link.target != m_id) m_constraints.push_back(link);
+      if (link.isMotionAssignment()) {
+        link.scope  = Constraint::Self;
+        link.target = TStageObjectId::NoneId;
+        if (link.type != Constraint::Mobile || m_id.isColumn() ||
+            m_id.isPegbar())
+          m_constraints.push_back(link);
+      } else if (link.target != m_id)
+        m_constraints.push_back(link);
     } else if (tagName == "name")
       is >> m_name;
     else if (tagName == "x")

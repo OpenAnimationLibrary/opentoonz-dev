@@ -77,6 +77,7 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    ../include/toonzqt/constraintsimulationpopup.h
     ../include/tools/cursormanager.h
     docklayout.h
     functionpaneltools.h
@@ -105,9 +106,11 @@ set(HEADERS
     ../include/toonzqt/styleselection.h
     ../include/toonzqt/trepetitionguard.h
     ../include/toonzqt/viewcommandids.h
+    ../include/toonzqt/fontstyletranslation.h
 )
 
 set(SOURCES
+    constraintsimulationpopup.cpp
     ../tnztools/cursormanager.cpp
     checkbox.cpp
     colorfield.cpp
@@ -142,6 +145,7 @@ set(SOURCES
     paletteviewer.cpp
     paletteviewergui.cpp
     paramfield.cpp
+    fontstyletranslation.cpp
     planeviewer.cpp
     popupbutton.cpp
     rasterimagedata.cpp

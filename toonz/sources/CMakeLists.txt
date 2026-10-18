@@ -640,8 +640,7 @@ elseif(BUILD_ENV_APPLE)
 elseif(BUILD_ENV_UNIXLIKE)
     set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
 
-    # Mirror relative bin/lib location for installation
-    # so the generated shell script works in both cases.
+    # build tree mirrors the installed bin/lib layout
     set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/opentoonz)
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/opentoonz)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -649,6 +648,11 @@ elseif(BUILD_ENV_UNIXLIKE)
     if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         set(CMAKE_INSTALL_PREFIX "/opt/opentoonz" CACHE PATH "OpenToonz install prefix" FORCE)
     endif()
+
+    # $ORIGIN RPATH: bin/<exe> finds ../lib/opentoonz, libraries find
+    # siblings. The build tree mirrors that layout, so no relink on install.
+    set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/opentoonz:$ORIGIN")
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
 
 if(BUILD_ENV_MSVC AND MSVC_VERSION EQUAL 1800)
@@ -741,8 +745,9 @@ set(CMAKE_CXX_FLAGS "${CXX_WARNINGS} ${CMAKE_CXX_FLAGS}")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/OpenEXR.cmake")
 
 option(BUILD_EXR_TESTS "Build the OpenEXR image I/O and level source regression tests" OFF)
+option(BUILD_CONSTRAINT_TESTS "Build the constraint gravity simulation regression test" OFF)
 option(BUILD_EXR_AOV_FX_TESTS "Build the OpenEXR AOV FX regression test" OFF)
-if(BUILD_EXR_TESTS OR BUILD_EXR_AOV_FX_TESTS)
+if(BUILD_EXR_TESTS OR BUILD_EXR_AOV_FX_TESTS OR BUILD_CONSTRAINT_TESTS)
     enable_testing()
 endif()
 
