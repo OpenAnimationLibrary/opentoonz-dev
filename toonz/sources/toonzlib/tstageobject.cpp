@@ -587,7 +587,12 @@ bool TStageObject::setRigBone(const TRigBone &bone, std::string *error) {
     if (error) *error = "Invalid bone or constraint settings.";
     return false;
   }
-  TRigDependencies graph = m_tree->rigDependencies(this, &bone);
+  TRigDependencies graph;
+  for (const auto &c : bone.constraints)
+    if (c.hasTarget()) {
+      graph = m_tree->rigDependencies(this, &bone);
+      break;
+    }
   for (const auto &c : bone.constraints) {
     if (c.hasTarget() && !c.targetId.empty() &&
         rigDependsOn(graph, c.targetId, m_rigId)) {
@@ -660,7 +665,9 @@ void TStageObject::setParent(const TStageObjectId &parentId) {
     newParent = m_tree->getStageObject(parentId);
     assert(newParent);
 
-    if (rigDependsOn(m_tree->rigDependencies(), newParent->getRigId(), m_rigId))
+    if (newParent == this || (m_tree->hasRigConstraints() &&
+                              rigDependsOn(m_tree->rigDependencies(),
+                                           newParent->getRigId(), m_rigId)))
       return;
 
     // cerco di evitare i cicli

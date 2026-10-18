@@ -346,6 +346,7 @@ void SkeletonTool::leftButtonDown(const TPointD &ppos, const TMouseEvent &e) {
   m_label              = "";
   // This undo block ends in leftButtonUp
   TUndoManager::manager()->beginBlock();
+  m_undoBlockOpen = true;
   if (!doesApply()) return;
 
   assert(m_dragTool == 0);
@@ -550,12 +551,21 @@ void SkeletonTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
   else
     m_device = -1;
   invalidate();
-  TUndoManager::manager()->endBlock();
+  if (m_undoBlockOpen) {
+    TUndoManager::manager()->endBlock();
+    m_undoBlockOpen = false;
+  }
 }
 
 //-------------------------------------------------------------------
 
 bool SkeletonTool::keyDown(QKeyEvent *event) {
+  if (event->key() == Qt::Key_Escape &&
+      dynamic_cast<DragBoneTipTool *>(m_dragTool)) {
+    cancelBoneTipDrag();
+    invalidate();
+    return true;
+  }
   ChangeDrawingTool tool(this, 0);
   switch (event->key()) {
   case Qt::Key_Up:
@@ -1711,7 +1721,20 @@ void SkeletonTool::onActivate() {
 
 //===================================================================
 
+void SkeletonTool::cancelBoneTipDrag() {
+  if (dynamic_cast<DragBoneTipTool *>(m_dragTool)) {
+    delete m_dragTool;
+    m_dragTool = nullptr;
+    m_device   = TD_None;
+    if (m_undoBlockOpen) {
+      TUndoManager::manager()->endBlock();
+      m_undoBlockOpen = false;
+    }
+  }
+}
+
 void SkeletonTool::onDeactivate() {
+  cancelBoneTipDrag();
   // m_selection.selectNone();
   // TSelection::setCurrent(0);
 }

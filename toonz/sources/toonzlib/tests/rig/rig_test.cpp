@@ -8,21 +8,22 @@ namespace {
 void check(bool value, const char *message) {
   if (!value) throw std::runtime_error(message);
 }
-void near(double a, double b, const char *message, double tolerance = 1e-7) {
+void expectNear(double a, double b, const char *message,
+                double tolerance = 1e-7) {
   check(std::isfinite(a) && std::isfinite(b) && std::abs(a - b) < tolerance,
         message);
 }
 void point(const TPointD &a, const TPointD &b, const char *message) {
-  near(a.x, b.x, message);
-  near(a.y, b.y, message);
+  expectNear(a.x, b.x, message);
+  expectNear(a.y, b.y, message);
 }
 void affine(const TAffine &a, const TAffine &b, const char *message) {
-  near(a.a11, b.a11, message);
-  near(a.a12, b.a12, message);
-  near(a.a13, b.a13, message);
-  near(a.a21, b.a21, message);
-  near(a.a22, b.a22, message);
-  near(a.a23, b.a23, message);
+  expectNear(a.a11, b.a11, message);
+  expectNear(a.a12, b.a12, message);
+  expectNear(a.a13, b.a13, message);
+  expectNear(a.a21, b.a21, message);
+  expectNear(a.a22, b.a22, message);
+  expectNear(a.a23, b.a23, message);
 }
 TPointD axisOf(const TAffine &a, TPointD axis = TPointD(0, 1)) {
   return a * axis - a * TPointD();
@@ -42,8 +43,8 @@ void transformConstraints() {
   TAffine translated = applyRigConstraint(original, c, ctx, 0);
   point(translated * ctx.pivot, (pivot + ctx.targetPosition + c.offset) * 0.5,
         "weighted translation around pivot");
-  near(translated.det(), original.det(),
-       "translation preserves mirrored scale");
+  expectNear(translated.det(), original.det(),
+             "translation preserves mirrored scale");
 
   c.type        = TRigConstraint::AimAt;
   c.enforcement = 1;
@@ -51,12 +52,12 @@ void transformConstraints() {
   point(aimed * ctx.pivot, pivot, "aim preserves pivot");
   point(normalize(axisOf(aimed)), normalize(ctx.targetPosition - pivot),
         "aim uses bone axis");
-  near(aimed.det(), original.det(), "aim preserves determinant");
+  expectNear(aimed.det(), original.det(), "aim preserves determinant");
 
   c.type           = TRigConstraint::OrientLike;
   c.angleOffset    = 45;
   TAffine oriented = applyRigConstraint(original, c, ctx, 0);
-  near(rigAngle(axisOf(oriented)), 45, "orient includes angular offset");
+  expectNear(rigAngle(axisOf(oriented)), 45, "orient includes angular offset");
   point(oriented * ctx.pivot, pivot, "orient preserves pivot");
 
   c.type           = TRigConstraint::ParentLike;
@@ -97,8 +98,8 @@ void limitsAndDegeneracies() {
   c.maxValue = 45;
   TAffine rotated =
       ctx.parentPlacement.inv() * applyRigConstraint(original, c, ctx, 0);
-  near(rigAngle(axisOf(rotated)), -45,
-       "rotation limits on parent-space bone direction");
+  expectNear(rigAngle(axisOf(rotated)), -45,
+             "rotation limits on parent-space bone direction");
   point(rotated * ctx.pivot, local * ctx.pivot,
         "rotation limit preserves pivot");
 
@@ -107,8 +108,8 @@ void limitsAndDegeneracies() {
   c.maxValue = 2;
   TAffine scaled =
       ctx.parentPlacement.inv() * applyRigConstraint(original, c, ctx, 0);
-  near(std::hypot(scaled.a11, scaled.a21), 2, "upper scale bound");
-  near(std::hypot(scaled.a12, scaled.a22), 0.5, "lower scale bound");
+  expectNear(std::hypot(scaled.a11, scaled.a21), 2, "upper scale bound");
+  expectNear(std::hypot(scaled.a12, scaled.a22), 0.5, "lower scale bound");
   check(scaled.det() < 0, "scale limit preserves reflection");
   point(scaled * ctx.pivot, local * ctx.pivot, "scale limit preserves pivot");
 
@@ -142,19 +143,20 @@ void enforcementAndOrder() {
   c.enforcementKeys = {{10, 1}, {20, 0.5}};
   c.firstFrame      = 5;
   c.lastFrame       = 25;
-  near(c.weight(4.999), 0, "range start");
-  near(c.weight(5), 0.25, "base before first key");
-  near(c.weight(10), 1, "held key");
-  near(c.weight(19.99), 1, "fractional held sample");
-  near(c.weight(20), 0.5, "next held key");
-  near(c.weight(25.99), 0.5, "inclusive final frame");
-  near(c.weight(26), 0, "range end");
-  near(c.weight(std::numeric_limits<double>::infinity()), 0, "nonfinite frame");
+  expectNear(c.weight(4.999), 0, "range start");
+  expectNear(c.weight(5), 0.25, "base before first key");
+  expectNear(c.weight(10), 1, "held key");
+  expectNear(c.weight(19.99), 1, "fractional held sample");
+  expectNear(c.weight(20), 0.5, "next held key");
+  expectNear(c.weight(25.99), 0.5, "inclusive final frame");
+  expectNear(c.weight(26), 0, "range end");
+  expectNear(c.weight(std::numeric_limits<double>::infinity()), 0,
+             "nonfinite frame");
   TRigContext ctx;
   ctx.targetPosition = TPointD(10, 0);
   for (double frame : {20.0, 6.0, 10.0, 25.5, 0.0, 20.0, 6.0}) {
     TAffine a = applyRigConstraint(TAffine(), c, ctx, frame);
-    near(a.a13, 10 * c.weight(frame), "scrub order independent");
+    expectNear(a.a13, 10 * c.weight(frame), "scrub order independent");
   }
   c.enforcementKeys.clear();
   c.firstFrame = c.lastFrame = -1;
@@ -168,8 +170,8 @@ void enforcementAndOrder() {
         applyRigConstraint(TAffine(), c, ctx, 0), aim, aimCtx, 0);
   TAffine aimThenMove = applyRigConstraint(
       applyRigConstraint(TAffine(), aim, aimCtx, 0), c, ctx, 0);
-  near(rigAngle(axisOf(moveThenAim)), 90, "stack position then aim");
-  near(rigAngle(axisOf(aimThenMove)), 45, "stack aim then position");
+  expectNear(rigAngle(axisOf(moveThenAim)), 90, "stack position then aim");
+  expectNear(rigAngle(axisOf(aimThenMove)), 45, "stack aim then position");
   c.enabled = false;
   affine(applyRigConstraint(TAffine(), c, ctx, 0), TAffine(),
          "disabled is identity");
@@ -217,7 +219,8 @@ void randomizedAim() {
     TPointD pivot  = input * ctx.pivot;
     TAffine output = applyRigConstraint(input, aim, ctx, i);
     check(rigFinite(output), "finite randomized aim");
-    near(input.det(), output.det(), "randomized aim preserves affine shape");
+    expectNear(input.det(), output.det(),
+               "randomized aim preserves affine shape");
     point(output * ctx.pivot, pivot, "randomized pivot invariant");
     point(normalize(axisOf(output)), normalize(ctx.targetPosition - pivot),
           "randomized target direction");

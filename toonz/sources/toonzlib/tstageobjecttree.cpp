@@ -572,6 +572,7 @@ TRigDependencies TStageObjectTree::rigDependencies(
 }
 
 void TStageObjectTree::refreshRig() {
+  bool previouslyConstrained = m_imp->m_hasRigConstraints;
   m_imp->m_hasRigConstraints = false;
   for (const auto &entry : m_imp->m_pegbarTable)
     if (!entry.second->getRigBone().constraints.empty()) {
@@ -579,8 +580,13 @@ void TStageObjectTree::refreshRig() {
       break;
     }
   // Also invalidate after removing the final constraint.
+  if (!previouslyConstrained && !m_imp->m_hasRigConstraints) return;
   for (const auto &entry : m_imp->m_pegbarTable)
     entry.second->m_lazyData(tcg::direct_access).m_time = -1;
+}
+
+bool TStageObjectTree::hasRigConstraints() const {
+  return m_imp->m_hasRigConstraints;
 }
 
 void TStageObjectTree::invalidateRigPlacements() {

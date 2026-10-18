@@ -187,6 +187,7 @@ Returns the numbers of the objects in the tree.
                                    const TRigBone *replacement = nullptr) const;
   void refreshRig();
   void invalidateRigPlacements();
+  bool hasRigConstraints() const;
 
   /*!
           Sets the handle manager to be \b \e hm.

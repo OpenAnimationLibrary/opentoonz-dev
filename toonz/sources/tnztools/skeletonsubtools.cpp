@@ -75,9 +75,14 @@ void DragCenterTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
 
 DragBoneTipTool::DragBoneTipTool(SkeletonTool *tool) : DragTool(tool) {}
 
+DragBoneTipTool::~DragBoneTipTool() {
+  if (m_object && m_dragged && !m_committed) m_object->assignRigBone(m_before);
+}
+
 void DragBoneTipTool::leftButtonDown(const TPointD &, const TMouseEvent &) {
   auto app     = TTool::getApplication();
   auto *xsheet = app->getCurrentXsheet()->getXsheet();
+  m_xsheet     = xsheet;
   m_object     = xsheet->getStageObject(app->getCurrentObject()->getObjectId());
   m_before = m_after = m_object->getRigBone();
   int frame          = app->getCurrentFrame()->getFrame();
@@ -109,6 +114,7 @@ void DragBoneTipTool::leftButtonUp(const TPointD &, const TMouseEvent &) {
   auto *xsheet = TTool::getApplication()->getCurrentXsheet()->getXsheet();
   SkeletonRig::recordEdit(xsheet, m_object.getPointer(), m_before, m_after,
                           m_object->getName(), m_object->getName());
+  m_committed = true;
 }
 
 //============================================================

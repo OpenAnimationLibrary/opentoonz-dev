@@ -51,6 +51,7 @@ class SkeletonTool : public TTool {
 
   bool m_active;
   bool m_firstTime;
+  bool m_undoBlockOpen = false;
   int m_device;
 
   TEnumProperty m_mode;
@@ -95,7 +96,11 @@ public:
 
   void onImageChanged() override { invalidate(); }
 
-  void reset() override { m_temporaryPinnedColumns.clear(); }
+  void reset() override {
+    cancelBoneTipDrag();
+    m_temporaryPinnedColumns.clear();
+  }
+  void cancelBoneTipDrag();
 
   bool onPropertyChanged(std::string propertyName) override;
 
