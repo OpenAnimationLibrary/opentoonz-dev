@@ -498,6 +498,7 @@
 #define MI_ExportSXF "MI_ExportSXF"
 #define MI_ExportOCA "MI_ExportOCA"
 #define MI_ImportOCA "MI_ImportOCA"
+#define MI_ImportFlash "MI_ImportFlash"
 #define MI_ExportTvpJson "MI_ExportTvpJson"
 #define MI_ExportXsheetPDF "MI_ExportXsheetPDF"
 #define MI_ExportCameraTrack "MI_ExportCameraTrack"
@@ -522,5 +523,6 @@
 
 #define MI_OpenLocator "MI_OpenLocator"
 #define MI_OpenAlignmentPanel "MI_OpenAlignmentPanel"
+#define MI_OpenFlashInstancePanel "MI_OpenFlashInstancePanel"
 
 #endif

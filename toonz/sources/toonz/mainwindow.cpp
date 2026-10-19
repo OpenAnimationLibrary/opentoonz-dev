@@ -2282,6 +2282,8 @@ void MainWindow::defineActions() {
       MI_ImportOCA,
       QT_TRANSLATE_NOOP("MainWindow", "Import Open Cel Animation (OCA)"), "",
       "import_oca");
+  createMenuFileAction(MI_ImportFlash,
+                       QT_TR_NOOP("Import Flash / Adobe Animate..."), "");
   createMenuFileAction(
       MI_ExportTvpJson,
       QT_TRANSLATE_NOOP("MainWindow", "Export TVPaint JSON File"), "");
@@ -2848,6 +2850,8 @@ void MainWindow::defineActions() {
                           "Alt+S", "opentoonz");
   createMenuWindowsAction(MI_OpenAlignmentPanel,
                           QT_TR_NOOP("Align and Distribute Panel"), "", "");
+  createMenuWindowsAction(MI_OpenFlashInstancePanel,
+                          QT_TR_NOOP("Flash Instance"), "", "");
   createMenuWindowsAction(MI_OpenGuidedDrawingControls,
                           QT_TR_NOOP("Guided Drawing Controls"), "",
                           "guided_drawing");

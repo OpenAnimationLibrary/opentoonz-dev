@@ -34,6 +34,20 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    flashvector.h
+    flashtext.h
+    flashbitmap.h
+    flashscene.h
+    flasheffects.h
+    flashpreflight.h
+    flashimport.h
+    flashbundle.h
+    flashprovenance.h
+    flashhandoff.h
+    flashfieldbindings.h
+    flashloadingrange.h
+    ../include/toonz/flashinstance.h
+    ../include/toonz/flashinstanceedit.h
     autoadjust.h
     autopos.h
     cleanupcommon.h
@@ -183,6 +197,19 @@ set(SOURCES
     dpiscale.cpp
     fill.cpp
     fillutil.cpp
+    flashvector.cpp
+    flashtext.cpp
+    flashbitmap.cpp
+    flashscene.cpp
+    flasheffects.cpp
+    flashpreflight.cpp
+    flashimport.cpp
+    flashfieldbindings.cpp
+    flashbundle.cpp
+    flashprovenance.cpp
+    flashhandoff.cpp
+    flashinstance.cpp
+    flashinstanceedit.cpp
     fullcolorpalette.cpp
     fxdag.cpp
     glrasterpainter.cpp
@@ -339,6 +366,7 @@ endif()
 qt5_wrap_cpp(SOURCES ${MOC_HEADERS})
 
 add_library(toonzlib SHARED ${HEADERS} ${SOURCES})
+target_link_libraries(toonzlib tnzflash)
 
 if(WITH_TRANSLATION)
     add_translation(toonzlib ${HEADERS} ${SOURCES})

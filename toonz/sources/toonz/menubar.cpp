@@ -136,6 +136,30 @@ void ensureAlignmentPanelAction(QMenu *windowsMenu) {
     windowsMenu->addAction(alignment);
 }
 
+void ensureFlashInstancePanelAction(QMenu *windowsMenu) {
+  QAction *action =
+      CommandManager::instance()->getAction(MI_OpenFlashInstancePanel);
+  if (action && !menuContainsAction(windowsMenu, action))
+    windowsMenu->addAction(action);
+}
+
+void ensureFlashImportAction(QMenu *fileMenu) {
+  QAction *action = CommandManager::instance()->getAction(MI_ImportFlash);
+  if (!action || menuContainsAction(fileMenu, action)) return;
+  // Reuse the existing import submenu, including translated/customized menus.
+  QAction *existing = CommandManager::instance()->getAction(MI_ImportOCA);
+  for (QAction *entry : fileMenu->actions()) {
+    QMenu *submenu = entry->menu();
+    if (submenu && ((existing && menuContainsAction(submenu, existing)) ||
+                    submenu->title() == QCoreApplication::translate(
+                                            "StackedMenuBar", "Import"))) {
+      submenu->addAction(action);
+      return;
+    }
+  }
+  fileMenu->addAction(action);
+}
+
 }  // namespace
 
 //=============================================================================
@@ -331,8 +355,12 @@ void StackedMenuBar::createMenuBarByName(const QString &roomName) {
   QMenuBar *menuBar = qobject_cast<QMenuBar *>(widget(count() - 1));
   if (menuBar) {
     for (QAction *action : menuBar->actions()) {
-      if (action->menu() && action->menu()->title() == tr("Windows"))
+      if (action->menu() && action->menu()->title() == tr("Windows")) {
         ensureAlignmentPanelAction(action->menu());
+        ensureFlashInstancePanelAction(action->menu());
+      }
+      if (action->menu() && action->menu()->title() == tr("File"))
+        ensureFlashImportAction(action->menu());
     }
   }
 }
@@ -377,8 +405,11 @@ QMenuBar *StackedMenuBar::loadMenuBar(const TFilePath &fp) {
             // Older Windows profiles keep private menu XML files. Add the new
             // built-in command without replacing the user's customized menu.
             if (title == QStringLiteral("Help")) ensureHelpActions(menu);
-            if (title == QStringLiteral("Windows"))
+            if (title == QStringLiteral("File")) ensureFlashImportAction(menu);
+            if (title == QStringLiteral("Windows")) {
               ensureAlignmentPanelAction(menu);
+              ensureFlashInstancePanelAction(menu);
+            }
             menuBar->addMenu(menu);
           } else {
             reader.raiseError(tr("Failed to load menu %1").arg(title));
@@ -1251,6 +1282,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   {
     addMenuItem(importMenu, MI_ImportMagpieFile);
     addMenuItem(importMenu, MI_ImportOCA);
+    addMenuItem(importMenu, MI_ImportFlash);
   }
   QMenu *exportMenu = fileMenu->addMenu(tr("Export"));
   {
@@ -1592,6 +1624,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(windowsMenu, MI_StartupPopup);
   addMenuItem(windowsMenu, MI_OpenGuidedDrawingControls);
   addMenuItem(windowsMenu, MI_OpenAlignmentPanel);
+  addMenuItem(windowsMenu, MI_OpenFlashInstancePanel);
   addMenuItem(windowsMenu, MI_OpenCustomPanels);
   // windowsMenu->addSeparator();
   // addMenuItem(windowsMenu, MI_OpenExport);
