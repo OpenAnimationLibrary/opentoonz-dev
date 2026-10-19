@@ -636,7 +636,7 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
         TPalette *palette = ti->getPalette();
 
         const int previousCount = palette ? palette->getStyleCount() : 0;
-        const bool highlight = e.isShiftPressed();
+        const bool highlight    = e.isShiftPressed();
         styleId = paintBrushCompanionStyle(palette, styleId, highlight);
         if (palette && palette->getStyleCount() != previousCount)
           getApplication()->getCurrentPalette()->notifyPaletteChanged();
