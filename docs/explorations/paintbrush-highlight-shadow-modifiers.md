@@ -1,13 +1,13 @@
 # Exploratory design: Shift/Ctrl Paint Brush highlight and shadow
 
-Status: exploratory functional prototype committed; build and regressions not yet validated.
+Status: experimental implementation committed; Palette Gizmo integration and regressions need validation.
 
 ## Goal
 
 When painting with the **Paint Brush** on a Toonz Raster level:
 - Normal stroke: selected palette style.
-- Shift held at stroke start: a highlight 40% lighter than the selected style.
-- Ctrl held at stroke start: a shadow 40% darker than the selected style.
+- Shift held at stroke start: a new or existing highlight variant of the selected style.
+- Ctrl held at stroke start: a new or existing shadow variant of the selected style.
 - Modifier release: subsequent strokes use the regular style.
 - Shift+Ctrl: explicitly choose normal style until a modifier precedence is agreed.
 - Palette's original style, current style selection, and unrelated drawings must not change.
@@ -35,21 +35,50 @@ style (including source-style edits, palette changes, style naming, and
 index limits) using existing palette-management APIs, rather than inventing
 new IDs directly in the raster stroke generator.
 
-## Color semantics
+## Palette Gizmo color semantics
 
-For a first implementation use per-channel interpolation against white
-or black, retaining original alpha:
+The Palette Gizmo dialog publishes its live **Fade (%)** field to the
+Paint Brush through a Qt application property. If the Gizmo has not supplied
+a Fade in the current session (for example, it has never opened), the Paint
+Brush uses **30%**. Opening the unmodified Gizmo publishes its existing
+10% Fade default; the Gizmo's original action button defaults are not
+changed. Editing the Fade number or pressing Fade updates the brush strength.
 
-- Highlight: `round(channel + (255 - channel) * 0.40)`
-- Shadow: `round(channel * 0.60)`
+For a **new** companion only:
+- Highlight: interpolate the source RGB towards white by Fade (%).
+- Shadow: interpolate the source RGB towards the Gizmo's fade-to-color swatch,
+  initially black, by Fade (%). Each shadow target component is capped at
+  the original source component to avoid inadvertently brightening the
+  shadow.
+- If the user explicitly edits a Gizmo Value / Saturation / Hue / Alpha
+  Scale or Shift field (or activates that field's + or - button), its
+  magnitude contributes to new variants. Highlight uses positive values
+  and shadow uses negative values. Value and Saturation are adjusted in
+  HSV; Hue shifts in degrees; Alpha is modified only when an Alpha field
+  was explicitly used. The Gizmo's 10-unit default for these other controls
+  does **not** affect paint until the user changes/uses that control.
+- Clamp numeric channel values to valid bounds and preserve original alpha
+  unless Alpha has been explicitly adjusted.
+- The swatch tints shadow variants only; it does not change existing
+  palette styles or force colored highlights.
+- Neither editing Gizmo settings nor reusing a companion recalculates an
+  existing highlight/shadow color. Artists can edit companions manually.
 
-Apply to RGB, clamp to [0,255], and never repeatedly accumulate adjustments
-on the generated variant. This is a 40% channel adjustment, not a perceptual
-40% lightness increase; evaluate perceptual alternatives in a separate PR.
+With no Gizmo and no extra adjustments, RGB (100,150,200) and the 30%
+fallback produce an illustrative highlight (147,182,217) and shadow
+(70,105,140), subject to rounding.
 
-Examples (RGB):
-- (100, 150, 200) -> highlight (162, 192, 222)
-- (100, 150, 200) -> shadow (60, 90, 120)
+The bridge uses in-process Qt application properties, not a new file
+format or a direct dependency from tnztools on OpenToonz executable
+symbols. It intentionally resets with the application session.
+
+### Style names
+
+New styles are named `Highlight <sourceStyleId>` and
+`Shadow <sourceStyleId>`, e.g. `Highlight 7` and `Shadow 7`.
+Previously generated names `[Paint Brush Highlight 7]` and
+`[Paint Brush Shadow 7]` are recognized and reused unchanged to avoid
+duplicates and preserve the user's existing edits.
 
 ## Scope restrictions
 
@@ -136,15 +165,15 @@ Add focused regression tests proving that an existing TLV rendered, edited,
 saved, and reopened with **no modifier** behaves identically before and
 after the feature. Test creation order (Shift first, Ctrl first), reuse,
 palette-page ordering, Undo/Redo, save/reopen, source edits, style deletion,
-and existing modifier shortcuts. No functional implementation is included
-until these edge cases are addressed.
+and existing modifier shortcuts. This experimental implementation should not be treated as merge-ready until these
+edge cases are addressed.
 
 ## Manual color adjustment
 
-Generated companions are ordinary editable palette styles. Artists may manually lighten, darken, or otherwise adjust each generated style afterward. Reusing the companion must **not** recalculate its color or overwrite those manual edits. Creation uses 40% only as the initial default. Changes to the original source color should not silently overwrite manually edited variants; any future regeneration or synchronization must be explicit.
+Generated companions are ordinary editable palette styles. Artists may manually lighten, darken, or otherwise adjust each generated style afterward. Reusing the companion must **not** recalculate its color or overwrite those manual edits. Creation uses the current Gizmo Fade strength (or a 30% fallback) only once. Changes to the original source color should not silently overwrite manually edited variants; any future regeneration or synchronization must be explicit.
 
 ## Current prototype status (October 19, 2026)
 
-`paintbrushtool.cpp` now intercepts Shift/Ctrl at mouse-down, creates a 40% companion style if missing, and reuses a named companion in the same palette. It triggers palette UI refresh when the palette grows. No modifier takes the original unmodified stroke path. Generated colors remain editable and are not regenerated on reuse.
+`paintbrushtool.cpp` now intercepts Shift/Ctrl at mouse-down, creates a Gizmo-adjusted companion style if missing, and reuses named companions in the same palette. It triggers palette UI refresh when the palette grows. No modifier takes the original unmodified stroke path. Generated colors remain editable and are not regenerated on reuse.
 
-**Not complete or validated:** Style association currently uses encoded style names, not a distinct persisted association record. User renaming a companion can defeat reuse. Dedicated palette undo/redo for style creation and style lifecycle handling is not implemented; automated tests, Windows compilation, clang-format, and manual regression tests are outstanding. The PR is intentionally still draft and should not be merged until these concerns are resolved.
+**Not complete or validated:** Style association currently uses encoded style names, not a distinct persisted association record. User renaming a companion can defeat reuse. Dedicated palette undo/redo for style creation and style lifecycle handling is not implemented; automated tests, Windows compilation, clang-format, and manual regression tests are outstanding. The PR should not be merged until these concerns are resolved. Existing builds succeeded before the Gizmo changes; new CI checks and manual interaction testing remain necessary.
