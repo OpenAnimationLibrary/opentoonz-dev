@@ -71,18 +71,19 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
     return sourceId;
 
   const std::wstring label =
-      std::wstring(highlight ? L"[Paint Brush Highlight " : L"[Paint Brush Shadow ") +
+      std::wstring(highlight ? L"[Paint Brush Highlight "
+                             : L"[Paint Brush Shadow ") +
       std::to_wstring(sourceId) + L"]";
 
   // Find the original's page. Palette indices are NOT changed when new
   // companions are inserted into a page.
   TPalette::Page *page = nullptr;
-  int sourcePosition = -1;
+  int sourcePosition   = -1;
   for (int i = 0; i < palette->getPageCount(); ++i) {
     TPalette::Page *candidate = palette->getPage(i);
-    const int pos = candidate->search(sourceId);
+    const int pos             = candidate->search(sourceId);
     if (pos >= 0) {
-      page = candidate;
+      page           = candidate;
       sourcePosition = pos;
       break;
     }
@@ -98,7 +99,7 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   // styles. A clone retains all original solid style properties.
   TColorStyle *companion = source->clone();
   if (!companion) return sourceId;
-  TPixel32 color = source->getMainColor();
+  TPixel32 color        = source->getMainColor();
   const auto adjusted = [highlight](int channel) {
     return highlight ? channel + (255 - channel) * 40 / 100
                      : channel * 60 / 100;
@@ -120,7 +121,6 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   return sourceId;
 }
 }  // namespace
-
 
 //-----------------------------------------------------------------------------
 
@@ -632,7 +632,7 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       // Modifier selection is captured at stroke start; normal drawing is
       // unchanged, and the selected source style remains selected in the UI.
       if (e.isShiftPressed() != e.isCtrlPressed()) {
-        TPalette *palette = ti->getPalette();
+        TPalette *palette      = ti->getPalette();
         const int previousCount = palette ? palette->getStyleCount() : 0;
         styleId = paintBrushCompanionStyle(palette, styleId,
                                           e.isShiftPressed());
