@@ -58,6 +58,70 @@ TEnv::IntVar PaintBrushFill("PaintBrushFill", 0);
 
 const int BackgroundStyle = 0;
 
+// Companion styles are ordinary palette styles. The name embeds the source ID
+// so variants can be found again after the palette has been saved and reopened.
+// Existing companions are never recolored when they are reused.
+namespace {
+int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
+  if (!palette || palette->isLocked() || sourceId <= BackgroundStyle)
+    return sourceId;
+
+  TColorStyle *source = palette->getStyle(sourceId);
+  if (!source || !source->hasMainColor() || source->getColorParamCount() != 1)
+    return sourceId;
+
+  const std::wstring label =
+      std::wstring(highlight ? L"[Paint Brush Highlight " : L"[Paint Brush Shadow ") +
+      std::to_wstring(sourceId) + L"]";
+
+  // Find the original's page. Palette indices are NOT changed when new
+  // companions are inserted into a page.
+  TPalette::Page *page = nullptr;
+  int sourcePosition = -1;
+  for (int i = 0; i < palette->getPageCount(); ++i) {
+    TPalette::Page *candidate = palette->getPage(i);
+    const int pos = candidate->search(sourceId);
+    if (pos >= 0) {
+      page = candidate;
+      sourcePosition = pos;
+      break;
+    }
+  }
+  if (!page) return sourceId;
+
+  for (int i = 0; i < palette->getStyleCount(); ++i) {
+    TColorStyle *style = palette->getStyle(i);
+    if (style && style->getName() == label) return i;
+  }
+
+  // Avoid generating solid-color approximations from animated or multi-color
+  // styles. A clone retains all original solid style properties.
+  TColorStyle *companion = source->clone();
+  if (!companion) return sourceId;
+  TPixel32 color = source->getMainColor();
+  const auto adjusted = [highlight](int channel) {
+    return highlight ? channel + (255 - channel) * 40 / 100
+                     : channel * 60 / 100;
+  };
+  color.r = adjusted(color.r);
+  color.g = adjusted(color.g);
+  color.b = adjusted(color.b);
+  companion->setMainColor(color);
+  companion->setName(label);
+
+  // Page insertion creates a new palette style ID without renumbering any
+  // existing CM32 pixels. Highlight precedes source; shadow follows source.
+  page->insertStyle(sourcePosition + (highlight ? 0 : 1), companion);
+  palette->setDirtyFlag(true);
+  for (int i = 0; i < page->getStyleCount(); ++i) {
+    TColorStyle *style = page->getStyle(i);
+    if (style && style->getName() == label) return page->getStyleId(i);
+  }
+  return sourceId;
+}
+}  // namespace
+
+
 //-----------------------------------------------------------------------------
 
 namespace {
@@ -565,6 +629,12 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       }
       int thickness = m_toolSize.getValue();
       int styleId   = TTool::getApplication()->getCurrentLevelStyleIndex();
+      // Modifier selection is captured at stroke start; normal drawing is
+      // unchanged, and the selected source style remains selected in the UI.
+      if (e.isShiftPressed() != e.isCtrlPressed()) {
+        styleId = paintBrushCompanionStyle(ti->getPalette().getPointer(),
+                                          styleId, e.isShiftPressed());
+      }
       TTileSetCM32 *tileSet = new TTileSetCM32(ras->getSize());
       m_tileSaver           = new TTileSaverCM32(ras, tileSet);
       m_rasterTrack         = new RasterStrokeGenerator(
