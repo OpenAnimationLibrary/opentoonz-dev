@@ -1,33 +1,41 @@
 # OT-Dev build branding
 
-The assembly-line SVG is a template. `brand_build.py` fills it from the current
-GitHub event: PR number/title, two description lines, UTC build date, and actual
-checkout commit. Push and manual branch builds show the ref instead. The seven
-original template fields remain supported; two wrapped heading fields keep long
-PR titles inside the new artwork. XML escaping is applied once to metadata.
+## Splash designs
 
-Ordinary Edition Windows builds generate the compiled splash and external
-`splash.svg`, and add the PR/ref label to both window-title construction paths.
-These changes are made only in the CI working tree.
+- `splash-template-assembly-line.svg`: the active assembly-line artwork.
+- `splash-template-legacy.svg`: the preserved previous artwork.
+
+Both are templates populated from current PR number/title, description, UTC
+build date, and actual checkout commit. Branch builds show the ref instead.
+The original seven fields remain supported. The new artwork adds wrapped
+heading fields; XML escaping is applied once to metadata.
+
+The Windows workflows explicitly select the assembly-line template. Branding
+updates both window-title paths, the compiled splash, and the external splash
+in the CI working tree. The generated external file is `ot-dev-splash.svg`.
+The build-only startup overlay loads that distinct name, so a legacy
+`splash.svg` left beside an updated executable cannot override the new artwork.
+The compiled resource remains the fallback. The clean upstream source is unchanged.
+
+Both `main` and `edition` need this infrastructure update for their ordinary
+PR builds. Merging it into one branch does not update the other branch's builds.
+Existing downloads must be rebuilt to pick up the new artwork.
 
 ## Branded builds of upstream-based PRs
 
-The default `upstream/master` branch is an exact upstream mirror, so GitHub does
-not expose the Edition-only manual dispatch inputs there. To build an open PR
-with branding, create a branch **from edition** named **otdev-build/pr-NUMBER**
-in GitHub's branch picker. For example, `otdev-build/pr-259` builds PR #259.
-Branch creation triggers `otdev_branding.yml`; a push to that branch also runs it.
-For a new build with refreshed metadata, create a new branch with a suffix such
-as `otdev-build/pr-259-20261018`. No extra pull request is needed for build refs.
+The separate `otdev_branding.yml` workflow is maintained on `edition`. Create a
+branch **from edition** named **otdev-build/pr-NUMBER** in GitHub's branch
+picker; for example, `otdev-build/pr-259` builds open PR #259. A suffix such as
+`otdev-build/pr-259-20261019` requests a fresh build with current metadata.
+Branch creation and pushes trigger it. No extra PR is needed for build refs.
 
-The job fetches the current PR description and test merge SHA, checks out that
-exact commit, and obtains branding assets from its own workflow revision. It
-uploads a branded Windows application and a separate populated SVG. It leaves
-the PR branch and the clean mirror untouched. A conflicted/closed PR is rejected.
+The job fetches current PR metadata and its test merge SHA, checks out that
+exact source commit, and loads branding assets from its workflow revision.
+It uploads a branded Windows application and a separate populated SVG.
+A conflicted or closed PR is rejected. The PR source and clean mirror stay intact.
 
-Existing PRs against `main` retain their established workflows until their
-branding update is integrated there. This infrastructure belongs on `edition`;
-do not include it or the build-only overlay in upstream feature proposals.
+This infrastructure belongs only in OT-Dev build branches. Keep the templates,
+workflows, and build-only source overlays out of upstream feature proposals.
 
 Validation: `python -m unittest discover -s .github/ot-dev -p test_brand_build.py -v`.
 Artwork concept: Rodney Baker. SVG drawing and workflow implementation assisted

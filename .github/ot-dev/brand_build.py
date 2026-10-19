@@ -12,6 +12,9 @@ import xml.etree.ElementTree as ET
 
 TOKEN = re.compile(r"\{\{([A-Z_0-9]+)\}\}")
 TITLE_ANCHOR = 'QString::fromStdString(TEnv::getApplicationFullName());'
+SPLASH_ANCHOR = 'QDir(exeDir).filePath("splash.svg")'
+SPLASH_FILENAME = "ot-dev-splash.svg"
+TEMPLATE_NAME = "splash-template-assembly-line.svg"
 
 
 def plain_text(value):
@@ -82,9 +85,18 @@ def brand_window(source, label):
     return source.replace(TITLE_ANCHOR, TITLE_ANCHOR[:-1] + " + " + suffix + ";")
 
 
+def brand_startup(source):
+    if source.count(SPLASH_ANCHOR) != 1:
+        raise ValueError("Unable to locate the external OpenToonz splash path")
+    # A legacy splash.svg beside an updated executable must not hide this build.
+    return source.replace(SPLASH_ANCHOR,
+                          f'QDir(exeDir).filePath("{SPLASH_FILENAME}")')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--template", type=Path, required=True)
+    parser.add_argument("--template", type=Path,
+                        default=Path(__file__).with_name(TEMPLATE_NAME))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-root", type=Path)
     parser.add_argument("--event-path", type=Path, default=os.getenv("GITHUB_EVENT_PATH"))
@@ -98,10 +110,13 @@ def main():
     if args.source_root:
         source_path = args.source_root / "toonz/sources/toonz/mainwindow.cpp"
         source = brand_window(source_path.read_text(encoding="utf-8"), fields["BUILD_LABEL"])
+        startup_path = args.source_root / "toonz/sources/toonz/main.cpp"
+        startup = brand_startup(startup_path.read_text(encoding="utf-8"))
         resource_path = args.source_root / "toonz/sources/toonz/Resources/splash.svg"
         if not resource_path.is_file():
             raise ValueError("Unable to locate the compiled OpenToonz splash resource")
         source_path.write_text(source, encoding="utf-8")
+        startup_path.write_text(startup, encoding="utf-8")
         resource_path.write_text(svg, encoding="utf-8")
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(svg, encoding="utf-8")
