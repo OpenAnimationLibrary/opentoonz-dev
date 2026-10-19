@@ -639,8 +639,8 @@ PltGizmoPopup::PltGizmoPopup()
       PaintBrushGizmoSettings::read(PaintBrushGizmoSettings::ShadowColor);
   if (shadowPreset.canConvert<QColor>()) {
     const QColor color = shadowPreset.value<QColor>();
-    m_colorFld->setColor(TPixel32(color.red(), color.green(), color.blue(),
-                                 255));
+    const TPixel32 paletteColor(color.red(), color.green(), color.blue(), 255);
+    m_colorFld->setColor(paletteColor);
   }
   PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::Fade,
                                    colorFader->presetValue());
@@ -737,11 +737,10 @@ PltGizmoPopup::PltGizmoPopup()
             PaintBrushGizmoSettings::publish(
                 PaintBrushGizmoSettings::ValueScale, value);
           });
-  connect(luminanceShift, &ValueShifter::presetChanged, this,
-          [](double value) {
-            PaintBrushGizmoSettings::publish(
-                PaintBrushGizmoSettings::ValueShift, value);
-          });
+  connect(luminanceShift, &ValueShifter::presetChanged, this, [](double value) {
+    PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::ValueShift,
+                                     value);
+  });
   connect(saturationValue, &ValueAdjuster::presetChanged, this,
           [](double value) {
             PaintBrushGizmoSettings::publish(
