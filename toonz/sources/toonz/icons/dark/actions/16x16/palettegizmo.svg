@@ -1,14 +1,31 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-<svg width="16px" height="16px" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;">
-    <g transform="matrix(1,0,0,1,-30,-170)">
-        <g id="palettegizmo">
-            <g id="bg" transform="matrix(0.110345,0,0,0.121212,13.7793,151.091)">
-                <rect x="147" y="156" width="145" height="132" style="fill:rgb(135,135,135);fill-opacity:0;"/>
-            </g>
-            <g id="rect11" transform="matrix(1,0,0,1,28,168)">
-                <path d="M17,6L10,6L10,13L17,13L17,6ZM9,6L2,6L2,13L9,13L9,6ZM6,9L8,9L8,10L6,10L6,12L5,12L5,10L3,10L3,9L5,9L5,7L6,7L6,9ZM16,10L11,10L11,9L16,9L16,10Z"/>
-            </g>
-        </g>
-    </g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="0.7" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ffe6a2"/>
+      <stop offset="0.72" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#e9a444"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0.2" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#f3f5f9"/>
+      <stop offset="0.64" stop-color="#c5cedf"/>
+      <stop offset="1" stop-color="#9eaabc"/>
+    </linearGradient>
+  </defs>
+  <!-- Palette silhouette follows the approved painter's-palette artwork. -->
+  <path d="M7.69 2.19c2.65-.68 4.97.57 6.09 2.53.8 1.4 1.12 3.15-.43 3.62-.86.26-1.34.53-1.28 1.17.08.62.67 1.17.65 1.94-.05 1.62-1.85 2.64-3.56 2.85-2.31.29-4.63-.43-5.86-2.02-1.09-1.41-.99-3.47-.35-5.17.85-2.22 2.64-4.39 4.74-4.92Z" fill="url(#wood)" stroke="#22252b" stroke-width=".77" stroke-linejoin="round"/>
+  <path d="M3.20 11.25c1.45 2.35 4.34 3.1 6.77 2.45 1.62-.43 2.38-1.16 2.71-2.21-.05 1.62-1.86 2.64-3.57 2.85-2.31.29-4.63-.43-5.86-2.02-.21-.27-.39-.62-.55-1.03Z" fill="#f4ac4e" opacity=".58"/>
+  <!-- Four colored wells: red, green, blue, yellow, starting at lower left. -->
+  <ellipse cx="4.77" cy="10.80" rx="1.13" ry="1.08" fill="#fb3732" stroke="#24262c" stroke-width=".53"/>
+  <path d="M4.16 10.42q.25-.52.75-.48" fill="none" stroke="#ffe2df" stroke-width=".34" stroke-linecap="round"/>
+  <ellipse cx="4.89" cy="7.67" rx="1.15" ry="1.07" fill="#29ce57" stroke="#24262c" stroke-width=".53"/>
+  <path d="M4.31 7.26q.24-.44.7-.43" fill="none" stroke="#e7ffea" stroke-width=".34" stroke-linecap="round"/>
+  <ellipse cx="7.71" cy="4.83" rx="1.13" ry="1.00" fill="#149bff" stroke="#24262c" stroke-width=".53"/>
+  <path d="M7.14 4.50q.21-.42.63-.43" fill="none" stroke="#dbf3ff" stroke-width=".33" stroke-linecap="round"/>
+  <ellipse cx="10.87" cy="5.79" rx="1.14" ry="1.07" fill="#ffe125" stroke="#24262c" stroke-width=".53"/>
+  <path d="M10.28 5.41q.22-.43.69-.46" fill="none" stroke="#fffceb" stroke-width=".33" stroke-linecap="round"/>
+  <!-- The gear replaces the thumb-hole instead of protruding beyond the palette. -->
+  <path d="M8.38 9.02 9.13 9.02 9.27 9.49 9.63 9.66 10.09 9.42 10.6 9.94 10.36 10.41 10.53 10.76 11.01 10.9 11.01 11.64 10.53 11.8 10.36 12.16 10.59 12.62 10.07 13.15 9.61 12.9 9.27 13.06 9.13 13.54 8.38 13.54 8.24 13.06 7.88 12.9 7.42 13.15 6.9 12.62 7.14 12.16 6.98 11.8 6.50 11.64 6.50 10.9 6.98 10.76 7.14 10.41 6.90 9.94 7.42 9.42 7.88 9.66 8.24 9.49Z" fill="url(#metal)" stroke="#24262c" stroke-width=".38" stroke-linejoin="round"/>
+  <circle cx="8.75" cy="11.27" r=".77" fill="#353741"/>
+  <circle cx="8.75" cy="11.27" r=".46" fill="#efb459"/>
 </svg>
