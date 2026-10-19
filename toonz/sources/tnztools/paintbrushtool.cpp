@@ -103,9 +103,8 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
 
   for (int i = 0; i < palette->getStyleCount(); ++i) {
     TColorStyle *style = palette->getStyle(i);
-    if (style && (style->getName() == label ||
-                  style->getName() == legacyLabel))
-      return i;
+    if (!style) continue;
+    if (style->getName() == label || style->getName() == legacyLabel) return i;
   }
 
   // Avoid generating solid-color approximations from animated or multi-color
@@ -116,10 +115,10 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
 
   // The Gizmo Fade field controls strength. When it has not been published
   // (e.g. the Gizmo was never opened), use the conservative 30% fallback.
-  const int fade = std::max(
-      0, std::min(100, static_cast<int>(std::lround(
-                           PaintBrushGizmoSettings::number(
-                               PaintBrushGizmoSettings::Fade, 30.0)))));
+  const double fadeValue =
+      PaintBrushGizmoSettings::number(PaintBrushGizmoSettings::Fade, 30.0);
+  const int roundedFade = static_cast<int>(std::lround(fadeValue));
+  const int fade        = std::max(0, std::min(100, roundedFade));
 
   // The Gizmo's fade target, when edited, tints the shadow. Never let a
   // shadow target brighten a source channel. Highlights fade toward white.
@@ -149,23 +148,27 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   const double saturationShift =
       preset(PaintBrushGizmoSettings::SaturationShift);
   const double hueShift = preset(PaintBrushGizmoSettings::HueShift);
+
   const auto clamp = [](double number, int maximum) {
-    return std::max(0, std::min(maximum, static_cast<int>(std::lround(number))));
+    const int rounded = static_cast<int>(std::lround(number));
+    return std::max(0, std::min(maximum, rounded));
   };
   if (valueScale || valueShift || saturationScale || saturationShift ||
       hueShift) {
     const int alpha = color.m;
     int hsv[3];
     rgb2hsv(hsv, color, 360);
-    hsv[0] = (hsv[0] +
-              static_cast<int>(std::lround(sign * hueShift)) % 360 + 360) %
-             360;
-    hsv[1] = clamp(hsv[1] * (1.0 + sign * saturationScale / 100.0) +
-                       sign * saturationShift * 3.6,
-                   360);
-    hsv[2] = clamp(hsv[2] * (1.0 + sign * valueScale / 100.0) +
-                       sign * valueShift * 3.6,
-                   360);
+    const int hueDelta = static_cast<int>(std::lround(sign * hueShift));
+    hsv[0] = (hsv[0] + hueDelta % 360 + 360) % 360;
+
+    const double saturation =
+        hsv[1] * (1.0 + sign * saturationScale / 100.0) +
+        sign * saturationShift * 3.6;
+    hsv[1] = clamp(saturation, 360);
+
+    const double value = hsv[2] * (1.0 + sign * valueScale / 100.0) +
+                         sign * valueShift * 3.6;
+    hsv[2] = clamp(value, 360);
     hsv2rgb(color, hsv, 360);
     color.m = alpha;
   }
@@ -173,9 +176,9 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   const double alphaScale = preset(PaintBrushGizmoSettings::AlphaScale);
   const double alphaShift = preset(PaintBrushGizmoSettings::AlphaShift);
   if (alphaScale || alphaShift) {
-    color.m = clamp(color.m * (1.0 + sign * alphaScale / 100.0) +
-                        sign * alphaShift,
-                    255);
+    const double adjustedAlpha =
+        color.m * (1.0 + sign * alphaScale / 100.0) + sign * alphaShift;
+    color.m = clamp(adjustedAlpha, 255);
   }
   companion->setMainColor(color);
   companion->setName(label);
