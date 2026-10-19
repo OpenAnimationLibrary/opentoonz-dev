@@ -632,8 +632,12 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       // Modifier selection is captured at stroke start; normal drawing is
       // unchanged, and the selected source style remains selected in the UI.
       if (e.isShiftPressed() != e.isCtrlPressed()) {
-        styleId = paintBrushCompanionStyle(ti->getPalette(),
-                                          styleId, e.isShiftPressed());
+        TPalette *palette = ti->getPalette();
+        const int previousCount = palette ? palette->getStyleCount() : 0;
+        styleId = paintBrushCompanionStyle(palette, styleId,
+                                          e.isShiftPressed());
+        if (palette && palette->getStyleCount() != previousCount)
+          getApplication()->getCurrentPalette()->notifyPaletteChanged();
       }
       TTileSetCM32 *tileSet = new TTileSetCM32(ras->getSize());
       m_tileSaver           = new TTileSaverCM32(ras, tileSet);
