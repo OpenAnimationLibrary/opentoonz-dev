@@ -6,8 +6,8 @@ Status: exploratory; no user-facing behavior is implemented in this first commit
 
 When painting with the **Paint Brush** on a Toonz Raster level:
 - Normal stroke: selected palette style.
-- Shift held at stroke start: a highlight 20% lighter than the selected style.
-- Ctrl held at stroke start: a shadow 20% darker than the selected style.
+- Shift held at stroke start: a highlight 40% lighter than the selected style.
+- Ctrl held at stroke start: a shadow 40% darker than the selected style.
 - Modifier release: subsequent strokes use the regular style.
 - Shift+Ctrl: explicitly choose normal style until a modifier precedence is agreed.
 - Palette's original style, current style selection, and unrelated drawings must not change.
@@ -40,16 +40,16 @@ new IDs directly in the raster stroke generator.
 For a first implementation use per-channel interpolation against white
 or black, retaining original alpha:
 
-- Highlight: `round(channel + (255 - channel) * 0.20)`
-- Shadow: `round(channel * 0.80)`
+- Highlight: `round(channel + (255 - channel) * 0.40)`
+- Shadow: `round(channel * 0.60)`
 
 Apply to RGB, clamp to [0,255], and never repeatedly accumulate adjustments
-on the generated variant. This is a 20% channel adjustment, not a perceptual
-20% lightness increase; evaluate perceptual alternatives in a separate PR.
+on the generated variant. This is a 40% channel adjustment, not a perceptual
+40% lightness increase; evaluate perceptual alternatives in a separate PR.
 
 Examples (RGB):
-- (100, 150, 200) -> highlight (131, 171, 211)
-- (100, 150, 200) -> shadow (80, 120, 160)
+- (100, 150, 200) -> highlight (162, 192, 222)
+- (100, 150, 200) -> shadow (60, 90, 120)
 
 ## Scope restrictions
 
@@ -138,3 +138,7 @@ after the feature. Test creation order (Shift first, Ctrl first), reuse,
 palette-page ordering, Undo/Redo, save/reopen, source edits, style deletion,
 and existing modifier shortcuts. No functional implementation is included
 until these edge cases are addressed.
+
+## Manual color adjustment
+
+Generated companions are ordinary editable palette styles. Artists may manually lighten, darken, or otherwise adjust each generated style afterward. Reusing the companion must **not** recalculate its color or overwrite those manual edits. Creation uses 40% only as the initial default. Changes to the original source color should not silently overwrite manually edited variants; any future regeneration or synchronization must be explicit.
