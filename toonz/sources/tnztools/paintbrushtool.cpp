@@ -159,16 +159,18 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
     int hsv[3];
     rgb2hsv(hsv, color, 360);
     const int hueDelta = static_cast<int>(std::lround(sign * hueShift));
+
     hsv[0] = (hsv[0] + hueDelta % 360 + 360) % 360;
 
-    const double saturation =
-        hsv[1] * (1.0 + sign * saturationScale / 100.0) +
-        sign * saturationShift * 3.6;
-    hsv[1] = clamp(saturation, 360);
+    const double saturationFactor = 1.0 + sign * saturationScale / 100.0;
+    const double saturationOffset = sign * saturationShift * 3.6;
 
-    const double value = hsv[2] * (1.0 + sign * valueScale / 100.0) +
-                         sign * valueShift * 3.6;
-    hsv[2] = clamp(value, 360);
+    hsv[1] = clamp(hsv[1] * saturationFactor + saturationOffset, 360);
+
+    const double valueFactor = 1.0 + sign * valueScale / 100.0;
+    const double valueOffset = sign * valueShift * 3.6;
+
+    hsv[2] = clamp(hsv[2] * valueFactor + valueOffset, 360);
     hsv2rgb(color, hsv, 360);
     color.m = alpha;
   }
