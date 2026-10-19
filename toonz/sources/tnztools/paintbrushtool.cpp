@@ -70,10 +70,10 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   if (!source || !source->hasMainColor() || source->getColorParamCount() != 1)
     return sourceId;
 
-  const std::wstring label =
-      std::wstring(highlight ? L"[Paint Brush Highlight "
-                             : L"[Paint Brush Shadow ") +
-      std::to_wstring(sourceId) + L"]";
+  std::wstring label =
+      highlight ? L"[Paint Brush Highlight " : L"[Paint Brush Shadow ";
+  label += std::to_wstring(sourceId);
+  label += L"]";
 
   // Find the original's page. Palette indices are NOT changed when new
   // companions are inserted into a page.
@@ -99,7 +99,8 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   // styles. A clone retains all original solid style properties.
   TColorStyle *companion = source->clone();
   if (!companion) return sourceId;
-  TPixel32 color        = source->getMainColor();
+  TPixel32 color = source->getMainColor();
+
   const auto adjusted = [highlight](int channel) {
     return highlight ? channel + (255 - channel) * 40 / 100
                      : channel * 60 / 100;
@@ -632,10 +633,11 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       // Modifier selection is captured at stroke start; normal drawing is
       // unchanged, and the selected source style remains selected in the UI.
       if (e.isShiftPressed() != e.isCtrlPressed()) {
-        TPalette *palette      = ti->getPalette();
+        TPalette *palette = ti->getPalette();
+
         const int previousCount = palette ? palette->getStyleCount() : 0;
-        styleId = paintBrushCompanionStyle(palette, styleId,
-                                          e.isShiftPressed());
+        const bool highlight = e.isShiftPressed();
+        styleId = paintBrushCompanionStyle(palette, styleId, highlight);
         if (palette && palette->getStyleCount() != previousCount)
           getApplication()->getCurrentPalette()->notifyPaletteChanged();
       }
