@@ -25,15 +25,11 @@
 // KeyframeMover
 //-----------------------------------------------------------------------------
 
-KeyframeMover::KeyframeMover()
-    : m_qualifiers(eMoveKeyframes), m_lastKeyframeData(0) {}
+KeyframeMover::KeyframeMover() : m_qualifiers(eMoveKeyframes) {}
 
 //-----------------------------------------------------------------------------
 
-KeyframeMover::~KeyframeMover() {
-  delete m_lastKeyframeData;
-  m_lastKeyframeData = 0;
-}
+KeyframeMover::~KeyframeMover() {}
 
 //-----------------------------------------------------------------------------
 
@@ -45,46 +41,40 @@ TXsheet *KeyframeMover::getXsheet() const {
 
 void KeyframeMover::setKeyframes() {
   TXsheet *xsh = getXsheet();
-  std::set<KeyframePosition>::iterator posIt;
-  for (auto const &key : m_lastKeyframes) {
-    int c = key.second;
+  for (const auto &entry : m_originalKeyframes) {
+    const int c = entry.first;
     TStageObjectId objId =
         c >= 0 ? TStageObjectId::ColumnId(c)
                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
     TStageObject *stObj = xsh->getStageObject(objId);
-    TStageObject::KeyframeMap keyframes;
-    stObj->getKeyframes(keyframes);
-    for (auto const &frame : keyframes) {
+    if (!stObj) continue;
+
+    // Restore the complete snapshot, not a re-created clipboard selection.
+    // This preserves per-channel keys and interpolation during Alt-drag.
+    TStageObject::KeyframeMap currentKeys;
+    stObj->getKeyframes(currentKeys);
+    for (const auto &frame : currentKeys)
       stObj->removeKeyframeWithoutUndo(frame.first);
-    }
+    for (const auto &frame : entry.second)
+      stObj->setKeyframeWithoutUndo(frame.first, frame.second);
   }
-  m_lastKeyframeData->getKeyframes(m_lastKeyframes, xsh);
 }
 
 //-----------------------------------------------------------------------------
 
 void KeyframeMover::getKeyframes() {
   TXsheet *xsh = getXsheet();
-  for (auto const &pos : m_startSelectedKeyframes) {
-    int c = pos.second;
+  m_originalKeyframes.clear();
+  for (const auto &pos : m_startSelectedKeyframes) {
+    const int c = pos.second;
+    if (m_originalKeyframes.count(c)) continue;
     TStageObjectId objId =
         c >= 0 ? TStageObjectId::ColumnId(c)
                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
     TStageObject *stObj = xsh->getStageObject(objId);
-    assert(stObj->isKeyframe(pos.first));
-    TStageObject::KeyframeMap keyframes;
-    stObj->getKeyframes(keyframes);
-    for (auto const &frame : keyframes) {
-      m_lastKeyframes.insert(KeyframePosition(frame.first, c));
-    }
+    if (!stObj) continue;
+    stObj->getKeyframes(m_originalKeyframes[c]);
   }
-
-  if (m_lastKeyframeData) {
-    delete m_lastKeyframeData;
-    m_lastKeyframeData = 0;
-  }
-  m_lastKeyframeData = new TKeyframeData();
-  m_lastKeyframeData->setKeyframes(m_lastKeyframes, xsh);
 }
 
 //-----------------------------------------------------------------------------
