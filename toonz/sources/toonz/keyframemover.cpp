@@ -474,6 +474,13 @@ void KeyframeMoverTool::onRelease(const CellPosition &pos) {
     TUndoManager::manager()->add(new UndoMoveKeyFrame(dr, m_mover));
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  } else if (!m_firstKeyframeMovement) {
+    // An overwrite/insert drag may modify keys before returning to the
+    // starting row. Without this rollback there is no Undo entry to
+    // recover overwritten keys.
+    m_mover->undoMoveKeyframe();
+    *getSelection() = m_startSelection;
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   }
 }
 
