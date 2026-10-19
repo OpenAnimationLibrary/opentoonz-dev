@@ -1,6 +1,7 @@
 
 #include "tsystem.h"
 #include "tiio_mp4.h"
+#include <QMutexLocker>
 #include "trasterimage.h"
 #include "timageinfo.h"
 #include "tsound.h"
@@ -119,7 +120,13 @@ void TLevelWriterMp4::saveSoundTrack(TSoundTrack *st) {
 //-----------------------------------------------------------
 
 void TLevelWriterMp4::save(const TImageP &img, int frameIndex) {
+  // Parallel raster completion is allowed, but this level writer owns one
+  // Ffmpeg instance with mutable frame counts, dimensions and cleanup paths.
+  // Keep all of those updates and intermediate file creation serialized.
+  QMutexLocker lock(&m_frameWriteMutex);
   TRasterImageP image(img);
+  if (!image || !image->getRaster())
+    throw TImageException(m_path, "Invalid raster for MP4 output");
   m_lx = image->getRaster()->getLx();
   m_ly = image->getRaster()->getLy();
   ffmpegWriter->createIntermediateImage(img, frameIndex);
