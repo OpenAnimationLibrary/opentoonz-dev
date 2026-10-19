@@ -293,7 +293,7 @@ void PaletteViewer::load(QSettings &settings) {
   if (visibleVar.canConvert(QVariant::Int)) {
     visibleParts = visibleVar.toInt();
   } else {
-    visibleParts = 3;  // Show keyframes and new style/page
+    visibleParts = 7;  // Show keyframes, new style/page, and Palette Gizmo
   }
 
   m_visibleKeysAction->setChecked(visibleParts & 0x01);
