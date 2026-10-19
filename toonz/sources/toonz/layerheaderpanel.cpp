@@ -11,6 +11,7 @@
 #include "toonz/tscenehandle.h"
 #include "toonz/txsheethandle.h"
 #include "toonz/tobjecthandle.h"
+#include "toonz/xsheetengine.h"
 
 #include "toonz/preferences.h"
 #include "../include/toonzqt/gutil.h"
@@ -71,28 +72,22 @@ LayerHeaderPanel::~LayerHeaderPanel() {}
 void LayerHeaderPanel::toggleColumnVisibility(int visibilityFlag) {
   TApp *app    = TApp::instance();
   TXsheet *xsh = m_viewer->getXsheet();
-  int col, totcols = xsh->getColumnCount();
-  bool sound_changed = false;
+  int totcols  = xsh->getColumnCount();
 
   if (totcols > 0) {
-    int startCol =
-        Preferences::instance()->isXsheetCameraColumnVisible() ? -1 : 0;
-    for (col = startCol; col < totcols; col++) {
-      if (startCol < 0 || !xsh->isColumnEmpty(col)) {
-        TXshColumn *column = xsh->getColumn(col);
-
-        if (visibilityFlag == ToggleAllPreviewVisible) {
-          column->setPreviewVisible(!column->isPreviewVisible());
-        } else if (visibilityFlag == ToggleAllTransparency) {
-          column->setCamstandVisible(!column->isCamstandVisible());
-          if (column->getSoundColumn()) sound_changed = true;
-        } else if (visibilityFlag == ToggleAllLock) {
-          column->lock(!column->isLocked());
-        }
-      }
-    }
-
-    if (sound_changed) {
+    const auto toggle = visibilityFlag == ToggleAllLock
+                            ? XsheetEngine::ColumnToggle::Lock
+                        : visibilityFlag == ToggleAllTransparency
+                            ? XsheetEngine::ColumnToggle::Camstand
+                            : XsheetEngine::ColumnToggle::Preview;
+    XsheetEngine::ColumnToggleOptions options;
+    options.includeCamera =
+        Preferences::instance()->isXsheetCameraColumnVisible();
+    options.targets   = options.includeCamera
+                            ? XsheetEngine::ColumnTargets::Existing
+                            : XsheetEngine::ColumnTargets::NonEmpty;
+    const auto result = XsheetEngine::toggleColumns(xsh, toggle, options);
+    if (result.soundChanged) {
       app->getCurrentXsheet()->notifyXsheetSoundChanged();
     }
 

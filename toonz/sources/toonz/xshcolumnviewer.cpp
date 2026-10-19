@@ -50,6 +50,7 @@
 #include "toonz/tcamera.h"
 #include "toonz/tcolumnhandle.h"
 #include "toonz/levelset.h"
+#include "toonz/xsheetengine.h"
 
 // TnzCore includes
 #include "tconvert.h"
@@ -1167,8 +1168,8 @@ void ColumnArea::DrawHeader::drawColumnName() const {
   if (column && !columnObject->hasSpecifiedName() &&
       Preferences::instance()->getLevelNameDisplayType() ==
           Preferences::ShowLevelNameOnColumnHeader) {
-    QSet<TXshLevel *> levels = getLevels(column);
-    if (levels.size() == 1) name = to_string((*levels.begin())->getName());
+    if (TXshLevel *level = XsheetEngine::singleLevel(column))
+      name = to_string(level->getName());
   }
   //  if (col < 0) name = std::string("Camera");
 
@@ -2774,7 +2775,6 @@ bool ColumnArea::event(QEvent *event) {
 void ColumnArea::mouseReleaseEvent(QMouseEvent *event) {
   TApp *app    = TApp::instance();
   TXsheet *xsh = m_viewer->getXsheet();
-  int col, totcols = xsh->getColumnCount();
   if (m_doOnRelease != 0) {
     TXshColumn *column = xsh->getColumn(m_col);
     if (m_doOnRelease == OpenSettings) {
@@ -2830,40 +2830,25 @@ void ColumnArea::mouseReleaseEvent(QMouseEvent *event) {
 
         openTransparencyPopup();
       }
-    } else if (m_doOnRelease == ToggleAllPreviewVisible) {
-      for (col = 0; col < totcols; col++) {
-        TXshColumn *column = xsh->getColumn(col);
-        if (!xsh->isColumnEmpty(col) && !column->getPaletteColumn() &&
-            !column->getSoundTextColumn()) {
-          column->setPreviewVisible(!column->isPreviewVisible());
-        }
-      }
-    } else if (m_doOnRelease == ToggleAllTransparency) {
-      bool sound_changed = false;
-      for (col = 0; col < totcols; col++) {
-        TXshColumn *column = xsh->getColumn(col);
-        if (!xsh->isColumnEmpty(col) && !column->getPaletteColumn() &&
-            !column->getSoundTextColumn()) {
-          column->setCamstandVisible(!column->isCamstandVisible());
-          // sync eye button
-          if (Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled())
-            column->setPreviewVisible(column->isCamstandVisible());
-          if (column->getSoundColumn()) sound_changed = true;
-        }
-      }
-
-      if (sound_changed) {
+    } else if (m_doOnRelease == ToggleAllPreviewVisible ||
+               m_doOnRelease == ToggleAllTransparency ||
+               m_doOnRelease == ToggleAllLock) {
+      const auto toggle = m_doOnRelease == ToggleAllLock
+                              ? XsheetEngine::ColumnToggle::Lock
+                          : m_doOnRelease == ToggleAllTransparency
+                              ? XsheetEngine::ColumnToggle::Camstand
+                              : XsheetEngine::ColumnToggle::Preview;
+      XsheetEngine::ColumnToggleOptions options;
+      options.includeCamera =
+          toggle == XsheetEngine::ColumnToggle::Lock &&
+          Preferences::instance()->isXsheetCameraColumnVisible();
+      options.excludePaletteAndSoundText =
+          toggle != XsheetEngine::ColumnToggle::Lock;
+      options.unifyVisibility =
+          Preferences::instance()->isUnifyColumnVisibilityTogglesEnabled();
+      const auto result = XsheetEngine::toggleColumns(xsh, toggle, options);
+      if (result.soundChanged)
         app->getCurrentXsheet()->notifyXsheetSoundChanged();
-      }
-    } else if (m_doOnRelease == ToggleAllLock) {
-      int startCol =
-          Preferences::instance()->isXsheetCameraColumnVisible() ? -1 : 0;
-      for (col = startCol; col < totcols; col++) {
-        TXshColumn *column = xsh->getColumn(col);
-        if (!xsh->isColumnEmpty(col)) {
-          column->lock(!column->isLocked());
-        }
-      }
     } else
       assert(false);
   }

@@ -151,6 +151,7 @@ set(HEADERS
     ../include/toonz/txshchildlevel.h
     ../include/toonz/txshcolumn.h
     ../include/toonz/txsheet.h
+    ../include/toonz/xsheetengine.h
     ../include/toonz/txsheetexpr.h
     ../include/toonz/txshlevelcolumn.h
     ../include/toonz/txshleveltypes.h
@@ -279,6 +280,7 @@ set(SOURCES
     txshchildlevel.cpp
     txshcolumn.cpp
     txsheet.cpp
+    xsheetengine.cpp
     txsheetexpr.cpp
     txshlevel.cpp
     txshlevelcolumn.cpp
@@ -358,9 +360,7 @@ if(BUILD_ENV_APPLE)
     add_dependencies(toonzlib tnzcore tnzbase tnzext)
 endif()
 
-add_definitions(
-    -DTOONZLIB_EXPORTS
-)
+target_compile_definitions(toonzlib PRIVATE TOONZLIB_EXPORTS)
 
 message("subdir: toonzlib")
 message("Bin: " ${CMAKE_CURRENT_BINARY_DIR})
@@ -406,3 +406,10 @@ elseif(BUILD_ENV_UNIXLIKE)
 endif()
 
 target_link_libraries(toonzlib OpenEXR::OpenEXR)
+
+if(BUILD_XSHEET_ENGINE_TESTS)
+    add_executable(xsheetengine_test tests/xsheetengine_test.cpp)
+    target_link_libraries(xsheetengine_test PRIVATE toonzlib tnzcore sound Qt5::Widgets)
+    add_test(NAME xsheetengine COMMAND xsheetengine_test)
+    set_tests_properties(xsheetengine PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()

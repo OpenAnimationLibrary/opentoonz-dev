@@ -34,6 +34,7 @@
 #include "toonz/tframehandle.h"
 #include "toonz/txshleveltypes.h"
 #include "toonz/txsheet.h"
+#include "toonz/xsheetengine.h"
 #include "toonz/toonzscene.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/txshsoundcolumn.h"
@@ -74,29 +75,6 @@
 #include <QRegularExpression>
 
 namespace {
-
-const bool checkContainsSingleLevel(TXshColumn *column,
-                                    const std::string &columnName) {
-  TXshLevel *level           = nullptr;
-  TXshCellColumn *cellColumn = column->getCellColumn();
-  if (cellColumn) {
-    int i, r0, r1;
-    cellColumn->getRange(r0, r1);
-    for (i = r0; i <= r1; i++) {
-      TXshCell cell = cellColumn->getCell(i);
-      if (cell.isEmpty()) continue;
-      TXshLevel *lvl = cell.m_level.getPointer();
-      if (!level)
-        level = lvl;
-      else if (lvl != level)
-        return false;
-    }
-    // column name should be unspecified or same as the content level
-    return level != nullptr &&
-           (columnName.empty() || level->getName() == to_wstring(columnName));
-  }
-  return false;
-}
 
 bool selectionContainTlvImage(TCellSelection *selection, TXsheet *xsheet,
                               bool onlyTlv = false) {
@@ -1348,7 +1326,7 @@ void CellArea::drawCells(QPainter &p, const QRect toBeUpdated) {
               xsh->getStageObject(TStageObjectId::ColumnId(col))->getName();
         showLevelName =
             (isSoundColumn || isPaletteColumn || isSoundTextColumn ||
-             !checkContainsSingleLevel(column, columnName));
+             !XsheetEngine::containsSingleLevel(column, columnName));
       }
     }
     // check if the column is reference
