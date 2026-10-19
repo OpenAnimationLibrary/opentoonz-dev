@@ -27,6 +27,7 @@ protected slots:
 
 signals:
   void adjust(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
@@ -49,6 +50,7 @@ protected slots:
 
 signals:
   void adjust(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
@@ -67,11 +69,14 @@ public:
              Qt::WindowFlags flags = Qt::WindowFlags());
   ~ColorFader();
 
+  double presetValue() const { return m_valueLineEdit->text().toDouble(); }
+
 protected slots:
   void onClicked();
 
 signals:
   void valueChanged(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
