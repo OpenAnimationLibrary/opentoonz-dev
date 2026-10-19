@@ -296,6 +296,18 @@ void PaletteViewer::load(QSettings &settings) {
     visibleParts = 7;  // Show keyframes, new style/page, and Palette Gizmo
   }
 
+  // Existing workspaces may have saved the old default (0x03), which hid
+  // Palette Gizmo. Upgrade only that legacy default, once per level palette,
+  // so later user changes to toolbar visibility remain respected.
+  if (m_viewType == LEVEL_PALETTE &&
+      !settings.value("paletteGizmoDefaultVisibleMigrated", false).toBool()) {
+    if (visibleVar.canConvert(QVariant::Int) && visibleParts == 0x03) {
+      visibleParts |= 0x04;
+      settings.setValue("toolbarVisibleMsk", visibleParts);
+    }
+    settings.setValue("paletteGizmoDefaultVisibleMigrated", true);
+  }
+
   m_visibleKeysAction->setChecked(visibleParts & 0x01);
   m_visibleNewAction->setChecked(visibleParts & 0x02);
   m_visibleGizmoAction->setChecked(visibleParts & 0x04);
