@@ -28,6 +28,8 @@ class TStageObjectId;
 class TXshColumn;
 class QComboBox;
 class QPushButton;
+class QLabel;
+class QSpinBox;
 class Orientation;
 class TApp;
 class TXsheet;
@@ -222,6 +224,10 @@ class ColumnTransparencyPopup final : public QWidget {
   XsheetViewer *m_viewer;
   QPushButton *m_lockBtn;
 
+  // Mask columns only: how many following columns the mask clips.
+  QLabel *m_maskScopeLabel;
+  QSpinBox *m_maskScopeField;
+
 public:
   ColumnTransparencyPopup(XsheetViewer *viewer, QWidget *parent);
   void setColumn(TXshColumn *column);
@@ -238,6 +244,7 @@ protected slots:
 
   void onFilterColorChanged();
   void onLockButtonClicked(bool on);
+  void onMaskScopeChanged();
 };
 
 class SoundColumnPopup final : public QWidget {
