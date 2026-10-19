@@ -16,6 +16,7 @@
 // TnzLib includes
 #include "toonz/tpalettehandle.h"
 #include "toonz/palettecontroller.h"
+#include "toonz/paintbrushgizmosettings.h"
 
 // TnzCore includes
 #include "tundo.h"
@@ -32,6 +33,7 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QContextMenuEvent>
+#include <QColor>
 
 using namespace DVGui;
 
@@ -477,6 +479,8 @@ ValueAdjuster::ValueAdjuster(QWidget *parent, Qt::WindowFlags flags)
 
   connect(plusBut, SIGNAL(clicked()), this, SLOT(onClickedPlus()));
   connect(minusBut, SIGNAL(clicked()), this, SLOT(onClickedMinus()));
+  connect(m_valueLineEdit, &DoubleValueLineEdit::valueChanged, this,
+          [this]() { emit presetChanged(m_valueLineEdit->getValue()); });
 }
 
 //-----------------------------------------------------------------------------
@@ -486,6 +490,7 @@ ValueAdjuster::~ValueAdjuster() {}
 
 void ValueAdjuster::onClickedPlus() {
   double value = m_valueLineEdit->text().toDouble();
+  emit presetChanged(value);
   emit adjust(value);
 }
 
@@ -493,6 +498,7 @@ void ValueAdjuster::onClickedPlus() {
 
 void ValueAdjuster::onClickedMinus() {
   double value = m_valueLineEdit->text().toDouble();
+  emit presetChanged(value);
   emit adjust(-value);
 }
 
@@ -525,6 +531,8 @@ ValueShifter::ValueShifter(bool isHue, QWidget *parent, Qt::WindowFlags flags)
 
   connect(plusBut, SIGNAL(clicked()), this, SLOT(onClickedPlus()));
   connect(minusBut, SIGNAL(clicked()), this, SLOT(onClickedMinus()));
+  connect(m_valueLineEdit, &DoubleValueLineEdit::valueChanged, this,
+          [this]() { emit presetChanged(m_valueLineEdit->getValue()); });
 }
 
 //-----------------------------------------------------------------------------
@@ -534,6 +542,7 @@ ValueShifter::~ValueShifter() {}
 
 void ValueShifter::onClickedPlus() {
   double value = m_valueLineEdit->text().toDouble();
+  emit presetChanged(value);
   emit adjust(value);
 }
 
@@ -541,6 +550,7 @@ void ValueShifter::onClickedPlus() {
 
 void ValueShifter::onClickedMinus() {
   double value = m_valueLineEdit->text().toDouble();
+  emit presetChanged(value);
   emit adjust(-value);
 }
 
@@ -561,6 +571,8 @@ ColorFader::ColorFader(QString name, QWidget *parent, Qt::WindowFlags flags)
   connect(button, SIGNAL(clicked()), this, SLOT(onClicked()));
 
   m_valueLineEdit = new DoubleLineEdit(this, 10.00);
+  connect(m_valueLineEdit, &DoubleValueLineEdit::valueChanged, this,
+          [this]() { emit presetChanged(m_valueLineEdit->getValue()); });
 
   QLabel *percLabel = new QLabel(QString("%"), this);
   percLabel->setFixedWidth(15);
@@ -582,6 +594,7 @@ ColorFader::~ColorFader() {}
 
 void ColorFader::onClicked() {
   double value = m_valueLineEdit->text().toDouble();
+  emit presetChanged(value);
   emit valueChanged(value);
 }
 
@@ -606,6 +619,23 @@ PltGizmoPopup::PltGizmoPopup()
   ValueShifter *saturationShift  = new ValueShifter(false, this);
   ValueShifter *hueShift         = new ValueShifter(true, this);
   ValueShifter *trasparancyShift = new ValueShifter(false, this);
+
+  // Restore published values when the dialog is recreated during a session.
+  // The Gizmo's original defaults and its action-button behavior are intact.
+  const auto restore = [](auto *widget, const char *key) {
+    const QVariant value = PaintBrushGizmoSettings::read(key);
+    if (value.isValid()) widget->setPresetValue(value.toDouble());
+  };
+  restore(colorFader, PaintBrushGizmoSettings::Fade);
+  restore(luminanceValue, PaintBrushGizmoSettings::ValueScale);
+  restore(luminanceShift, PaintBrushGizmoSettings::ValueShift);
+  restore(saturationValue, PaintBrushGizmoSettings::SaturationScale);
+  restore(saturationShift, PaintBrushGizmoSettings::SaturationShift);
+  restore(hueShift, PaintBrushGizmoSettings::HueShift);
+  restore(trasparancyValue, PaintBrushGizmoSettings::AlphaScale);
+  restore(trasparancyShift, PaintBrushGizmoSettings::AlphaShift);
+  PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::Fade,
+                                   colorFader->presetValue());
 
   QPushButton *fullMatteButton = new QPushButton(tr("Full Alpha"), this);
   QPushButton *zeroMatteButton = new QPushButton(tr("Zero Alpha"), this);
@@ -688,6 +718,51 @@ PltGizmoPopup::PltGizmoPopup()
 
   connect(blendButton, SIGNAL(clicked()), this, SLOT(onBlend()));
   connect(colorFader, SIGNAL(valueChanged(double)), SLOT(onFade(double)));
+
+  // These extra connections only publish brush presets. The existing Gizmo
+  // buttons still modify selected palette styles exactly as before.
+  connect(colorFader, &ColorFader::presetChanged, this, [](double value) {
+    PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::Fade, value);
+  });
+  connect(luminanceValue, &ValueAdjuster::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::ValueScale, value);
+          });
+  connect(luminanceShift, &ValueShifter::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::ValueShift, value);
+          });
+  connect(saturationValue, &ValueAdjuster::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::SaturationScale, value);
+          });
+  connect(saturationShift, &ValueShifter::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::SaturationShift, value);
+          });
+  connect(hueShift, &ValueShifter::presetChanged, this, [](double value) {
+    PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::HueShift, value);
+  });
+  connect(trasparancyValue, &ValueAdjuster::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::AlphaScale, value);
+          });
+  connect(trasparancyShift, &ValueShifter::presetChanged, this,
+          [](double value) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::AlphaShift, value);
+          });
+  connect(m_colorFld, &ColorField::colorChanged, this,
+          [](const TPixel32 &color, bool) {
+            PaintBrushGizmoSettings::publish(
+                PaintBrushGizmoSettings::ShadowColor,
+                QColor(color.r, color.g, color.b));
+          });
 }
 
 //-----------------------------------------------------------------------------
