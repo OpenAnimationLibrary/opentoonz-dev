@@ -7,6 +7,7 @@
 #include "keyframeselection.h"
 #include "keyframedata.h"
 #include "toonz/txshcell.h"
+#include <memory>
 
 class TXsheet;
 
@@ -53,6 +54,7 @@ public:
   void start(TKeyframeSelection *selection, int qualifiers);
 
   int getQualifiers() const { return m_qualifiers; }
+  void setQualifiers(int qualifiers) { m_qualifiers = qualifiers; }
 
   bool moveKeyframes(int dr,
                      std::set<TKeyframeSelection::Position> &newPositions,
@@ -72,7 +74,7 @@ class KeyframeMoverTool final : public XsheetGUI::DragTool {
   bool m_selecting;
   bool m_justMovement;
   TPointD m_startPos, m_curPos;
-  KeyframeMover *m_mover;
+  std::unique_ptr<KeyframeMover> m_mover;
   bool m_firstKeyframeMovement;
 
   //! Helper method: returns the current keyframe selection
@@ -85,6 +87,7 @@ class KeyframeMoverTool final : public XsheetGUI::DragTool {
 
 public:
   KeyframeMoverTool(XsheetViewer *viewer, bool justMovement = false);
+  ~KeyframeMoverTool() override;
 
   bool canMove(const TPoint &pos);
 

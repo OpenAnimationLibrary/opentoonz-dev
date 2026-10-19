@@ -319,8 +319,8 @@ XsheetViewer::XsheetViewer(QWidget *parent, Qt::WindowFlags flags)
 //-----------------------------------------------------------------------------
 
 XsheetViewer::~XsheetViewer() {
-  delete m_cellKeyframeSelection;
   delete m_dragTool;
+  delete m_cellKeyframeSelection;
 }
 
 //-----------------------------------------------------------------------------

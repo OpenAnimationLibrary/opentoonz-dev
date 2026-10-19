@@ -44,10 +44,12 @@ TXsheet *KeyframeMover::getXsheet() const {
 //-----------------------------------------------------------------------------
 
 void KeyframeMover::setKeyframes() {
+  if (m_lastKeyframes.empty()) return;
   TXsheet *xsh = getXsheet();
-  std::set<KeyframePosition>::iterator posIt;
+  std::set<int> restoredColumns;
   for (auto const &key : m_lastKeyframes) {
     int c = key.second;
+    if (!restoredColumns.insert(c).second) continue;
     TStageObjectId objId =
         c >= 0 ? TStageObjectId::ColumnId(c)
                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
@@ -58,20 +60,22 @@ void KeyframeMover::setKeyframes() {
       stObj->removeKeyframeWithoutUndo(frame.first);
     }
   }
-  m_lastKeyframeData->getKeyframes(m_lastKeyframes, xsh);
+  m_lastKeyframeData->getKeyframes(m_lastKeyframes, xsh, false);
 }
 
 //-----------------------------------------------------------------------------
 
 void KeyframeMover::getKeyframes() {
+  m_lastKeyframes.clear();
   TXsheet *xsh = getXsheet();
+  std::set<int> capturedColumns;
   for (auto const &pos : m_startSelectedKeyframes) {
     int c = pos.second;
+    if (!capturedColumns.insert(c).second) continue;
     TStageObjectId objId =
         c >= 0 ? TStageObjectId::ColumnId(c)
                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
     TStageObject *stObj = xsh->getStageObject(objId);
-    assert(stObj->isKeyframe(pos.first));
     TStageObject::KeyframeMap keyframes;
     stObj->getKeyframes(keyframes);
     for (auto const &frame : keyframes) {
@@ -103,7 +107,7 @@ bool KeyframeMover::moveKeyframes(
     int dr, std::set<TKeyframeSelection::Position> &newPositions,
     TKeyframeSelection *selection) {
   // return if there is no movement
-  if (dr == 0) return false;
+  if (dr == 0 && (m_qualifiers & eMoveKeyframes)) return false;
   TXsheet *xsh = getXsheet();
   std::set<TKeyframeSelection::Position> positions;
   if (selection)
@@ -193,6 +197,41 @@ bool KeyframeMover::moveKeyframes(
   }
   if (notChange) return true;
 
+  if (m_qualifiers & eOverwriteKeyframes) {
+    // Read every source before changing any destination: selected source and
+    // destination rows can overlap in either direction (including copy-drag).
+    std::map<KeyframePosition, TStageObject::Keyframe> keyframes;
+    for (const auto& pos : m_startSelectedKeyframes) {
+      TStageObjectId id =
+          pos.second >= 0
+              ? TStageObjectId::ColumnId(pos.second)
+              : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
+      keyframes[pos] = xsh->getStageObject(id)->getKeyframe(pos.first);
+    }
+    if (!(m_qualifiers & eCopyKeyframes)) {
+      for (const auto& pos : m_startSelectedKeyframes) {
+        TStageObjectId id =
+            pos.second >= 0
+                ? TStageObjectId::ColumnId(pos.second)
+                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
+        xsh->getStageObject(id)->removeKeyframeWithoutUndo(pos.first);
+      }
+    }
+    newPositions.clear();
+    for (const auto& entry : keyframes) {
+      const auto& pos = entry.first;
+      TStageObjectId id =
+          pos.second >= 0
+              ? TStageObjectId::ColumnId(pos.second)
+              : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
+      TStageObject* obj = xsh->getStageObject(id);
+      obj->removeKeyframeWithoutUndo(pos.first + dr);
+      obj->setKeyframeWithoutUndo(pos.first + dr, entry.second);
+      newPositions.insert(KeyframePosition(pos.first + dr, pos.second));
+    }
+    return true;
+  }
+
   newPositions.clear();
   for (posIt = m_startSelectedKeyframes.begin();
        posIt != m_startSelectedKeyframes.end(); ++posIt) {
@@ -203,14 +242,7 @@ bool KeyframeMover::moveKeyframes(
                : TStageObjectId::CameraId(xsh->getCameraColumnIndex());
     TStageObject *stObj = xsh->getStageObject(objId);
 
-    if (m_qualifiers & eOverwriteKeyframes) {
-      stObj->removeKeyframeWithoutUndo(r + dr);
-      if (m_qualifiers & eCopyKeyframes)
-        stObj->setKeyframeWithoutUndo(r + dr, stObj->getKeyframe(r));
-      else
-        stObj->moveKeyframe(r + dr, r);
-      newPositions.insert(TKeyframeSelection::Position(r + dr, c));
-    } else if (m_qualifiers & eInsertKeyframes) {
+    if (m_qualifiers & eInsertKeyframes) {
       int s                           = r;
       TStageObject::Keyframe keyframe = stObj->getKeyframe(r);
       if (!(m_qualifiers & eCopyKeyframes)) stObj->removeKeyframeWithoutUndo(r);
@@ -237,11 +269,16 @@ namespace {
 //-----------------------------------------------------------------------------
 
 class UndoMoveKeyFrame final : public TUndo {
-  int m_dr;
-  KeyframeMover *m_mover;
+  std::unique_ptr<KeyframeMover> m_mover;
+  std::unique_ptr<KeyframeMover> m_redoMover;
 
 public:
-  UndoMoveKeyFrame(int dr, KeyframeMover *mover) : m_dr(dr), m_mover(mover) {}
+  UndoMoveKeyFrame(KeyframeMover* mover, TKeyframeSelection* selection)
+      : m_mover(mover), m_redoMover(new KeyframeMover()) {
+    // Redo restores the committed result instead of replaying an interactive
+    // move (whose copy qualifier and selection may have changed during drag).
+    m_redoMover->start(selection, 0);
+  }
 
   void undo() const override {
     m_mover->undoMoveKeyframe();
@@ -249,8 +286,7 @@ public:
   }
 
   void redo() const override {
-    std::set<TKeyframeSelection::Position> newPositions;
-    m_mover->moveKeyframes(m_dr, newPositions);
+    m_redoMover->undoMoveKeyframe();
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   }
 
@@ -269,7 +305,7 @@ public:
 // KeyframeMoverTool
 //-----------------------------------------------------------------------------
 
-KeyframeMoverTool::KeyframeMoverTool(XsheetViewer *viewer, bool justMovement)
+KeyframeMoverTool::KeyframeMoverTool(XsheetViewer* viewer, bool justMovement)
     : XsheetGUI::DragTool(viewer)
     , m_startSelection()
     , m_offset(0)
@@ -277,10 +313,21 @@ KeyframeMoverTool::KeyframeMoverTool(XsheetViewer *viewer, bool justMovement)
     , m_selecting(false)
     , m_startPos()
     , m_curPos()
-    , m_firstKeyframeMovement(false)
+    , m_firstKeyframeMovement(true)
     , m_justMovement(justMovement) {
-  m_mover    = new KeyframeMover();
+  m_mover.reset(new KeyframeMover());
   m_firstCol = Preferences::instance()->isXsheetCameraColumnVisible() ? -1 : 0;
+}
+
+//-----------------------------------------------------------------------------
+
+KeyframeMoverTool::~KeyframeMoverTool() {
+  // A tool discarded without release must not leave its preview in the scene.
+  if (m_mover && !m_firstKeyframeMovement) {
+    m_mover->undoMoveKeyframe();
+    *getSelection() = m_startSelection;
+    TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -432,8 +479,11 @@ void KeyframeMoverTool::onClick(const QMouseEvent *event) {
     }
     getSelection()->makeCurrent();
   }
+  if (!m_selecting && !getSelection()->isEmpty())
+    m_mover->start(getSelection(), KeyframeMover::eMoveKeyframes);
+  // start() removes locked columns; anchor against the resulting selection.
   if (!getSelection()->isEmpty())
-    m_offset       = row - getSelection()->getFirstRow();
+    m_offset = row - getSelection()->getFirstRow();
   m_startSelection = *getSelection();
   getViewer()->update();
   m_startPos = TPointD(event->pos().x(), event->pos().y());
@@ -462,7 +512,7 @@ void KeyframeMoverTool::onDrag(const QMouseEvent *e) {
         qualifiers |= KeyframeMover::eOverwriteKeyframes;
       else
         qualifiers |= KeyframeMover::eMoveKeyframes;
-      m_mover->start(getSelection(), qualifiers);
+      m_mover->setQualifiers(qualifiers);
     }
     m_firstKeyframeMovement = false;
     onCellChange(row, col);
@@ -481,10 +531,14 @@ void KeyframeMoverTool::onRelease(const CellPosition &pos) {
   m_offset = 0;
   int dr   = getSelection()->getFirstRow() - m_startSelection.getFirstRow();
   if (dr) {
-    TUndoManager::manager()->add(new UndoMoveKeyFrame(dr, m_mover));
+    TUndoManager::manager()->add(
+        new UndoMoveKeyFrame(m_mover.release(), getSelection()));
     TApp::instance()->getCurrentScene()->setDirtyFlag(true);
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  } else if (!m_firstKeyframeMovement) {
+    m_mover->undoMoveKeyframe();
   }
+  m_mover.reset();
 }
 
 //-----------------------------------------------------------------------------
