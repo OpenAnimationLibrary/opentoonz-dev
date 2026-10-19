@@ -29,7 +29,7 @@ inline QVariant read(const char *key) {
 }
 
 inline double number(const char *key, double fallback = 0.0) {
-  bool valid = false;
+  bool valid          = false;
   const double result = read(key).toDouble(&valid);
   return valid ? result : fallback;
 }
