@@ -634,6 +634,14 @@ PltGizmoPopup::PltGizmoPopup()
   restore(hueShift, PaintBrushGizmoSettings::HueShift);
   restore(trasparancyValue, PaintBrushGizmoSettings::AlphaScale);
   restore(trasparancyShift, PaintBrushGizmoSettings::AlphaShift);
+
+  const QVariant shadowPreset =
+      PaintBrushGizmoSettings::read(PaintBrushGizmoSettings::ShadowColor);
+  if (shadowPreset.canConvert<QColor>()) {
+    const QColor color = shadowPreset.value<QColor>();
+    m_colorFld->setColor(TPixel32(color.red(), color.green(), color.blue(),
+                                 255));
+  }
   PaintBrushGizmoSettings::publish(PaintBrushGizmoSettings::Fade,
                                    colorFader->presetValue());
 
