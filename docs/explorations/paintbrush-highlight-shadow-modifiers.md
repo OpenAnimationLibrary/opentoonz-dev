@@ -1,6 +1,6 @@
 # Exploratory design: Shift/Ctrl Paint Brush highlight and shadow
 
-Status: exploratory; no user-facing behavior is implemented in this first commit.
+Status: exploratory functional prototype committed; build and regressions not yet validated.
 
 ## Goal
 
@@ -142,3 +142,9 @@ until these edge cases are addressed.
 ## Manual color adjustment
 
 Generated companions are ordinary editable palette styles. Artists may manually lighten, darken, or otherwise adjust each generated style afterward. Reusing the companion must **not** recalculate its color or overwrite those manual edits. Creation uses 40% only as the initial default. Changes to the original source color should not silently overwrite manually edited variants; any future regeneration or synchronization must be explicit.
+
+## Current prototype status (October 19, 2026)
+
+`paintbrushtool.cpp` now intercepts Shift/Ctrl at mouse-down, creates a 40% companion style if missing, and reuses a named companion in the same palette. It triggers palette UI refresh when the palette grows. No modifier takes the original unmodified stroke path. Generated colors remain editable and are not regenerated on reuse.
+
+**Not complete or validated:** Style association currently uses encoded style names, not a distinct persisted association record. User renaming a companion can defeat reuse. Dedicated palette undo/redo for style creation and style lifecycle handling is not implemented; automated tests, Windows compilation, clang-format, and manual regression tests are outstanding. The PR is intentionally still draft and should not be merged until these concerns are resolved.
