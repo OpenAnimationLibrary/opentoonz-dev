@@ -9,6 +9,7 @@
 #include "tunit.h"
 #include <QString>
 #include <map>
+#include <cmath>
 
 //=============================================================================
 //
@@ -418,6 +419,171 @@ m_param->setKeyframe(kf);
 */
 }
 
+bool KeyframeSetter::convertToBezier(TDoubleParam *curve,
+                                     const std::set<int> &segments,
+                                     bool enableUndo) {
+  if (!curve || segments.empty()) return false;
+  const int n = curve->getKeyframeCount();
+  std::map<int, double> values;
+  for (int s : segments) {
+    if (s < 0 || s + 1 >= n) return false;
+    const double f0 = curve->keyframeIndexToFrame(s);
+    const double f1 = curve->keyframeIndexToFrame(s + 1);
+    const double v0 = curve->getValue(f0), v1 = curve->getValue(f1);
+    if (!std::isfinite(f1 - f0) || f1 <= f0 || !std::isfinite(v0) ||
+        !std::isfinite(v1) || !std::isfinite(v1 - v0))
+      return false;
+    values[s]     = v0;
+    values[s + 1] = v1;
+  }
+  // Sample before retyping: expression/file endpoints need not equal their
+  // stored key values. Converting first would lose the visible anchors.
+  for (int s : segments)
+    KeyframeSetter(curve, s, enableUndo).setType(TDoubleKeyframe::SpeedInOut);
+  for (const auto &value : values)
+    KeyframeSetter(curve, value.first, enableUndo).setValue(value.second);
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+void KeyframeSetter::setAutoBezier(TDoubleParam *curve,
+                                   const std::set<int> &keys, bool enableUndo) {
+  setTangents(curve, keys, false, enableUndo);
+}
+
+void KeyframeSetter::setFlatTangents(TDoubleParam *curve,
+                                     const std::set<int> &keys,
+                                     bool enableUndo) {
+  setTangents(curve, keys, true, enableUndo);
+}
+
+void KeyframeSetter::setTangents(TDoubleParam *curve,
+                                 const std::set<int> &kIndices, bool flat,
+                                 bool enableUndo) {
+  if (!curve || curve->getKeyframeCount() < 2) return;
+  const int n = curve->getKeyframeCount();
+  std::set<int> keys, segments;
+  for (int k : kIndices) {
+    if (k < 0 || k >= n) continue;
+    keys.insert(k);
+    if (k > 0) segments.insert(k - 1);
+    if (k + 1 < n) segments.insert(k);
+  }
+  if (keys.empty()) return;
+
+  std::vector<double> f(n), v(n), d(n - 1), slopes(n, 0.);
+  for (int i = 0; i < n; ++i) {
+    f[i] = curve->keyframeIndexToFrame(i);
+    v[i] = curve->getValue(f[i]);
+    if (!std::isfinite(f[i]) || !std::isfinite(v[i])) return;
+    if (i > 0) {
+      const double dt = f[i] - f[i - 1];
+      if (!std::isfinite(dt) || dt <= 0.) return;
+      d[i - 1] = (v[i] - v[i - 1]) / dt;
+      if (!std::isfinite(d[i - 1])) return;
+    }
+  }
+  for (int i : keys) {
+    // Held endpoints, extrema and plateaus have flat tangents. Otherwise
+    // clamp the shared slope to three times either adjoining secant.
+    if (!flat && i > 0 && i + 1 < n) {
+      const double a = d[i - 1], b = d[i];
+      if ((a > 0. && b > 0.) || (a < 0. && b < 0.)) {
+        const double limit = 3. * std::min(std::abs(a), std::abs(b));
+        slopes[i]          = std::max(-limit, std::min(a * .5 + b * .5, limit));
+      }
+    }
+    if ((i > 0 && !std::isfinite((f[i] - f[i - 1]) / 3. * slopes[i])) ||
+        (i + 1 < n && !std::isfinite((f[i + 1] - f[i]) / 3. * slopes[i])))
+      return;
+  }
+
+  if (enableUndo) TUndoManager::manager()->beginBlock();
+  if (convertToBezier(curve, segments, enableUndo)) {
+    for (int i : keys) {
+      const bool linked = curve->getKeyframe(i).m_linkedHandles;
+      KeyframeSetter setter(curve, i, enableUndo);
+      setter.unlinkHandles();
+      if (i + 1 < n) {
+        const double dx = (f[i + 1] - f[i]) / 3.;
+        setter.setSpeedOut(TPointD(dx, dx * slopes[i]));
+      }
+      if (i > 0) {
+        const double dx = (f[i] - f[i - 1]) / 3.;
+        setter.setSpeedIn(TPointD(-dx, -dx * slopes[i]));
+      }
+      // Restore the user's linked state; the generated slopes agree.
+      if (linked) setter.linkHandles();
+    }
+  }
+  if (enableUndo) TUndoManager::manager()->endBlock();
+}
+
+//-----------------------------------------------------------------------------
+
+const EasePreset *KeyframeSetter::getEasePresets(int &count) {
+  // Cubic-Bezier approximations used by Ztoryc, grouped by strength.
+  static const EasePreset presets[] = {
+      {"Sine", EasePreset::In, .12, 0., .39, 0.},
+      {"Sine", EasePreset::Out, .61, 1., .88, 1.},
+      {"Sine", EasePreset::InOut, .37, 0., .63, 1.},
+      {"Quad", EasePreset::In, .11, 0., .50, 0.},
+      {"Quad", EasePreset::Out, .50, 1., .89, 1.},
+      {"Quad", EasePreset::InOut, .45, 0., .55, 1.},
+      {"Cubic", EasePreset::In, .32, 0., .67, 0.},
+      {"Cubic", EasePreset::Out, .33, 1., .68, 1.},
+      {"Cubic", EasePreset::InOut, .65, 0., .35, 1.},
+      {"Quart", EasePreset::In, .50, 0., .75, 0.},
+      {"Quart", EasePreset::Out, .25, 1., .50, 1.},
+      {"Quart", EasePreset::InOut, .76, 0., .24, 1.},
+      {"Expo", EasePreset::In, .70, 0., .84, 0.},
+      {"Expo", EasePreset::Out, .16, 1., .30, 1.},
+      {"Expo", EasePreset::InOut, .87, 0., .13, 1.}};
+  count = sizeof(presets) / sizeof(presets[0]);
+  return presets;
+}
+
+void KeyframeSetter::setEasePreset(TDoubleParam *curve,
+                                   const std::set<int> &segmentIndices,
+                                   const EasePreset &preset, bool enableUndo) {
+  if (!curve) return;
+  if (!std::isfinite(preset.m_x1) || !std::isfinite(preset.m_x2) ||
+      !std::isfinite(preset.m_y1) || !std::isfinite(preset.m_y2) ||
+      preset.m_x1 < 0. || preset.m_x1 > 1. || preset.m_x2 < 0. ||
+      preset.m_x2 > 1. || preset.m_y1 < 0. || preset.m_y1 > 1. ||
+      preset.m_y2 < 0. || preset.m_y2 > 1.)
+    return;
+  std::set<int> segments;
+  for (int s : segmentIndices)
+    if (s >= 0 && s + 1 < curve->getKeyframeCount()) segments.insert(s);
+  if (segments.empty()) return;
+
+  if (enableUndo) TUndoManager::manager()->beginBlock();
+  if (convertToBezier(curve, segments, enableUndo)) {
+    for (int s : segments) {
+      const double dt =
+          curve->keyframeIndexToFrame(s + 1) - curve->keyframeIndexToFrame(s);
+      const double dv =
+          curve->getKeyframe(s + 1).m_value - curve->getKeyframe(s).m_value;
+      {
+        KeyframeSetter setter(curve, s, enableUndo);
+        setter.unlinkHandles();
+        setter.setSpeedOut(TPointD(preset.m_x1 * dt, preset.m_y1 * dv));
+      }
+      {
+        KeyframeSetter setter(curve, s + 1, enableUndo);
+        setter.unlinkHandles();
+        setter.setSpeedIn(
+            TPointD((preset.m_x2 - 1.) * dt, (preset.m_y2 - 1.) * dv));
+      }
+    }
+  }
+  if (enableUndo) TUndoManager::manager()->endBlock();
+}
+
+//-----------------------------------------------------------------------------
+
 void KeyframeSetter::setType(int kIndex, TDoubleKeyframe::Type type) {
   assert(0 <= kIndex && kIndex < m_param->getKeyframeCount());
   // get the current keyframe value
@@ -428,7 +594,7 @@ void KeyframeSetter::setType(int kIndex, TDoubleKeyframe::Type type) {
   if (kIndex + 1 < m_param->getKeyframeCount()) {
     nextKeyframe = m_param->getKeyframe(kIndex + 1);
     segmentWidth = nextKeyframe.m_frame - keyframe.m_frame;
-  } else if (kIndex + 1 > m_param->getKeyframeCount()) {
+  } else if (kIndex + 1 == m_param->getKeyframeCount()) {
     // kIndex is the last keyframe. no segment is defined (therefore no segment
     // type)
     type = TDoubleKeyframe::Linear;
@@ -444,6 +610,7 @@ void KeyframeSetter::setType(int kIndex, TDoubleKeyframe::Type type) {
   std::map<int, TDoubleKeyframe> keyframes;
   switch (type) {
   case TDoubleKeyframe::SpeedInOut:
+    m_undo->addKeyframe(kIndex + 1);
     keyframe.m_speedOut    = TPointD(segmentWidth / 3, 0);
     nextKeyframe.m_speedIn = TPointD(-segmentWidth / 3, 0);
     if (nextKeyframe.m_linkedHandles && nextKeyframe.m_speedOut.x > 0.01)
@@ -458,6 +625,7 @@ void KeyframeSetter::setType(int kIndex, TDoubleKeyframe::Type type) {
 
   case TDoubleKeyframe::EaseInOut:
   case TDoubleKeyframe::EaseInOutPercentage:
+    m_undo->addKeyframe(kIndex + 1);
     if (keyframe.m_type == TDoubleKeyframe::EaseInOut) {
       // absolute -> percentage
       ease0 = keyframe.m_speedOut.x * 100.0 / segmentWidth;
