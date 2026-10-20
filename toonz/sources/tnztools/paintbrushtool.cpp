@@ -114,6 +114,12 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
   // styles. A clone retains all original solid style properties.
   TColorStyle *companion = source->clone();
   if (!companion) return -1;
+
+  // Generated companions must stay independently editable even when their
+  // source was copied or linked from a studio palette.
+  companion->setGlobalName(L"");
+  companion->setOriginalName(L"");
+
   TPixel32 color = source->getMainColor();
 
   // The Gizmo Fade field controls strength. When it has not been published
