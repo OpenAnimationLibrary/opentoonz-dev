@@ -1,0 +1,60 @@
+name: Translation Build Rules
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'toonz/cmake/Translations.cmake'
+      - 'toonz/cmake/CompileTranslation.cmake'
+      - 'toonz/cmake/tests/test_translations.py'
+      - 'toonz/sources/CMakeLists.txt'
+      - '.github/workflows/translation_build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'toonz/cmake/Translations.cmake'
+      - 'toonz/cmake/CompileTranslation.cmake'
+      - 'toonz/cmake/tests/test_translations.py'
+      - 'toonz/sources/CMakeLists.txt'
+      - '.github/workflows/translation_build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  Linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - name: Install Qt 5 tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build qttools5-dev-tools
+      - name: Test production translation rules
+        run: >-
+          python3 toonz/cmake/tests/test_translations.py
+          --lupdate /usr/lib/qt5/bin/lupdate
+          --lrelease /usr/lib/qt5/bin/lrelease
+
+  Windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - name: Install the application's Qt 5.15.2 tools
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/shun-iwasawa/qt5/releases/download/v5.15.2_wintab/Qt5.15.2_wintab.zip -OutFile qt.zip
+          7z x qt.zip
+          if ($LASTEXITCODE) { throw 'Qt extraction failed' }
+      - name: Test production translation rules with MSBuild
+        shell: pwsh
+        run: |
+          $qtBin = Join-Path $PWD 'Qt5.15.2_wintab/5.15.2_wintab/msvc2019_64/bin'
+          $env:PATH = "$qtBin;$env:PATH"
+          python toonz/cmake/tests/test_translations.py --generator 'Visual Studio 17 2022' --lupdate "$qtBin/lupdate.exe" --lrelease "$qtBin/lrelease.exe"
+          if ($LASTEXITCODE) { throw 'Translation build regression failed' }

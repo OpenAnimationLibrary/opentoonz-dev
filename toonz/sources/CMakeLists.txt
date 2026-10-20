@@ -683,60 +683,8 @@ if(WITH_TRANSLATION)
         message(FATAL_ERROR "LANG_CODES and LANG_DISPLAY_NAMES must have the same length!")
     endif()
     
-    # -------------------------------------------------------------------------
-    # translate_update_** projects for lupdate (update .ts files)
-    # -------------------------------------------------------------------------
-    function(add_translation module)
-        set(translation)
-        foreach(lang ${LANG_CODES})
-            set(name "${CMAKE_SOURCE_DIR}/translations/${lang}/${module}.ts")
-            list(APPEND translation ${name})
-            set_source_files_properties(${name} PROPERTIES
-                OUTPUT_LOCATION "${CMAKE_BINARY_DIR}/loc/${lang}"
-            )
-        endforeach()
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Translations.cmake")
 
-        qt5_create_translation(message ${translation} ${ARGN})
-
-        add_custom_target("translate_update_${module}" DEPENDS ${message})
-        set_target_properties("translate_update_${module}" PROPERTIES
-            EXCLUDE_FROM_DEFAULT_BUILD TRUE
-        )
-    endfunction()
-
-    # ---------------------------------------------------------------------
-    # add lrelease command (compiling .ts -> .qm) to each project
-    # ---------------------------------------------------------------------
-    function(add_compile_translations_command module ts_name)
-        set(qm_files "")
-        list(LENGTH LANG_CODES NUM_LANGS)
-        math(EXPR LAST_INDEX "${NUM_LANGS}-1")
-        foreach(idx RANGE 0 ${LAST_INDEX})
-            list(GET LANG_CODES ${idx} lang)
-            list(GET LANG_DISPLAY_NAMES ${idx} lang_disp_name)
-            set(ts_file "${CMAKE_SOURCE_DIR}/translations/${lang}/${ts_name}.ts")
-            set(qm_dir  "${CMAKE_BINARY_DIR}/../../stuff/config/loc/${lang_disp_name}")
-            set(qm_file "${qm_dir}/${ts_name}.qm")
-            # Temporarily generate qm files directly under loc, then rename them to respective language folders
-            set(qm_tmp_dir  "${CMAKE_BINARY_DIR}/../../stuff/config/loc")
-            set(qm_tmp_file "${qm_tmp_dir}/${lang}_${ts_name}.qm")
-
-            # Ensure output directory exists at configure time (safe for parallel builds)
-            file(MAKE_DIRECTORY "${qm_dir}")
-
-            if(EXISTS "${ts_file}")
-                add_custom_command(
-                    TARGET "${module}" POST_BUILD 
-                    COMMAND ${Qt5_LRELEASE_EXECUTABLE} "${ts_file}" -qm "${qm_tmp_file}"
-                    COMMAND ${CMAKE_COMMAND} -E rename ${qm_tmp_file} ${qm_file}
-                    DEPENDS "${ts_file}"
-                    BYPRODUCTS "${qm_file}"
-                    COMMENT "lrelease ${lang_disp_name}/${ts_name}.qm"
-                    VERBATIM
-                  )
-            endif()
-        endforeach()
-    endfunction()
 endif()
 
 set(CMAKE_C_FLAGS "${C_WARNINGS} ${CMAKE_C_FLAGS}")
