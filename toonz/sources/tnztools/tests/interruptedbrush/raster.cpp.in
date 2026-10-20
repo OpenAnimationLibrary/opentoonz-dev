@@ -1,0 +1,239 @@
+#include <cassert>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <utility>
+
+// Test doubles: image/raster storage, bounding boxes, UI notifications and cache.
+// The three methods below are extracted verbatim from the selected source tree.
+struct TFrameId {
+  int id = 0;
+  TFrameId(int n = 0) : id(n) {}
+  bool isEmptyFrame() const { return id == 0; }
+};
+struct Rect { int getP00() const { return 0; } };
+struct Raster;
+using TRasterCM32P = std::shared_ptr<Raster>;
+struct Raster {
+  std::set<int> pixels;
+  int width = 100;
+  bool unlocked = false;
+  TRasterCM32P extract(Rect) { return clone(); }
+  TRasterCM32P clone() const { return std::make_shared<Raster>(*this); }
+  void copy(TRasterCM32P other, int) { pixels = other->pixels; }
+  void unlock() { unlocked = true; }
+};
+struct Image;
+using TToonzImageP = std::shared_ptr<Image>;
+using TImageP = TToonzImageP;
+struct Image {
+  TRasterCM32P raster = std::make_shared<Raster>();
+  int savebox = 2;
+  TRasterCM32P getRaster() { return raster; }
+  TImageP cloneImage() const {
+    auto image = std::make_shared<Image>(*this);
+    image->raster = raster->clone();
+    return image;
+  }
+};
+struct TXshSimpleLevel {
+  std::map<int, TToonzImageP> frames;
+  bool dirty = false;
+  TToonzImageP getFrame(TFrameId fid, bool) { return frames.count(fid.id) ? frames.at(fid.id) : nullptr; }
+  void setDirtyFlag(bool value) { dirty = value; }
+};
+struct TXshSimpleLevelP {
+  std::shared_ptr<TXshSimpleLevel> value;
+  TXshSimpleLevelP() = default;
+  explicit TXshSimpleLevelP(std::shared_ptr<TXshSimpleLevel> p) : value(p) {}
+  TXshSimpleLevel* getPointer() const { return value.get(); }
+  TXshSimpleLevel* operator->() const { return value.get(); }
+  explicit operator bool() const { return bool(value); }
+};
+TXshSimpleLevelP current;
+TFrameId currentFid(1);
+bool minimize = true;
+int updates = 0;
+struct TTileSetCM32 {
+  std::set<int> before{2};
+  int count = 1;
+  int getTileCount() const { return count; }
+};
+struct Saver {};
+struct Xsheet { void notifyXsheetChanged() {} };
+struct TTool {
+  struct Application { Xsheet sheet; Xsheet* getCurrentXsheet() { return &sheet; } };
+  static Application* getApplication() { static Application app; return &app; }
+};
+namespace ToonzImageUtils {
+void paste(TToonzImageP image, TTileSetCM32* tiles) { image->raster->pixels = tiles->before; }
+}
+namespace ToolUtils {
+void updateSaveBox(const TXshSimpleLevelP& level, TFrameId fid) {
+  assert(level);
+  ++updates;
+  level->setDirtyFlag(true);
+  auto image = level->getFrame(fid, true);
+  if (!image) return;
+  assert(image->raster);
+  int bounds = image->raster->pixels.empty() ? 0 : *image->raster->pixels.rbegin();
+  image->savebox = minimize ? bounds : std::max(bounds, image->savebox);
+}
+void updateSaveBox() { if (current) updateSaveBox(current, currentFid); }
+struct TRasterUndo {
+  TTileSetCM32* m_tiles;
+  TXshSimpleLevelP m_level;
+  TFrameId m_frameId;
+  bool m_updateSaveBox = true;
+  TRasterUndo(TTileSetCM32* tiles, TXshSimpleLevelP level, TFrameId fid)
+      : m_tiles(tiles), m_level(level), m_frameId(fid) {}
+  virtual ~TRasterUndo() { delete m_tiles; }
+  TToonzImageP getImage() const { return m_level->getFrame(m_frameId, true); }
+  void insertLevelAndFrameIfNeeded() const {} // Existing levels/frames in this harness.
+  void removeLevelAndFrameIfNeeded() const {}
+  void notifyImageChanged() const {}
+  void undo() const;
+};
+}
+struct CacheId { std::string toStdString() const { return "stroke"; } };
+struct TImageCache {
+  TImageP image;
+  static TImageCache* instance() { static TImageCache cache; return &cache; }
+  TImageP get(std::string, bool) { return image; }
+};
+struct MyPaintBrushUndo : ToolUtils::TRasterUndo {
+  int m_offset;
+  CacheId m_id;
+  MyPaintBrushUndo(TTileSetCM32* tiles, TXshSimpleLevel* level, TFrameId fid,
+                   bool, bool, TRasterCM32P raster, int offset)
+      : TRasterUndo(tiles, origin, fid), m_offset(offset) {
+    assert(level == origin.getPointer());
+    auto image = std::make_shared<Image>();
+    image->raster = raster;
+    TImageCache::instance()->image = image;
+  }
+  static TXshSimpleLevelP origin;
+  void redo() const;
+};
+TXshSimpleLevelP MyPaintBrushUndo::origin;
+struct TUndoManager {
+  std::unique_ptr<MyPaintBrushUndo> last;
+  static TUndoManager* manager() { static TUndoManager manager; return &manager; }
+  void add(MyPaintBrushUndo* undo) { last.reset(undo); }
+};
+struct ToonzCheck {
+  enum { eGap = 1, eAutoclose = 2 };
+  int getChecks() const { return 0; }
+  static ToonzCheck* instance() { static ToonzCheck check; return &check; }
+};
+struct ToonzRasterBrushTool {
+  struct Painting {
+    bool active = true;
+    struct { bool isActive = false; } myPaint, pencil, blured;
+    Saver* tileSaver = new Saver;
+    TTileSetCM32* tileSet = new TTileSetCM32;
+    TFrameId frameId{1};
+    TXshSimpleLevelP level;
+    Rect affectedRect;
+  } m_painting;
+  TRasterCM32P m_workRas = std::make_shared<Raster>();
+  bool m_isFrameCreated = false, m_isLevelCreated = false;
+  int notifications = 0;
+  TFrameId getCurrentFid() { return currentFid; }
+  void invalidate() {}
+  void notifyImageChanged(TFrameId fid, TXshSimpleLevel* level) {
+    assert(!m_painting.active); // Callback must not recursively recommit.
+    assert(level == MyPaintBrushUndo::origin.getPointer());
+    assert(fid.id == 1);
+    ++notifications;
+  }
+  void commitPainting();
+};
+void ToonzRasterBrushTool::commitPainting() @COMMIT@
+void MyPaintBrushUndo::redo() const @REDO@
+void ToolUtils::TRasterUndo::undo() const @UNDO@
+
+int failures = 0;
+void check(bool ok, const std::string& name) {
+  std::cout << (ok ? "PASS " : "FAIL ") << name << '\n';
+  failures += !ok;
+}
+TXshSimpleLevelP level(int fid, int width = 100) {
+  auto p = TXshSimpleLevelP(std::make_shared<TXshSimpleLevel>());
+  p->frames[fid] = std::make_shared<Image>();
+  p->frames[fid]->raster->pixels = {2};
+  p->frames[fid]->raster->width = width;
+  return p;
+}
+// In-memory savebox crop model only; NOT the OpenToonz TLV writer/reader.
+std::set<int> croppedSnapshot(TToonzImageP image) {
+  std::set<int> result;
+  for (int pixel : image->raster->pixels)
+    if (pixel <= image->savebox) result.insert(pixel);
+  return result;
+}
+void scenario(const std::string& name, bool sameLevel, bool sameFrame, bool shrink) {
+  minimize = shrink;
+  auto origin = level(1);
+  auto destination = sameLevel ? origin : level(sameFrame ? 1 : 2, 16);
+  int destFid = sameFrame ? 1 : 2;
+  if (sameLevel && !sameFrame) destination->frames[2] = std::make_shared<Image>();
+  auto destImage = destination->frames[destFid];
+  auto destPixels = destImage->raster->pixels;
+  int destBounds = destImage->savebox;
+  current = destination;
+  currentFid = TFrameId(destFid);
+  MyPaintBrushUndo::origin = origin;
+  ToonzRasterBrushTool tool;
+  tool.m_painting.level = origin;
+  tool.m_painting.myPaint.isActive = true;
+  auto image = origin->frames[1];
+  image->raster->pixels.insert(80); // Stroke extends beyond savebox and B's size.
+  tool.commitPainting();
+  check(image->savebox == 80 && origin->dirty, name + ": commit origin bounds/dirty");
+  check(croppedSnapshot(image).count(80), name + ": modeled savebox crop retains stroke");
+  auto* undo = TUndoManager::manager()->last.get();
+  check(undo && undo->m_level.getPointer() == origin.getPointer(), name + ": undo bound to A.1");
+  check(!tool.m_painting.level && !tool.m_painting.active && !tool.m_painting.tileSet &&
+        !tool.m_painting.tileSaver && tool.m_workRas->unlocked, name + ": cleanup");
+  int oldUpdates = updates;
+  tool.commitPainting();
+  check(updates == oldUpdates && tool.notifications == 1, name + ": repeat commit is inert");
+  undo->undo();
+  check(image->raster->pixels == std::set<int>{2} && image->savebox == (shrink ? 2 : 80), name + ": undo pixels/bounds");
+  undo->redo();
+  check(image->raster->pixels.count(80) && image->savebox == 80, name + ": redo origin pixels/bounds");
+  check(croppedSnapshot(image).count(80), name + ": modeled crop after redo retains stroke");
+  if (!(sameLevel && sameFrame))
+    check(destImage->raster->pixels == destPixels && destImage->savebox == destBounds &&
+          (sameLevel || !destination->dirty), name + ": destination unchanged");
+  TUndoManager::manager()->last.reset();
+}
+int main() {
+  scenario("two levels with frame 1, minimize on", false, true, true);
+  scenario("two levels with frame 1, minimize off", false, true, false);
+  scenario("two levels with differing IDs", false, false, true);
+  scenario("same level/different frames", true, false, true);
+  scenario("ordinary completion", true, true, true);
+  for (int missing = 0; missing < 4; ++missing) {
+    auto origin = level(1);
+    MyPaintBrushUndo::origin = origin;
+    current = level(1);
+    currentFid = TFrameId(1);
+    ToonzRasterBrushTool tool;
+    tool.m_painting.level = origin;
+    if (missing == 0) tool.m_painting.level = TXshSimpleLevelP();
+    if (missing == 1) origin->frames.clear();
+    if (missing == 2) origin->frames[1]->raster.reset();
+    if (missing == 3) tool.m_painting.tileSet->count = 0;
+    int before = updates;
+    tool.commitPainting();
+    check(updates == before + (missing == 3) && !current->dirty &&
+          !TUndoManager::manager()->last && !tool.m_painting.active,
+          "missing level/image/raster or empty tiles " + std::to_string(missing));
+  }
+  std::cout << failures << " failures\n";
+  return failures ? 1 : 0;
+}

@@ -1,0 +1,23 @@
+name: Interrupted brush regression tests
+
+on:
+  pull_request:
+    paths:
+      - 'toonz/sources/tnztools/**'
+      - '.github/workflows/interrupted_brush_tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run extracted-method regression harnesses
+        run: |
+          python3 toonz/sources/tnztools/tests/interruptedbrush/raster.py .
+          python3 toonz/sources/tnztools/tests/interruptedbrush/fullcolor.py .
+          python3 toonz/sources/tnztools/tests/interruptedbrush/vector.py .
+          python3 toonz/sources/tnztools/tests/interruptedbrush/events.py .

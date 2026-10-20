@@ -1,0 +1,101 @@
+#include <algorithm>
+#include <iostream>
+#include <vector>
+using TFrameId = int;
+using TrackList = std::vector<int>;
+using StrokeList = std::vector<int>;
+struct TInputState { enum class Key { control }; };
+struct Input {
+  struct State { bool control = true; bool isKeyPressed(TInputState::Key) { return control; } } state;
+  int resets = 0;
+  void reset() { ++resets; }
+};
+struct Property { int getIndex() const { return 1; } bool getValue() const { return false; } };
+struct Frame {
+  bool scene = false;
+  int fid = 1;
+  bool isEditingScene() { return scene; }
+  int getFrame() { return fid; }
+  void setFrame(int n) { fid = n; }
+  void setFid(int n) { fid = n; }
+};
+struct Column { int getColumnIndex() { return 0; } void setColumnIndex(int) {} };
+struct App {
+  Frame frame;
+  Column column;
+  Frame* getCurrentFrame() { return &frame; }
+  Column* getCurrentColumn() { return &column; }
+};
+struct TUndoManager {
+  static TUndoManager* manager() { static TUndoManager m; return &m; }
+  void beginBlock() {}
+  void endBlock() {}
+};
+struct Tool {
+  TrackList m_tracks, m_rangeTracks;
+  StrokeList m_firstStrokes;
+  TFrameId m_firstFrameId = 1, m_veryFirstFrameId = 1;
+  int m_veryFirstCol = 0, m_veryFirstFrame = 1;
+  bool m_firstFrameRange = true, m_active = false, m_skipStrokeUntilDown = false;
+  Property m_frameRange, m_breakAngles;
+  Input m_inputmanager;
+  App application;
+  int interpolations = 0;
+  int getFrameId() { return application.frame.fid; }
+  void copyStrokes(StrokeList& to, const StrokeList& from) { to = from; }
+  void deleteStrokes(StrokeList& strokes) { strokes.clear(); }
+  void onImageChanged() @CHANGED@
+  void resetFrameRange() @RESET@
+  void doFrameRangeStrokes(int first, int, int last, int, int, bool, bool, bool, bool) {
+    ++interpolations;
+    // Production interpolation synchronously notifies image changes.
+    // Its backwards case returns to the earlier endpoint before notifying.
+    application.frame.fid = std::min(first, last);
+    onImageChanged();
+  }
+  void finish(const StrokeList& strokes) {
+    App* app = &application;
+    @RANGE@
+  }
+};
+int failures = 0, checks = 0;
+void check(bool pass, const char* label) {
+  ++checks;
+  failures += !pass;
+  std::cout << (pass ? "PASS " : "FAIL ") << label << '\n';
+}
+int main() {
+  for (bool scene : {false, true}) {
+    for (bool backwards : {false, true}) {
+      Tool t;
+      t.application.frame.scene = scene;
+      t.m_firstFrameId = backwards ? 9 : 1;
+      t.m_firstStrokes = {11};
+      t.m_tracks = {22};
+      t.application.frame.fid = 5;
+      t.finish({22});
+      check(t.m_rangeTracks == TrackList{22}, "Ctrl second endpoint preview survives callback");
+      check(t.m_firstStrokes == StrokeList{22} && t.m_firstFrameId == 5 && !t.m_firstFrameRange, "continuation starts at second endpoint");
+      check(t.m_tracks.empty() && t.m_inputmanager.resets == 1, "real callback clears working tracks");
+      t.m_tracks = {33};
+      t.application.frame.fid = backwards ? 1 : 9;
+      t.finish({33});
+      check(t.m_rangeTracks == TrackList{33}, "Ctrl third endpoint preview survives callback");
+      check(t.interpolations == 2 && t.m_firstStrokes == StrokeList{33}, "third endpoint interpolation continues");
+      t.m_inputmanager.state.control = false;
+      t.m_tracks = {44};
+      t.application.frame.fid = 15;
+      t.finish({44});
+      check(t.m_rangeTracks.empty() && t.m_firstStrokes.empty() && t.m_firstFrameId == -1, "release Ctrl ends range");
+    }
+  }
+  Tool t;
+  t.m_active = true;
+  t.m_tracks = {1};
+  t.m_rangeTracks = {9};
+  t.onImageChanged();
+  check(!t.m_active && t.m_skipStrokeUntilDown && t.m_tracks.empty(), "interrupted active vector stroke discarded");
+  check(t.m_rangeTracks == TrackList{9}, "existing range preview preserved on image switch");
+  std::cout << checks << " checks, " << failures << " failures\n";
+  return failures ? 1 : 0;
+}

@@ -1188,6 +1188,8 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       m_rangeTracks = m_tracks;
     } else {
       // paint frame range strokes
+      // Image-change notifications during interpolation clear m_tracks.
+      const TrackList rangeTracks = m_tracks;
       TFrameId currentId = getFrameId();
       int curCol   = app ? app->getCurrentColumn()->getColumnIndex() : 0;
       int curFrame = app ? app->getCurrentFrame()->getFrame()        : 0;
@@ -1215,7 +1217,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
         
         resetFrameRange();
         copyStrokes(m_firstStrokes, strokes);
-        m_rangeTracks     = m_tracks;
+        m_rangeTracks     = rangeTracks;
         m_firstFrameId    = currentId;
         m_firstFrameRange = false;
       } else {

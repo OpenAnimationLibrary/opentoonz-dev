@@ -1,0 +1,68 @@
+using TRasterImageP = TToonzImageP;
+using TRasterP = TRasterCM32P;
+struct FullColorBrushUndo : MyPaintBrushUndo {
+  FullColorBrushUndo(TTileSetCM32* tiles, TXshSimpleLevel* level, TFrameId fid,
+                    bool created, TRasterP ras, int offset)
+      : MyPaintBrushUndo(tiles, level, fid, created, false, ras, offset) {}
+};
+struct FullColorBrushTool {
+  bool m_started = true, m_isFrameCreated = false;
+  TFrameId m_strokeFrameId{1};
+  TXshSimpleLevelP m_strokeLevel;
+  Rect m_lastRect, m_strokeRect;
+  TRasterP m_workRaster = std::make_shared<Raster>();
+  TTileSetCM32* m_tileSet = new TTileSetCM32;
+  Saver* m_tileSaver = new Saver;
+  int notifications = 0;
+  TFrameId getCurrentFid() { return currentFid; }
+  void notifyImageChanged(TFrameId fid, TXshSimpleLevel* sl) {
+    assert(!m_started && sl == MyPaintBrushUndo::origin.getPointer() && fid.id == 1);
+    ++notifications;
+  }
+  void commitStroke() @COMMIT@
+};
+int failures = 0, checks = 0;
+void check(bool ok, const char* name) {
+  ++checks;
+  failures += !ok;
+  std::cout << (ok ? "PASS " : "FAIL ") << name << '\n';
+}
+int main() {
+  for (int scenario = 0; scenario < 7; ++scenario) {
+    auto origin = TXshSimpleLevelP(std::make_shared<TXshSimpleLevel>());
+    auto image = std::make_shared<Image>();
+    image->raster->pixels = {2, 80};
+    origin->frames[1] = image;
+    current = TXshSimpleLevelP(std::make_shared<TXshSimpleLevel>());
+    auto dest = std::make_shared<Image>();
+    dest->raster->width = 16;
+    dest->raster->pixels = {3};
+    current->frames[1] = dest;
+    MyPaintBrushUndo::origin = origin;
+    FullColorBrushTool t;
+    t.m_strokeLevel = origin;
+    if (scenario == 1) t.m_strokeLevel = TXshSimpleLevelP();
+    if (scenario == 2) origin->frames.clear();
+    if (scenario == 3) image->raster.reset();
+    if (scenario == 4) t.m_tileSet->count = 0;
+    if (scenario == 5) t.m_workRaster.reset();
+    if (scenario == 6) { current = origin; currentFid = TFrameId(2); origin->frames[2] = dest; }
+    t.commitStroke();
+    const bool valid = scenario == 0 || scenario == 5 || scenario == 6;
+    auto* undo = TUndoManager::manager()->last.get();
+    check(bool(undo) == valid, "undo requires available origin raster and tiles");
+    if (undo) {
+      check(undo->m_level.getPointer() == origin.getPointer() && undo->m_frameId.id == 1, "undo identifies origin despite current selection");
+      check(TImageCache::instance()->image->raster->pixels == std::set<int>({2, 80}), "undo redo-cache captures origin pixels");
+    }
+    check(dest->raster->pixels == std::set<int>{3} && !current->dirty, "destination untouched");
+    check(!t.m_started && !t.m_strokeLevel && !t.m_tileSet && !t.m_tileSaver, "ownership cleanup");
+    check(!t.m_workRaster || t.m_workRaster->unlocked, "work raster unlocked when present");
+    int n = t.notifications;
+    t.commitStroke();
+    check(t.notifications == n, "second completion inert");
+    TUndoManager::manager()->last.reset();
+  }
+  std::cout << checks << " checks, " << failures << " failures\n";
+  return failures ? 1 : 0;
+}
