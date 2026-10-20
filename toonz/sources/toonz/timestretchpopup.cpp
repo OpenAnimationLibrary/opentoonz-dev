@@ -5,6 +5,7 @@
 // Tnz6 includes
 #include "filmstripcommand.h"
 #include "cellselection.h"
+#include "keyframeselection.h"
 #include "tapp.h"
 #include "menubarcommandids.h"
 
@@ -29,12 +30,45 @@
 #include <QComboBox>
 #include <QMainWindow>
 
+// C++ includes
+#include <algorithm>
+#include <climits>
+
 //=============================================================================
 // TimeStretch
 //-----------------------------------------------------------------------------
 
 //-----------------------------------------------------------------------------
 namespace {
+//-----------------------------------------------------------------------------
+
+TKeyframeSelection *asKeyframeSelection(TSelection *selection) {
+  TKeyframeSelection *keyframeSelection =
+      dynamic_cast<TKeyframeSelection *>(selection);
+  return keyframeSelection && !keyframeSelection->isEmpty() ? keyframeSelection
+                                                            : nullptr;
+}
+
+//-----------------------------------------------------------------------------
+
+TKeyframeSelection *getCurrentKeyframeSelection() {
+  return asKeyframeSelection(
+      TApp::instance()->getCurrentSelection()->getSelection());
+}
+
+//-----------------------------------------------------------------------------
+
+bool getKeyframeSelectionRange(TKeyframeSelection *selection, int &r0,
+                               int &r1) {
+  r0 = INT_MAX;
+  r1 = -1;
+  for (const auto &position : selection->getSelection()) {
+    r0 = std::min(r0, position.first);
+    r1 = std::max(r1, position.first);
+  }
+  return r1 > r0;
+}
+
 //-----------------------------------------------------------------------------
 
 class TimeStretchUndo final : public TUndo {
@@ -146,6 +180,13 @@ public:
 //-----------------------------------------------------------------------------
 
 void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type) {
+  if (type != TimeStretchPopup::eWholeXsheet) {
+    if (TKeyframeSelection *selection = getCurrentKeyframeSelection()) {
+      selection->timeStretchKeyframes(newRange);
+      return;
+    }
+  }
+
   TCellSelection::Range range;
   TCellSelection *selection = dynamic_cast<TCellSelection *>(
       TApp::instance()->getCurrentSelection()->getSelection());
@@ -293,6 +334,11 @@ void TimeStretchPopup::updateValues(TSelection *selection) {
       int c0, c1;
       cellCelection->getSelectedCells(from, c0, to, c1);
       newRange = to - from + 1;
+    } else if (TKeyframeSelection *keyframeSelection =
+                   asKeyframeSelection(selection)) {
+      int r0, r1;
+      if (getKeyframeSelectionRange(keyframeSelection, r0, r1))
+        newRange = r1 - r0 + 1;
     }
   }
 
