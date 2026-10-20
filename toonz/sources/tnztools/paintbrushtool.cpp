@@ -25,11 +25,17 @@
 #include "tenv.h"
 
 #include "trop.h"
+#include "tpixelutils.h"
+
+#include <algorithm>
+#include <cmath>
+#include <QColor>
 
 #include "tinbetween.h"
 #include "ttile.h"
 
 #include "toonz/tpalettehandle.h"
+#include "toonz/paintbrushgizmosettings.h"
 #include "toonz/txsheethandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tframehandle.h"
@@ -57,6 +63,148 @@ TEnv::IntVar PaintBrushFill("PaintBrushFill", 0);
 //-----------------------------------------------------------------------------
 
 const int BackgroundStyle = 0;
+
+// Companion styles are ordinary palette styles. The name embeds the source ID
+// so variants can be found again after the palette has been saved and reopened.
+// Existing companions are never recolored when they are reused.
+namespace {
+int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
+  if (!palette || sourceId <= BackgroundStyle) return -1;
+
+  TColorStyle *source = palette->getStyle(sourceId);
+  if (!source || !source->hasMainColor() || source->getColorParamCount() != 1)
+    return -1;
+
+  // A short visible name includes the stable numeric ID of the source style.
+  // Recognize old Paint Brush names so existing painted art is not duplicated.
+  std::wstring label = highlight ? L"Highlight " : L"Shadow ";
+  label += std::to_wstring(sourceId);
+
+  std::wstring legacyLabel =
+      highlight ? L"[Paint Brush Highlight " : L"[Paint Brush Shadow ";
+  legacyLabel += std::to_wstring(sourceId);
+  legacyLabel += L"]";
+
+  // Find the original's page. Palette indices are NOT changed when new
+  // companions are inserted into a page.
+  TPalette::Page *page = nullptr;
+  int sourcePosition   = -1;
+  for (int i = 0; i < palette->getPageCount(); ++i) {
+    TPalette::Page *candidate = palette->getPage(i);
+    const int pos             = candidate->search(sourceId);
+    if (pos >= 0) {
+      page           = candidate;
+      sourcePosition = pos;
+      break;
+    }
+  }
+  if (!page) return -1;
+
+  for (int i = 0; i < palette->getStyleCount(); ++i) {
+    TColorStyle *style = palette->getStyle(i);
+    if (!style) continue;
+    if (style->getName() == label || style->getName() == legacyLabel) return i;
+  }
+
+  // An existing companion can be used even if the palette is locked.
+  // Only the creation path requires an unlocked palette.
+  if (palette->isLocked()) return -1;
+
+  // Avoid generating solid-color approximations from animated or multi-color
+  // styles. A clone retains all original solid style properties.
+  TColorStyle *companion = source->clone();
+  if (!companion) return -1;
+
+  // Generated companions must stay independently editable even when their
+  // source was copied or linked from a studio palette.
+  companion->setGlobalName(L"");
+  companion->setOriginalName(L"");
+
+  TPixel32 color = source->getMainColor();
+
+  // The Gizmo Fade field controls strength. When it has not been published
+  // (e.g. the Gizmo was never opened), use the conservative 30% fallback.
+  const double fadeValue =
+      PaintBrushGizmoSettings::number(PaintBrushGizmoSettings::Fade, 30.0);
+  const int roundedFade = static_cast<int>(std::lround(fadeValue));
+  const int fade        = std::max(0, std::min(100, roundedFade));
+
+  // The Gizmo's fade target, when edited, tints the shadow. Never let a
+  // shadow target brighten a source channel. Highlights fade toward white.
+  QColor shadowColor =
+      PaintBrushGizmoSettings::read(PaintBrushGizmoSettings::ShadowColor)
+          .value<QColor>();
+  if (!shadowColor.isValid()) shadowColor = QColor(0, 0, 0);
+
+  const auto adjusted = [highlight, fade](int channel, int shadowChannel) {
+    const int target = highlight ? 255 : std::min(channel, shadowChannel);
+    return (channel * (100 - fade) + target * fade + 50) / 100;
+  };
+  color.r = adjusted(color.r, shadowColor.red());
+  color.g = adjusted(color.g, shadowColor.green());
+  color.b = adjusted(color.b, shadowColor.blue());
+
+  // Unlike the Gizmo's action buttons, the following adjustments are used
+  // only if their numeric fields have explicitly been edited or activated.
+  const double sign = highlight ? 1.0 : -1.0;
+  const auto preset = [](const char *key) {
+    return PaintBrushGizmoSettings::number(key);
+  };
+  const double valueScale = preset(PaintBrushGizmoSettings::ValueScale);
+  const double valueShift = preset(PaintBrushGizmoSettings::ValueShift);
+  const double saturationScale =
+      preset(PaintBrushGizmoSettings::SaturationScale);
+  const double saturationShift =
+      preset(PaintBrushGizmoSettings::SaturationShift);
+  const double hueShift = preset(PaintBrushGizmoSettings::HueShift);
+
+  const auto clamp = [](double number, int maximum) {
+    const int rounded = static_cast<int>(std::lround(number));
+    return std::max(0, std::min(maximum, rounded));
+  };
+  if (valueScale || valueShift || saturationScale || saturationShift ||
+      hueShift) {
+    const int alpha = color.m;
+    int hsv[3];
+    rgb2hsv(hsv, color, 360);
+    const int hueDelta = static_cast<int>(std::lround(sign * hueShift));
+
+    hsv[0] = (hsv[0] + hueDelta % 360 + 360) % 360;
+
+    const double saturationFactor = 1.0 + sign * saturationScale / 100.0;
+    const double saturationOffset = sign * saturationShift * 3.6;
+
+    hsv[1] = clamp(hsv[1] * saturationFactor + saturationOffset, 360);
+
+    const double valueFactor = 1.0 + sign * valueScale / 100.0;
+    const double valueOffset = sign * valueShift * 3.6;
+
+    hsv[2] = clamp(hsv[2] * valueFactor + valueOffset, 360);
+    hsv2rgb(color, hsv, 360);
+    color.m = alpha;
+  }
+
+  const double alphaScale = preset(PaintBrushGizmoSettings::AlphaScale);
+  const double alphaShift = preset(PaintBrushGizmoSettings::AlphaShift);
+  if (alphaScale || alphaShift) {
+    const double adjustedAlpha =
+        color.m * (1.0 + sign * alphaScale / 100.0) + sign * alphaShift;
+    color.m = clamp(adjustedAlpha, 255);
+  }
+  companion->setMainColor(color);
+  companion->setName(label);
+
+  // Page insertion creates a new palette style ID without renumbering any
+  // existing CM32 pixels. Highlight precedes source; shadow follows source.
+  page->insertStyle(sourcePosition + (highlight ? 0 : 1), companion);
+  palette->setDirtyFlag(true);
+  for (int i = 0; i < page->getStyleCount(); ++i) {
+    TColorStyle *style = page->getStyle(i);
+    if (style && style->getName() == label) return page->getStyleId(i);
+  }
+  return -1;
+}
+}  // namespace
 
 //-----------------------------------------------------------------------------
 
@@ -565,6 +713,25 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       }
       int thickness = m_toolSize.getValue();
       int styleId   = TTool::getApplication()->getCurrentLevelStyleIndex();
+      // Modifier selection is captured at stroke start; normal drawing is
+      // unchanged, and the selected source style remains selected in the UI.
+      if (e.isShiftPressed() != e.isCtrlPressed()) {
+        TPalette *palette = ti->getPalette();
+
+        const int previousCount = palette ? palette->getStyleCount() : 0;
+        const bool highlight    = e.isShiftPressed();
+        styleId = paintBrushCompanionStyle(palette, styleId, highlight);
+        if (palette && palette->getStyleCount() != previousCount)
+          getApplication()->getCurrentPalette()->notifyPaletteChanged();
+        if (styleId < 0) {
+          // Do not paint with the unmodified source when a requested
+          // companion cannot be created (e.g. a locked palette).
+          if (m_pick.getValue())
+            getApplication()->setCurrentLevelStyleIndex(m_orignalStyle);
+          m_selecting = false;
+          return;
+        }
+      }
       TTileSetCM32 *tileSet = new TTileSetCM32(ras->getSize());
       m_tileSaver           = new TTileSaverCM32(ras, tileSet);
       m_rasterTrack         = new RasterStrokeGenerator(

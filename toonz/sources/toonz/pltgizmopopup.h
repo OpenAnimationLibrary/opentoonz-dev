@@ -20,6 +20,7 @@ class ValueAdjuster final : public QWidget {
 public:
   ValueAdjuster(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
   ~ValueAdjuster();
+  void setPresetValue(double value) { m_valueLineEdit->setValue(value); }
 
 protected slots:
   void onClickedPlus();
@@ -27,6 +28,7 @@ protected slots:
 
 signals:
   void adjust(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
@@ -42,6 +44,7 @@ public:
   ValueShifter(bool isHue, QWidget *parent = 0,
                Qt::WindowFlags flags = Qt::WindowFlags());
   ~ValueShifter();
+  void setPresetValue(double value) { m_valueLineEdit->setValue(value); }
 
 protected slots:
   void onClickedPlus();
@@ -49,6 +52,7 @@ protected slots:
 
 signals:
   void adjust(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
@@ -67,11 +71,15 @@ public:
              Qt::WindowFlags flags = Qt::WindowFlags());
   ~ColorFader();
 
+  double presetValue() const { return m_valueLineEdit->text().toDouble(); }
+  void setPresetValue(double value) { m_valueLineEdit->setValue(value); }
+
 protected slots:
   void onClicked();
 
 signals:
   void valueChanged(double factor);
+  void presetChanged(double value);
 };
 
 //=============================================================================
