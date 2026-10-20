@@ -488,7 +488,7 @@ ValueAdjuster::ValueAdjuster(QWidget *parent, Qt::WindowFlags flags)
   QPushButton *plusBut  = new QPushButton(QString("+"), this);
   QPushButton *minusBut = new QPushButton(QString("-"), this);
   m_valueLineEdit =
-      new DoubleLineEdit(this, kDefaultGizmoAdjustment);  // parent - value - min - max
+      new DoubleLineEdit(this, 10.00);  // parent - value - min - max
   QLabel *percLabel = new QLabel(QString("%"), this);
   plusBut->setFixedSize(21, 21);
   minusBut->setFixedSize(21, 21);
@@ -541,7 +541,7 @@ ValueShifter::ValueShifter(bool isHue, QWidget *parent, Qt::WindowFlags flags)
   QPushButton *plusBut  = new QPushButton(QString("+"), this);
   QPushButton *minusBut = new QPushButton(QString("-"), this);
   int maxValue          = (isHue) ? 360 : 100;
-  m_valueLineEdit       = new DoubleLineEdit(this, kDefaultGizmoAdjustment);  // parent - value
+  m_valueLineEdit       = new DoubleLineEdit(this, 10.00);  // parent - value
   plusBut->setFixedSize(21, 21);
   minusBut->setFixedSize(21, 21);
   plusBut->setObjectName("GizmoButton");
@@ -600,7 +600,7 @@ ColorFader::ColorFader(QString name, QWidget *parent, Qt::WindowFlags flags)
   button->setObjectName("PushButton_NoPadding");
   connect(button, SIGNAL(clicked()), this, SLOT(onClicked()));
 
-  m_valueLineEdit = new DoubleLineEdit(this, kDefaultGizmoAdjustment);
+  m_valueLineEdit = new DoubleLineEdit(this, 10.00);
 
   QLabel *percLabel = new QLabel(QString("%"), this);
   percLabel->setFixedWidth(15);
