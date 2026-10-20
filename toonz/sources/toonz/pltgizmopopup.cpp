@@ -32,8 +32,40 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QColor>
+#include <QVariant>
 
 using namespace DVGui;
+
+// Palette Gizmo has historically initialized every numeric control at 10.
+namespace {
+constexpr double kDefaultGizmoAdjustment = 10.0;
+
+// PR #263 optionally consumes these application properties when creating a
+// Paint Brush highlight or shadow. This standalone Reset implementation
+// clears optional modifiers and publishes the visible default Fade. No
+// existing palette styles are accessed or changed here.
+void resetPaintBrushGizmoPresets() {
+  QCoreApplication *app = QCoreApplication::instance();
+  if (!app) return;
+
+  app->setProperty("OpenToonz_PaintBrushGizmoFade",
+                   QVariant(kDefaultGizmoAdjustment));
+  app->setProperty("OpenToonz_PaintBrushGizmoShadowColor",
+                   QVariant(QColor(Qt::black)));
+
+  const char *const optionalKeys[] = {
+      "OpenToonz_PaintBrushGizmoValueScale",
+      "OpenToonz_PaintBrushGizmoValueShift",
+      "OpenToonz_PaintBrushGizmoSaturationScale",
+      "OpenToonz_PaintBrushGizmoSaturationShift",
+      "OpenToonz_PaintBrushGizmoHueShift",
+      "OpenToonz_PaintBrushGizmoAlphaScale",
+      "OpenToonz_PaintBrushGizmoAlphaShift"};
+  for (const char *key : optionalKeys) app->setProperty(key, QVariant());
+}
+}  // namespace
 
 //-----------------------------------------------------------------------------
 
@@ -456,7 +488,7 @@ ValueAdjuster::ValueAdjuster(QWidget *parent, Qt::WindowFlags flags)
   QPushButton *plusBut  = new QPushButton(QString("+"), this);
   QPushButton *minusBut = new QPushButton(QString("-"), this);
   m_valueLineEdit =
-      new DoubleLineEdit(this, 10.00);  // parent - value - min - max
+      new DoubleLineEdit(this, kDefaultGizmoAdjustment);  // parent - value - min - max
   QLabel *percLabel = new QLabel(QString("%"), this);
   plusBut->setFixedSize(21, 21);
   minusBut->setFixedSize(21, 21);
@@ -482,6 +514,10 @@ ValueAdjuster::ValueAdjuster(QWidget *parent, Qt::WindowFlags flags)
 //-----------------------------------------------------------------------------
 
 ValueAdjuster::~ValueAdjuster() {}
+
+void ValueAdjuster::resetToDefault() {
+  m_valueLineEdit->setValue(kDefaultGizmoAdjustment);
+}
 //-----------------------------------------------------------------------------
 
 void ValueAdjuster::onClickedPlus() {
@@ -505,7 +541,7 @@ ValueShifter::ValueShifter(bool isHue, QWidget *parent, Qt::WindowFlags flags)
   QPushButton *plusBut  = new QPushButton(QString("+"), this);
   QPushButton *minusBut = new QPushButton(QString("-"), this);
   int maxValue          = (isHue) ? 360 : 100;
-  m_valueLineEdit       = new DoubleLineEdit(this, 10.00);  // parent - value
+  m_valueLineEdit       = new DoubleLineEdit(this, kDefaultGizmoAdjustment);  // parent - value
   plusBut->setFixedSize(21, 21);
   minusBut->setFixedSize(21, 21);
   plusBut->setObjectName("GizmoButton");
@@ -530,6 +566,10 @@ ValueShifter::ValueShifter(bool isHue, QWidget *parent, Qt::WindowFlags flags)
 //-----------------------------------------------------------------------------
 
 ValueShifter::~ValueShifter() {}
+
+void ValueShifter::resetToDefault() {
+  m_valueLineEdit->setValue(kDefaultGizmoAdjustment);
+}
 //-----------------------------------------------------------------------------
 
 void ValueShifter::onClickedPlus() {
@@ -560,7 +600,7 @@ ColorFader::ColorFader(QString name, QWidget *parent, Qt::WindowFlags flags)
   button->setObjectName("PushButton_NoPadding");
   connect(button, SIGNAL(clicked()), this, SLOT(onClicked()));
 
-  m_valueLineEdit = new DoubleLineEdit(this, 10.00);
+  m_valueLineEdit = new DoubleLineEdit(this, kDefaultGizmoAdjustment);
 
   QLabel *percLabel = new QLabel(QString("%"), this);
   percLabel->setFixedWidth(15);
@@ -577,6 +617,10 @@ ColorFader::ColorFader(QString name, QWidget *parent, Qt::WindowFlags flags)
 //-----------------------------------------------------------------------------
 
 ColorFader::~ColorFader() {}
+
+void ColorFader::resetToDefault() {
+  m_valueLineEdit->setValue(kDefaultGizmoAdjustment);
+}
 
 //-----------------------------------------------------------------------------
 
@@ -609,6 +653,9 @@ PltGizmoPopup::PltGizmoPopup()
 
   QPushButton *fullMatteButton = new QPushButton(tr("Full Alpha"), this);
   QPushButton *zeroMatteButton = new QPushButton(tr("Zero Alpha"), this);
+  QPushButton *resetButton     = new QPushButton(tr("Reset Controls"), this);
+  resetButton->setToolTip(
+      tr("Restore Gizmo controls without changing palette styles."));
 
   //----layout
   m_topLayout->setContentsMargins(5, 5, 5, 5);
@@ -668,9 +715,10 @@ PltGizmoPopup::PltGizmoPopup()
     m_topLayout->addWidget(fadeBox);
 
     m_topLayout->addStretch();
+    m_topLayout->addWidget(resetButton, 0, Qt::AlignRight);
   }
 
-  resize(460, 220);
+  resize(460, 250);
 
   //----signal-slot connections
   /*-- Scale の差が渡される。+10%なら0.1が渡される --*/
@@ -688,6 +736,22 @@ PltGizmoPopup::PltGizmoPopup()
 
   connect(blendButton, SIGNAL(clicked()), this, SLOT(onBlend()));
   connect(colorFader, SIGNAL(valueChanged(double)), SLOT(onFade(double)));
+
+  // Reset changes only the dialog's controls. In particular, it does not
+  // invoke modifyColor(), onFade(), or the other palette edit commands.
+  connect(resetButton, &QPushButton::clicked, this, [=]() {
+    luminanceValue->resetToDefault();
+    luminanceShift->resetToDefault();
+    saturationValue->resetToDefault();
+    saturationShift->resetToDefault();
+    hueShift->resetToDefault();
+    trasparancyValue->resetToDefault();
+    trasparancyShift->resetToDefault();
+    colorFader->resetToDefault();
+    m_colorFld->setColor(TPixel32(0, 0, 0, 255));
+
+    resetPaintBrushGizmoPresets();
+  });
 }
 
 //-----------------------------------------------------------------------------
