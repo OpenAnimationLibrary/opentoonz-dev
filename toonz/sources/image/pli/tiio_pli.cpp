@@ -340,6 +340,8 @@ static void createGroup(GroupTag *groupTag, TVectorImage *vi,
   }
 
   vi->group(count, vi->getStrokeCount() - count);
+  if (vi->getStrokeCount() > UINT(count))
+    vi->setGroupName(count, 1, groupTag->m_name);
 }
 
 //-----------------------------------------------------------------------------
@@ -871,8 +873,10 @@ GroupTag *makeGroup(TVectorImageP &vi, int &currStyleId, int &index,
     else
       assert(false);
   }
+  auto group    = new GroupTag(GroupTag::STROKE, tags.size(), tags.data());
+  group->m_name = vi->getGroupName(index, currDepth);
   index = i;
-  return new GroupTag(GroupTag::STROKE, tags.size(), tags.data());
+  return group;
 }
 
 //=============================================================================

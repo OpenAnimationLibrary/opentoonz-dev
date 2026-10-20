@@ -80,6 +80,7 @@ public:
     OUTLINE_OPTIONS_GOBJ,
     PRECISION_SCALE_GOBJ,
     AUTOCLOSE_TOLERANCE_GOBJ,
+    GROUP_NAME_NGOBJ,
     // ...
     HOW_MANY_TAG_TYPES
   };
@@ -353,6 +354,7 @@ public:
 
   UCHAR m_type;
   TUINT32 m_numObjects;
+  std::wstring m_name;
   std::unique_ptr<PliObjectTag *[]> m_object;
 
   GroupTag();

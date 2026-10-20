@@ -26,6 +26,7 @@
 #include "previewfxmanager.h"
 #include "comboviewerpane.h"
 #include "historypane.h"
+#include "drawinglayers.h"
 #include "cleanupsettingspane.h"
 
 #include "vectorguideddrawingpane.h"
@@ -134,6 +135,21 @@ public:
     panel->resize(500, 300);
   }
 } timelineViewerFactory;
+
+class DrawingLayersFactory final : public TPanelFactory {
+public:
+  DrawingLayersFactory() : TPanelFactory("DrawingLayers") {}
+  void initialize(TPanel *panel) override {
+    panel->setWidget(new DrawingLayers(TApp::instance(), panel));
+    panel->setWindowTitle(QObject::tr("Layers"));
+    panel->setMinimumSize(250, 180);
+    panel->resize(360, 520);
+  }
+} drawingLayersFactory;
+
+OpenFloatingPanel openDrawingLayersCommand(MI_OpenDrawingLayers,
+                                           "DrawingLayers",
+                                           QObject::tr("Layers"));
 
 //=============================================================================
 // SchematicSceneViewer
