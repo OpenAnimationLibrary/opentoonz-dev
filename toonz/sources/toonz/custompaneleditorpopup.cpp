@@ -48,6 +48,8 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QFile>
+#include <QDesktopServices>
+#include <QUrl>
 #include <algorithm>
 
 namespace {
@@ -1565,9 +1567,21 @@ CustomPanelEditorPopup::CustomPanelEditorPopup()
   m_fieldsScrollArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
   m_fieldsScrollArea->setWidget(m_UiFieldsContainer);
 
+  QPushButton* templateFolderButton =
+      new QPushButton(tr("Templates Folder"), this);
+  QPushButton* activePanelsFolderButton =
+      new QPushButton(tr("Active Panels Folder"), this);
   QPushButton* registerButton = new QPushButton(tr("Register"), this);
   QPushButton* removeButton   = new QPushButton(tr("Remove"), this);
   QPushButton* cancelButton   = new QPushButton(tr("Cancel"), this);
+
+  const QIcon folderIcon = templateFolderIcon();
+  templateFolderButton->setIcon(folderIcon);
+  activePanelsFolderButton->setIcon(folderIcon);
+  templateFolderButton->setToolTip(
+      tr("Open the custom panel templates folder."));
+  activePanelsFolderButton->setToolTip(
+      tr("Open the folder containing registered custom panels."));
 
   m_previewArea->setStyleSheet("background-color: black;");
 
@@ -1579,6 +1593,13 @@ CustomPanelEditorPopup::CustomPanelEditorPopup()
   {
     leftLay->addWidget(m_templateHeader, 0);
     leftLay->addWidget(m_templateBrowser, 0);
+    QHBoxLayout* folderLay = new QHBoxLayout();
+    folderLay->setContentsMargins(0, 0, 0, 0);
+    folderLay->setSpacing(5);
+    folderLay->addWidget(templateFolderButton, 0);
+    folderLay->addWidget(activePanelsFolderButton, 0);
+    folderLay->addStretch(1);
+    leftLay->addLayout(folderLay, 0);
     leftLay->addWidget(m_fieldsScrollArea, 0);
     leftLay->addWidget(m_previewArea, 1);
   }
@@ -1627,6 +1648,24 @@ CustomPanelEditorPopup::CustomPanelEditorPopup()
           &CustomPanelEditorPopup::onRegister);
   connect(removeButton, &QPushButton::clicked, this,
           &CustomPanelEditorPopup::onRemove);
+  connect(templateFolderButton, &QPushButton::clicked, this, [this]() {
+    const QString path = customPaneTemplateFolderPath().getQString();
+    if (!QDir(path).exists() && !QDir().mkpath(path)) {
+      DVGui::warning(tr("Unable to create the templates folder."));
+      return;
+    }
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+      DVGui::warning(tr("Unable to open the templates folder."));
+  });
+  connect(activePanelsFolderButton, &QPushButton::clicked, this, [this]() {
+    const QString path = customPaneFolderPath().getQString();
+    if (!QDir(path).exists() && !QDir().mkpath(path)) {
+      DVGui::warning(tr("Unable to create the active panels folder."));
+      return;
+    }
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
+      DVGui::warning(tr("Unable to open the active panels folder."));
+  });
   connect(searchEdit, &QLineEdit::textChanged, this,
           &CustomPanelEditorPopup::onSearchTextChanged);
 
