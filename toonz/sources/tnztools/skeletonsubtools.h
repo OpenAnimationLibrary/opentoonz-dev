@@ -6,6 +6,7 @@
 #include "tools/tool.h"
 #include "toonz/txsheet.h"
 #include "toonz/skeleton.h"
+#include "toonz/txsheet.h"
 #include "toonz/stageobjectutil.h"
 #include "toonz/ikengine.h"
 
@@ -49,6 +50,23 @@ public:
 
   void leftButtonDown(const TPointD &pos, const TMouseEvent &) override;
   void leftButtonDrag(const TPointD &pos, const TMouseEvent &) override;
+  void leftButtonUp(const TPointD &pos, const TMouseEvent &) override;
+};
+
+class DragBoneTipTool final : public DragTool {
+  TXsheetP m_xsheet;
+  TStageObjectP m_object;
+  TRigBone m_before, m_after;
+  TAffine m_toLocal;
+  TPointD m_pivot;
+  bool m_dragged   = false;
+  bool m_committed = false;
+
+public:
+  explicit DragBoneTipTool(SkeletonTool *tool);
+  ~DragBoneTipTool() override;
+  void leftButtonDown(const TPointD &pos, const TMouseEvent &) override;
+  void leftButtonDrag(const TPointD &pos, const TMouseEvent &event) override;
   void leftButtonUp(const TPointD &pos, const TMouseEvent &) override;
 };
 

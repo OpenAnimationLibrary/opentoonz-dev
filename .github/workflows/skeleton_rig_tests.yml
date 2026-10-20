@@ -1,0 +1,42 @@
+name: Skeleton Rig Tests
+
+on:
+  pull_request:
+    paths:
+      - 'toonz/sources/include/toonz/trig*'
+      - 'toonz/sources/toonzlib/trig*'
+      - 'toonz/sources/toonzlib/tests/rig/**'
+      - 'toonz/sources/toonzlib/tests/rig_stage_test.cpp'
+      - 'toonz/sources/include/toonz/tstageobject*.h'
+      - 'toonz/sources/toonzlib/tstageobject*.cpp'
+      - 'toonz/sources/tnztools/skeleton*'
+      - 'toonz/sources/toonzqt/stageobjectsdata.cpp'
+      - '.github/workflows/skeleton_rig_tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  constraint-kernel:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - run: cmake -S toonz/sources/toonzlib/tests/rig -B rig-build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build rig-build --config Release --parallel 2
+      - run: ctest --test-dir rig-build --build-config Release --output-on-failure
+
+  sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - run: cmake -S toonz/sources/toonzlib/tests/rig -B rig-build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+      - run: cmake --build rig-build --parallel 2
+      - run: ctest --test-dir rig-build --output-on-failure

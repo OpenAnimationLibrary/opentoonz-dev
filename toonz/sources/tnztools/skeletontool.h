@@ -51,11 +51,14 @@ class SkeletonTool : public TTool {
 
   bool m_active;
   bool m_firstTime;
+  bool m_undoBlockOpen = false;
   int m_device;
 
   TEnumProperty m_mode;
   TBoolProperty m_showOnlyActiveSkeleton;
   TBoolProperty m_globalKeyframes;
+  TBoolProperty m_modernBones;
+  TBoolProperty m_boneNames;
 
   TPropertyGroup m_prop;
 
@@ -93,13 +96,19 @@ public:
 
   void onImageChanged() override { invalidate(); }
 
-  void reset() override { m_temporaryPinnedColumns.clear(); }
+  void reset() override {
+    cancelBoneTipDrag();
+    m_temporaryPinnedColumns.clear();
+  }
+  void cancelBoneTipDrag();
 
   bool onPropertyChanged(std::string propertyName) override;
 
   void draw() override;
 
   void drawSkeleton(const Skeleton &skeleton, int row);
+  void drawModernSkeleton(const Skeleton &skeleton, int row);
+  TPointD getBoneTip(const Skeleton::Bone *bone, int row) const;
   void drawLevelBoundingBox(int frame, int columnIndex);
   void getImageBoundingBox(TRectD &bbox, TAffine &aff, int frame,
                            int columnIndex);

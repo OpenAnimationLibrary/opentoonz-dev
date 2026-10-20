@@ -2,6 +2,7 @@
 
 #include "skeletonsubtools.h"
 #include "skeletontool.h"
+#include "skeletonrig.h"
 #include "tools/toolhandle.h"
 #include "tools/toolutils.h"
 #include "toonz/tscenehandle.h"
@@ -70,6 +71,50 @@ void DragCenterTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
   undo->setObjectHandle(app->getCurrentObject());
   undo->setXsheetHandle(app->getCurrentXsheet());
   TUndoManager::manager()->add(undo);
+}
+
+DragBoneTipTool::DragBoneTipTool(SkeletonTool *tool) : DragTool(tool) {}
+
+DragBoneTipTool::~DragBoneTipTool() {
+  if (m_object && m_dragged && !m_committed) m_object->assignRigBone(m_before);
+}
+
+void DragBoneTipTool::leftButtonDown(const TPointD &, const TMouseEvent &) {
+  auto app     = TTool::getApplication();
+  auto *xsheet = app->getCurrentXsheet()->getXsheet();
+  m_xsheet     = xsheet;
+  m_object     = xsheet->getStageObject(app->getCurrentObject()->getObjectId());
+  m_before = m_after = m_object->getRigBone();
+  int frame          = app->getCurrentFrame()->getFrame();
+  TAffine placement  = m_object->getPlacement(frame);
+  if (std::abs(placement.det()) < 1e-10) {
+    m_object = nullptr;
+    return;
+  }
+  m_toLocal = placement.inv() * getTool()->getMatrix();
+  m_pivot   = m_object->getCenter(frame) * Stage::inch;
+}
+
+void DragBoneTipTool::leftButtonDrag(const TPointD &pos,
+                                     const TMouseEvent &event) {
+  if (!m_object) return;
+  TPointD tip = (m_toLocal * pos - m_pivot) / Stage::inch;
+  if (norm2(tip) < 1e-8) return;
+  if (event.isShiftPressed()) {
+    double angle = std::round(rigAngle(tip) / 15.0) * 15.0;
+    tip          = TRotation(angle) * TPointD(norm(tip), 0);
+  }
+  m_after.enabled = true;
+  m_after.tip     = tip;
+  if (m_object->setRigBone(m_after)) m_dragged = true;
+}
+
+void DragBoneTipTool::leftButtonUp(const TPointD &, const TMouseEvent &) {
+  if (!m_object || !m_dragged) return;
+  auto *xsheet = TTool::getApplication()->getCurrentXsheet()->getXsheet();
+  SkeletonRig::recordEdit(xsheet, m_object.getPointer(), m_before, m_after,
+                          m_object->getName(), m_object->getName());
+  m_committed = true;
 }
 
 //============================================================

@@ -115,6 +115,8 @@ set(HEADERS
     ../include/toonz/sceneproperties.h
     ../include/toonz/sceneresources.h
     ../include/toonz/skeleton.h
+    ../include/toonz/trig.h
+    ../include/toonz/trigserialization.h
     ../include/toonz/stage.h
     ../include/toonz/stage2.h
     ../include/toonz/stageobjectutil.h
@@ -236,6 +238,8 @@ set(SOURCES
     scriptbinding_toonz_raster_converter.cpp
     scriptengine.cpp
     skeleton.cpp
+    trig.cpp
+    trigserialization.cpp
     skeletonlut.cpp
     stage.cpp
     stage2.cpp
@@ -406,3 +410,9 @@ elseif(BUILD_ENV_UNIXLIKE)
 endif()
 
 target_link_libraries(toonzlib OpenEXR::OpenEXR)
+
+if(BUILD_RIG_TESTS)
+    add_executable(skeleton_stage_test tests/rig_stage_test.cpp)
+    target_link_libraries(skeleton_stage_test PRIVATE toonzlib tnzcore Qt5::Core)
+    add_test(NAME skeleton_stage COMMAND skeleton_stage_test)
+endif()

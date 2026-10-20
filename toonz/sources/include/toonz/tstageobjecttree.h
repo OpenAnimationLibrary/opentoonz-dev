@@ -182,6 +182,13 @@ Returns the numbers of the objects in the tree.
 
   void invalidateAll();
 
+  TStageObject *getRigObject(const std::string &id) const;
+  TRigDependencies rigDependencies(const TStageObject *owner   = nullptr,
+                                   const TRigBone *replacement = nullptr) const;
+  void refreshRig();
+  void invalidateRigPlacements();
+  bool hasRigConstraints() const;
+
   /*!
           Sets the handle manager to be \b \e hm.
           An Handle Manager is an object that implements a method to retrieve
@@ -223,7 +230,7 @@ new spline.
   TStageObjectSpline *createSpline();
 
   /*! Assign a unique id to the passed \b spline
-*/
+   */
   void assignUniqueSplineId(TStageObjectSpline *spline);
   /*!
 Removes from stage object tree the spline \b spline.
