@@ -148,6 +148,12 @@ bool menuContainsAction(QMenu *menu, QAction *target) {
 }
 
 void ensureAlignmentPanelAction(QMenu *windowsMenu) {
+#ifdef WITH_BULLET
+  QAction *physics =
+      CommandManager::instance()->getAction(MI_ExploreBulletPhysics);
+  if (physics && !menuContainsAction(windowsMenu, physics))
+    windowsMenu->addAction(physics);
+#endif
   QAction *alignment =
       CommandManager::instance()->getAction(MI_OpenAlignmentPanel);
   if (!alignment || menuContainsAction(windowsMenu, alignment)) return;
@@ -1633,6 +1639,9 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(windowsMenu, MI_OpenStopMotionPanel);
 #endif
   addMenuItem(windowsMenu, MI_StartupPopup);
+#ifdef WITH_BULLET
+  addMenuItem(windowsMenu, MI_ExploreBulletPhysics);
+#endif
   addMenuItem(windowsMenu, MI_OpenGuidedDrawingControls);
   addMenuItem(windowsMenu, MI_OpenAlignmentPanel);
   addMenuItem(windowsMenu, MI_OpenCustomPanels);

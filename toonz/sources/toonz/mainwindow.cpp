@@ -2868,6 +2868,10 @@ void MainWindow::defineActions() {
   createMenuHelpAction(MI_About, QT_TR_NOOP("&About OpenToonz..."), "", "info");
   createMenuWindowsAction(MI_StartupPopup, QT_TR_NOOP("&Startup Popup..."),
                           "Alt+S", "opentoonz");
+#ifdef WITH_BULLET
+  createMenuWindowsAction(MI_ExploreBulletPhysics,
+                          QT_TR_NOOP("Explore Bullet Physics..."), "", "");
+#endif
   createMenuWindowsAction(MI_OpenAlignmentPanel,
                           QT_TR_NOOP("Align and Distribute Panel"), "", "");
   createMenuWindowsAction(MI_OpenGuidedDrawingControls,

@@ -204,6 +204,15 @@ jobs:
           Get-ChildItem recorder-tests/recorder-*.txt | ForEach-Object { Get-Content $_.FullName }
           if ($recorderTestExit) { throw 'Recorder tests failed' }
 
+      - name: Get Bullet SDK for the optional physics exploration
+        uses: actions/checkout@v6
+        with:
+          repository: bulletphysics/bullet3
+          ref: 2c204c49e56ed15ec5fcfa71d199ab6d6570b3f5
+          path: bullet-sdk
+          sparse-checkout: src
+          lfs: false
+
       # CMake configuration step
       - name: CMake configuration
         run: |
@@ -218,8 +227,18 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DBUILD_EXR_TESTS=ON -DBUILD_EXR_AOV_FX_TESTS=ON -DBUILD_LUT3D_TESTS=ON -DBUILD_GLB_FX_TESTS=ON -DWITH_BULLET=ON -DBUILD_BULLET_TESTS=ON -DOT_BULLET_SOURCE_DIR="%GITHUB_WORKSPACE%\bullet-sdk"
         shell: cmd
+
+      - name: Build and test Bullet connections and native stage baking
+        shell: cmd
+        run: |
+          cd toonz\build
+          cmake --build . --config RelWithDebInfo --target bullet_world_test bullet_stage_test --parallel
+          if %errorlevel% neq 0 exit /b %errorlevel%
+          set "PATH=%QT_PATH%\bin;%GITHUB_WORKSPACE%\thirdparty\glut\3.7.6\lib;%GITHUB_WORKSPACE%\thirdparty\glew\glew-1.9.0\bin\64bit;%GITHUB_WORKSPACE%\thirdparty\libmypaint\dist\64;C:\tools\opencv\build\x64\vc16\bin;%PATH%"
+          ctest -C RelWithDebInfo --output-on-failure -R "^bullet_(world|stage)$"
+          if %errorlevel% neq 0 exit /b %errorlevel%
 
       - name: Build and test OpenEXR image I/O and level source
         shell: cmd
