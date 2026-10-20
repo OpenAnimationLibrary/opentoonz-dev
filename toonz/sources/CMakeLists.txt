@@ -736,6 +736,11 @@ endif()
 set(CMAKE_C_FLAGS "${C_WARNINGS} ${CMAKE_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CXX_WARNINGS} ${CMAKE_CXX_FLAGS}")
 
+option(BUILD_XSHEET_TESTS "Build xsheet/Plastic cell state regression tests" OFF)
+if(BUILD_XSHEET_TESTS)
+    enable_testing()
+endif()
+
 add_subdirectory(tnzcore)
 add_subdirectory(tnzbase)
 add_subdirectory(tnzext)
