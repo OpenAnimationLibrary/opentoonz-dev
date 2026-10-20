@@ -73,6 +73,101 @@ void ungroupWithoutUndo(TVectorImage *vimg, StrokeSelection *selection) {
 }
 
 //=============================================================================
+// Group hierarchy snapshot helpers
+//-----------------------------------------------------------------------------
+
+struct GroupSpan {
+  int m_fromStroke;
+  int m_count;
+  int m_depth;
+};
+
+struct GroupingSnapshot {
+  std::vector<GroupSpan> m_groups;
+  int m_maxDepth;
+  int m_enteredGroupDepth;
+  int m_enteredGroupStroke;
+
+  GroupingSnapshot()
+      : m_maxDepth(0)
+      , m_enteredGroupDepth(0)
+      , m_enteredGroupStroke(-1) {}
+};
+
+GroupingSnapshot captureGrouping(TVectorImage *vimg) {
+  GroupingSnapshot snapshot;
+  const int strokeCount = (int)vimg->getStrokeCount();
+
+  for (int i = 0; i < strokeCount; i++) {
+    int depth = vimg->getGroupDepth(i);
+    if (depth > snapshot.m_maxDepth) snapshot.m_maxDepth = depth;
+  }
+
+  for (int depth = 1; depth <= snapshot.m_maxDepth; depth++) {
+    for (int i = 0; i < strokeCount;) {
+      if (vimg->getGroupDepth(i) < depth) {
+        i++;
+        continue;
+      }
+
+      const int fromStroke = i++;
+      while (i < strokeCount &&
+             vimg->getCommonGroupDepth(fromStroke, i) >= depth)
+        i++;
+
+      GroupSpan span = {fromStroke, i - fromStroke, depth};
+      snapshot.m_groups.push_back(span);
+    }
+  }
+
+  snapshot.m_enteredGroupDepth = vimg->isInsideGroup();
+  if (snapshot.m_enteredGroupDepth > 0) {
+    for (int i = 0; i < strokeCount; i++) {
+      if (vimg->isEnteredGroupStroke(i)) {
+        snapshot.m_enteredGroupStroke = i;
+        break;
+      }
+    }
+  }
+
+  return snapshot;
+}
+
+void ungroupAllWithoutUndo(TVectorImage *vimg) {
+  bool foundGroup;
+  do {
+    foundGroup = false;
+    for (int i = 0; i < (int)vimg->getStrokeCount();) {
+      if (!vimg->isStrokeGrouped(i)) {
+        i++;
+        continue;
+      }
+
+      i += vimg->ungroup(i);
+      foundGroup = true;
+    }
+  } while (foundGroup);
+}
+
+void restoreGroupingWithoutUndo(TVectorImage *vimg,
+                                const GroupingSnapshot &snapshot) {
+  ungroupAllWithoutUndo(vimg);
+
+  for (int depth = snapshot.m_maxDepth; depth > 0; depth--) {
+    for (const GroupSpan &span : snapshot.m_groups) {
+      if (span.m_depth == depth)
+        vimg->group(span.m_fromStroke, span.m_count);
+    }
+  }
+
+  if (snapshot.m_enteredGroupDepth > 0 &&
+      snapshot.m_enteredGroupStroke >= 0) {
+    for (int depth = 0; depth < snapshot.m_enteredGroupDepth; depth++)
+      if (!vimg->enterGroup(snapshot.m_enteredGroupStroke)) break;
+  }
+}
+
+//=============================================================================
 // GroupUndo
 //-----------------------------------------------------------------------------
 
@@ -104,26 +199,39 @@ public:
 //-----------------------------------------------------------------------------
 
 class UngroupUndo final : public ToolUtils::TToolUndo {
-  std::unique_ptr<StrokeSelection> m_selection;
+  GroupingSnapshot m_before;
+  GroupingSnapshot m_after;
+  QString m_name;
+
+  void apply(const GroupingSnapshot &snapshot) const {
+    TVectorImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+
+    QMutexLocker lock(image->getMutex());
+    restoreGroupingWithoutUndo(image.getPointer(), snapshot);
+    notifyImageChanged();
+  }
 
 public:
   UngroupUndo(TXshSimpleLevel *level, const TFrameId &frameId,
-              StrokeSelection *selection)
-      : ToolUtils::TToolUndo(level, frameId), m_selection(selection) {}
+              const GroupingSnapshot &before,
+              const GroupingSnapshot &after, const QString &name)
+      : ToolUtils::TToolUndo(level, frameId)
+      , m_before(before)
+      , m_after(after)
+      , m_name(name) {}
 
-  void undo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) groupWithoutUndo(image.getPointer(), m_selection.get());
+  void undo() const override { apply(m_before); }
+
+  void redo() const override { apply(m_after); }
+
+  int getSize() const override {
+    return sizeof(*this) +
+           (m_before.m_groups.capacity() + m_after.m_groups.capacity()) *
+               sizeof(GroupSpan);
   }
 
-  void redo() const override {
-    TVectorImageP image = m_level->getFrame(m_frameId, true);
-    if (image) ungroupWithoutUndo(image.getPointer(), m_selection.get());
-  }
-
-  int getSize() const override { return sizeof(*this); }
-
-  QString getToolName() override { return QObject::tr("Ungroup"); }
+  QString getToolName() override { return m_name; }
 };
 
 //=============================================================================
@@ -272,6 +380,12 @@ UCHAR TGroupCommand::getGroupingOptions() {
   int count  = 0;
   UINT i, j;
 
+  for (i = 0; i < vimg->getStrokeCount(); i++)
+    if (vimg->isStrokeGrouped(i)) {
+      mask |= UNGROUP_ALL;
+      break;
+    }
+
   // spostamento: si possono  spostare solo gruppi interi  oppure  stroke   non
   // gruppate
 
@@ -308,7 +422,7 @@ selezionato
           }
    */
 
-  if (strokeIndexes.empty()) return 0;  // no stroke selected
+  if (strokeIndexes.empty()) return mask;  // no stroke selected
 
   int strokeIndex = vimg->getStrokeIndex(strokeIndexes[0].first);
 
@@ -555,11 +669,43 @@ void TGroupCommand::ungroup() {
   }
 
   QMutexLocker lock(vimg->getMutex());
+  GroupingSnapshot before = captureGrouping(vimg);
   ungroupWithoutUndo(vimg, m_sel);
+  GroupingSnapshot after = captureGrouping(vimg);
   TXshSimpleLevel *level =
       TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
-  TUndoManager::manager()->add(new UngroupUndo(level, tool->getCurrentFid(),
-                                               new StrokeSelection(*m_sel)));
+  TUndoManager::manager()->add(
+      new UngroupUndo(level, tool->getCurrentFid(), before, after,
+                      QObject::tr("Ungroup")));
+}
+
+//-----------------------------------------------------------------------------
+
+void TGroupCommand::ungroupAll() {
+  if (!(getGroupingOptions() & UNGROUP_ALL)) return;
+
+  TTool *tool = TTool::getApplication()->getCurrentTool()->getTool();
+  if (!tool) return;
+  TVectorImage *vimg = (TVectorImage *)tool->getImage(true);
+  if (!vimg) return;
+
+  if (!m_sel->isEditable()) {
+    DVGui::error(QObject::tr(
+        "The drawing cannot be ungrouped. It is not editable."));
+    return;
+  }
+
+  QMutexLocker lock(vimg->getMutex());
+  GroupingSnapshot before = captureGrouping(vimg);
+  ungroupAllWithoutUndo(vimg);
+  GroupingSnapshot after = captureGrouping(vimg);
+  tool->notifyImageChanged();
+
+  TXshSimpleLevel *level =
+      TTool::getApplication()->getCurrentLevel()->getSimpleLevel();
+  TUndoManager::manager()->add(
+      new UngroupUndo(level, tool->getCurrentFid(), before, after,
+                      QObject::tr("Ungroup All in Drawing")));
 }
 
 //-----------------------------------------------------------------------------
@@ -795,7 +941,11 @@ void TGroupCommand::addMenuItems(QMenu *menu) {
   if (optionMask & TGroupCommand::UNGROUP)
     menu->addAction(cm->getAction(MI_Ungroup));
 
-  if (optionMask & (TGroupCommand::GROUP | TGroupCommand::UNGROUP) &&
+  if (optionMask & TGroupCommand::UNGROUP_ALL)
+    menu->addAction(cm->getAction(MI_UngroupAll));
+
+  if (optionMask & (TGroupCommand::GROUP | TGroupCommand::UNGROUP |
+                    TGroupCommand::UNGROUP_ALL) &&
       optionMask & (TGroupCommand::FORWARD | TGroupCommand::BACKWARD))
     menu->addSeparator();
 

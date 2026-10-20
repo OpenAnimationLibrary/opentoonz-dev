@@ -91,6 +91,7 @@ set(SOURCES
     hooktool.cpp
     hookselection.cpp
     imagegrouping.cpp
+    ungroupallselection.cpp
     irontool.cpp
     levelselection.cpp
     magnettool.cpp
