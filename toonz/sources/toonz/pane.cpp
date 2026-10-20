@@ -35,6 +35,7 @@
 #include <QTextEdit>
 #include <QScreen>
 #include <QGlobalStatic>
+#include <QDebug>
 #include <memory>
 #include <utility>
 
@@ -999,8 +1000,13 @@ TPanel *TPanelFactory::createPanel(QWidget *parent, const QString &panelType) {
 
   if (panelType.startsWith(QStringLiteral("Custom_"))) {
     QString customType = panelType.mid(7);
-    return CustomPanelManager::instance()->createCustomPanel(customType,
-                                                             parent);
+    if (TPanel *panel =
+            CustomPanelManager::instance()->createCustomPanel(customType,
+                                                              parent))
+      return panel;
+
+    qWarning() << "TPanelFactory::createPanel: unable to create custom panel"
+               << panelType << "- using generic fallback";
   }
 
   // Fallback: generic panel
