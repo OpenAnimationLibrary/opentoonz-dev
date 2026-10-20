@@ -76,18 +76,19 @@ void TXshSoundLevel::loadSoundTrack() {
 //-----------------------------------------------------------------------------
 
 void TXshSoundLevel::loadSoundTrack(const TFilePath &fileName) {
+  TSoundTrackP st;
   try {
-    TSoundTrackP st;
-    TFilePath path(fileName);
-    bool ret = TSoundTrackReader::load(path, st);
-    if (ret) {
-      m_duration = st->getDuration();
-      setName(fileName.getWideName());
-      setSoundTrack(st);
-    }
-  } catch (TException &) {
-    return;
+    if (!TSoundTrackReader::load(fileName, st) || !st ||
+        st->getSampleCount() <= 0)
+      throw TException("The file contains no readable audio samples.");
+  } catch (TException &e) {
+    throw TException(fileName.getWideString() + L": " + e.getMessage());
   }
+
+  // Keep the existing sound intact if reading a replacement fails.
+  m_duration = st->getDuration();
+  setName(fileName.getWideName());
+  setSoundTrack(st);
 }
 
 //-----------------------------------------------------------------------------
