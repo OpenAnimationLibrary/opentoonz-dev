@@ -69,12 +69,11 @@ const int BackgroundStyle = 0;
 // Existing companions are never recolored when they are reused.
 namespace {
 int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
-  if (!palette || palette->isLocked() || sourceId <= BackgroundStyle)
-    return sourceId;
+  if (!palette || sourceId <= BackgroundStyle) return -1;
 
   TColorStyle *source = palette->getStyle(sourceId);
   if (!source || !source->hasMainColor() || source->getColorParamCount() != 1)
-    return sourceId;
+    return -1;
 
   // A short visible name includes the stable numeric ID of the source style.
   // Recognize old Paint Brush names so existing painted art is not duplicated.
@@ -99,7 +98,7 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
       break;
     }
   }
-  if (!page) return sourceId;
+  if (!page) return -1;
 
   for (int i = 0; i < palette->getStyleCount(); ++i) {
     TColorStyle *style = palette->getStyle(i);
@@ -107,10 +106,14 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
     if (style->getName() == label || style->getName() == legacyLabel) return i;
   }
 
+  // An existing companion can be used even if the palette is locked.
+  // Only the creation path requires an unlocked palette.
+  if (palette->isLocked()) return -1;
+
   // Avoid generating solid-color approximations from animated or multi-color
   // styles. A clone retains all original solid style properties.
   TColorStyle *companion = source->clone();
-  if (!companion) return sourceId;
+  if (!companion) return -1;
   TPixel32 color = source->getMainColor();
 
   // The Gizmo Fade field controls strength. When it has not been published
@@ -193,7 +196,7 @@ int paintBrushCompanionStyle(TPalette *palette, int sourceId, bool highlight) {
     TColorStyle *style = page->getStyle(i);
     if (style && style->getName() == label) return page->getStyleId(i);
   }
-  return sourceId;
+  return -1;
 }
 }  // namespace
 
@@ -714,6 +717,14 @@ void PaintBrushTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
         styleId = paintBrushCompanionStyle(palette, styleId, highlight);
         if (palette && palette->getStyleCount() != previousCount)
           getApplication()->getCurrentPalette()->notifyPaletteChanged();
+        if (styleId < 0) {
+          // Do not paint with the unmodified source when a requested
+          // companion cannot be created (e.g. a locked palette).
+          if (m_pick.getValue())
+            getApplication()->setCurrentLevelStyleIndex(m_orignalStyle);
+          m_selecting = false;
+          return;
+        }
       }
       TTileSetCM32 *tileSet = new TTileSetCM32(ras->getSize());
       m_tileSaver           = new TTileSaverCM32(ras, tileSet);
