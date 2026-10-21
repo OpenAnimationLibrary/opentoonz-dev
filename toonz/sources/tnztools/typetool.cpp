@@ -2434,8 +2434,8 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
     }
     const TRectD cameraRect = camera->getStageRect();
     canvasTopLeft           = TPointD(cameraRect.x0, cameraRect.y1);
-    pixelStepX              = (cameraRect.x1 - cameraRect.x0) / camera->getRes().lx;
-    pixelStepY              = (cameraRect.y1 - cameraRect.y0) / camera->getRes().ly;
+    pixelStepX              = cameraRect.getLx() / camera->getRes().lx;
+    pixelStepY              = cameraRect.getLy() / camera->getRes().ly;
   } else {
     if (previousUndone) undoManager->redo();
     QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"),
@@ -2464,8 +2464,9 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
   // m_textBox has viewer-dependent padding which must not alter placement.
   const double border = cBorderSize * m_pixelSize;
   const TPointD textTopLeft(m_textBox.x0 + border, m_textBox.y1 - border);
-  const TPointD requestedTopLeft(canvasTopLeft.x + horizontalPx * pixelStepX,
-                                  canvasTopLeft.y - verticalPx * pixelStepY);
+  TPointD requestedTopLeft = canvasTopLeft;
+  requestedTopLeft.x += horizontalPx * pixelStepX;
+  requestedTopLeft.y -= verticalPx * pixelStepY;
   m_startPoint = requestedTopLeft - textTopLeft;
   updateCharPositions();
 
@@ -2482,8 +2483,9 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
 
   m_lastStampUndo         = undoManager->getUndoItem(newHistoryIndex);
   m_lastStampHistoryIndex = newHistoryIndex;
-  m_lastStampLevel        = getApplication()->getCurrentLevel()->getSimpleLevel();
-  m_lastStampFid          = getCurrentFid();
+
+  m_lastStampLevel = getApplication()->getCurrentLevel()->getSimpleLevel();
+  m_lastStampFid   = getCurrentFid();
   return true;
 }
 
