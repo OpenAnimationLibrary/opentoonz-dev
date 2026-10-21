@@ -612,7 +612,7 @@ class TypeTool final : public TTool {
   bool m_isVertical;      // text orientation
 
   TUndo *m_undo;
-  TUndo *m_lastStampUndo = nullptr;
+  TUndo *m_lastStampUndo            = nullptr;
   TXshSimpleLevel *m_lastStampLevel = nullptr;
   TFrameId m_lastStampFid;
   int m_lastStampHistoryIndex = 0;
@@ -1091,8 +1091,7 @@ public:
     m_formatCombo->addItem(tr("Plain Text"));
     m_formatCombo->addItem(tr("Markdown"));
 
-    for (QDoubleSpinBox *offset :
-         {m_horizontalOffset, m_verticalOffset}) {
+    for (QDoubleSpinBox *offset : {m_horizontalOffset, m_verticalOffset}) {
       offset->setDecimals(2);
       offset->setRange(-100000.0, 100000.0);
       offset->setSingleStep(1.0);
@@ -1143,7 +1142,7 @@ public:
     markdownNote->setWordWrap(true);
     layout->addWidget(markdownNote);
 
-    QGroupBox *placementGroup = new QGroupBox(tr("Precise Placement"), this);
+    QGroupBox *placementGroup    = new QGroupBox(tr("Precise Placement"), this);
     QHBoxLayout *placementLayout = new QHBoxLayout;
     placementLayout->addWidget(new QLabel(tr("Horizontal:"), this));
     placementLayout->addWidget(m_horizontalOffset);
@@ -1152,11 +1151,7 @@ public:
     placementLayout->addWidget(m_stampButton);
     QVBoxLayout *placementGroupLayout = new QVBoxLayout;
     placementGroupLayout->addLayout(placementLayout);
-    QLabel *placementNote =
-        new QLabel(tr("Offsets from the image's top-left corner. "
-                      "For vector levels, use the current camera rectangle. "
-                      "Shift+Stamp replaces only the last Stamp on this "
-                      "drawing."), this);
+    QLabel *placementNote = new QLabel(tr("Origin: top-left."), this);
     placementNote->setWordWrap(true);
     placementGroupLayout->addWidget(placementNote);
     placementGroup->setLayout(placementGroupLayout);
@@ -2380,8 +2375,7 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
   const auto mayReplace = [&]() {
     const int index = undoManager->getCurrentHistoryIndex();
     return m_lastStampUndo && currentLevel == m_lastStampLevel &&
-           currentFid == m_lastStampFid &&
-           index == m_lastStampHistoryIndex &&
+           currentFid == m_lastStampFid && index == m_lastStampHistoryIndex &&
            undoManager->getUndoItem(index) == m_lastStampUndo;
   };
 
@@ -2420,7 +2414,7 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
     return false;
   }
 
-  const TImageP image = getImage(false);
+  const TImageP image             = getImage(false);
   const TVectorImageP vectorImage = image;
   const TToonzImageP toonzImage   = image;
   TPointD canvasTopLeft;
@@ -2428,9 +2422,9 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
   double pixelStepY = 1.0;
   if (toonzImage) {
     const TDimension size = toonzImage->getSize();
-    canvasTopLeft = TPointD(-0.5 * size.lx, 0.5 * size.ly);
+    canvasTopLeft         = TPointD(-0.5 * size.lx, 0.5 * size.ly);
   } else if (vectorImage) {
-    ToonzScene *scene = getApplication()->getCurrentScene()->getScene();
+    ToonzScene *scene     = getApplication()->getCurrentScene()->getScene();
     const TCamera *camera = scene ? scene->getCurrentCamera() : nullptr;
     if (!camera || camera->getRes().lx <= 0 || camera->getRes().ly <= 0) {
       if (previousUndone) undoManager->redo();
@@ -2439,9 +2433,9 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
       return false;
     }
     const TRectD cameraRect = camera->getStageRect();
-    canvasTopLeft = TPointD(cameraRect.x0, cameraRect.y1);
-    pixelStepX = (cameraRect.x1 - cameraRect.x0) / camera->getRes().lx;
-    pixelStepY = (cameraRect.y1 - cameraRect.y0) / camera->getRes().ly;
+    canvasTopLeft           = TPointD(cameraRect.x0, cameraRect.y1);
+    pixelStepX              = (cameraRect.x1 - cameraRect.x0) / camera->getRes().lx;
+    pixelStepY              = (cameraRect.y1 - cameraRect.y0) / camera->getRes().ly;
   } else {
     if (previousUndone) undoManager->redo();
     QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"),
@@ -2453,8 +2447,8 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
   setSize(m_size.getValue());
   m_string.clear();
   m_cursorIndex = 0;
-  m_startPoint = TPointD();
-  m_active     = true;
+  m_startPoint  = TPointD();
+  m_active      = true;
   setTextFromHistory(source);
   updateTextBox();
 
@@ -2469,11 +2463,9 @@ bool TypeTool::stampText(double horizontalPx, double verticalPx,
   // Align the actual text bounds rather than the Type Tool's baseline.
   // m_textBox has viewer-dependent padding which must not alter placement.
   const double border = cBorderSize * m_pixelSize;
-  const TPointD textTopLeft(m_textBox.x0 + border,
-                            m_textBox.y1 - border);
-  const TPointD requestedTopLeft(
-      canvasTopLeft.x + horizontalPx * pixelStepX,
-      canvasTopLeft.y - verticalPx * pixelStepY);
+  const TPointD textTopLeft(m_textBox.x0 + border, m_textBox.y1 - border);
+  const TPointD requestedTopLeft(canvasTopLeft.x + horizontalPx * pixelStepX,
+                                  canvasTopLeft.y - verticalPx * pixelStepY);
   m_startPoint = requestedTopLeft - textTopLeft;
   updateCharPositions();
 
