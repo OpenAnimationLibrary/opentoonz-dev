@@ -1440,13 +1440,13 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
     strokeRect *= ras->getBounds();
     m_painting.affectedRect += strokeRect;
     updateWorkAndBackupRasters(m_painting.affectedRect);
-    m_painting.tileSaver->save(strokeRect);
-    handler->brush.addPoint(thickPoint, 1, !lastPoint);
-    handler->brush.updateDrawing(ras, m_backupRas, strokeRect,
-                                 m_painting.styleId, drawOrder,
-                                 m_modifierLockAlpha.getValue());
-
-    invalidateRect += convert(strokeRect) - rasCenter;
+    if (handler->brush.addPoint(thickPoint, 1, !lastPoint)) {
+      m_painting.tileSaver->save(strokeRect);
+      handler->brush.updateDrawing(ras, m_backupRas, strokeRect,
+                                   m_painting.styleId, drawOrder,
+                                   m_modifierLockAlpha.getValue());
+      invalidateRect += convert(strokeRect) - rasCenter;
+    }
   }
 
   // invalidate rect
