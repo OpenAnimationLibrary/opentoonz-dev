@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    shadowbevelutils.h
     texturefxP.h
     warp.h
     motionawarebasefx.h
@@ -102,6 +103,7 @@ set(SOURCES
     adjustlevelsfx.cpp
     artcontourfx.cpp
     backlitfx.cpp
+    bevelfx.cpp
     blendtzfx.cpp
     blurfx.cpp
     bodyhighlightfx.cpp
