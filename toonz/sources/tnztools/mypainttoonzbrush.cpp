@@ -1,5 +1,6 @@
 
 #include <algorithm>
+#include <cmath>
 
 #include "mypainttoonzbrush.h"
 #include "tropcm.h"
@@ -163,6 +164,8 @@ void MyPaintToonzBrush::endStroke() {
 
 void MyPaintToonzBrush::strokeTo(const TPointD &position, double pressure,
                                  const TPointD &tilt, double dtime) {
+  // Repeated timestamps and the final interpolation flush may have zero time.
+  if (!std::isfinite(dtime) || dtime < 0.0) dtime = 0.0;
   Params next(position.x, position.y, pressure, tilt.x, tilt.y, 0.0);
 
   if (m_reset) {
@@ -244,3 +247,4 @@ void MyPaintToonzBrush::updateDrawing(const TRasterCM32P rasCM,
   putOnRasterCM(rasCM->extract(targetRect), m_ras->extract(targetRect), styleId,
                 lockAlpha, eraser, eraserMode);
 }
+

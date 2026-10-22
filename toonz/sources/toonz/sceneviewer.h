@@ -16,6 +16,7 @@
 
 // TnzTools includes
 #include "tools/tool.h"
+#include "tools/strokesampleclock.h"
 
 // Toonz includes
 #include "pane.h"
@@ -180,6 +181,11 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_isStyleShortcutSwitchable;
 
   bool m_isBusyOnTabletMove;
+  TStrokeSampleClock m_tabletSampleClock;
+  TMouseEvent m_lastTabletSample;
+  qint64 m_lastTabletDevice   = -1;
+  int m_lastTabletPointerType = -1;
+  bool m_hasLastTabletSample  = false;
 
   QMatrix4x4 m_projectionMatrix;
 
@@ -497,3 +503,4 @@ signals:
 void invalidateIcons();
 
 #endif  // SCENEVIEWER_H
+

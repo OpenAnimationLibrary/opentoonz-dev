@@ -1132,7 +1132,7 @@ bool ToonzRasterBrushTool::preLeftButtonDown() {
 void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
                                             const TPointD &pos,
                                             const TMouseEvent &e) {
-  TTimerTicks t    = TToolTimer::ticks();
+  TTimerTicks t    = e.time() > 0 ? e.time() : TToolTimer::ticks();
   bool alt         = e.getModifiersMask() & TMouseEvent::ALT_KEY;
   bool shift       = e.getModifiersMask() & TMouseEvent::SHIFT_KEY;
   bool control     = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
@@ -1178,7 +1178,7 @@ void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
     double pressure    = hasPressure ? e.m_pressure : defPressure;
     bool final         = type == ME_UP;
     m_inputmanager.trackEvent(deviceId, 0, fixedPos, pressure, TPointD(),
-                              hasPressure, false, final, t);
+                              hasPressure, false, final, t, e.sampleTime());
     m_inputmanager.processTracks();
   }
 }
@@ -1313,6 +1313,40 @@ void ToonzRasterBrushTool::inputSetBusy(bool busy) {
 
 //--------------------------------------------------------------------------------------------------
 
+void ToonzRasterBrushTool::inputPaintTracksBegin() {
+  m_inputPaintRect.empty();
+  m_inputPaintAll          = false;
+  m_batchInputInvalidation = true;
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void ToonzRasterBrushTool::inputPaintTracksEnd() {
+  const TRectD rect = m_inputPaintRect;
+  const bool all    = m_inputPaintAll;
+  m_inputPaintRect.empty();
+  m_inputPaintAll          = false;
+  m_batchInputInvalidation = false;
+  if (all)
+    invalidate();
+  else if (!rect.isEmpty())
+    invalidate(rect);
+}
+
+//--------------------------------------------------------------------------------------------------
+
+void ToonzRasterBrushTool::inputInvalidateRect(const TRectD &bounds) {
+  if (!m_batchInputInvalidation) {
+    invalidate(bounds);
+  } else if (bounds.isEmpty()) {
+    m_inputPaintAll = true;
+  } else {
+    m_inputPaintRect += bounds;
+  }
+}
+
+//--------------------------------------------------------------------------------------------------
+
 void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
                                                 const TTrack &track,
                                                 bool firstTrack, bool preview) {
@@ -1440,13 +1474,13 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
     strokeRect *= ras->getBounds();
     m_painting.affectedRect += strokeRect;
     updateWorkAndBackupRasters(m_painting.affectedRect);
-    m_painting.tileSaver->save(strokeRect);
-    handler->brush.addPoint(thickPoint, 1, !lastPoint);
-    handler->brush.updateDrawing(ras, m_backupRas, strokeRect,
-                                 m_painting.styleId, drawOrder,
-                                 m_modifierLockAlpha.getValue());
-
-    invalidateRect += convert(strokeRect) - rasCenter;
+    if (handler->brush.addPoint(thickPoint, 1, !lastPoint)) {
+      m_painting.tileSaver->save(strokeRect);
+      handler->brush.updateDrawing(ras, m_backupRas, strokeRect,
+                                   m_painting.styleId, drawOrder,
+                                   m_modifierLockAlpha.getValue());
+      invalidateRect += convert(strokeRect) - rasCenter;
+    }
   }
 
   // invalidate rect
@@ -1463,7 +1497,8 @@ void ToonzRasterBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
     m_brushPos = m_mousePos = point.position;
   }
 
-  if (!invalidateRect.isEmpty()) invalidate(invalidateRect.enlarge(20));
+  if (!invalidateRect.isEmpty())
+    inputInvalidateRect(invalidateRect.enlarge(20));
 }
 
 //---------------------------------------------------------------------------------------------------------------
@@ -2584,3 +2619,4 @@ void BrushPresetManager::removePreset(const std::wstring &name) {
   m_presets.erase(BrushData(name));
   save();
 }
+

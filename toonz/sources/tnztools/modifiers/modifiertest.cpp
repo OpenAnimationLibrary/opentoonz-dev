@@ -61,9 +61,7 @@ void TModifierTest::modifyTrack(const TTrack &track,
                                 TTrackList &outTracks) {
   const double segmentSize = 2.0 * M_PI / 10.0;
 
-  if ( !track.handler
-    && track.getKeyState(track.front().time).isPressed(TKey::alt) )
-  {
+  if (!track.handler && track.getKeyState(track.front()).isPressed(TKey::alt)) {
     Handler *handler = new Handler(this->radius);
     track.handler = handler;
     for (int i = 0; i < count; ++i) {
@@ -72,7 +70,7 @@ void TModifierTest::modifyTrack(const TTrack &track,
       new Interpolator(subTrack, i*2*M_PI/(double)count, radius, 0.25);
     }
   }
-  
+
   Handler *handler = dynamic_cast<Handler*>(track.handler.getPointer());
   if (!handler)
     return TInputModifier::modifyTrack(track, outTracks);
@@ -148,3 +146,4 @@ void TModifierTest::modifyTrack(const TTrack &track,
 }
 
 #endif
+
