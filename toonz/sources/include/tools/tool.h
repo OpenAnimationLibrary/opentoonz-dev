@@ -9,6 +9,7 @@
 #include "toonz/imagepainter.h"
 #include "toonz/tapplication.h"
 #include "tools/cursors.h"
+#include "tools/tooltimer.h"
 
 // TnzCore includes
 #include "tcommon.h"
@@ -102,6 +103,10 @@ public:
   Qt::MouseButton m_button;
   QPointF m_mousePos;  // mouse position obtained with QMouseEvent::pos() or
                        // QTabletEvent::pos()
+  TTimerTicks m_time;  // Delivery clock, used to order input and key states.
+  qint64 m_sourceTimestamp;  // Original device timestamp in milliseconds.
+  double m_sampleTime;  // Stroke-relative seconds; -1 uses delivery timing.
+  bool m_sampleTimeEstimated;
   bool m_isTablet;
   bool m_isHighFrequent;
 
@@ -111,6 +116,10 @@ public:
       , m_modifiersMask(NO_KEY)
       , m_buttons(Qt::NoButton)
       , m_button(Qt::NoButton)
+      , m_time(0)
+      , m_sourceTimestamp(0)
+      , m_sampleTime(-1.0)
+      , m_sampleTimeEstimated(true)
       , m_isTablet(false)
       , m_isHighFrequent(false) {}
 
@@ -122,6 +131,10 @@ public:
   Qt::MouseButtons buttons() const { return m_buttons; }
   Qt::MouseButton button() const { return m_button; }
   QPointF mousePos() const { return m_mousePos; }
+  TTimerTicks time() const { return m_time; }
+  qint64 sourceTimestamp() const { return m_sourceTimestamp; }
+  double sampleTime() const { return m_sampleTime; }
+  bool isSampleTimeEstimated() const { return m_sampleTimeEstimated; }
   bool isTablet() const { return m_isTablet; }
   bool isHighFrequent() const { return m_isHighFrequent; }
 
@@ -767,3 +780,4 @@ public:
 };
 
 #endif
+

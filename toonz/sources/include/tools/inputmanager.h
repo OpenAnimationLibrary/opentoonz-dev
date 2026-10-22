@@ -189,6 +189,7 @@ private:
     double pressure,
     const TPointD &tilt,
     double time,
+    double eventTime,
     bool final );
   void touchTracks(bool finish = false);
 
@@ -240,7 +241,8 @@ public:
     bool hasPressure,
     bool hasTilt,
     bool final,
-    TTimerTicks ticks );
+    TTimerTicks ticks,
+    double sampleTime = -1.0 );
   bool keyEvent(
     bool press,
     TInputState::Key key,
@@ -270,3 +272,4 @@ template class DVAPI TSmartPointerT<TInputModifier>;
 
 
 #endif
+

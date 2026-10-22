@@ -118,8 +118,9 @@ TTrack::push_back(const TTrackPoint &point, bool fixed) {
     if (p.originalIndex < prev.originalIndex)
         p.originalIndex = prev.originalIndex;
 
-    // fix time
-    p.time = std::max(p.time, prev.time + TToolTimer::step);
+    // Equal source timestamps do not imply one nanosecond of pen motion.
+    p.time = std::max(p.time, prev.time);
+    p.eventTime = std::max(p.eventTime, prev.eventTime + TToolTimer::step);
 
     // calculate length
     p.length = prev.length + tdistance(p.position, prev.position);
@@ -175,3 +176,4 @@ TTrack::calcRootPoint(double index) const {
        ? original->calcRootPoint( originalIndexByIndex(index) )
        : calcPoint(index);
 }
+

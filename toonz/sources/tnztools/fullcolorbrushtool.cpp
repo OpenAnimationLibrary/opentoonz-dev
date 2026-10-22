@@ -375,7 +375,7 @@ bool FullColorBrushTool::preLeftButtonDown() {
 void FullColorBrushTool::handleMouseEvent(MouseEventType type,
                                           const TPointD &pos,
                                           const TMouseEvent &e) {
-  TTimerTicks t = TToolTimer::ticks();
+  TTimerTicks t = e.time() > 0 ? e.time() : TToolTimer::ticks();
   bool alt      = e.getModifiersMask() & TMouseEvent::ALT_KEY;
   bool shift    = e.getModifiersMask() & TMouseEvent::SHIFT_KEY;
   bool control  = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
@@ -418,7 +418,8 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
     double pressure    = hasPressure ? e.m_pressure : defPressure;
     bool   final       = type == ME_UP;
     m_inputmanager.trackEvent(
-      deviceId, 0, pos, pressure, TPointD(), hasPressure, false, final, t);
+      deviceId, 0, pos, pressure, TPointD(), hasPressure, false, final, t,
+      e.sampleTime());
     m_inputmanager.processTracks();
   }
 }
@@ -1293,3 +1294,4 @@ void FullColorBrushToolNotifier::onDeactivate() {
 //==========================================================================================================
 
 FullColorBrushTool fullColorPencil("T_Brush");
+

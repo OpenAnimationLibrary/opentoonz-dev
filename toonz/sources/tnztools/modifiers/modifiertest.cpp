@@ -62,7 +62,7 @@ void TModifierTest::modifyTrack(const TTrack &track,
   const double segmentSize = 2.0 * M_PI / 10.0;
 
   if ( !track.handler
-    && track.getKeyState(track.front().time).isPressed(TKey::alt) )
+    && track.getKeyState(track.front()).isPressed(TKey::alt) )
   {
     Handler *handler = new Handler(this->radius);
     track.handler = handler;
@@ -148,3 +148,4 @@ void TModifierTest::modifyTrack(const TTrack &track,
 }
 
 #endif
+

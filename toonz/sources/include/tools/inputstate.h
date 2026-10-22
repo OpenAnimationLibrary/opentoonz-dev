@@ -213,7 +213,7 @@ public:
     { return ButtonState::Holder(buttonState(deviceId), ticks, timeOffset); }
   inline ButtonState::Holder buttonStateHolder(DeviceId deviceId)
     { return buttonStateHolder(deviceId, m_ticks); }
-  inline ButtonHistory::Holder buttonHistoryHolder(DeviceId deviceId, long ticks, double timeOffset = 0.0)
+  inline ButtonHistory::Holder buttonHistoryHolder(DeviceId deviceId, TTimerTicks ticks, double timeOffset = 0.0)
     { return ButtonHistory::Holder(buttonHistory(deviceId), ticks, timeOffset); }
   inline ButtonHistory::Holder buttonHistoryHolder(DeviceId deviceId)
     { return buttonHistoryHolder(deviceId, m_ticks); }
@@ -225,3 +225,4 @@ public:
 
 
 #endif
+

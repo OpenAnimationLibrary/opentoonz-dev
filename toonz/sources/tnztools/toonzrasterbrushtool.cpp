@@ -1132,7 +1132,7 @@ bool ToonzRasterBrushTool::preLeftButtonDown() {
 void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
                                             const TPointD &pos,
                                             const TMouseEvent &e) {
-  TTimerTicks t    = TToolTimer::ticks();
+  TTimerTicks t    = e.time() > 0 ? e.time() : TToolTimer::ticks();
   bool alt         = e.getModifiersMask() & TMouseEvent::ALT_KEY;
   bool shift       = e.getModifiersMask() & TMouseEvent::SHIFT_KEY;
   bool control     = e.getModifiersMask() & TMouseEvent::CTRL_KEY;
@@ -1178,7 +1178,7 @@ void ToonzRasterBrushTool::handleMouseEvent(MouseEventType type,
     double pressure    = hasPressure ? e.m_pressure : defPressure;
     bool final         = type == ME_UP;
     m_inputmanager.trackEvent(deviceId, 0, fixedPos, pressure, TPointD(),
-                              hasPressure, false, final, t);
+                              hasPressure, false, final, t, e.sampleTime());
     m_inputmanager.processTracks();
   }
 }
@@ -2584,3 +2584,4 @@ void BrushPresetManager::removePreset(const std::wstring &name) {
   m_presets.erase(BrushData(name));
   save();
 }
+

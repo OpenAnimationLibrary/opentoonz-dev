@@ -16,6 +16,8 @@
 // std includes
 #include <vector>
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 
 #undef DVAPI
@@ -80,7 +82,8 @@ public:
   TPointD tilt;
 
   double originalIndex;
-  double time;
+  double time;       // Sample elapsed time, used by brush dynamics.
+  double eventTime;  // Delivery time relative to ticks(), used by input history.
   double length;
 
   bool final;
@@ -92,13 +95,15 @@ public:
     double originalIndex = 0.0,
     double time = 0.0,
     double length = 0.0,
-    bool final = false
+    bool final = false,
+    double eventTime = std::numeric_limits<double>::quiet_NaN()
   ):
     position(position),
     pressure(pressure),
     tilt(tilt),
     originalIndex(originalIndex),
     time(time),
+    eventTime(std::isnan(eventTime) ? time : eventTime),
     length(length),
     final(final)
   { }
@@ -282,6 +287,10 @@ public:
 
   inline TTimerTicks ticks() const
     { return keyHistory.ticks(); }
+
+  inline double eventTimeFromTicks(TTimerTicks eventTicks) const {
+    return (double)(eventTicks - ticks()) * TToolTimer::step - rootTimeOffset;
+  }
   inline bool changed() const
     { return pointsRemoved || pointsAdded || fixedPointsAdded; }
 
@@ -362,15 +371,15 @@ public:
   inline TInputState::KeyState::Holder getKeyState(double time) const
     { return keyHistory.get(time); }
   inline TInputState::KeyState::Holder getKeyState(const TTrackPoint &point) const
-    { return getKeyState(rootTimeOffset + point.time); }
+    { return getKeyState(rootTimeOffset + point.eventTime); }
   inline TInputState::KeyState::Holder getCurrentKeyState() const
-    { return getKeyState(rootTimeOffset + current().time); }
+    { return getKeyState(rootTimeOffset + current().eventTime); }
   inline TInputState::ButtonState::Holder getButtonState(double time) const
     { return buttonHistory.get(time); }
   inline TInputState::ButtonState::Holder getButtonState(const TTrackPoint &point) const
-    { return getButtonState(rootTimeOffset + point.time); }
+    { return getButtonState(rootTimeOffset + point.eventTime); }
   inline TInputState::ButtonState::Holder getCurrentButtonState() const
-    { return getButtonState(rootTimeOffset + current().time); }
+    { return getButtonState(rootTimeOffset + current().eventTime); }
 
 private:
   template<double TTrackPoint::*Field>
@@ -430,6 +439,7 @@ public:
     TTrackPoint p = originalPoint;
     p.originalIndex = original ? original->clampIndexFloat(originalIndex) : originalIndex;
     p.time -= timeOffset;
+    p.eventTime -= timeOffset;
     return p;
   }
   
@@ -470,7 +480,8 @@ public:
       interpolationLinear(p0.originalIndex , p1.originalIndex , l),
       interpolationLinear(p0.time          , p1.time          , l),
       interpolationLinear(p0.length        , p1.length        , l),
-      p0.final && p1.final );
+      p0.final && p1.final,
+      interpolationLinear(p0.eventTime, p1.eventTime, l) );
   }
 
   static inline TTrackPoint interpolationSpline(
@@ -491,7 +502,8 @@ public:
       interpolationLinear(p0.originalIndex , p1.originalIndex , l),
       interpolationLinear(p0.time          , p1.time          , l),
       interpolationLinear(p0.length        , p1.length        , l),
-      p0.final && p1.final );
+      p0.final && p1.final,
+      interpolationLinear(p0.eventTime, p1.eventTime, l) );
   }
 };
 
@@ -517,3 +529,4 @@ public:
 
 
 #endif
+
