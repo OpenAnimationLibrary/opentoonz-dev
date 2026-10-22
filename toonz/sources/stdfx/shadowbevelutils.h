@@ -68,7 +68,7 @@ inline void writePixel<TPixelF>(TPixelF &pix, const float *value) {
 // ones weighted by the fractional part, divided by the width and rounded
 // down to 8 bits. Samples outside are zero.
 inline void boxPass(float *values, int count, int step, double width,
-             std::vector<double> &prefix, std::vector<float> &line) {
+                    std::vector<double> &prefix, std::vector<float> &line) {
   if (width <= 1 || count <= 0) return;
   const double radius = (width - 1) / 2;
   const int m         = int(std::ceil(radius)) - 1;
@@ -91,7 +91,7 @@ inline void boxPass(float *values, int count, int step, double width,
 
 // Blurs the alpha plane `alpha` (lx * ly) in place.
 inline void boxBlur(std::vector<float> &alpha, int lx, int ly, double widthX,
-             double widthY, int passes) {
+                    double widthY, int passes) {
   std::vector<double> prefix;
   std::vector<float> line;
   for (int pass = 0; pass < passes; ++pass) {
