@@ -11,11 +11,11 @@
 #include <limits>
 #include <vector>
 
-using shadowbevel::FloatImage;
-using shadowbevel::ShadowGeometry;
 using shadowbevel::boxBlur;
+using shadowbevel::FloatImage;
 using shadowbevel::premultipliedColor;
 using shadowbevel::readRaster;
+using shadowbevel::ShadowGeometry;
 using shadowbevel::writePixel;
 
 class DropShadowFx final : public TStandardRasterFx {
