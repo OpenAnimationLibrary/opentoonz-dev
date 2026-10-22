@@ -197,12 +197,12 @@ BluredBrush::~BluredBrush() {}
 
 //----------------------------------------------------------------------------------
 
-bool BluredBrush::addPoint(const TThickPoint &p, double opacity, bool keepDistance) {
+bool BluredBrush::addPoint(const TThickPoint &p, double opacity,
+                           bool keepDistance) {
   if (keepDistance) {
     double dist = norm2(p - m_lastPoint);
     double d = 0.12 * m_lastPoint.thick;
-    if (dist < d*d)
-      return false;
+    if (dist < d * d) return false;
   }
   
   double radius      = p.thick * 0.5;

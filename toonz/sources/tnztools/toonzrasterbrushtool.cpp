@@ -1323,7 +1323,7 @@ void ToonzRasterBrushTool::inputPaintTracksBegin() {
 
 void ToonzRasterBrushTool::inputPaintTracksEnd() {
   const TRectD rect = m_inputPaintRect;
-  const bool all   = m_inputPaintAll;
+  const bool all    = m_inputPaintAll;
   m_inputPaintRect.empty();
   m_inputPaintAll          = false;
   m_batchInputInvalidation = false;

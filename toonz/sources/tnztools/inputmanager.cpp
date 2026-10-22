@@ -193,7 +193,9 @@ TInputHandler::inputPaintTracks(const TTrackList &tracks) {
       if (t.pointsAdded > 0) {
         TTimerTicks ticks = t.ticks();
         double timeOffset = t.rootTimeOffset + t.current().eventTime;
-        if (!track || (ticks - minTicks)*TToolTimer::step + timeOffset - minTimeOffset < 0.0) {
+        if (!track ||
+            (ticks - minTicks) * TToolTimer::step + timeOffset - minTimeOffset <
+                0.0) {
           track = *i;
           minTicks = ticks;
           minTimeOffset = timeOffset;
@@ -357,30 +359,15 @@ TInputManager::getTrack(
   return createTrack(b, deviceId, touchId, ticks, hasPressure, hasTilt);
 }
 
-
-void
-TInputManager::addTrackPoint(
-  const TTrackP& track,
-  const TPointD &position,
-  double pressure,
-  const TPointD &tilt,
-  double time,
-  double eventTime,
-  bool final )
-{
+void TInputManager::addTrackPoint(const TTrackP &track, const TPointD &position,
+                                  double pressure, const TPointD &tilt,
+                                  double time, double eventTime, bool final) {
   track->push_back(
-    TTrackPoint(
-      position,
-      pressure,
-      tilt,
-      (double)track->size(),
-      time,
-      0.0, // length will calculated inside of TTrack::push_back
-      final,
-      eventTime ),
-    true );
+      TTrackPoint(position, pressure, tilt, (double)track->size(), time,
+                  0.0,  // length will calculated inside of TTrack::push_back
+                  final, eventTime),
+      true);
 }
-
 
 void
 TInputManager::touchTracks(bool finish) {
@@ -388,11 +375,12 @@ TInputManager::touchTracks(bool finish) {
     if (!(*i)->finished() && (*i)->size() > 0) {
       const TTrackPoint &p = (*i)->back();
       const TTimerTicks ticks = fixTicks(m_lastTicks);
-      const double eventTime = (*i)->eventTimeFromTicks(ticks);
+      const double eventTime  = (*i)->eventTimeFromTicks(ticks);
       // Key changes and finalization carry no additional pen sample time.
-      addTrackPoint(*i, p.position, p.pressure, p.tilt, p.time, eventTime, finish);
-      StrokeSmoothnessDiagnostics::recordAccepted(
-        **i, ticks, finish ? "finish" : "state");
+      addTrackPoint(*i, p.position, p.pressure, p.tilt, p.time, eventTime,
+                    finish);
+      StrokeSmoothnessDiagnostics::recordAccepted(**i, ticks,
+                                                  finish ? "finish" : "state");
     }
   }
 }
@@ -490,40 +478,24 @@ TInputManager::clearModifiers() {
     removeModifier(getModifiersCount() - 1);
 }
 
-
-void
-TInputManager::trackEvent(
-  TInputState::DeviceId deviceId,
-  TInputState::TouchId touchId,
-  const TPointD &position,
-  const double pressure,
-  const TPointD &tilt,
-  bool hasPressure,
-  bool hasTilt,
-  bool final,
-  TTimerTicks ticks,
-  double sampleTime )
-{
+void TInputManager::trackEvent(TInputState::DeviceId deviceId,
+                               TInputState::TouchId touchId,
+                               const TPointD &position, const double pressure,
+                               const TPointD &tilt, bool hasPressure,
+                               bool hasTilt, bool final, TTimerTicks ticks,
+                               double sampleTime) {
   if (StrokeSmoothnessDiagnostics::maybeReplay(*this, final)) return;
   ticks = fixTicks(ticks);
   TTrackP track = getTrack(deviceId, touchId, ticks, hasPressure, hasTilt);
   if (!track->finished()) {
     const double eventTime = track->eventTimeFromTicks(ticks);
-    const double time = std::isfinite(sampleTime) && sampleTime >= 0.0
-                            ? sampleTime - track->rootTimeOffset
-                            : eventTime;
-    addTrackPoint(
-      track,
-      position,
-      pressure,
-      tilt,
-      time,
-      eventTime,
-      final );
+    const double time      = std::isfinite(sampleTime) && sampleTime >= 0.0
+                                 ? sampleTime - track->rootTimeOffset
+                                 : eventTime;
+    addTrackPoint(track, position, pressure, tilt, time, eventTime, final);
     StrokeSmoothnessDiagnostics::recordAccepted(*track, ticks);
   }
 }
-
 
 bool
 TInputManager::keyEvent(

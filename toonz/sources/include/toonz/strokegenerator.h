@@ -47,7 +47,7 @@ class DVAPI StrokeGenerator {
     TPointD left, right;
   };
   std::vector<PreviewPoint> m_previewPoints;
-  int m_previewDirty = 0;
+  int m_previewDirty     = 0;
   bool m_previewShowZero = false;
 
   void invalidatePreview(int point);

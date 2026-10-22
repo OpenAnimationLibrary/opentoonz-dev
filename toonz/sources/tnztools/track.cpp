@@ -119,7 +119,7 @@ TTrack::push_back(const TTrackPoint &point, bool fixed) {
         p.originalIndex = prev.originalIndex;
 
     // Equal source timestamps do not imply one nanosecond of pen motion.
-    p.time = std::max(p.time, prev.time);
+    p.time      = std::max(p.time, prev.time);
     p.eventTime = std::max(p.eventTime, prev.eventTime + TToolTimer::step);
 
     // calculate length

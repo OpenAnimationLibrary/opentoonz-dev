@@ -14,7 +14,7 @@ using namespace std;
 void StrokeGenerator::clear() {
   m_points.clear();
   m_previewPoints.clear();
-  m_previewDirty = 0;
+  m_previewDirty   = 0;
   m_modifiedRegion = TRectD();
   m_lastPointRect.empty();
   m_lastModifiedRegion.empty();
@@ -260,7 +260,7 @@ void StrokeGenerator::drawLastFragments() {
 void StrokeGenerator::drawAllFragments() {
   if (m_points.empty()) return;
   updatePreview();
-  const int n = (int)m_points.size();
+  const int n    = (int)m_points.size();
   const double h = 0.01;
 
   TThickPoint a = m_points[0];
@@ -300,8 +300,8 @@ void StrokeGenerator::drawAllFragments() {
   }
   if (n > 1) {
     const PreviewPoint &p = m_previewPoints[n == 2 ? 1 : n - 2];
-    m_p0 = p.left;
-    m_p1 = p.right;
+    m_p0                  = p.left;
+    m_p1                  = p.right;
   }
   a = m_points.back();
   if (a.thick >= h) tglDrawDisk(a, a.thick);
@@ -319,7 +319,7 @@ void StrokeGenerator::updatePreview() {
   const bool showZero = Preferences::instance()->getShow0ThickLines();
   if (showZero != m_previewShowZero) m_previewDirty = 0;
   m_previewShowZero = showZero;
-  const int n = (int)m_points.size();
+  const int n       = (int)m_points.size();
   m_previewPoints.resize(n);
   for (int i = m_previewDirty; i < n; ++i) {
     const TThickPoint &p = m_points[i];
@@ -327,10 +327,9 @@ void StrokeGenerator::updatePreview() {
         m_points[std::min(i + 1, n - 1)] - m_points[std::max(i - 1, 0)];
     double thickness = p.thick;
     // Match drawFragments(), including its unexpanded final zero-width tip.
-    if (showZero && thickness == 0.0 && (n == 2 || i < n - 1))
-      thickness = 0.1;
-    const TPointD normal = thickness * normalizeOrZero(rotate90(direction));
-    m_previewPoints[i].left = p + normal;
+    if (showZero && thickness == 0.0 && (n == 2 || i < n - 1)) thickness = 0.1;
+    const TPointD normal     = thickness * normalizeOrZero(rotate90(direction));
+    m_previewPoints[i].left  = p + normal;
     m_previewPoints[i].right = p - normal;
   }
   m_previewDirty = n;

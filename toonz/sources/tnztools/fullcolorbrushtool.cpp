@@ -417,9 +417,8 @@ void FullColorBrushTool::handleMouseEvent(MouseEventType type,
     bool   hasPressure = e.isTablet();
     double pressure    = hasPressure ? e.m_pressure : defPressure;
     bool   final       = type == ME_UP;
-    m_inputmanager.trackEvent(
-      deviceId, 0, pos, pressure, TPointD(), hasPressure, false, final, t,
-      e.sampleTime());
+    m_inputmanager.trackEvent(deviceId, 0, pos, pressure, TPointD(),
+                              hasPressure, false, final, t, e.sampleTime());
     m_inputmanager.processTracks();
   }
 }
@@ -561,7 +560,7 @@ void FullColorBrushTool::inputPaintTracksBegin() {
 
 void FullColorBrushTool::inputPaintTracksEnd() {
   const TRectD rect = m_inputPaintRect;
-  const bool all   = m_inputPaintAll;
+  const bool all    = m_inputPaintAll;
   m_inputPaintRect.empty();
   m_inputPaintAll          = false;
   m_batchInputInvalidation = false;

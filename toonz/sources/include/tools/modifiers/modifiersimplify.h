@@ -28,13 +28,13 @@ class DVAPI TModifierSimplify: public TInputModifier {
 public:
   typedef TSubTrackHandler Handler;
   typedef TTrackIntrOrig Interpolator;
-  
+
   // Maximum deviation from a replacement line segment, in track units.
   double step;
   // Error after applying pressureExponent; a negative value ignores pressure.
   double pressureError = 0.01;
   int pressureExponent = 1;
-  
+
   explicit TModifierSimplify(double step = 1.0);
 
   void modifyTrack(

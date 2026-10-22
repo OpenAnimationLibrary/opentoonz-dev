@@ -183,9 +183,9 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_isBusyOnTabletMove;
   TStrokeSampleClock m_tabletSampleClock;
   TMouseEvent m_lastTabletSample;
-  qint64 m_lastTabletDevice = -1;
+  qint64 m_lastTabletDevice   = -1;
   int m_lastTabletPointerType = -1;
-  bool m_hasLastTabletSample = false;
+  bool m_hasLastTabletSample  = false;
 
   QMatrix4x4 m_projectionMatrix;
 
