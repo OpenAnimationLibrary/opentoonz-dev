@@ -13,6 +13,8 @@ using namespace std;
 
 void StrokeGenerator::clear() {
   m_points.clear();
+  m_previewPoints.clear();
+  m_previewDirty = 0;
   m_modifiedRegion = TRectD();
   m_lastPointRect.empty();
   m_lastModifiedRegion.empty();
@@ -30,6 +32,7 @@ bool StrokeGenerator::add(const TThickPoint &point, double pixelSize2) {
   if (m_points.empty()) {
     double x = point.x, y = point.y, d = point.thick + 3;
     m_points.push_back(point);
+    invalidatePreview(0);
     TRectD rect(x - d, y - d, x + d, y + d);
     m_modifiedRegion     += rect;
     m_lastPointRect      += rect;
@@ -41,6 +44,7 @@ bool StrokeGenerator::add(const TThickPoint &point, double pixelSize2) {
   TThickPoint lastPoint = m_points.back();
   if (tdistance2(lastPoint, point) >= 4 * pixelSize2) {
     m_points.push_back(point);
+    invalidatePreview((int)m_points.size() - 1);
     double d = std::max(point.thick, lastPoint.thick) + 3;
     TRectD rect(TRectD(lastPoint, point).enlarge(d));
     m_modifiedRegion += rect;
@@ -50,6 +54,7 @@ bool StrokeGenerator::add(const TThickPoint &point, double pixelSize2) {
   }
   
   m_points.back().thick = std::max(m_points.back().thick, point.thick);
+  invalidatePreview((int)m_points.size() - 1);
   return false;
 }
 
@@ -60,6 +65,7 @@ void StrokeGenerator::pop() {
     TRectD rect;
     TThickPoint point = m_points.back();
     m_points.pop_back();
+    invalidatePreview((int)m_points.size());
     if (!m_points.empty()) {
       const TThickPoint &lastPoint = m_points.back();
       double d = std::max(point.thick, lastPoint.thick) + 3;
@@ -83,6 +89,7 @@ void StrokeGenerator::setLoop(bool loop)
 
 void StrokeGenerator::filterPoints() {
   if (m_points.size() < 10) return;
+  invalidatePreview(0);
 
   //  filtra m_points iniziali: generalmente elevate variazioni di thickness
   //  si hanno tra m_points[0] (al massimo m_points[1]) e i successivi)
@@ -252,28 +259,81 @@ void StrokeGenerator::drawLastFragments() {
 
 void StrokeGenerator::drawAllFragments() {
   if (m_points.empty()) return;
-
-  int n          = m_points.size();
-  int i          = 0;
+  updatePreview();
+  const int n = (int)m_points.size();
   const double h = 0.01;
 
   TThickPoint a = m_points[0];
   if (a.thick >= h) tglDrawDisk(a, a.thick);
 
-  drawFragments(1, n - 1);
-  /*
-//last fragment
-TPointD p0 = c+v;
-TPointD p1 = c-v;
-glBegin(GL_POLYGON);
-tglVertex(m_p0);
-tglVertex(m_p1);
-tglVertex(p1);
-tglVertex(p0);
-glEnd();
-*/
+  // The cache uses image coordinates, so expose, pan and zoom can redraw the
+  // complete stroke without recomputing its already stable strip normals.
+  if (glIsEnabled(GL_DEPTH_TEST) || glIsEnabled(GL_STENCIL_TEST)) {
+    // Preserve primitive order when an enclosing renderer uses depth/stencil.
+    for (int i = 1; i < n; ++i) {
+      glBegin(GL_POLYGON);
+      tglVertex(m_previewPoints[i - 1].left);
+      tglVertex(m_previewPoints[i - 1].right);
+      tglVertex(m_previewPoints[i].right);
+      tglVertex(m_previewPoints[i].left);
+      glEnd();
+      glBegin(GL_LINE_STRIP);
+      tglVertex(m_points[i - 1]);
+      tglVertex(m_points[i]);
+      glEnd();
+    }
+  } else {
+    glBegin(GL_QUADS);
+    for (int i = 1; i < n; ++i) {
+      tglVertex(m_previewPoints[i - 1].left);
+      tglVertex(m_previewPoints[i - 1].right);
+      tglVertex(m_previewPoints[i].right);
+      tglVertex(m_previewPoints[i].left);
+    }
+    glEnd();
+    glBegin(GL_LINES);
+    for (int i = 1; i < n; ++i) {
+      tglVertex(m_points[i - 1]);
+      tglVertex(m_points[i]);
+    }
+    glEnd();
+  }
+  if (n > 1) {
+    const PreviewPoint &p = m_previewPoints[n == 2 ? 1 : n - 2];
+    m_p0 = p.left;
+    m_p1 = p.right;
+  }
   a = m_points.back();
   if (a.thick >= h) tglDrawDisk(a, a.thick);
+}
+
+//-------------------------------------------------------------------
+
+void StrokeGenerator::invalidatePreview(int point) {
+  m_previewDirty = std::min(m_previewDirty, std::max(0, point - 1));
+}
+
+//-------------------------------------------------------------------
+
+void StrokeGenerator::updatePreview() {
+  const bool showZero = Preferences::instance()->getShow0ThickLines();
+  if (showZero != m_previewShowZero) m_previewDirty = 0;
+  m_previewShowZero = showZero;
+  const int n = (int)m_points.size();
+  m_previewPoints.resize(n);
+  for (int i = m_previewDirty; i < n; ++i) {
+    const TThickPoint &p = m_points[i];
+    const TPointD direction =
+        m_points[std::min(i + 1, n - 1)] - m_points[std::max(i - 1, 0)];
+    double thickness = p.thick;
+    // Match drawFragments(), including its unexpanded final zero-width tip.
+    if (showZero && thickness == 0.0 && (n == 2 || i < n - 1))
+      thickness = 0.1;
+    const TPointD normal = thickness * normalizeOrZero(rotate90(direction));
+    m_previewPoints[i].left = p + normal;
+    m_previewPoints[i].right = p - normal;
+  }
+  m_previewDirty = n;
 }
 
 //-------------------------------------------------------------------
@@ -343,6 +403,7 @@ void StrokeGenerator::removeMiddlePoints() {
   int size = m_points.size();
   if (size > 2) {
     m_points.erase(m_points.begin() + 1, m_points.begin() + (size - 1));
+    invalidatePreview(0);
   }
 }
 
@@ -375,3 +436,4 @@ TStroke *StrokeGenerator::makeStroke(double error, UINT onlyLastPoints, bool use
 }
 
 //-------------------------------------------------------------------
+

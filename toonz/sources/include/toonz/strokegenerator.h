@@ -43,6 +43,16 @@ class DVAPI StrokeGenerator {
   //! mark that stroke must be looped
   bool m_loop;
 
+  struct PreviewPoint {
+    TPointD left, right;
+  };
+  std::vector<PreviewPoint> m_previewPoints;
+  int m_previewDirty = 0;
+  bool m_previewShowZero = false;
+
+  void invalidatePreview(int point);
+  void updatePreview();
+
   //! Visualizza i frammenti
   /*!
   \param first Indice del primo punto di m_points da visualizzare
@@ -52,7 +62,7 @@ class DVAPI StrokeGenerator {
 
 public:
   //! Costruttore
-  StrokeGenerator() : m_paintedPointCount(0) {}
+  StrokeGenerator() : m_paintedPointCount(0), m_loop(false) {}
 
   //! Distruttore
   ~StrokeGenerator() {}
@@ -127,3 +137,4 @@ stroke
 //===============================================================
 
 #endif
+
