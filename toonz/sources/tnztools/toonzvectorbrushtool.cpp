@@ -1133,9 +1133,7 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
   for(TrackList::iterator i = m_tracks.begin(); i != m_tracks.end(); ++i) {
     StrokeGenerator &track = *i;
     
-    track.filterPoints();
-    double error = 30.0/(1 + 0.5 * m_accuracy.getValue())*m_pixelSize;
-    TStroke *stroke = track.makeStroke(error);
+    TStroke *stroke = track.makeStroke(m_strokeFitError);
     
     stroke->setStyle(m_styleId);
     
@@ -1319,7 +1317,19 @@ void ToonzVectorBrushTool::updateModifiers() {
   m_modifierAssistants->magnetism = m_assistants.getValue() ? 1 : 0;
   m_modifierSegmentation->setStep(TPointD(m_pixelSize, m_pixelSize));
   m_modifierSmoothSegmentation->setStep(TPointD(2*m_pixelSize, 2*m_pixelSize));
-  m_modifierSimplify->step = 2*m_pixelSize;
+  const double error = 30.0 / (1.0 + 0.5 * m_accuracy.getValue()) * m_pixelSize;
+  const double simplifyError = std::min(2.0 * m_pixelSize, 0.25 * error);
+  m_modifierSimplify->step = simplifyError;
+  m_modifierSimplify->pressureExponent = 3;
+  const double thicknessRange = 0.5 *
+      std::abs(m_thickness.getValue().second - m_thickness.getValue().first) *
+      Stage::inch / m_cameraDpi;
+  m_modifierSimplify->pressureError =
+      m_pressure.getValue() && !m_isPath && thicknessRange > TConsts::epsilon
+          ? std::min(0.01, simplifyError / thicknessRange)
+          : -1.0;
+  // Keep the stroke's error scale stable if the viewer zoom changes mid-stroke.
+  m_strokeFitError = error - simplifyError;
   m_inputmanager.drawPreview = false;
 
   m_modifierReplicate.clear();

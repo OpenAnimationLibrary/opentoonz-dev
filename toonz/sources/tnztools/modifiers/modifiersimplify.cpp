@@ -2,6 +2,56 @@
 
 #include <tools/modifiers/modifiersimplify.h>
 #include <algorithm>
+#include <cmath>
+
+namespace {
+
+// Bound both the work per candidate and the uncommitted straight-line tail.
+constexpr int maxPendingPoints = 64;
+
+bool isCorner(const TTrackPoint &a, const TTrackPoint &b,
+              const TTrackPoint &c) {
+  const TPointD ab = b.position - a.position;
+  const TPointD bc = c.position - b.position;
+  const double ab2 = ab.x * ab.x + ab.y * ab.y;
+  const double bc2 = bc.x * bc.x + bc.y * bc.y;
+  if (ab2 <= TConsts::epsilon || bc2 <= TConsts::epsilon) return false;
+  const double dot = ab.x * bc.x + ab.y * bc.y;
+  return dot <= 0.0 || dot * dot < 0.5 * ab2 * bc2;
+}
+
+bool isPressureExtremum(const TTrackPoint &a, const TTrackPoint &b,
+                        const TTrackPoint &c) {
+  return (a.pressure < b.pressure && c.pressure <= b.pressure) ||
+         (a.pressure > b.pressure && c.pressure >= b.pressure);
+}
+
+bool canReplace(const TTrack &track, int first, int last, double error2,
+                double pressureError, int pressureExponent) {
+  const TTrackPoint &a = track[first];
+  const TTrackPoint &b = track[last];
+  const TPointD ab = b.position - a.position;
+  const double length2 = ab.x * ab.x + ab.y * ab.y;
+  // Retain stationary samples, including pressure-only changes.
+  if (length2 <= TConsts::epsilon) return false;
+
+  const double pa = std::pow(a.pressure, pressureExponent);
+  const double pb = std::pow(b.pressure, pressureExponent);
+  for (int i = first + 1; i < last; ++i) {
+    const TTrackPoint &p = track[i];
+    const TPointD ap = p.position - a.position;
+    const double t = std::max(
+        0.0, std::min(1.0, (ap.x * ab.x + ap.y * ab.y) / length2));
+    if (tdistance2(p.position, a.position + ab * t) > error2) return false;
+    if (pressureError >= 0.0 &&
+        std::abs(std::pow(p.pressure, pressureExponent) -
+                 (pa + (pb - pa) * t)) > pressureError)
+      return false;
+  }
+  return true;
+}
+
+}  // namespace
 
 
 //*****************************************************************************************
@@ -35,41 +85,34 @@ TModifierSimplify::modifyTrack(
   if (!track.changed())
     return;
   
-  // remove points
-  int start = track.size() - track.pointsAdded;
-  if (start < 0) start = 0;
-  int subStart = subTrack.floorIndex(subTrack.indexByOriginalIndex(start));
-  if (subStart < 0) subStart = 0;
-  start = track.floorIndex(subTrack[subStart].originalIndex);
-  if (start < 0) start = 0;
-  subTrack.truncate(subStart);
+  // Reconsider only the tail after the last stable anchor. A new anchor is
+  // fixed only when the point which selected it is also fixed upstream.
+  subTrack.truncate(subTrack.fixedSize());
+  if (!track.empty()) {
+    int first = 0;
+    if (subTrack.empty())
+      subTrack.push_back(subTrack.pointFromOriginal(0), track.fixedSize() > 0);
+    else
+      first = track.floorIndex(subTrack.back().originalIndex);
 
-  // add points
-  double step2 = step*step;
-  TTrackPoint p0 = subTrack.back();
-  for(int i = start; i < track.size(); ++i) {
-    const TTrackPoint &p1 = subTrack.pointFromOriginal(i);
-    if (!subTrack.empty() && tdistance2(p1.position, p0.position) < step2) {
-      if (p0.pressure < p1.pressure) p0.pressure = p1.pressure;
-      if (i == track.size() - 1) p0.position = p1.position;
-      p0.tilt          = p1.tilt;
-      p0.time          = p1.time;
-      p0.final         = p1.final;
-      subTrack.pop_back();
-      subTrack.push_back(p0, false);
-    } else {
-      p0 = p1;
-      subTrack.push_back(p0, false);
+    const double error2 = std::max(0.0, step) * std::max(0.0, step);
+    const int exponent = std::max(1, pressureExponent);
+    for (int last = first + 2; last < track.size(); ++last) {
+      const bool preserve = isCorner(track[last - 2], track[last - 1], track[last]) ||
+          (pressureError >= 0.0 &&
+           isPressureExtremum(track[last - 2], track[last - 1], track[last]));
+      if (preserve || last - first >= maxPendingPoints ||
+          !canReplace(track, first, last, error2, pressureError, exponent)) {
+        first = last - 1;
+        subTrack.push_back(subTrack.pointFromOriginal(first),
+                           last < track.fixedSize());
+      }
     }
+    if (first < track.size() - 1)
+      subTrack.push_back(subTrack.pointFromOriginal(track.size() - 1), false);
+    if (track.fixedFinished()) subTrack.fix_all();
   }
-
-  // fix points
-  if (track.fixedFinished())
-    subTrack.fix_all();
-  else
-  if (track.fixedSize())
-    subTrack.fix_to(
-      subTrack.floorIndex( subTrack.indexByOriginalIndex(track.fixedSize()-1) ));
   
   track.resetChanges();
 }
+
