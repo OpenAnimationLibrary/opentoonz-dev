@@ -1,4 +1,4 @@
-<fxlayout>
+<fxlayout help_file="DropShadowFx.pdf">
   <page name="Drop Shadow">
      <control>color</control>
      <control>blur_x</control>
