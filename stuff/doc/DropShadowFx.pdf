@@ -222,7 +222,7 @@ endobj
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 11 0 R /F2 12 0 R >> >> /Contents 8 0 R >>
 endobj
 8 0 obj
-<< /Length 4762 >>
+<< /Length 4764 >>
 stream
 1 1 1 rg
 0 0 612 792 re f
@@ -251,7 +251,7 @@ BT /F2 8.5 Tf 1 0 0 1 173 611 Tm (KEY DIFFERENCE) Tj ET
 1 1 1 rg
 BT /F2 8.5 Tf 1 0 0 1 383 611 Tm (USE WHEN) Tj ET
 0.919 0.957 0.973 rg
-48 525 516 69 re f
+48 539 516 55 re f
 0.083 0.176 0.263 rg
 BT /F2 9 Tf 1 0 0 1 56 574 Tm (DROP SHADOW) Tj ET
 0.26 0.34 0.40 rg
@@ -263,79 +263,79 @@ BT /F1 8.6 Tf 1 0 0 1 383 578 Tm (Cutouts, titles, character) Tj ET
 0.26 0.34 0.40 rg
 BT /F1 8.6 Tf 1 0 0 1 383 566 Tm (separation, inset shade.) Tj ET
 0.083 0.176 0.263 rg
-BT /F2 9 Tf 1 0 0 1 56 505 Tm (BEVEL) Tj ET
+BT /F2 9 Tf 1 0 0 1 56 519 Tm (BEVEL) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 509 Tm (Two-sided edge lighting: Highlight +) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 523 Tm (Two-sided edge lighting: Highlight +) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 497 Tm (Shadow. Inner, Outer, Full.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 511 Tm (Shadow. Inner, Outer, Full.) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 509 Tm (Raised or engraved type; surface) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 523 Tm (Raised or engraved type; surface) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 497 Tm (edge relief.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 511 Tm (edge relief.) Tj ET
 0.919 0.957 0.973 rg
-48 387 516 69 re f
+48 429 516 55 re f
 0.083 0.176 0.263 rg
-BT /F2 9 Tf 1 0 0 1 56 436 Tm (BODY HIGHLIGHT) Tj ET
+BT /F2 9 Tf 1 0 0 1 56 464 Tm (BODY HIGHLIGHT) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 440 Tm (Tinted interior overlay, point X/Y,) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 468 Tm (Tinted interior overlay, point X/Y,) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 428 Tm (blur, invert, blend modes.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 456 Tm (blur, invert, blend modes.) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 440 Tm (Interior contour highlight or body) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 468 Tm (Interior contour highlight or body) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 428 Tm (shading.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 456 Tm (shading.) Tj ET
 0.083 0.176 0.263 rg
-BT /F2 9 Tf 1 0 0 1 56 367 Tm (CAST SHADOW) Tj ET
+BT /F2 9 Tf 1 0 0 1 56 409 Tm (CAST SHADOW) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 371 Tm (Projected, distortable shadow with) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 413 Tm (Projected, distortable shadow with) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 359 Tm (top/bottom blur/opacity.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 401 Tm (top/bottom blur/opacity.) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 371 Tm (Ground or wall shadow with) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 413 Tm (Ground or wall shadow with) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 359 Tm (perspective.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 401 Tm (perspective.) Tj ET
 0.919 0.957 0.973 rg
-48 249 516 69 re f
+48 319 516 55 re f
 0.083 0.176 0.263 rg
-BT /F2 9 Tf 1 0 0 1 56 298 Tm (BACKLIT) Tj ET
+BT /F2 9 Tf 1 0 0 1 56 354 Tm (BACKLIT) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 302 Tm (Separate Light input affects Source.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 358 Tm (Separate Light input affects Source.) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 302 Tm (Image-driven lighting from a) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 358 Tm (Image-driven lighting from a) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 290 Tm (second layer.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 346 Tm (second layer.) Tj ET
 0.083 0.176 0.263 rg
-BT /F2 9 Tf 1 0 0 1 56 229 Tm (GLOW / EMBOSS) Tj ET
+BT /F2 9 Tf 1 0 0 1 56 299 Tm (GLOW / EMBOSS) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 233 Tm (Light halo / surface relief rather than) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 303 Tm (Light halo / surface relief rather than) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 173 221 Tm (displaced silhouette.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 173 291 Tm (displaced silhouette.) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 233 Tm (Luminous bloom / texture-depth) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 303 Tm (Luminous bloom / texture-depth) Tj ET
 0.26 0.34 0.40 rg
-BT /F1 8.6 Tf 1 0 0 1 383 221 Tm (treatment.) Tj ET
+BT /F1 8.6 Tf 1 0 0 1 383 291 Tm (treatment.) Tj ET
 0.082 0.463 0.627 rg
-BT /F2 12 Tf 1 0 0 1 48 160 Tm (DROP SHADOW VS. BEVEL) Tj ET
+BT /F2 12 Tf 1 0 0 1 48 244 Tm (DROP SHADOW VS. BEVEL) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 138 Tm (Both new effects use shared raster and Flash-style box-blur utilities. Drop Shadow produces a single) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 222 Tm (Both new effects use shared raster and Flash-style box-blur utilities. Drop Shadow produces a single) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 124 Tm (colored matte moved by Angle and Distance. Bevel samples opposite offset sides of the alpha silhouette) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 208 Tm (colored matte moved by Angle and Distance. Bevel samples opposite offset sides of the alpha silhouette) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 110 Tm (to form simultaneous highlight and dark edges.) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 194 Tm (to form simultaneous highlight and dark edges.) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 84 Tm (Bevel supports Inner, Outer and Full and distinct Highlight and Shadow colors; Drop Shadow instead) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 168 Tm (Bevel supports Inner, Outer and Full and distinct Highlight and Shadow colors; Drop Shadow instead) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 70 Tm (offers Inner and the shadow-only Hide Object / Knockout controls. A bevel makes a shape appear raised) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 154 Tm (offers Inner and the shadow-only Hide Object / Knockout controls. A bevel makes a shape appear raised) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.4 Tf 1 0 0 1 48 56 Tm (or engraved, not simply separated from its background.) Tj ET
+BT /F1 9.4 Tf 1 0 0 1 48 140 Tm (or engraved, not simply separated from its background.) Tj ET
 0.919 0.957 0.973 rg
-48 -31 516 61 re f
+48 53 516 61 re f
 0.083 0.176 0.263 rg
-BT /F1 9.1 Tf 1 0 0 1 60 15 Tm (Quick choice: need a detached outline shadow? Drop Shadow. Need dual light/dark relief? Bevel. Need) Tj ET
+BT /F1 9.1 Tf 1 0 0 1 60 99 Tm (Quick choice: need a detached outline shadow? Drop Shadow. Need dual light/dark relief? Bevel. Need) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.1 Tf 1 0 0 1 60 1 Tm (tint inside a drawing with blend controls? Body Highlight. Need a skewed projection onto a floor?) Tj ET
+BT /F1 9.1 Tf 1 0 0 1 60 85 Tm (tint inside a drawing with blend controls? Body Highlight. Need a skewed projection onto a floor?) Tj ET
 0.083 0.176 0.263 rg
-BT /F1 9.1 Tf 1 0 0 1 60 -13 Tm (Cast Shadow.) Tj ET
+BT /F1 9.1 Tf 1 0 0 1 60 71 Tm (Cast Shadow.) Tj ET
 endstream
 endobj
 9 0 obj
@@ -438,13 +438,13 @@ xref
 0000003899 00000 n 
 0000008827 00000 n 
 0000008965 00000 n 
-0000013778 00000 n 
-0000013917 00000 n 
-0000017770 00000 n 
-0000017868 00000 n 
-0000017971 00000 n 
+0000013780 00000 n 
+0000013919 00000 n 
+0000017772 00000 n 
+0000017870 00000 n 
+0000017973 00000 n 
 trailer
 << /Root 1 0 R /Info 13 0 R /Size 14 >>
 startxref
-18156
+18158
 %%EOF
