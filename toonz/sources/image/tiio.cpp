@@ -101,6 +101,7 @@ void initImageIo(bool lightVersion) {
 
     TLevelReader::define("svg", 0, TLevelReaderSvg::create);
     TFileType::declare("svg", TFileType::VECTOR_IMAGE);
+    TFileType::declare("pdf", TFileType::RASTER_LEVEL);
     TLevelWriter::define("svg", TLevelWriterSvg::create, false);
     Tiio::defineWriterProperties("svg", new Tiio::SvgWriterProperties());
 

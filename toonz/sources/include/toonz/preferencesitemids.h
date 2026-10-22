@@ -41,8 +41,12 @@ enum PreferencesItemId {
   colorCalibrationLutPaths,
   showIconsInMenu,
   showRoomBindButtons,
+  customHelpLink,
   displayIn30bit,
   viewerIndicatorEnabled,
+  restoreViewerViewFromLastSession,
+  togglePanelWithShortcut,
+  RestoreStyleEditorTab,
 
   //----------
   // Visualization
@@ -80,6 +84,8 @@ enum PreferencesItemId {
   //----------
   // Import / Export
   ffmpegPath,
+  pdfRendererPath,
+  otlutPath,
   ffmpegTimeout,
   fastRenderPath,
   ffmpegMultiThread,
@@ -126,8 +132,11 @@ enum PreferencesItemId {
   useStrokeEndCursor,
   clickTwiceToCreateArcs,
   tempToolSwitchTimer,
+  compressInputEvents,
   animateToolHandleSize,
   animateToolColor,
+  defaultStartupTool,
+  defaultNewSceneTool,
 
   //----------
   // Xsheet
@@ -154,6 +163,10 @@ enum PreferencesItemId {
   syncLevelRenumberWithXsheet,
   currentTimelineEnabled,
   currentColumnColor,
+  customCurrentCellColorEnabled,
+  currentCellColor,
+  customCurrentColumnOutlineColorEnabled,
+  currentColumnOutlineColor,
   levelNameDisplayType,
   showFrameNumberWithLetters,
   linkColumnNameWithLevel,
@@ -215,6 +228,7 @@ enum PreferencesItemId {
 
   //----------
   // Others (not appeared in the popup)
+  saveBeforeRendering,
   // Shortcut popup settings
   shortcutPreset,
   // Viewer context menu
@@ -234,6 +248,9 @@ enum PreferencesItemId {
   // textureSize, // set to 0
   // LineTestFpsCapture,
   // guidedDrawingType,
+
+  // Tape Tool confirmation (stored only; no Preferences popup control)
+  tapeToolFillRiskPolicy,
 
   PreferencesItemCount
 };

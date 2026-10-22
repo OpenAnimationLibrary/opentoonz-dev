@@ -13,6 +13,7 @@
 #include <QPainterPath>
 #include <QPainter>
 #include <QRawFont>
+#include <QTextLayout>
 
 #include <vector>
 #include <iostream>
@@ -26,6 +27,48 @@
 #include "tmathutil.h"
 #include "tvectorimage.h"
 using namespace std;
+
+namespace {
+
+QString fromUnicodeCodePoint(uint32_t codePoint) {
+  if (codePoint > 0x10ffff ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff))
+    return QString(QChar::ReplacementCharacter);
+
+  uint value = codePoint;
+  return QString::fromUcs4(&value, 1);
+}
+
+QPainterPath shapedTextPath(const QString &text, const QFont &font) {
+  QPainterPath path;
+  if (text.isEmpty()) return path;
+
+  QTextLayout layout(text, font);
+  layout.beginLayout();
+  QTextLine line = layout.createLine();
+  layout.endLayout();
+  if (!line.isValid()) return path;
+
+  // QTextLayout positions glyph runs in line-box coordinates, where the
+  // baseline is offset by the line ascent. TFont's vector drawing API expects
+  // glyph outlines relative to a zero baseline, as QRawFont::pathForGlyph()
+  // returned before shaped text support was added.
+  const qreal baselineOffset = line.ascent();
+
+  for (const QGlyphRun &run : line.glyphRuns()) {
+    const QVector<quint32> glyphs = run.glyphIndexes();
+    const QVector<QPointF> positions = run.positions();
+    QRawFont rawFont = run.rawFont();
+    for (int i = 0; i < glyphs.size() && i < positions.size(); ++i) {
+      QPainterPath glyphPath = rawFont.pathForGlyph(glyphs.at(i));
+      glyphPath.translate(positions.at(i) - QPointF(0, baselineOffset));
+      path.addPath(glyphPath);
+    }
+  }
+  return path;
+}
+
+}  // namespace
 
 //=============================================================================
 
@@ -71,20 +114,21 @@ TFont::Impl::~Impl() {}
 
 //-----------------------------------------------------------------------------
 // returns the offset (advance of the cursor) for the current character
-TPoint TFont::drawChar(TVectorImageP &image, wchar_t charcode,
-                       wchar_t nextCharCode) const {
-  QRawFont raw(QRawFont::fromFont(m_pimpl->m_font));
+TPoint TFont::drawChar(TVectorImageP &image, uint32_t charcode,
+                       uint32_t nextCharCode) const {
+  QString nextText;
+  if (nextCharCode) nextText = fromUnicodeCodePoint(nextCharCode);
+  return drawText(image, fromUnicodeCodePoint(charcode), nextText);
+}
 
-  QChar chars[2] = {charcode, nextCharCode};
-  quint32 indices[2];
-  int count = 2;
+//-----------------------------------------------------------------------------
 
-  if (!raw.glyphIndexesForChars(chars, 2, indices, &count) || count < 1)
-    return TPoint(0, 0);
-  QPainterPath path = raw.pathForGlyph(indices[0]);
+TPoint TFont::drawText(TVectorImageP &image, const QString &text,
+                       const QString &nextText) const {
+  QPainterPath path = shapedTextPath(text, m_pimpl->m_font);
 
   // empty glyph, nothing to do
-  if (path.elementCount() < 1) return getDistance(charcode, nextCharCode);
+  if (path.elementCount() < 1) return getDistance(text, nextText);
 
   // force closing the last path
   if (path.elementAt(path.elementCount() - 1).type !=
@@ -150,22 +194,25 @@ TPoint TFont::drawChar(TVectorImageP &image, wchar_t charcode,
 
   if (strokes > 1) image->group(0, strokes);
 
-  return getDistance(charcode, nextCharCode);
+  return getDistance(text, nextText);
 }
 
 //-----------------------------------------------------------------------------
 
-TPoint TFont::drawChar(QImage &outImage, TPoint &unused, wchar_t charcode,
-                       wchar_t nextCharCode) const {
-  QRawFont raw(QRawFont::fromFont(m_pimpl->m_font));
+TPoint TFont::drawChar(QImage &outImage, TPoint &unused, uint32_t charcode,
+                       uint32_t nextCharCode) const {
+  QString nextText;
+  if (nextCharCode) nextText = fromUnicodeCodePoint(nextCharCode);
+  return drawText(outImage, unused, fromUnicodeCodePoint(charcode), nextText);
+}
 
-  QChar chars[2] = {charcode, nextCharCode};
-  quint32 indices[2];
-  int count = 2;
+//-----------------------------------------------------------------------------
 
-  if (!raw.glyphIndexesForChars(chars, 2, indices, &count) || count < 1) {
-    return TPoint(0, 0);
-  }
+TPoint TFont::drawText(QImage &outImage, TPoint &unused, const QString &text,
+                       const QString &nextText) const {
+  if (text.isEmpty()) return TPoint(0, 0);
+
+  QFontMetrics metrics(m_pimpl->m_font);
 
   // Workaround for unix when the user using the space character:
   // alphaMapForGlyph with a space character returns an invalid
@@ -173,35 +220,43 @@ TPoint TFont::drawChar(QImage &outImage, TPoint &unused, wchar_t charcode,
   // Bug 3604: https://github.com/opentoonz/opentoonz/issues/3604
   // (21/1/2022) Use this workaround for all platforms as the crash also
   // occurred in windows when the display is scaled up.
-  if (chars[0].isSpace()) {
-    int w = QFontMetrics(m_pimpl->m_font).horizontalAdvance(chars[0]);
-    outImage =
-        QImage(w, raw.ascent() + raw.descent(), QImage::Format_Grayscale8);
+  if (text.at(0).isSpace()) {
+    int w    = metrics.horizontalAdvance(text);
+    outImage = QImage(w, metrics.height(), QImage::Format_Grayscale8);
     outImage.fill(255);
-    return getDistance(charcode, nextCharCode);
+    return getDistance(text, nextText);
   }
-  QImage image = raw.alphaMapForGlyph(indices[0], QRawFont::PixelAntialiasing);
-  if (image.format() != QImage::Format_Indexed8 &&
-      image.format() != QImage::Format_Alpha8)
-    throw TException(L"bad QImage format " + image.format());
 
-  QRectF boundingRect = raw.boundingRect(indices[0]);
+  int width  = qMax(1, metrics.horizontalAdvance(text));
+  int height = qMax(1, metrics.height());
+  QImage rendered(width, height, QImage::Format_ARGB32_Premultiplied);
+  rendered.fill(Qt::white);
+  QPainter painter(&rendered);
+  painter.setFont(m_pimpl->m_font);
+  painter.setPen(Qt::black);
+  painter.drawText(0, metrics.ascent(), text);
+  painter.end();
+  outImage = rendered.convertToFormat(QImage::Format_Grayscale8);
 
-  outImage = QImage(image.width(), raw.ascent() + raw.descent(),
-                    QImage::Format_Grayscale8);
-  outImage.fill(255);
-  QPainter painter(&outImage);
-  painter.drawImage(0, boundingRect.top() + raw.ascent(), image);
-
-  return getDistance(charcode, nextCharCode);
+  return getDistance(text, nextText);
 }
 
 //-----------------------------------------------------------------------------
 
 TPoint TFont::drawChar(TRasterCM32P &outImage, TPoint &unused, int inkId,
-                       wchar_t charcode, wchar_t nextCharCode) const {
+                       uint32_t charcode, uint32_t nextCharCode) const {
+  QString nextText;
+  if (nextCharCode) nextText = fromUnicodeCodePoint(nextCharCode);
+  return drawText(outImage, unused, inkId, fromUnicodeCodePoint(charcode),
+                  nextText);
+}
+
+//-----------------------------------------------------------------------------
+
+TPoint TFont::drawText(TRasterCM32P &outImage, TPoint &unused, int inkId,
+                       const QString &text, const QString &nextText) const {
   QImage grayAppImage;
-  this->drawChar(grayAppImage, unused, charcode, nextCharCode);
+  drawText(grayAppImage, unused, text, nextText);
 
   int lx = grayAppImage.width();
   int ly = grayAppImage.height();
@@ -230,14 +285,23 @@ TPoint TFont::drawChar(TRasterCM32P &outImage, TPoint &unused, int inkId,
   }
   outImage->unlock();
 
-  return getDistance(charcode, nextCharCode);
+  return getDistance(text, nextText);
 }
 
 //-----------------------------------------------------------------------------
 
-TPoint TFont::getDistance(wchar_t firstChar, wchar_t secondChar) const {
+TPoint TFont::getDistance(uint32_t firstChar, uint32_t secondChar) const {
+  QString nextText;
+  if (secondChar) nextText = fromUnicodeCodePoint(secondChar);
+  return getDistance(fromUnicodeCodePoint(firstChar), nextText);
+}
+
+//-----------------------------------------------------------------------------
+
+TPoint TFont::getDistance(const QString &text, const QString &nextText) const {
+  Q_UNUSED(nextText);
   QFontMetrics metrics(m_pimpl->m_font);
-  return TPoint(metrics.horizontalAdvance(QChar(firstChar)), 0);
+  return TPoint(metrics.horizontalAdvance(text), 0);
 }
 
 //-----------------------------------------------------------------------------

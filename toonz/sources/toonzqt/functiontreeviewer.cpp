@@ -12,6 +12,7 @@
 #include "tparamset.h"
 #include "tmacrofx.h"
 #include "tparamchange.h"
+#include "tfxmaterial.h"
 
 // TnzExt includes
 #include "ext/plasticskeleton.h"
@@ -43,6 +44,8 @@
 #include <QApplication>  // for drag&drop
 #include <QDrag>
 #include <QMimeData>
+#include <map>
+#include <stdexcept>
 
 #include "toonzqt/functiontreeviewer.h"
 
@@ -55,11 +58,16 @@ namespace {
 class ParamChannelGroup final : public FunctionTreeModel::ParamWrapper,
                                 public FunctionTreeModel::ChannelGroup {
 public:
+  QString m_materialCaption;
   ParamChannelGroup(TParam *param, const std::wstring &fxId,
                     std::string &paramName);
 
   void refresh() override;
   void *getInternalPointer() const override;
+  QString getShortName() const override {
+    return m_materialCaption.isEmpty() ? ChannelGroup::getShortName() : m_materialCaption;
+  }
+  QString getLongName() const override { return getShortName(); }
 };
 
 //=============================================================================
@@ -464,6 +472,54 @@ void ParamChannelGroup::refresh() {
   TParamSet *paramSet = dynamic_cast<TParamSet *>(m_param.getPointer());
   if (!paramSet) return;
 
+  if (paramSet->getName() == "materialColors") {
+    m_materialCaption = QObject::tr("Materials");
+    auto *model = dynamic_cast<FunctionTreeModel *>(getModel());
+    auto *fxGroup = dynamic_cast<FxChannelGroup *>(getParent());
+    if (!model || !fxGroup) return;
+    TFx *fx = fxGroup->getFx();
+    if (auto *macro = dynamic_cast<TMacroFx *>(fx)) fx = macro->getFxById(getFxId());
+    std::map<std::string, QString> names;
+    if (auto *source = dynamic_cast<TFxMaterialSource *>(fx)) {
+      try {
+        const auto materials = source->getMaterials();
+        for (std::size_t i = 0; i < materials.size(); ++i)
+          names[materials[i].key] = QString("%1: %2").arg(int(i + 1))
+              .arg(QString::fromStdString(materials[i].name));
+      } catch (const std::exception &) {
+        // A missing/replaced asset must not hide its saved animation curves.
+      }
+    }
+    QList<TreeModel::Item *> children;
+    for (int i = 0; i < paramSet->getParamCount(); ++i) {
+      TPixelParamP color = paramSet->getParam(i);
+      if (!color) continue;
+      std::string key = paramSet->getParamName(i);
+      children.push_back(new ParamChannelGroup(color.getPointer(), getFxId(), key));
+    }
+    // Reuse by parameter identity, never by a model-dependent row or name.
+    // Reused groups retain expansion, active curves and selection.
+    setChildren(children);
+    for (auto *item : children) {
+      auto *group = static_cast<ParamChannelGroup *>(item);
+      TPixelParamP color = group->getParam();
+      for (auto curve : {color->getRed(), color->getGreen(), color->getBlue()}) {
+        auto *channel = new FunctionTreeModel::Channel(model, curve.getPointer(), "", getFxId());
+        group->appendChild(channel);
+        // Keep the FX owner for preview notifications and current-FX selection.
+        channel->setChannelGroup(fxGroup);
+      }
+    }
+    for (int i = 0; i < getChildCount(); ++i) {
+      auto *group = static_cast<ParamChannelGroup *>(getChild(i));
+      auto found = names.find(group->getParam()->getName());
+      group->m_materialCaption = found != names.end() ? found->second :
+          QObject::tr("Inactive material %1").arg(i + 1);
+    }
+    applyShowFilter();
+    return;
+  }
+
   int c, childrenCount = getChildCount();
   for (c = 0; c < childrenCount; ++c) {
     FunctionTreeModel::ParamWrapper *wrap =
@@ -624,6 +680,9 @@ QString FunctionTreeModel::Channel::getShortName() const {
 
 QString FunctionTreeModel::Channel::getLongName() const {
   QString name = getShortName();
+  auto *material = dynamic_cast<ParamChannelGroup *>(getParent());
+  if (material && !material->m_materialCaption.isEmpty())
+    name = material->getShortName() + " " + name;
   if (getChannelGroup()) name = getChannelGroup()->getLongName() + " " + name;
   return name;
 }
@@ -646,6 +705,10 @@ void FunctionTreeModel::Channel::setParam(const TParamP &param) {
 /*! in order to show the expression name in the tooltip
  */
 QString FunctionTreeModel::Channel::getExprRefName() const {
+  auto *material = dynamic_cast<ParamChannelGroup *>(getParent());
+  // The expression token registry does not yet register dynamic material paths.
+  // Do not advertise a reference made from a display name that cannot resolve.
+  if (material && !material->m_materialCaption.isEmpty()) return QString();
   QString tmpName;
   if (m_param->hasUILabel())
     tmpName = QString::fromStdString(m_param->getUILabel());
@@ -1068,6 +1131,11 @@ void FunctionTreeModel::addParameter(ChannelGroup *group,
 
     group->appendChild(channel);
     channel->setChannelGroup(group);
+  } else if (param->getName() == "materialColors" && dynamic_cast<TParamSet *>(param)) {
+    std::string name = prefixString + param->getName();
+    auto *materials = new ParamChannelGroup(param, fxId, name);
+    group->appendChild(materials);
+    materials->refresh();
   } else if (dynamic_cast<TPointParam *>(param) ||
              dynamic_cast<TRangeParam *>(param) ||
              dynamic_cast<TPixelParam *>(param)) {

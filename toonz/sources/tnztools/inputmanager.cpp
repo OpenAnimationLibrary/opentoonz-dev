@@ -678,3 +678,4 @@ TInputManager::draw() {
 TInputState::TouchId
 TInputManager::genTouchId()
   { return ++m_lastTouchId; }
+

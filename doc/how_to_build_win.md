@@ -10,7 +10,12 @@ This software can be built using Visual Studio 2019 and Qt 5.x
 
 ### CMake
 - https://cmake.org/download/
-- This will be used to create the `MSVC 2019` project file.
+- Version 3.14 or newer is required. This will be used to create the
+  `MSVC 2019` project file.
+- The default configuration downloads the pinned OpenEXR 3.5.0 and Imath
+  3.2.3 sources and links them statically, so the first configuration requires
+  internet access. Set `OT_USE_SYSTEM_OPENEXR=ON` only when an installed
+  OpenEXR 3.5 or newer should be used instead.
 
 ### Qt
 - https://www.qt.io/download-open-source/
@@ -200,4 +205,21 @@ OpenToonz utilizes the QuickTime SDK's `mov` and associated file formats.  Since
   - `$opentoonz/thirdparty/glut/3.7.6/lib/glut32.dll`
 
 ## Creating Translation Files
-Qt translation files are generated first from the source code to .ts files, then from .ts files to a .qm file.  These files can be created in Visual Studio if the `translation_` project and `Build translation_??? only` (`translation_???`のみをビルド」) is used.  These files are not created in the default `Build Project Solution`.
+
+See [Contributing and maintaining translations](../toonz/sources/translations/README.md)
+for contributor submissions and maintainer integration. Qt Linguist editing and
+manual `lrelease` compilation remain supported.
+
+With `WITH_TRANSLATION=ON`, explicitly build a `translate_update_*` project in
+Visual Studio to extract source strings. For example, from the repository root:
+
+```sh
+cmake --build toonz/build --config Release --target translate_update_toonz
+```
+
+Use the configuration and build directory you actually configured. Extraction
+updates source catalogs and can affect all registered languages for the module;
+review the diff before committing. Application targets currently compile `.qm`
+files after linking, but a translation-only edit may not trigger a relink.
+Explicitly release the affected catalogs or confirm their outputs were refreshed.
+The shared guide explains output paths and testing in installed/portable builds.

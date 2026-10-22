@@ -12,6 +12,8 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    t3dsource.h
+    ../include/tfxaovsource.h
     texturefxP.h
     warp.h
     motionawarebasefx.h
@@ -121,6 +123,8 @@ set(SOURCES
     fourpointsgradientfx.cpp
     freedistortfx.cpp
     gammafx.cpp
+    glbmodelfx.cpp
+    imageplanefx.cpp
     glowfx.cpp
     gradients.cpp
     hsvkeyfx.cpp
@@ -130,11 +134,13 @@ set(SOURCES
     linearwavefx.cpp
     localblurfx.cpp
     localtransparencyfx.cpp
+    lut3dbakefx.cpp
     mosaicfx.cpp
     motionblurfx.cpp
     multitonefx.cpp
     noisefx.cpp
     nothingfx.cpp
+    openexraovfx.cpp
     palettefilterfx.cpp
     particles.cpp
     particlesengine.cpp
@@ -164,8 +170,10 @@ set(SOURCES
     stdfx.cpp
     targetspotfx.cpp
     texturefx.cpp
+    threepointlightfx.cpp
     tilefx.cpp
     tonecurvefx.cpp
+    transform3dfx.cpp
     unmultiplyfx.cpp
     warp.cpp
     warpfx.cpp
@@ -334,8 +342,33 @@ include_directories(
 
 _find_toonz_library(TNZLIBS "tnzcore;tnzbase;toonzlib")
 
-target_link_libraries(tnzstdfx Qt5::Core Qt5::Gui Qt5::OpenGL ${GL_LIB} ${GLEW_LIB} ${TNZLIBS} ${PTHREAD_LIBRARY})
+target_link_libraries(tnzstdfx otglb OpenEXR::OpenEXR Qt5::Core Qt5::Gui Qt5::OpenGL ${GL_LIB} ${GLEW_LIB} ${TNZLIBS} ${PTHREAD_LIBRARY})
 
 if(OpenCV_FOUND)
     target_link_libraries(tnzstdfx ${OpenCV_LIBS})
+endif()
+
+# Optional regression target for the production LUT parser and raster FX.
+option(BUILD_LUT3D_TESTS "Build the 3D LUT Bake regression executable" OFF)
+if(BUILD_LUT3D_TESTS)
+    add_executable(lut3dbake_test tests/lut3dbake_test.cpp)
+    target_link_libraries(lut3dbake_test Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+endif()
+
+# Optional regression targets for the GLB-backed 3D FX framework.
+option(BUILD_GLB_FX_TESTS "Build the 3D FX framework regression executables" OFF)
+if(BUILD_GLB_FX_TESTS)
+    add_executable(glbmodelfx_test tests/glbmodelfx_test.cpp)
+    target_link_libraries(glbmodelfx_test otglb toonzqt Qt5::Core Qt5::Gui Qt5::Widgets ${TNZLIBS} ${PTHREAD_LIBRARY})
+    add_executable(threepointlightfx_test tests/threepointlightfx_test.cpp)
+    target_link_libraries(threepointlightfx_test otglb Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+    add_executable(transform3dfx_test tests/transform3dfx_test.cpp)
+    target_link_libraries(transform3dfx_test otglb Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+endif()
+
+# Optional regression target for multipart, tiled, and channel-mapped EXR AOVs.
+if(BUILD_EXR_AOV_FX_TESTS)
+    add_executable(openexraovfx_test tests/openexraovfx_test.cpp)
+    target_link_libraries(openexraovfx_test OpenEXR::OpenEXR Qt5::Core Qt5::Gui ${TNZLIBS} ${PTHREAD_LIBRARY})
+    add_test(NAME openexraovfx COMMAND openexraovfx_test)
 endif()

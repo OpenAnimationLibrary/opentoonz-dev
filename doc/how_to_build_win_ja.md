@@ -10,7 +10,8 @@ Visual Studio 2019 (2015以降) と Qt 5.15 でビルドできることを確認
 
 ### CMake
 - https://cmake.org/download/
-- Visual Studio 用のプロジェクトファイルの生成に使用します
+- バージョン 3.14 以降が必要です。Visual Studio 用のプロジェクトファイルの生成に使用します。
+- デフォルトの設定では、固定された OpenEXR 3.5.0 と Imath 3.2.3 のソースをダウンロードして静的リンクするため、初回の設定時にはインターネット接続が必要です。インストール済みの OpenEXR 3.5 以降を使う場合は、`OT_USE_SYSTEM_OPENEXR=ON` を指定してください。
 
 ## ソースコードの取得
 - 本リポジトリを `git clone` します
@@ -141,4 +142,21 @@ OpenToonz は QuickTime SDK を用いて mov 形式などへ対応していま�
   - `$opentoonz/thirdparty/glut/3.7.6/lib/glut32.dll`
 
 ## 翻訳ファイルの生成
-Qt の翻訳ファイルは、ソースコードから `.ts` ファイルを生成して、 `.ts` ファイルに対して翻訳作業を行い、 `.ts` ファイルから `.qm` ファイルを生成します。Visual Studioソリューション中の`translation_`から始まるプロジェクトに対して「 `translation_???` のみをビルド」を実行すると、 `.ts` ファイルと `.qm` ファイルの生成が行われます。これらのプロジェクトはソリューションのビルドではビルドされないようになっています。
+
+翻訳の提出とメンテナーによる確認・更新については、
+[翻訳ガイド（英語）](../toonz/sources/translations/README.md)を参照してください。
+Qt Linguist での編集と手動の `lrelease` は引き続き利用できます。
+
+`WITH_TRANSLATION=ON` のビルドでは、Visual Studio の `translate_update_*`
+プロジェクトを明示的にビルドすると、ソースから翻訳文字列を抽出できます。
+例（リポジトリのルートから実行）:
+
+```sh
+cmake --build toonz/build --config Release --target translate_update_toonz
+```
+
+実際のビルドディレクトリと構成名に置き換えてください。抽出は対象モジュールの
+複数言語の `.ts` を変更するため、コミット前に差分を確認してください。
+現在、アプリケーションのターゲットはリンク後に `.qm` を生成しますが、
+翻訳のみの変更では再リンクされない場合があります。手動でリリースするか、
+生成ファイルが更新されたことを確認してください。

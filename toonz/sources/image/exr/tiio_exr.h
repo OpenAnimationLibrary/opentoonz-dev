@@ -7,11 +7,18 @@
 #include "tproperty.h"
 
 #include <QCoreApplication>
+
+#ifdef IMAGE_EXPORTS
+#define TIIO_EXR_API DV_EXPORT_API
+#else
+#define TIIO_EXR_API DV_IMPORT_API
+#endif
+
 namespace Tiio {
 
 //===========================================================================
 
-class ExrWriterProperties final : public TPropertyGroup {
+class TIIO_EXR_API ExrWriterProperties final : public TPropertyGroup {
   Q_DECLARE_TR_FUNCTIONS(ExrWriterProperties)
 public:
   TEnumProperty m_compressionType;
@@ -26,8 +33,10 @@ public:
 
 //===========================================================================
 
-Tiio::Reader* makeExrReader();
-Tiio::Writer* makeExrWriter();
+TIIO_EXR_API Tiio::Reader* makeExrReader();
+TIIO_EXR_API Tiio::Writer* makeExrWriter();
 }  // namespace Tiio
+
+#undef TIIO_EXR_API
 
 #endif

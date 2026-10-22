@@ -761,6 +761,11 @@ public:
       return false;
   }
 
+  void reloadItems() {
+    m_manager->loadItems();
+    patternAdded();
+  }
+
   TMyPaintBrushStyle &getBrush(int index) {
     return m_mypManager->getBrush(index);
   }
@@ -818,6 +823,8 @@ class SettingsPage final : public QScrollArea {
   QGridLayout *m_paramsLayout;
 
   QCheckBox *m_autoFillCheckBox;
+  QPushButton *m_revertMyPaintButton;
+  QPushButton *m_saveMyPaintButton;
 
   TColorStyleP m_editedStyle;  //!< A copy of the current style being edited by
                                //! the Style Editor.
@@ -840,12 +847,15 @@ signals:
 
   void paramStyleChanged(
       bool isDragging);  //!< Signals that the edited style has changed.
+  void myPaintBrushSaved();
 
 private slots:
 
   void onAutofillChanged();
   void onValueChanged(bool isDragging = false);
   void onValueReset();
+  void onMyPaintRevert();
+  void onMyPaintSaveAs();
 };
 
 //=============================================================================
@@ -920,6 +930,9 @@ class DVAPI StyleEditor final : public QWidget, public SaveLoadQSettings {
   QPushButton *m_textureSearchClear;
   QPushButton *m_vectorsSearchClear;
   QPushButton *m_mypaintSearchClear;
+  QPushButton *m_specialButton     = nullptr;
+  QPushButton *m_customButton      = nullptr;
+  QPushButton *m_vectorBrushButton = nullptr;
 
   TColorStyleP
       m_oldStyle;  //!< A copy of current style \a before the last change.
@@ -931,6 +944,7 @@ class DVAPI StyleEditor final : public QWidget, public SaveLoadQSettings {
   bool m_enabledOnlyFirstTab;
   bool m_enabledFirstAndLastTab;
   bool m_colorPageIsVertical = true;
+  int m_currentPageIndex     = 0;
 
 public:
   StyleEditor(PaletteController *, QWidget *parent = 0);
@@ -1023,6 +1037,7 @@ protected slots:
   void onColorParamChanged();
 
   void onParamStyleChanged(bool isDragging);
+  void onMyPaintBrushSaved();
 
   void onHexChanged();
   void onHexEditor();
@@ -1051,6 +1066,9 @@ private:
   QFrame *createVectorPage();
   QFrame *createMyPaintPage();
   void updateTabBar();
+  int tabIndexForPage(int page) const;
+  void rememberPage(int page);
+  void applySavedPage();
 
   void copyEditedStyleToPalette(bool isDragging);
 };

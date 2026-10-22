@@ -1917,3 +1917,4 @@ void SceneViewer::mouseScrub(const TMouseEvent &e) {
 
   m_oldPos = e.m_pos;
 }
+
