@@ -118,6 +118,7 @@
   </Layer_Blending_Ino>
   <Light>
     STD_backlitFx
+    STD_bevelFx
     STD_bodyHighLightFx
     STD_castShadowFx
     STD_colorRaylitFx
