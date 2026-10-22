@@ -1509,16 +1509,20 @@ void TXsheet::scrub(int frame, bool isPreview, int endFrame) {
     prop->m_isPreview              = isPreview;
 
     TSoundTrack *st = makeSound(prop);  // Absorbs prop's ownership
-    if (!st || st->getSampleCount() <= 0) return;
+    if (!st || st->getSampleCount() <= 0 || st->getSampleRate() <= 0) return;
 
-    double samplePerFrame = st->getSampleRate() / fps;
+    const double samplePerFrame = double(st->getSampleRate()) / fps;
+    if (!std::isfinite(samplePerFrame) || samplePerFrame <= 0) return;
 
     // extract() has an inclusive end; adjacent frames must not share a sample.
     const double begin = std::floor(double(frame) * samplePerFrame);
     const double end = std::min(double(st->getSampleCount()),
                                std::floor((double(endFrame) + 1) *
                                           samplePerFrame));
-    if (begin >= end) return;
+    // Validate floating-point boundaries before converting to sample indices.
+    if (!std::isfinite(begin) || !std::isfinite(end) || begin < 0 ||
+        begin >= end)
+      return;
     TSoundTrackP snippet = st->extract(int(begin), int(end) - 1);
     if (!m_imp->m_scrubPlayer)
       m_imp->m_scrubPlayer = std::make_unique<AudioScrubPlayer>();
