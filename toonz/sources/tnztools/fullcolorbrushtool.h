@@ -82,6 +82,8 @@ public:
   void inputMouseMove(const TPointD &position,
                       const TInputState &state) override;
   void inputSetBusy(bool busy) override;
+  void inputPaintTracksBegin() override;
+  void inputPaintTracksEnd() override;
   void inputPaintTrackPoint(const TTrackPoint &point, const TTrack &track,
                             bool firstTrack, bool preview) override;
   void inputInvalidateRect(const TRectD &bounds) override;
@@ -123,6 +125,9 @@ private:
 
 protected:
   TInputManager m_inputmanager;
+  TRectD m_inputPaintRect;
+  bool m_batchInputInvalidation = false;
+  bool m_inputPaintAll          = false;
 #ifndef NDEBUG
   TSmartPointerT<TModifierTest> m_modifierTest;
 #endif
@@ -193,3 +198,4 @@ protected slots:
 };
 
 #endif  // FULLCOLORBRUSHTOOL_H
+

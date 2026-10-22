@@ -551,6 +551,28 @@ void FullColorBrushTool::inputSetBusy(bool busy) {
 
 //-------------------------------------------------------------------------------------------------------------
 
+void FullColorBrushTool::inputPaintTracksBegin() {
+  m_inputPaintRect.empty();
+  m_inputPaintAll          = false;
+  m_batchInputInvalidation = true;
+}
+
+//-------------------------------------------------------------------------------------------------------------
+
+void FullColorBrushTool::inputPaintTracksEnd() {
+  const TRectD rect = m_inputPaintRect;
+  const bool all   = m_inputPaintAll;
+  m_inputPaintRect.empty();
+  m_inputPaintAll          = false;
+  m_batchInputInvalidation = false;
+  if (all)
+    invalidate();
+  else if (!rect.isEmpty())
+    invalidate(rect);
+}
+
+//-------------------------------------------------------------------------------------------------------------
+
 void FullColorBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
                                               const TTrack &track,
                                               bool firstTrack,
@@ -603,13 +625,20 @@ void FullColorBrushTool::inputPaintTrackPoint(const TTrackPoint &point,
         TRectD(point.position - thickOffset, point.position + thickOffset);
     m_brushPos = m_mousePos = point.position;
   }
-  invalidate(invalidateRect.enlarge(2.0));
+  if (!invalidateRect.isEmpty())
+    inputInvalidateRect(invalidateRect.enlarge(2.0));
 }
 
 //-------------------------------------------------------------------------------------------------------------
 
 void FullColorBrushTool::inputInvalidateRect(const TRectD &bounds) {
-  invalidate(bounds);
+  if (!m_batchInputInvalidation) {
+    invalidate(bounds);
+  } else if (bounds.isEmpty()) {
+    m_inputPaintAll = true;
+  } else {
+    m_inputPaintRect += bounds;
+  }
 }
 
 //-------------------------------------------------------------------------------------------------------------

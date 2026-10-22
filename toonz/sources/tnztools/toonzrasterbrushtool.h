@@ -156,11 +156,11 @@ public:
   void inputMouseMove(const TPointD &position,
                       const TInputState &state) override;
   void inputSetBusy(bool busy) override;
+  void inputPaintTracksBegin() override;
+  void inputPaintTracksEnd() override;
   void inputPaintTrackPoint(const TTrackPoint &point, const TTrack &track,
                             bool firstTrack, bool preview) override;
-  void inputInvalidateRect(const TRectD &bounds) override {
-    invalidate(bounds);
-  }
+  void inputInvalidateRect(const TRectD &bounds) override;
   TTool *inputGetTool() override { return this; };
 
   void draw() override;
@@ -206,6 +206,9 @@ private:
 
 protected:
   TInputManager m_inputmanager;
+  TRectD m_inputPaintRect;
+  bool m_batchInputInvalidation = false;
+  bool m_inputPaintAll          = false;
   TSmartPointerT<TModifierLine> m_modifierLine;
   TSmartPointerT<TModifierTangents> m_modifierTangents;
   TSmartPointerT<TModifierAssistants> m_modifierAssistants;
@@ -350,3 +353,4 @@ protected slots:
 };
 
 #endif  // TOONZRASTERBRUSHTOOL_H
+
