@@ -244,10 +244,11 @@ void TFrameHandle::timerEvent(QTimerEvent *event) {
   qint64 elapsedTime = m_clock.elapsed();
   int frame = m_scrubRange.first + elapsedTime * m_fps / 1000;
   int lastFrame = m_scrubRange.second;
-  if (frame >= lastFrame) {
+  // Finish the last frame's audition before stopping the range.
+  if (frame > lastFrame) {
     if (m_frame != lastFrame) setFrame(lastFrame);
     stopScrubbing();
-  } else {
+  } else if (m_frame != frame) {
     setFrame(frame);
   }
 }
