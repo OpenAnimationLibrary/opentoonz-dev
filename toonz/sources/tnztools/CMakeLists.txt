@@ -50,6 +50,7 @@ set(HEADERS
     ../include/tools/toolutils.h
     ../include/tools/tooltimer.h
     ../include/tools/strokesampleclock.h
+    ../include/tools/strokesmoothnessdiagnostics.h
     ../include/tools/keyhistory.h
     ../include/tools/inputstate.h
     ../include/tools/track.h
@@ -133,6 +134,7 @@ set(SOURCES
     toonzrasterbrushtool.cpp
     toonzvectorbrushtool.cpp
     tooltimer.cpp
+    strokesmoothnessdiagnostics.cpp
     inputstate.cpp
     track.cpp
     inputmanager.cpp

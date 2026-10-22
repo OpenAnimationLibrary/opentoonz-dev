@@ -281,6 +281,7 @@ TInputManager::paintTracks() {
       if (m_handler) m_handler->inputSetBusy(false);
       m_started = false;
     }
+    StrokeSmoothnessDiagnostics::finishStroke(m_tracks.front());
     for(int i = 0; i < (int)m_tracks.size(); ++i)
       m_tracks[i].clear();
   }
@@ -390,6 +391,8 @@ TInputManager::touchTracks(bool finish) {
       const double eventTime = (*i)->eventTimeFromTicks(ticks);
       // Key changes and finalization carry no additional pen sample time.
       addTrackPoint(*i, p.position, p.pressure, p.tilt, p.time, eventTime, finish);
+      StrokeSmoothnessDiagnostics::recordAccepted(
+        **i, ticks, finish ? "finish" : "state");
     }
   }
 }
@@ -501,10 +504,8 @@ TInputManager::trackEvent(
   TTimerTicks ticks,
   double sampleTime )
 {
-  if (StrokeSmoothnessDiagnostics::maybeReplay(*this)) return;
+  if (StrokeSmoothnessDiagnostics::maybeReplay(*this, final)) return;
   ticks = fixTicks(ticks);
-  StrokeSmoothnessDiagnostics::recordAccepted(
-      deviceId, position, pressure, final, ticks);
   TTrackP track = getTrack(deviceId, touchId, ticks, hasPressure, hasTilt);
   if (!track->finished()) {
     const double eventTime = track->eventTimeFromTicks(ticks);
@@ -519,6 +520,7 @@ TInputManager::trackEvent(
       time,
       eventTime,
       final );
+    StrokeSmoothnessDiagnostics::recordAccepted(*track, ticks);
   }
 }
 

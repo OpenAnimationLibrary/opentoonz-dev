@@ -1,6 +1,7 @@
 
 
 #include "toonzvectorbrushtool.h"
+#include <tools/strokesmoothnessdiagnostics.h>
 
 // TnzTools includes
 #include "tools/toolhandle.h"
@@ -1091,6 +1092,8 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
 
     m_tracks.resize(1);
     TStroke *stroke = m_tracks.front().makeStroke(error);
+    StrokeSmoothnessDiagnostics::recordVectorStroke(
+      m_inputmanager.getOutputTracks(), 0, *stroke);
 
     TVectorImageP vi = getImage(true);
     if (!vi) return;
@@ -1155,6 +1158,8 @@ void ToonzVectorBrushTool::inputSetBusy(bool busy) {
       stroke->setSelfLoop(true);
     if (autoCloseEnabled()) closeOpenStroke(stroke);
 
+    StrokeSmoothnessDiagnostics::recordVectorStroke(
+      m_inputmanager.getOutputTracks(), strokes.size(), *stroke);
     strokes.push_back(stroke);
   }
 
