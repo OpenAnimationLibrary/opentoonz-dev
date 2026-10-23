@@ -20,6 +20,7 @@
 #include <QItemDelegate>
 #include <QWidget>
 #include <QFileSystemWatcher>
+#include <QPersistentModelIndex>
 
 //==============================================================
 
@@ -134,7 +135,10 @@ public:
   DvDirTreeView(DvDirTreeView &&)            = delete;
   DvDirTreeView &operator=(DvDirTreeView &&) = delete;
 
-  ~DvDirTreeView() override = default;
+  ~DvDirTreeView() override;
+
+  void refreshLoadedFolders(bool currentOnly = false);
+  void setWatchWhenHidden(bool enabled);
 
   // Path operations
   TFilePath getCurrentPath()
@@ -169,6 +173,7 @@ public:
 
 signals:
   void currentNodeChanged();  //!< Emitted when user selects a different node.
+  void folderRefreshed(const QString &path);
 
 public slots:
   void deleteFolder();  //!< Deletes the selected folder.
@@ -223,6 +228,8 @@ protected:
   // QWidget overrides
   QSize sizeHint() const override;
   void resizeEvent(QResizeEvent *event) override;
+  void showEvent(QShowEvent *event) override;
+  void hideEvent(QHideEvent *event) override;
 
   // QAbstractItemView overrides
   void currentChanged(const QModelIndex &current,
@@ -245,6 +252,10 @@ private:
   VersionControlThread m_thread;
 
   bool m_refreshVersionControlEnabled = false;
+  bool m_refreshingLoadedFolders      = false;
+  bool m_watchWhenHidden              = false;
+  QStringList m_watchedPaths;
+  QList<QPersistentModelIndex> m_pendingDriveRefreshes;
 
   // Temporary variable used while retrieving list of missing directories
   QString m_getSVNListRelativePath;
@@ -261,6 +272,8 @@ private:
    * tree -*/
   void addPathsToWatcher();
   void getExpandedPathsRecursive(const QModelIndex &index, QStringList &paths);
+  void getLoadedFoldersRecursive(const QModelIndex &index,
+                                 QList<QPersistentModelIndex> &folders);
 };
 
 //**********************************************************************************

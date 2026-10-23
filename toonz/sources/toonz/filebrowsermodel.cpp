@@ -19,6 +19,9 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QRegularExpression>
+#include <algorithm>
+#include <memory>
+#include <set>
 
 #ifdef _WIN32
 #include <shlobj.h>
@@ -33,6 +36,61 @@
 #endif
 
 namespace {
+
+void collectLoadedNodes(DvDirModelNode *node,
+                        std::set<DvDirModelNode *> &nodes) {
+  nodes.insert(node);
+  if (!node->areChildrenValid()) return;
+  for (int i = 0; i < node->getChildCount(); ++i)
+    collectLoadedNodes(node->getChild(i), nodes);
+}
+
+#ifdef _WIN32
+bool isRemovableDriveRoot(const TFilePath &path) {
+  QString root = QDir::toNativeSeparators(path.getQString());
+  if (!root.endsWith('\\')) root += '\\';
+  const UINT type = GetDriveTypeW(reinterpret_cast<LPCWSTR>(root.utf16()));
+  return type == DRIVE_REMOVABLE || type == DRIVE_CDROM;
+}
+
+bool readRemovableDriveFolders(const TFilePath &path,
+                               std::vector<std::wstring> &names) {
+  QString root = QDir::toNativeSeparators(path.getQString());
+  if (!root.endsWith('\\')) root += '\\';
+  const DWORD attributes =
+      GetFileAttributesW(reinterpret_cast<LPCWSTR>(root.utf16()));
+  if (attributes == INVALID_FILE_ATTRIBUTES ||
+      !(attributes & FILE_ATTRIBUTE_DIRECTORY))
+    return false;
+
+  const QString pattern = root + '*';
+  WIN32_FIND_DATAW data;
+  HANDLE handle =
+      FindFirstFileW(reinterpret_cast<LPCWSTR>(pattern.utf16()), &data);
+  if (handle == INVALID_HANDLE_VALUE) {
+    const DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_NO_MORE_FILES;
+  }
+  std::unique_ptr<void, decltype(&FindClose)> closer(handle, &FindClose);
+
+  QStringList entries;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+        !(data.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) &&
+        wcscmp(data.cFileName, L".") != 0 && wcscmp(data.cFileName, L"..") != 0)
+      entries.append(QString::fromWCharArray(data.cFileName));
+  } while (FindNextFileW(handle, &data));
+  if (GetLastError() != ERROR_NO_MORE_FILES) return false;
+
+  std::sort(entries.begin(), entries.end(),
+            [](const QString &a, const QString &b) {
+              return QString::localeAwareCompare(a, b) < 0;
+            });
+  for (const QString &entry : entries) names.push_back(entry.toStdWString());
+  return true;
+}
+#endif
+
 TFilePath getMyDocumentsPath() {
 #ifdef _WIN32
   WCHAR szPath[MAX_PATH];
@@ -181,30 +239,27 @@ void DvDirModelNode::restoreName() {
 
 DvDirModelFileFolderNode::DvDirModelFileFolderNode(DvDirModelNode *parent,
                                                    std::wstring name,
-                                                   const TFilePath &path)
+                                                   const TFilePath &path,
+                                                   bool isRemovableDrive)
     : DvDirModelNode(parent, name)
     , m_path(path)
     , m_isProjectFolder(false)
     , m_existsChecked(false)
     , m_exists(true)
     , m_hasChildren(false)
-    , m_peeks(true) {
+    , m_peeks(true)
+    , m_isRemovableDrive(isRemovableDrive)
+    , m_driveAvailable(false) {
   m_nodeType = "FileFolder";
 }
 
 DvDirModelFileFolderNode::DvDirModelFileFolderNode(DvDirModelNode *parent,
                                                    const TFilePath &path)
-    : DvDirModelNode(parent, path.withoutParentDir().getWideString())
-    , m_path(path)
-    , m_isProjectFolder(false)
-    , m_existsChecked(false)
-    , m_exists(true)
-    , m_hasChildren(false)
-    , m_peeks(true) {
-  m_nodeType = "FileFolder";
-}
+    : DvDirModelFileFolderNode(parent, path.withoutParentDir().getWideString(),
+                               path) {}
 
 bool DvDirModelFileFolderNode::exists() {
+  if (m_isRemovableDrive) return !m_childrenValid || m_driveAvailable;
   return m_existsChecked ? m_exists
                          : m_peeks
              ? m_existsChecked = true,
@@ -212,7 +267,11 @@ bool DvDirModelFileFolderNode::exists() {
 }
 
 void DvDirModelFileFolderNode::visualizeContent(FileBrowser *browser) {
-  browser->setFolder(m_path);
+  if (m_isRemovableDrive) {
+    DvDirModel *model = DvDirModel::instance();
+    model->refresh(model->getIndexByNode(this));
+  }
+  browser->setFolder(m_path, false, m_isRemovableDrive);
 }
 
 DvDirModelNode *DvDirModelFileFolderNode::makeChild(std::wstring name) {
@@ -251,6 +310,9 @@ bool DvDirModelFileFolderNode::setName(std::wstring newName) {
 }
 
 bool DvDirModelFileFolderNode::hasChildren() {
+  // Keep the drive expandable after an unavailable/empty listing so that a
+  // later explicit expansion can retry without probing during layout.
+  if (m_isRemovableDrive) return true;
   if (m_childrenValid) return m_hasChildren;
 
   if (m_peeks) {
@@ -266,9 +328,15 @@ bool DvDirModelFileFolderNode::hasChildren() {
 
 void DvDirModelFileFolderNode::refreshChildren() {
   m_childrenValid = true;
+  m_existsChecked = false;
 
   std::vector<std::wstring> names;
-  getChildrenNames(names);
+#ifdef _WIN32
+  if (m_isRemovableDrive)
+    m_driveAvailable = readRemovableDriveFolders(m_path, names);
+  else
+#endif
+    getChildrenNames(names);
 
   std::vector<DvDirModelNode *> oldChildren;
   oldChildren.swap(m_children);
@@ -295,13 +363,9 @@ void DvDirModelFileFolderNode::refreshChildren() {
 
     addChild(child);
   }
-  for (j = oldChildren.begin(); j != oldChildren.end(); ++j) {
-    DvDirModelNode *child = *j;
-    if (!!child && child->hasChildren())
-      child->removeChildren(0, child->getChildCount());
-
-    delete *j;
-  }
+  // Destruction already releases cached descendants. Do not scan a removed
+  // folder (or a disconnected drive) just to delete its node.
+  clearPointerContainer(oldChildren);
 
   m_hasChildren = (m_children.size() > 0);
 }
@@ -309,13 +373,25 @@ void DvDirModelFileFolderNode::refreshChildren() {
 void DvDirModelFileFolderNode::getChildrenNames(
     std::vector<std::wstring> &names) const {
   if (m_path.isEmpty()) return;
+#ifdef _WIN32
+  if (m_isRemovableDrive) {
+    readRemovableDriveFolders(m_path, names);
+    return;
+  }
+#endif
   TFileStatus folderPathStatus(m_path);
   if (folderPathStatus.isLink()) return;
 
   if (!folderPathStatus.isDirectory()) return;
 
   QStringList dirItems;
-  TSystem::readDirectory_DirItems(dirItems, m_path);
+  try {
+    TSystem::readDirectory_DirItems(dirItems, m_path);
+  } catch (const TSystemException &) {
+    // A directory can disappear after the status check, including when its
+    // removable drive is disconnected. Keep the model refresh recoverable.
+    return;
+  }
   for (const QString &name : dirItems) names.push_back(name.toStdWString());
 
   QDir dir(toQString(m_path));
@@ -817,7 +893,6 @@ DvDirModelMyComputerNode::DvDirModelMyComputerNode(DvDirModelNode *parent)
 
 void DvDirModelMyComputerNode::refreshChildren() {
   m_childrenValid = true;
-  if (!m_children.empty()) clearPointerContainer(m_children);
 
   TFilePathSet fps = TSystem::getDisks();
 
@@ -825,12 +900,31 @@ void DvDirModelMyComputerNode::refreshChildren() {
   fps.push_back(TFilePath("/Volumes/"));
 #endif
 
-  TFilePathSet::iterator it;
-  for (it = fps.begin(); it != fps.end(); ++it) {
-    DvDirModelNode *child =
-        new DvDirModelFileFolderNode(this, it->getWideString(), *it);
+  std::vector<DvDirModelNode *> oldChildren;
+  oldChildren.swap(m_children);
+  for (const TFilePath &path : fps) {
+    bool removable = false;
+#ifdef _WIN32
+    removable = isRemovableDriveRoot(path);
+#endif
+    auto old = std::find_if(
+        oldChildren.begin(), oldChildren.end(),
+        [&path, removable](DvDirModelNode *node) {
+          auto folder = dynamic_cast<DvDirModelFileFolderNode *>(node);
+          return folder && folder->isFolder(path) &&
+                 folder->isRemovableDrive() == removable;
+        });
+    DvDirModelNode *child;
+    if (old != oldChildren.end()) {
+      child = *old;
+      oldChildren.erase(old);
+    } else {
+      child = new DvDirModelFileFolderNode(this, path.getWideString(), path,
+                                           removable);
+    }
     addChild(child);
   }
+  clearPointerContainer(oldChildren);
 }
 
 QPixmap DvDirModelMyComputerNode::getPixmap(bool isOpen) const {
@@ -1183,7 +1277,33 @@ void DvDirModel::refresh(const QModelIndex &index) {
 
   emit layoutAboutToBeChanged();
 
+  // Folder and drive refreshes retain matching nodes. Preserve their indexes
+  // and invalidate indexes into removed subtrees before views use them again.
+  const bool remap = dynamic_cast<DvDirModelFileFolderNode *>(node) ||
+                     dynamic_cast<DvDirModelMyComputerNode *>(node);
+  std::set<DvDirModelNode *> oldNodes;
+  QModelIndexList oldIndexes;
+  if (remap) {
+    collectLoadedNodes(node, oldNodes);
+    for (const QModelIndex &persistent : persistentIndexList())
+      if (oldNodes.count(getNode(persistent))) oldIndexes.append(persistent);
+  }
+
   node->refreshChildren();
+
+  if (remap) {
+    std::set<DvDirModelNode *> newNodes;
+    collectLoadedNodes(node, newNodes);
+    QModelIndexList newIndexes;
+    for (const QModelIndex &oldIndex : oldIndexes) {
+      DvDirModelNode *oldNode = getNode(oldIndex);
+      newIndexes.append(
+          newNodes.count(oldNode)
+              ? createIndex(oldNode->getRow(), oldIndex.column(), oldNode)
+              : QModelIndex());
+    }
+    changePersistentIndexList(oldIndexes, newIndexes);
+  }
 
   emit layoutChanged();
 }

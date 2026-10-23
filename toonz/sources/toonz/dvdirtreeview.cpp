@@ -34,6 +34,8 @@
 #include <QMimeData>
 #include <QFileSystemWatcher>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
+#include <QTimer>
 
 using namespace DVGui;
 
@@ -81,18 +83,15 @@ MyFileSystemWatcher::MyFileSystemWatcher(QObject *parent) : QObject(parent) {
 void MyFileSystemWatcher::addPaths(const QStringList &paths, bool onlyNewPath) {
   if (paths.isEmpty()) return;
 
+  QStringList activePaths = m_watcher->directories();
   for (const QString &path : paths) {
-    // If the path is not watched yet, try to start watching it
-    if (!m_watchedPath.contains(path)) {
-      // Symlink paths will not be watched
-      if (m_watcher->addPath(path)) {
-        m_watchedPath.append(path);
-      }
-    }
-    // Or just add path to the list
-    else if (!onlyNewPath) {
+    // Keep requests separate from active watches: Qt drops a watch when its
+    // directory disappears, and another browser may still need that path.
+    if (!onlyNewPath || !m_watchedPath.contains(path))
       m_watchedPath.append(path);
-    }
+
+    if (!activePaths.contains(path) && m_watcher->addPath(path))
+      activePaths.append(path);
   }
 }
 
@@ -100,8 +99,8 @@ void MyFileSystemWatcher::removePaths(const QStringList &paths) {
   if (m_watchedPath.isEmpty() || paths.isEmpty()) return;
 
   for (const QString &path : paths) {
-    // removeOne will return false for symlink paths
-    if (m_watchedPath.removeOne(path) && !m_watchedPath.contains(path)) {
+    if (m_watchedPath.removeOne(path) && !m_watchedPath.contains(path) &&
+        m_watcher->directories().contains(path)) {
       m_watcher->removePath(path);
     }
   }
@@ -110,7 +109,8 @@ void MyFileSystemWatcher::removePaths(const QStringList &paths) {
 void MyFileSystemWatcher::removeAllPaths() {
   if (m_watchedPath.isEmpty()) return;
 
-  m_watcher->removePaths(m_watcher->directories());
+  const QStringList activePaths = m_watcher->directories();
+  if (!activePaths.isEmpty()) m_watcher->removePaths(activePaths);
   m_watchedPath.clear();
 }
 
@@ -378,11 +378,16 @@ DvDirTreeView::DvDirTreeView(QWidget *parent)
   connect(this->model(), &QAbstractItemModel::layoutChanged, this,
           &DvDirTreeView::resizeToConts);
 
-  if (Preferences::instance()->isWatchFileSystemEnabled()) {
-    connect(this, &DvDirTreeView::expanded, this, &DvDirTreeView::onExpanded);
-    connect(this, &DvDirTreeView::collapsed, this, &DvDirTreeView::onCollapsed);
-    addPathsToWatcher();
-  }
+  connect(this, &DvDirTreeView::expanded, this, &DvDirTreeView::onExpanded);
+  connect(this, &DvDirTreeView::collapsed, this, &DvDirTreeView::onCollapsed);
+  connect(model(), &QAbstractItemModel::layoutChanged, this,
+          &DvDirTreeView::addPathsToWatcher);
+  connect(model(), &QAbstractItemModel::rowsInserted, this,
+          &DvDirTreeView::addPathsToWatcher, Qt::QueuedConnection);
+  connect(model(), &QAbstractItemModel::rowsRemoved, this,
+          &DvDirTreeView::addPathsToWatcher, Qt::QueuedConnection);
+  connect(model(), &QAbstractItemModel::modelReset, this,
+          &DvDirTreeView::addPathsToWatcher);
 
   connect(MyFileSystemWatcher::instance(),
           &MyFileSystemWatcher::directoryChanged, this,
@@ -400,6 +405,12 @@ DvDirTreeView::DvDirTreeView(QWidget *parent)
 
 //-----------------------------------------------------------------------------
 
+DvDirTreeView::~DvDirTreeView() {
+  MyFileSystemWatcher::instance()->removePaths(m_watchedPaths);
+}
+
+//-----------------------------------------------------------------------------
+
 void DvDirTreeView::resizeToConts() { resizeColumnToContents(0); }
 
 //-----------------------------------------------------------------------------
@@ -407,6 +418,58 @@ void DvDirTreeView::resizeToConts() { resizeColumnToContents(0); }
 void DvDirTreeView::resizeEvent(QResizeEvent *event) {
   resizeColumnToContents(0);
   QTreeView::resizeEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+
+void DvDirTreeView::showEvent(QShowEvent *event) {
+  QTreeView::showEvent(event);
+  addPathsToWatcher();
+}
+
+//-----------------------------------------------------------------------------
+
+void DvDirTreeView::refreshLoadedFolders(bool currentOnly) {
+  if (m_refreshingLoadedFolders ||
+      (m_currentRefreshedNode &&
+       (!refreshVersionControlEnabled() || m_thread.isRunning())))
+    return;
+
+  {
+    QScopedValueRollback<bool> refreshing(m_refreshingLoadedFolders, true);
+    QList<QPersistentModelIndex> folders;
+    if (!currentOnly) getLoadedFoldersRecursive(rootIndex(), folders);
+    QPersistentModelIndex selected = currentIndex();
+    auto currentFolder             = dynamic_cast<DvDirModelFileFolderNode *>(
+        DvDirModel::instance()->getNode(selected));
+    if (currentFolder &&
+        (currentFolder->areChildrenValid() ||
+         currentFolder->isRemovableDrive()) &&
+        !folders.contains(selected))
+      folders.append(selected);
+    // Watches were released while hidden. Refresh loaded visible folders;
+    // parent refreshes can remove descendants from this snapshot.
+    for (const QPersistentModelIndex &index : folders)
+      if (index.isValid()) DvDirModel::instance()->refresh(index);
+  }
+  addPathsToWatcher();
+}
+
+//-----------------------------------------------------------------------------
+
+void DvDirTreeView::hideEvent(QHideEvent *event) {
+  QTreeView::hideEvent(event);
+  addPathsToWatcher();
+}
+
+//-----------------------------------------------------------------------------
+
+void DvDirTreeView::setWatchWhenHidden(bool enabled) {
+  m_watchWhenHidden = enabled;
+  if (enabled)
+    onExpanded(currentIndex());
+  else
+    addPathsToWatcher();
 }
 
 //-----------------------------------------------------------------------------
@@ -500,10 +563,8 @@ void DvDirTreeView::contextMenuEvent(QContextMenuEvent *e) {
 
   QMenu menu(this);
 
-  if (!Preferences::instance()->isWatchFileSystemEnabled()) {
-    QAction *refresh = CommandManager::instance()->getAction("MI_RefreshTree");
-    menu.addAction(refresh);
-  }
+  QAction *refresh = CommandManager::instance()->getAction("MI_RefreshTree");
+  menu.addAction(refresh);
 
   DvDirVersionControlNode *vcNode =
       dynamic_cast<DvDirVersionControlNode *>(node);
@@ -653,6 +714,10 @@ void DvDirTreeView::currentChanged(const QModelIndex &current,
     }
   }
 
+  if (m_watchWhenHidden)
+    onExpanded(current);
+  else
+    addPathsToWatcher();
   emit currentNodeChanged();
 }
 
@@ -701,9 +766,9 @@ void DvDirTreeView::deleteFolder() {
 void DvDirTreeView::setCurrentNode(DvDirModelNode *node) {
   if (getCurrentNode() == node) return;
 
-  QModelIndex index = DvDirModel::instance()->getIndexByNode(node);
+  QPersistentModelIndex index = DvDirModel::instance()->getIndexByNode(node);
   setCurrentIndex(index);
-  scrollTo(index);
+  if (index.isValid()) scrollTo(index);
 }
 
 //-----------------------------------------------------------------------------
@@ -713,14 +778,14 @@ void DvDirTreeView::setCurrentNode(const TFilePath &fp, bool expandNode) {
       dynamic_cast<DvDirModelFileFolderNode *>(getCurrentNode());
   if (node && node->getPath() == fp) return;
 
-  QModelIndex index = DvDirModel::instance()->getIndexByPath(fp);
+  QPersistentModelIndex index = DvDirModel::instance()->getIndexByPath(fp);
   setCurrentIndex(index);
 
-  if (expandNode) {
+  if (expandNode && index.isValid()) {
     expand(index);
   }
 
-  scrollTo(index);
+  if (index.isValid()) scrollTo(index);
 }
 
 //-----------------------------------------------------------------------------
@@ -1735,76 +1800,124 @@ DvItemListModel::Status DvDirTreeView::getItemVersionControlStatus(
 /*- Refresh monitoring paths according to expand/shrink state of the folder tree
  * -*/
 void DvDirTreeView::addPathsToWatcher() {
+  if (m_refreshingLoadedFolders) return;
   QStringList paths;
-  getExpandedPathsRecursive(rootIndex(), paths);
-  if (!paths.isEmpty()) {
-    MyFileSystemWatcher::instance()->addPaths(paths);
+  if ((isVisible() || m_watchWhenHidden) &&
+      Preferences::instance()->isWatchFileSystemEnabled()) {
+    if (isVisible()) getExpandedPathsRecursive(rootIndex(), paths);
+    auto currentFolder =
+        dynamic_cast<DvDirModelFileFolderNode *>(getCurrentNode());
+    if (currentFolder && (!currentFolder->isRemovableDrive() ||
+                          currentFolder->isDriveAvailable())) {
+      const QString path = toQString(currentFolder->getPath());
+      if (!path.isEmpty() && !paths.contains(path)) paths.append(path);
+    }
   }
+
+  QStringList addedPaths, removedPaths, retainedPaths;
+  for (const QString &path : paths) {
+    if (m_watchedPaths.contains(path))
+      retainedPaths.append(path);
+    else
+      addedPaths.append(path);
+  }
+  for (const QString &path : m_watchedPaths)
+    if (!paths.contains(path)) removedPaths.append(path);
+
+  MyFileSystemWatcher *watcher = MyFileSystemWatcher::instance();
+  watcher->removePaths(removedPaths);
+  watcher->addPaths(addedPaths);
+  watcher->addPaths(retainedPaths, true);
+  m_watchedPaths = paths;
 }
 
 void DvDirTreeView::getExpandedPathsRecursive(const QModelIndex &index,
                                               QStringList &paths) {
   DvDirModelNode *node = DvDirModel::instance()->getNode(index);
+  if (!node) return;
   DvDirModelFileFolderNode *fileFolderNode =
       dynamic_cast<DvDirModelFileFolderNode *>(node);
 
+  if (fileFolderNode && fileFolderNode->isRemovableDrive() &&
+      (!fileFolderNode->isDriveAvailable() ||
+       (!isExpanded(index) && index != currentIndex())))
+    return;
+
   if (fileFolderNode) {
     QString path = toQString(fileFolderNode->getPath());
-    if (!paths.contains(path)) {
+    if (!path.isEmpty() && !paths.contains(path)) {
       paths.append(path);
     }
   }
 
   /*- search child nodes if this node is expanded -*/
   if (index != rootIndex() && !isExpanded(index)) return;
+  // Collect watches from already loaded nodes without scanning a drive.
+  if (!node->areChildrenValid()) return;
 
   int count = DvDirModel::instance()->rowCount(index);
   for (int r = 0; r < count; r++) {
     QModelIndex child = DvDirModel::instance()->index(r, 0, index);
     getExpandedPathsRecursive(child, paths);
   }
+}
+
+void DvDirTreeView::getLoadedFoldersRecursive(
+    const QModelIndex &index, QList<QPersistentModelIndex> &folders) {
+  DvDirModelNode *node = DvDirModel::instance()->getNode(index);
+  if (!node) return;
+  DvDirModelFileFolderNode *folder =
+      dynamic_cast<DvDirModelFileFolderNode *>(node);
+  if (folder) {
+    if (folder->isRemovableDrive() && !isExpanded(index) &&
+        index != currentIndex())
+      return;
+    if (node->areChildrenValid() || folder->isRemovableDrive())
+      folders.append(QPersistentModelIndex(index));
+  }
+  if (index != rootIndex() && !isExpanded(index)) return;
+  if (!node->areChildrenValid()) return;
+
+  const int count = DvDirModel::instance()->rowCount(index);
+  for (int r = 0; r < count; ++r)
+    getLoadedFoldersRecursive(DvDirModel::instance()->index(r, 0, index),
+                              folders);
 }
 
 void DvDirTreeView::onExpanded(const QModelIndex &index) {
-  QStringList paths;
-  int count = DvDirModel::instance()->rowCount(index);
-  for (int r = 0; r < count; r++) {
-    QModelIndex child = DvDirModel::instance()->index(r, 0, index);
-    getExpandedPathsRecursive(child, paths);
-  }
-  MyFileSystemWatcher::instance()->addPaths(paths);
-}
-
-void DvDirTreeView::onCollapsed(const QModelIndex &index) {
-  QStringList paths;
-  int count = DvDirModel::instance()->rowCount(index);
-  for (int r = 0; r < count; r++) {
-    QModelIndex child = DvDirModel::instance()->index(r, 0, index);
-    getExpandedPathsRecursive(child, paths);
-  }
-  MyFileSystemWatcher::instance()->removePaths(paths);
-}
-
-void DvDirTreeView::onMonitoredDirectoryChanged(const QString &dirPath) {
-  DvDirModel::instance()->refreshFolder(TFilePath(dirPath));
-
-  /*- the change may be adding of a new folder, which is needed to be added to
-   * the monitored paths -*/
-  DvDirModelNode *node = DvDirModel::instance()
-                             ->getNode(rootIndex())
-                             ->getNodeByPath(TFilePath(dirPath));
-  if (!node) return;
-
-  QStringList paths;
-  for (int c = 0; c < node->getChildCount(); c++) {
-    DvDirModelFileFolderNode *childNode =
-        dynamic_cast<DvDirModelFileFolderNode *>(node->getChild(c));
-    if (childNode) {
-      paths.append(toQString(childNode->getPath()));
+  if (m_refreshingLoadedFolders) return;
+  DvDirModelFileFolderNode *node = dynamic_cast<DvDirModelFileFolderNode *>(
+      DvDirModel::instance()->getNode(index));
+  if (node && node->isRemovableDrive()) {
+    const QPersistentModelIndex pending(index);
+    if (!m_pendingDriveRefreshes.contains(pending)) {
+      m_pendingDriveRefreshes.append(pending);
+      // Finish Qt's expansion/scroll operation before a refresh can remove
+      // any descendant indexes it is still using.
+      QTimer::singleShot(0, this, [this, pending]() {
+        m_pendingDriveRefreshes.removeAll(pending);
+        if (!pending.isValid() || (!isVisible() && !m_watchWhenHidden) ||
+            (!isExpanded(pending) && pending != currentIndex()))
+          return;
+        auto folder = dynamic_cast<DvDirModelFileFolderNode *>(
+            DvDirModel::instance()->getNode(pending));
+        if (!folder || !folder->isRemovableDrive()) return;
+        const QString path = toQString(folder->getPath());
+        DvDirModel::instance()->refresh(pending);
+        addPathsToWatcher();
+        emit folderRefreshed(path);
+      });
     }
   }
+  addPathsToWatcher();
+}
 
-  MyFileSystemWatcher::instance()->addPaths(paths, true);
+void DvDirTreeView::onCollapsed(const QModelIndex &) { addPathsToWatcher(); }
+
+void DvDirTreeView::onMonitoredDirectoryChanged(const QString &dirPath) {
+  if (!m_watchedPaths.contains(dirPath)) return;
+  DvDirModel::instance()->refreshFolder(TFilePath(dirPath));
+  addPathsToWatcher();
 }
 
 // on preference changed, update file browser's behavior
@@ -1812,17 +1925,7 @@ void DvDirTreeView::onPreferenceChanged(const QString &prefName) {
   // react only when the related preference is changed
   if (prefName != "WatchFileSystem") return;
 
-  if (Preferences::instance()->isWatchFileSystemEnabled()) {
-    connect(this, &DvDirTreeView::expanded, this, &DvDirTreeView::onExpanded);
-    connect(this, &DvDirTreeView::collapsed, this, &DvDirTreeView::onCollapsed);
-    addPathsToWatcher();
-  } else {
-    disconnect(this, &DvDirTreeView::expanded, this,
-               &DvDirTreeView::onExpanded);
-    disconnect(this, &DvDirTreeView::collapsed, this,
-               &DvDirTreeView::onCollapsed);
-    MyFileSystemWatcher::instance()->removeAllPaths();
-  }
+  addPathsToWatcher();
 }
 
 //=============================================================================
