@@ -5,7 +5,7 @@
 
 #include "xsheetdragtool.h"
 #include "keyframeselection.h"
-#include "keyframedata.h"
+#include "toonz/tstageobject.h"
 #include "toonz/txshcell.h"
 
 class TXsheet;
@@ -23,18 +23,16 @@ class KeyframeMover {
   //! Start Selected keyframes
   std::set<KeyframePosition> m_startSelectedKeyframes;
 
-  //! Store all keyframes position in selected StageObject.
-  std::set<KeyframePosition> m_lastKeyframes;
-  //! Store all keyframes in selected stageObject.
-  TKeyframeData *m_lastKeyframeData;
+  //! Exact keyframe snapshots for each affected stage object.
+  std::map<int, TStageObject::KeyframeMap> m_originalKeyframes;
 
   //! Helper method: returns the current xsheet
   TXsheet *getXsheet() const;
 
-  // m_lastKeyframes and m_lastKeyframeData -> xsheet
+  // Restore the original keyframe snapshots.
   void setKeyframes();
 
-  // m_lastKeyframes and m_lastKeyframeData <- xsheet
+  // Capture the original keyframes before a drag.
   void getKeyframes();
 
 public:
