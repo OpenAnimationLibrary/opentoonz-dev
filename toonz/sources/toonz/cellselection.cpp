@@ -72,13 +72,42 @@
 // Qt includes
 #include <QApplication>
 #include <QClipboard>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QLabel>
+#include <QPushButton>
+#include <QVBoxLayout>
 
 // C++ includes
+#include <limits>
 #include <memory>
+#include <cmath>
 
 //=============================================================================
 namespace {
 //-----------------------------------------------------------------------------
+
+TXshCell drawingPasteReference(TXsheet *xsh, int row, int col) {
+  TXshCell cell = xsh->getCell(row, col);
+  if (!cell.isEmpty()) return cell;
+  int first, last;
+  xsh->getCellRange(col, first, last);
+  if (first > last) return TXshCell();
+  for (int r = std::min(row - 1, last); r >= first; --r) {
+    cell = xsh->getCell(r, col);
+    if (!cell.isEmpty()) return cell;
+  }
+  for (int r = std::max(row + 1, first); r <= last; ++r) {
+    cell = xsh->getCell(r, col);
+    if (!cell.isEmpty()) return cell;
+  }
+  return TXshCell();
+}
+
+//-----------------------------------------------------------------------------
+
+bool hasDrawingSelection(const QMimeData *mime);
 
 // Copy cells to clipboard without undo
 void copyCellsWithoutUndo(int r0, int c0, int r1, int c1) {
@@ -504,7 +533,7 @@ bool pasteStrokesInCellWithoutUndo(
   TXshSimpleLevel *sl = 0;
   TFrameId fid(1);
   if (cell.isEmpty()) {
-    if (row > 0) cell = xsh->getCell(row - 1, col);
+    cell = drawingPasteReference(xsh, row, col);
     sl = cell.getSimpleLevel();
     if (!sl || sl->getType() != PLI_XSHLEVEL) {
       ToonzScene *scene = app->getCurrentScene()->getScene();
@@ -580,11 +609,12 @@ public:
     TPaletteP oldPalette = 0;
     if (!cell.getSimpleLevel()) {
       m_createdFrame      = true;
-      TXshSimpleLevel *sl = xsh->getCell(row - 1, col).getSimpleLevel();
-      if (row <= 0 || !sl || sl->getType() != PLI_XSHLEVEL)
+      TXshSimpleLevel *sl =
+          drawingPasteReference(xsh, row, col).getSimpleLevel();
+      if (!sl || sl->getType() != PLI_XSHLEVEL)
         m_isLevelCreated = true;
       else
-        oldPalette = xsh->getCell(row - 1, col).getSimpleLevel()->getPalette();
+        oldPalette = sl->getPalette();
     } else
       oldPalette = cell.getSimpleLevel()->getPalette();
     if (oldPalette) m_oldPalette = oldPalette->clone();
@@ -660,154 +690,321 @@ bool pasteRasterImageInCellWithoutUndo(int row, int col,
                                        const RasterImageData *rasterImageData,
                                        TTileSet **tiles, bool &isLevelCreated) {
   isLevelCreated = false;
-  TApp *app      = TApp::instance();
-  TXsheet *xsh   = app->getCurrentXsheet()->getXsheet();
-  TXshCell cell  = xsh->getCell(row, col);
-  TImageP img;
-  TXshSimpleLevel *sl = 0;
-  TFrameId fid(1);
+  if (!tiles) return false;
+  *tiles = nullptr;
+  if (!rasterImageData || row < 0 || col < 0) return false;
+
+  TApp *app         = TApp::instance();
+  TXsheet *xsh      = app->getCurrentXsheet()->getXsheet();
   ToonzScene *scene = app->getCurrentScene()->getScene();
-  TFrameId tmplFId  = scene->getProperties()->formatTemplateFIdForInput();
+  if (!xsh || !scene) return false;
+  TXshColumn *column = xsh->getColumn(col);
+  if (column && column->isLocked()) return false;
 
-  TCamera *camera = scene->getCurrentCamera();
-  if (cell.isEmpty()) {
-    if (row > 0) cell = xsh->getCell(row - 1, col);
-    sl = cell.getSimpleLevel();
-    if (!sl || (sl->getType() == OVL_XSHLEVEL &&
-                sl->getPath().getFrame() == TFrameId::NO_FRAME)) {
-      int levelType;
-      if (dynamic_cast<const ToonzImageData *>(rasterImageData))
-        levelType = TZP_XSHLEVEL;
-      else if (dynamic_cast<const FullColorImageData *>(rasterImageData))
-        levelType = OVL_XSHLEVEL;
-      TXshLevel *xl = 0;
-      if (levelType == TZP_XSHLEVEL)
-        xl = scene->createNewLevel(TZP_XSHLEVEL, L"", rasterImageData->getDim(),
-                                   rasterImageData->getDpi().x);
-      else if (levelType == OVL_XSHLEVEL)
-        xl = scene->createNewLevel(OVL_XSHLEVEL, L"", rasterImageData->getDim(),
-                                   rasterImageData->getDpi().x);
-      if (!xl) return false;
-      isLevelCreated = true;
-      sl             = xl->getSimpleLevel();
-      assert(sl);
-      app->getCurrentScene()->notifyCastChange();
+  const TXshCell originalCell = xsh->getCell(row, col);
+  const bool createFrame      = originalCell.isEmpty();
+  const TXshCell referenceCell =
+      createFrame ? drawingPasteReference(xsh, row, col) : originalCell;
+  TXshSimpleLevelP sl = referenceCell.getSimpleLevel();
+  const bool createLevel =
+      createFrame && (!sl || (sl->getType() == OVL_XSHLEVEL &&
+                              sl->getPath().getFrame() == TFrameId::NO_FRAME));
+  const int levelType =
+      createLevel ? (dynamic_cast<const ToonzImageData *>(rasterImageData)
+                         ? TZP_XSHLEVEL
+                     : dynamic_cast<const FullColorImageData *>(rasterImageData)
+                         ? OVL_XSHLEVEL
+                         : NO_XSHLEVEL)
+      : sl        ? sl->getType()
+                  : NO_XSHLEVEL;
+  if (levelType != TZP_XSHLEVEL && levelType != OVL_XSHLEVEL &&
+      levelType != TZI_XSHLEVEL)
+    return false;
+  if (!createLevel && (sl->isReadOnly() || sl->getPath().isUneditable()))
+    return false;
 
-      if (levelType == TZP_XSHLEVEL || levelType == OVL_XSHLEVEL) {
-        img = sl->createEmptyFrame();
+  TFrameId fid = createFrame ? TFrameId(1) : originalCell.getFrameId();
+  TImageP originalImage;
+  TPaletteP originalPalette;
+  TPaletteP paletteBackup;
+  bool wasDirty             = false;
+  bool wasPaletteDirty      = false;
+  bool levelCreated         = false;
+  bool frameTouched         = false;
+  bool cellTouched          = false;
+  bool paletteTouched       = false;
+  const size_t cellOpsCount = TTool::m_cellsData.size();
+
+  // A failed commit may undo only the frame/cell/level created by this paste.
+  // Preparation below never edits the live image or palette.
+  auto rollback = [&]() {
+    if (!levelCreated && !frameTouched && !cellTouched && !paletteTouched)
+      return;
+    TTool::m_cellsData.resize(cellOpsCount);
+    if (!sl) return;
+    if (cellTouched && xsh->getCell(row, col) == TXshCell(sl.getPointer(), fid))
+      xsh->setCell(row, col, originalCell);
+    if (frameTouched) {
+      if (createFrame)
+        sl->eraseFrame(fid);
+      else
+        sl->setFrame(fid, originalImage);
+    }
+    if (paletteTouched && !levelCreated) {
+      if (originalPalette) {
+        originalPalette->assign(paletteBackup.getPointer());
+        originalPalette->setDirtyFlag(wasPaletteDirty);
       } else
-        return false;
-
-      // modify frameId to be with the same frame format as existing frames
-      sl->formatFId(fid, tmplFId);
-
-      sl->setFrame(fid, img);
-      app->getCurrentLevel()->setLevel(sl);
-      app->getCurrentLevel()->notifyLevelChange();
-      sl->save();
-      // after saving you need to obtain the image again
-      img = sl->getFrame(fid, true);
-    } else {
-      img = sl->createEmptyFrame();
-      assert(img);
-      std::vector<TFrameId> fids;
-      sl->getFids(fids);
-      if (fids.size() > 0) fid = TFrameId(fids.back().getNumber() + 1);
-
-      // modify frameId to be with the same frame format as existing frames
-      sl->formatFId(fid, tmplFId);
-
-      sl->setFrame(fid, img);
+        sl->setPalette(nullptr);
     }
-    xsh->setCell(row, col, TXshCell(sl, fid));
-    // to let the undo to know which frame is edited
-    TTool::m_cellsData.push_back({row, row, TTool::CellOps::BlankToNew});
-  } else {
-    sl  = cell.getSimpleLevel();
-    fid = cell.getFrameId();
-    img = cell.getImage(true);
-    if (!img) {
-      DVGui::error(QObject::tr(
-          "It is not possible to paste image on the current cell."));
-      return false;
-    }
-  }
-  if (img) {
-    // This seems redundant, but newly created levels were having an issue with
-    // pasting.
-    // Don't know why.
-    cell = xsh->getCell(row, col);
-    sl   = cell.getSimpleLevel();
-    fid  = cell.getFrameId();
-    img  = cell.getImage(true);
-    if (!img->getPalette()) {
-      img->setPalette(sl->getPalette());
-    }
+    if (levelCreated) {
+      scene->getLevelSet()->removeLevel(sl.getPointer());
+      app->getCurrentScene()->notifyCastChange();
+    } else
+      sl->setDirtyFlag(wasDirty);
+  };
+
+  try {
+    // Bound both the raster allocation and the transformed temporary allocated
+    // by TRop::over. Reject invalid coordinates before rounding them to
+    // integers.
+    const int maxDimension      = 16384;
+    const qint64 maxRasterBytes = 256LL * 1024 * 1024;
+    auto validSize              = [&](const TDimension &dim, int pixelSize) {
+      return dim.lx > 0 && dim.ly > 0 && dim.lx <= maxDimension &&
+             dim.ly <= maxDimension && pixelSize > 0 &&
+             qint64(dim.lx) * dim.ly * pixelSize <= maxRasterBytes;
+    };
+    auto validCoordinate = [](double value) {
+      return std::isfinite(value) && std::abs(value) <= 268435456.0;
+    };
+    auto validRect = [&](const TRectD &rect) {
+      return validCoordinate(rect.x0) && validCoordinate(rect.y0) &&
+             validCoordinate(rect.x1) && validCoordinate(rect.y1);
+    };
+    auto validDpi = [](double dpi) { return std::isfinite(dpi) && dpi > 0.0; };
+    TPointD cameraDpi = scene->getCurrentCamera()->getDpi();
+    if (!validDpi(cameraDpi.x)) cameraDpi.x = 120.0;
+    if (!validDpi(cameraDpi.y)) cameraDpi.y = 120.0;
+    auto normalizedDpi = [&](TPointD dpi) {
+      if (!validDpi(dpi.x)) dpi.x = cameraDpi.x;
+      if (!validDpi(dpi.y)) dpi.y = cameraDpi.y;
+      return dpi;
+    };
+
+    TPaletteP palette;
+    TImageP referenceImage;
+    if (!createLevel) {
+      wasDirty        = sl->getDirtyFlag();
+      originalPalette = sl->getPalette();
+      if (originalPalette) {
+        wasPaletteDirty = originalPalette->getDirtyFlag();
+        paletteBackup   = originalPalette->clone();
+      }
+      palette = originalPalette ? originalPalette->clone() : new TPalette();
+      // Request full resolution without marking the source frame as modified.
+      referenceImage = referenceCell.getImage(false, 1);
+      if (!createFrame) {
+        originalImage = referenceImage;
+        if (!originalImage) return false;
+      } else {
+        std::vector<TFrameId> fids;
+        sl->getFids(fids);
+        if (!fids.empty()) {
+          if (fids.back().getNumber() == std::numeric_limits<int>::max())
+            return false;
+          fid = TFrameId(fids.back().getNumber() + 1);
+        }
+        sl->formatFId(fid, scene->getProperties()->formatTemplateFIdForInput());
+        if (sl->isFid(fid)) return false;
+      }
+    } else
+      palette = new TPalette();
+
     TRasterP ras;
-    TRasterP outRas;
-    double imgDpiX, imgDpiY;
-    if (TToonzImageP ti = (TToonzImageP)(img)) {
-      outRas = ti->getRaster();
-      ti->getDpi(imgDpiX, imgDpiY);
-    }
-    if (TRasterImageP ri = (TRasterImageP)(img)) {
-      outRas = ri->getRaster();
-      ri->getDpi(imgDpiX, imgDpiY);
-    }
-    double dpiX, dpiY;
+    double dpiX = 0.0, dpiY = 0.0;
     std::vector<TRectD> rects;
-    std::vector<TStroke> strokes;
-    std::vector<TStroke> originalStrokes;
+    std::vector<TStroke> strokes, originalStrokes;
     TAffine affine;
     rasterImageData->getData(ras, dpiX, dpiY, rects, strokes, originalStrokes,
-                             affine, img->getPalette());
-    if (dpiX == 0 || dpiY == 0) {
-      TPointD dpi = camera->getDpi();
-      dpiX        = dpi.x;
-      dpiY        = dpi.y;
-    }
-    if (imgDpiX == 0 || imgDpiY == 0) {
-      TPointD dpi = camera->getDpi();
-      imgDpiX     = dpi.x;
-      imgDpiY     = dpi.y;
-    }
-    TScale sc(imgDpiX / dpiX, imgDpiY / dpiY);
-    affine *= sc;
-    int i;
-    TRectD boxD;
-    if (rects.size() > 0) boxD = rects[0];
-    if (strokes.size() > 0) boxD = strokes[0].getBBox();
-    for (i = 0; i < rects.size(); i++) boxD += rects[i];
-    for (i = 0; i < strokes.size(); i++) boxD += strokes[i].getBBox();
-    boxD = affine * boxD;
-    TPoint pos;
-    if (sl->getType() == TZP_XSHLEVEL) {
-      TRect box = ToonzImageUtils::convertWorldToRaster(boxD, img);
-      pos       = box.getP00();
-      *tiles    = new TTileSetCM32(outRas->getSize());
-      (*tiles)->add(outRas, ras->getBounds() + pos);
-    } else if (sl->getType() == OVL_XSHLEVEL || sl->getType() == TZI_XSHLEVEL) {
-      TRect box = TRasterImageUtils::convertWorldToRaster(boxD, img);
-      pos       = box.getP00();
-      *tiles    = new TTileSetFullColor(outRas->getSize());
-      (*tiles)->add(outRas, ras->getBounds() + pos);
-    } else
+                             affine, palette.getPointer());
+    if (!ras || !validSize(ras->getSize(), ras->getPixelSize()) ||
+        (rects.empty() && strokes.empty()))
       return false;
-    TRasterCM32P rasCM    = ras;
+    TRasterCM32P rasCM = ras;
+    if (levelType == TZP_XSHLEVEL && !rasCM) return false;
+    const TPointD sourceDpi = normalizedDpi(TPointD(dpiX, dpiY));
+
+    TRasterP referenceRaster;
+    TPointD destinationDpi = sourceDpi;
+    TDimension dim         = rasterImageData->getDim();
+    if (!createLevel) {
+      destinationDpi = sl->getProperties()->getImageDpi();
+      dim            = sl->getProperties()->getImageRes();
+      if (TToonzImageP ti = referenceImage) {
+        referenceRaster = ti->getRaster();
+        ti->getDpi(destinationDpi.x, destinationDpi.y);
+      } else if (TRasterImageP ri = referenceImage) {
+        referenceRaster = ri->getRaster();
+        ri->getDpi(destinationDpi.x, destinationDpi.y);
+      }
+      if (!createFrame) {
+        if (!referenceRaster) return false;
+        dim = referenceRaster->getSize();
+      } else if ((dim.lx <= 0 || dim.ly <= 0) && referenceRaster)
+        dim = referenceRaster->getSize();
+      destinationDpi = normalizedDpi(destinationDpi);
+    } else if (dim.lx <= 0 || dim.ly <= 0)
+      dim = ras->getSize();
+
+    // Transform in source pixels first, then convert to destination pixels.
+    // Left multiplication also scales translations and supports non-square DPI.
+    affine =
+        TScale(destinationDpi.x / sourceDpi.x, destinationDpi.y / sourceDpi.y) *
+        affine;
+    if (!std::isfinite(affine.a11) || !std::isfinite(affine.a12) ||
+        !std::isfinite(affine.a13) || !std::isfinite(affine.a21) ||
+        !std::isfinite(affine.a22) || !std::isfinite(affine.a23))
+      return false;
+    TRectD boxD;
+    for (const auto &rect : rects) {
+      if (!validRect(rect)) return false;
+      boxD += rect;
+    }
+    for (const auto &stroke : strokes) {
+      const TRectD rect = stroke.getBBox();
+      if (!validRect(rect)) return false;
+      boxD += rect;
+    }
+    boxD = affine * boxD;
+    if (!validRect(boxD) || boxD.isEmpty()) return false;
+
+    // Match TRop::over's temporary exactly: its footprint can be larger than
+    // the copied raster after rotation, scaling, or a fractional translation.
+    TDimension paintSize = ras->getSize();
+    if (!affine.isIdentity()) {
+      const TRect bounds = ras->getBounds();
+      const TRectD transformed =
+          affine * TRectD(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+      if (!validRect(transformed)) return false;
+      paintSize =
+          TDimension(tceil(transformed.x1) - tfloor(transformed.x0) + 1,
+                     tceil(transformed.y1) - tfloor(transformed.y0) + 1);
+    }
+    if (!validSize(paintSize, ras->getPixelSize())) return false;
+
+    if (createLevel) {
+      // Native v1 clipboard data records a cropped raster, not its canvas size.
+      // Keep the source canvas as a minimum and grow symmetrically so that an
+      // off-center selection retains its position without being clipped.
+      const double halfWidth =
+          std::max(std::max(std::abs(boxD.x0), std::abs(boxD.x1)),
+                   std::abs(boxD.x0 + paintSize.lx));
+      const double halfHeight =
+          std::max(std::max(std::abs(boxD.y0), std::abs(boxD.y1)),
+                   std::abs(boxD.y0 + paintSize.ly));
+      if (halfWidth > maxDimension * 0.5 || halfHeight > maxDimension * 0.5)
+        return false;
+      dim.lx = std::max(dim.lx, tceil(2.0 * halfWidth));
+      dim.ly = std::max(dim.ly, tceil(2.0 * halfHeight));
+    }
+    const int pixelSize =
+        referenceRaster && !createFrame ? referenceRaster->getPixelSize() : 4;
+    if (!validSize(dim, pixelSize)) return false;
+
+    TImageP img;
+    TRasterP outRas;
+    if (!createFrame) {
+      img = originalImage->cloneImage();
+      if (TToonzImageP ti = img)
+        outRas = ti->getRaster();
+      else if (TRasterImageP ri = img)
+        outRas = ri->getRaster();
+    } else if (levelType == TZP_XSHLEVEL) {
+      TRasterCM32P raster(dim);
+      raster->fill(TPixelCM32());
+      TToonzImageP ti(raster, TRect());
+      ti->setDpi(destinationDpi.x, destinationDpi.y);
+      img    = ti;
+      outRas = raster;
+    } else {
+      TRaster32P raster(dim);
+      raster->fill(TPixel32(0, 0, 0, 0));
+      TRasterImageP ri(raster);
+      ri->setDpi(destinationDpi.x, destinationDpi.y);
+      img    = ri;
+      outRas = raster;
+    }
+    if (!img || !outRas) return false;
     TRasterCM32P outRasCM = outRas;
+    if ((levelType == TZP_XSHLEVEL) != bool(outRasCM)) return false;
+    img->setPalette(palette.getPointer());
+    const TPointD origin = boxD.getP00() + outRas->getCenterD();
+    const TPoint pos(tfloor(origin.x), tfloor(origin.y));
+    const TRect paintRect(pos, paintSize);
+    if ((paintRect * outRas->getBounds()).isEmpty()) return false;
+
+    std::unique_ptr<TTileSet> preparedTiles;
+    if (levelType == TZP_XSHLEVEL)
+      preparedTiles.reset(new TTileSetCM32(outRas->getSize()));
+    else
+      preparedTiles.reset(new TTileSetFullColor(outRas->getSize()));
+    preparedTiles->add(outRas, paintRect);
     if (!outRasCM && rasCM)
-      TRop::over(outRas, rasCM, img->getPalette(), pos, affine);
+      TRop::over(outRas, rasCM, palette.getPointer(), pos, affine);
     else
       TRop::over(outRas, ras, pos, affine);
-    assert(sl);
+
+    // All potentially expensive conversion and compositing has succeeded.
+    // Only now create the level/frame or replace the occupied destination.
+    if (createLevel) {
+      TXshLevel *level = scene->createNewLevel(levelType);
+      if (!level) return false;
+      sl           = level->getSimpleLevel();
+      levelCreated = true;
+      if (!sl) {
+        scene->getLevelSet()->removeLevel(level);
+        return false;
+      }
+      sl->getProperties()->setImageRes(dim);
+      sl->getProperties()->setImageDpi(destinationDpi);
+      sl->getProperties()->setDpi(destinationDpi);
+      sl->getProperties()->setDpiPolicy(LevelProperties::DP_ImageDpi);
+      sl->formatFId(fid, scene->getProperties()->formatTemplateFIdForInput());
+      sl->setPalette(palette.getPointer());
+    } else {
+      paletteTouched = true;
+      if (originalPalette) {
+        originalPalette->assign(palette.getPointer());
+        originalPalette->setDirtyFlag(wasPaletteDirty ||
+                                      palette->getDirtyFlag());
+      } else
+        sl->setPalette(palette.getPointer());
+    }
+    frameTouched = true;
+    sl->setFrame(fid, img);
+    if (createFrame) {
+      cellTouched = true;
+      if (!xsh->setCell(row, col, TXshCell(sl.getPointer(), fid))) {
+        rollback();
+        return false;
+      }
+      TTool::m_cellsData.push_back({row, row, TTool::CellOps::BlankToNew});
+    }
     ToolUtils::updateSaveBox(sl, fid);
-    IconGenerator::instance()->invalidate(sl, fid);
+    IconGenerator::instance()->invalidate(sl.getPointer(), fid);
     sl->setDirtyFlag(true);
+    if (levelCreated) app->getCurrentScene()->notifyCastChange();
     app->getPaletteController()
         ->getCurrentLevelPalette()
         ->notifyPaletteChanged();
+    *tiles         = preparedTiles.release();
+    isLevelCreated = levelCreated;
+    return true;
+  } catch (...) {
+    rollback();
+    return false;
   }
-  return true;
 }
 
 //=============================================================================
@@ -862,7 +1059,7 @@ public:
       : ToolUtils::TFullColorRasterUndo(tiles, level, id, createdFrame,
                                         isLevelCreated, oldPalette)
       , m_rasterImageData(data->clone()) {
-    if (col > 0) m_col = col;
+    if (col >= 0) m_col = col;
   }
 
   ~PasteFullColorImageInCellsUndo() { delete m_rasterImageData; }
@@ -1543,6 +1740,8 @@ void TCellSelection::enableCommands() {
   enableCommand(this, MI_ShiftKeyframesUp, &TCellSelection::shiftKeyframesUp);
 
   enableCommand(this, MI_Copy, &TCellSelection::copyCells);
+  enableCommand(this, MI_PasteAs, &TCellSelection::pasteAs);
+  enableCommand(this, MI_PasteAbove, &TCellSelection::shiftPaste);
   enableCommand(this, MI_Paste,
                 &TCellSelection::doPaste);  // choose pasting behavior by
                                             // preference option
@@ -1581,6 +1780,7 @@ void TCellSelection::setAlternativeCommandNames() {
   m_alternativeCommandNames = {
       {MI_Copy, QObject::tr("Copy Cells", "TCellSelection")},
       {MI_Paste, QObject::tr("Paste Cells", "TCellSelection")},
+      {MI_PasteAbove, QObject::tr("Paste As...", "TCellSelection")},
       {MI_PasteInto, QObject::tr("Overwrite Paste Cells", "TCellSelection")},
       {MI_Cut, QObject::tr("Cut Cells", "TCellSelection")},
       {MI_Clear, QObject::tr("Delete Cells", "TCellSelection")},
@@ -1615,6 +1815,8 @@ bool TCellSelection::isEnabledCommand(
                                         MI_ShiftKeyframesUp,
                                         MI_Copy,
                                         MI_Paste,
+                                        MI_PasteAs,
+                                        MI_PasteAbove,
                                         MI_PasteInto,
                                         MI_Cut,
                                         MI_Clear,
@@ -1733,26 +1935,27 @@ void TCellSelection::copyCells() {
 //-----------------------------------------------------------------------------
 
 // Paste strokes in cell with undo support
-static void pasteStrokesInCell(int row, int col,
-                               const StrokesData *strokesData) {
+static bool pasteStrokesInCell(int row, int col, const StrokesData *strokesData,
+                               std::vector<int> *pastedIndices = nullptr) {
   PasteStrokesInCellUndo *undo =
       new PasteStrokesInCellUndo(row, col, strokesData);
   std::vector<int> indices;
   bool isPaste = pasteStrokesInCellWithoutUndo(row, col, strokesData, indices);
   if (!isPaste) {
     delete undo;
-    return;
+    return false;
   }
   undo->setIndices(indices);
   TUndoManager::manager()->add(undo);
+  if (pastedIndices) *pastedIndices = indices;
+  return true;
 }
 
 //-----------------------------------------------------------------------------
 
 // Paste raster image in cell with undo support
-static void pasteRasterImageInCell(int row, int col,
-                                   const RasterImageData *rasterImageData,
-                                   bool newLevel = false) {
+static bool pasteRasterImageInCell(int row, int col,
+                                   const RasterImageData *rasterImageData) {
   // to let the undo to know which frame is edited
   TTool::m_cellsData.clear();
 
@@ -1761,34 +1964,28 @@ static void pasteRasterImageInCell(int row, int col,
   bool isLevelCreated  = false;
   TPaletteP oldPalette = 0;
 
-  if (newLevel) {
-    while (!xsh->getCell(row, col).isEmpty()) {
-      col += 1;
-    }
-    createdFrame = true;
-  }
   // get the current cell
   TXshCell cell = xsh->getCell(row, col);
   // if the cell doesn't have a level...
-  if (!newLevel) {
-    if (!cell.getSimpleLevel()) {
-      createdFrame = true;
-      // try the previous frame
-      TXshSimpleLevel *sl = xsh->getCell(row - 1, col).getSimpleLevel();
-      if (sl) oldPalette = sl->getPalette();
-    } else {
-      TXshSimpleLevel *sl = cell.getSimpleLevel();
-      // don't do anything to ffmpeg level types
-      if (sl->getType() == OVL_XSHLEVEL && sl->getPath().isUneditable()) return;
-      oldPalette = sl->getPalette();
-    }
+  if (!cell.getSimpleLevel()) {
+    createdFrame        = true;
+    TXshSimpleLevel *sl = drawingPasteReference(xsh, row, col).getSimpleLevel();
+    if (sl) oldPalette = sl->getPalette();
+  } else {
+    TXshSimpleLevel *sl = cell.getSimpleLevel();
+    if (sl->getType() == OVL_XSHLEVEL && sl->getPath().isUneditable())
+      return false;
+    oldPalette = sl->getPalette();
   }
   if (oldPalette) oldPalette = oldPalette->clone();
   TTileSet *tiles = 0;
   bool isPaste    = pasteRasterImageInCellWithoutUndo(row, col, rasterImageData,
                                                       &tiles, isLevelCreated);
   if (isLevelCreated && oldPalette.getPointer()) oldPalette = 0;
-  if (!isPaste) return;
+  if (!isPaste) {
+    delete tiles;
+    return false;
+  }
   cell = xsh->getCell(row, col);
 
   // The flag TTool::m_isLevelRenumbererd is evaluated in the undo.
@@ -1808,6 +2005,432 @@ static void pasteRasterImageInCell(int row, int col,
         rasterImageData, fullColorTiles, cell.getSimpleLevel(),
         cell.getFrameId(), oldPalette, createdFrame, isLevelCreated, col));
   }
+  return true;
+}
+
+namespace {
+
+bool hasDrawingSelection(const QMimeData *mime) {
+  return mime &&
+         (dynamic_cast<const StrokesData *>(mime) ||
+          dynamic_cast<const RasterImageData *>(mime) || mime->hasImage() ||
+          mime->hasFormat("application/x-opentoonz-vector-selection-v2") ||
+          mime->hasFormat("application/x-opentoonz-raster-selection-v1"));
+}
+
+int drawingLevelType(TXshSimpleLevel *level) {
+  if (!level) return NO_XSHLEVEL;
+  return level->getType() == TZI_XSHLEVEL ? OVL_XSHLEVEL : level->getType();
+}
+
+QString drawingTypeName(int type) {
+  switch (type) {
+  case PLI_XSHLEVEL:
+    return QObject::tr("Toonz Vector");
+  case TZP_XSHLEVEL:
+    return QObject::tr("Toonz Raster");
+  case OVL_XSHLEVEL:
+    return QObject::tr("Raster");
+  default:
+    return QObject::tr("New level");
+  }
+}
+
+int chooseDrawingPasteType(int sourceType, int destinationType) {
+  QDialog dialog(QApplication::activeWindow());
+  dialog.setWindowTitle(QObject::tr("Paste As"));
+  QVBoxLayout *layout = new QVBoxLayout(&dialog);
+  layout->addWidget(new QLabel(
+      QObject::tr("Copied selection: %1").arg(drawingTypeName(sourceType))));
+  QComboBox *types = new QComboBox(&dialog);
+  for (int type : {PLI_XSHLEVEL, TZP_XSHLEVEL, OVL_XSHLEVEL})
+    types->addItem(drawingTypeName(type), type);
+  int initial = types->findData(destinationType);
+  types->setCurrentIndex(initial >= 0 ? initial : types->findData(sourceType));
+  layout->addWidget(types);
+  QLabel *description = new QLabel(&dialog);
+  description->setWordWrap(true);
+  description->setMinimumWidth(380);
+  layout->addWidget(description);
+  auto updateDescription = [&]() {
+    int type = types->currentData().toInt();
+    QString conversion;
+    if (type == sourceType)
+      conversion = QObject::tr("Preserve the native drawing data.");
+    else if (type == PLI_XSHLEVEL)
+      conversion = QObject::tr(
+          "Vectorize using the scene's Convert to Vector settings.");
+    else if (sourceType == OVL_XSHLEVEL && type == TZP_XSHLEVEL)
+      conversion = QObject::tr(
+          "Convert to a palette of up to 256 colors, preserving transparency. "
+          "Colors become ink styles.");
+    else
+      conversion = QObject::tr("Rasterize the copied artwork.");
+    QString destination =
+        destinationType == type
+            ? QObject::tr("Paste into the destination level.")
+        : destinationType == NO_XSHLEVEL
+            ? QObject::tr("Create a new level in the selected column.")
+            : QObject::tr(
+                  "Create a new level in an empty column. The destination "
+                  "level will be kept.");
+    description->setText(conversion + "\n\n" + destination);
+  };
+  QObject::connect(types, QOverload<int>::of(&QComboBox::currentIndexChanged),
+                   &dialog, [&](int) { updateDescription(); });
+  updateDescription();
+  QDialogButtonBox *buttons = new QDialogButtonBox(
+      QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+  buttons->button(QDialogButtonBox::Ok)->setText(QObject::tr("Paste"));
+  QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog,
+                   &QDialog::accept);
+  QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog,
+                   &QDialog::reject);
+  layout->addWidget(buttons);
+  return dialog.exec() == QDialog::Accepted ? types->currentData().toInt()
+                                            : NO_XSHLEVEL;
+}
+
+struct DrawingPasteData {
+  std::unique_ptr<StrokesData> strokes;
+  std::unique_ptr<RasterImageData> raster;
+  bool external = false;
+  QImage externalImage;
+
+  int type() const {
+    return strokes                                              ? PLI_XSHLEVEL
+           : dynamic_cast<const ToonzImageData *>(raster.get()) ? TZP_XSHLEVEL
+                                                                : OVL_XSHLEVEL;
+  }
+
+  bool hasRaster() const {
+    if (!raster) return false;
+    TRasterP pixels;
+    double dpiX = 0.0, dpiY = 0.0;
+    std::vector<TRectD> rects;
+    std::vector<TStroke> outlines, originalOutlines;
+    TAffine affine;
+    TPaletteP palette = new TPalette;
+    raster->getData(pixels, dpiX, dpiY, rects, outlines, originalOutlines,
+                    affine, palette.getPointer());
+    return pixels && pixels->getLx() > 0 && pixels->getLy() > 0 &&
+           (!rects.empty() || !outlines.empty());
+  }
+
+  bool setExternalImage(const QImage &image) {
+    TRasterP pixels =
+        rasterFromQImage(image.convertToFormat(QImage::Format_ARGB32));
+    if (!pixels) return false;
+    std::vector<TRectD> rects{TRectD(-image.width() / 2.0,
+                                     -image.height() / 2.0, image.width() / 2.0,
+                                     image.height() / 2.0)};
+    raster.reset(new FullColorImageData);
+    raster->setData(pixels, new TPalette, 120.0, 120.0, pixels->getSize(),
+                    rects, {}, {}, TAffine());
+    return true;
+  }
+
+  bool fitExternalImage(TXshSimpleLevel *destination) {
+    if (!external || !destination) return true;
+    TDimension size = destination->getResolution();
+    if (size.lx <= 0 || size.ly <= 0) return true;
+    if (externalImage.width() <= size.lx && externalImage.height() <= size.ly)
+      return true;
+    return setExternalImage(
+        externalImage.scaled(size.lx, size.ly, Qt::KeepAspectRatio));
+  }
+
+  bool read(const QMimeData *mime) {
+    if (const StrokesData *data = dynamic_cast<const StrokesData *>(mime))
+      strokes.reset(data->clone());
+    else if (const RasterImageData *data =
+                 dynamic_cast<const RasterImageData *>(mime))
+      raster.reset(data->clone());
+    else {
+      strokes.reset(StrokesData::fromClipboard(mime));
+      if (!strokes) raster.reset(RasterImageData::fromClipboard(mime));
+    }
+    if (strokes)
+      return strokes->m_image && strokes->m_image->getStrokeCount() > 0;
+    if (raster) return hasRaster();
+    if (mime->hasFormat("application/x-opentoonz-vector-selection-v2") ||
+        mime->hasFormat("application/x-opentoonz-raster-selection-v1"))
+      return false;
+    externalImage = qvariant_cast<QImage>(mime->imageData());
+    if (externalImage.isNull())
+      externalImage = QApplication::clipboard()->image();
+    if (externalImage.isNull()) return false;
+    external = true;
+    return setExternalImage(externalImage);
+  }
+};
+
+bool convertDrawingPaste(DrawingPasteData &data, int targetType,
+                         TXshSimpleLevel *destination, ToonzScene *scene) {
+  int sourceType = data.type();
+  if (sourceType == targetType) return true;
+  if (targetType == PLI_XSHLEVEL) {
+    data.strokes.reset(data.raster->toStrokesData(scene));
+    return data.strokes && data.strokes->m_image &&
+           data.strokes->m_image->getStrokeCount() > 0;
+  }
+  if (sourceType == PLI_XSHLEVEL) {
+    TPointD dpi = destination ? destination->getDpi()
+                              : scene->getCurrentCamera()->getDpi();
+    if (dpi.x <= 0.0 || dpi.y <= 0.0) dpi = scene->getCurrentCamera()->getDpi();
+    if (targetType == TZP_XSHLEVEL) {
+      TToonzImageP image(new TToonzImage(TRasterCM32P(1, 1), TRect()));
+      image->setDpi(dpi.x, dpi.y);
+      data.raster.reset(data.strokes->toToonzImageData(image));
+    } else {
+      TRasterImageP image(new TRasterImage(TRaster32P(1, 1)));
+      image->setDpi(dpi.x, dpi.y);
+      data.raster.reset(data.strokes->toFullColorImageData(image));
+    }
+    data.strokes.reset();
+    return data.hasRaster();
+  }
+  if (targetType == TZP_XSHLEVEL) {
+    const FullColorImageData *color =
+        dynamic_cast<const FullColorImageData *>(data.raster.get());
+    std::unique_ptr<RasterImageData> converted(color ? color->toToonzImageData()
+                                                     : nullptr);
+    if (!converted) return false;
+    data.raster = std::move(converted);
+    return true;
+  }
+  TPaletteP palette = new TPalette;
+  TRasterP raster;
+  double dpiX = 0.0, dpiY = 0.0;
+  std::vector<TRectD> rects;
+  std::vector<TStroke> strokes, originalStrokes;
+  TAffine affine;
+  data.raster->getData(raster, dpiX, dpiY, rects, strokes, originalStrokes,
+                       affine, palette.getPointer());
+  TRasterCM32P cm = raster;
+  if (!cm) return false;
+  TRaster32P rgba(cm->getSize());
+  TRop::convert(rgba, cm, palette.getPointer());
+  std::unique_ptr<RasterImageData> converted(new FullColorImageData);
+  converted->setData(rgba, palette, dpiX, dpiY, data.raster->getDim(), rects,
+                     strokes, originalStrokes, affine);
+  data.raster = std::move(converted);
+  return true;
+}
+
+void selectPastedDrawing(const DrawingPasteData &data, const TXshCell &cell,
+                         const std::vector<int> &indices) {
+  TApp *app   = TApp::instance();
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (!tool || tool->getName() != "T_Selection") return;
+  tool->onActivate();
+  if (StrokeSelection *selection =
+          dynamic_cast<StrokeSelection *>(tool->getSelection())) {
+    selection->selectNone();
+    for (int index : indices) selection->select(index, true);
+    selection->makeCurrent();
+    selection->notifyView();
+  } else if (RasterSelection *selection =
+                 dynamic_cast<RasterSelection *>(tool->getSelection())) {
+    if (!data.raster) return;
+    selection->selectNone();
+    selection->setCurrentImage(cell.getImage(false), cell);
+    selection->setFrameId(cell.getFrameId());
+    TRasterP raster;
+    double dpiX = 0.0, dpiY = 0.0;
+    std::vector<TRectD> rects;
+    std::vector<TStroke> strokes, originalStrokes;
+    TAffine affine;
+    TPaletteP palette = new TPalette;
+    data.raster->getData(raster, dpiX, dpiY, rects, strokes, originalStrokes,
+                         affine, palette.getPointer());
+    TPointD destinationDpi;
+    TImageP image = cell.getImage(false);
+    if (TToonzImageP ti = image)
+      ti->getDpi(destinationDpi.x, destinationDpi.y);
+    else if (TRasterImageP ri = image)
+      ri->getDpi(destinationDpi.x, destinationDpi.y);
+    TPointD cameraDpi =
+        app->getCurrentScene()->getScene()->getCurrentCamera()->getDpi();
+    auto validDpi = [](double dpi) { return std::isfinite(dpi) && dpi > 0.0; };
+    if (!validDpi(cameraDpi.x)) cameraDpi.x = 120.0;
+    if (!validDpi(cameraDpi.y)) cameraDpi.y = 120.0;
+    if (!validDpi(dpiX)) dpiX = cameraDpi.x;
+    if (!validDpi(dpiY)) dpiY = cameraDpi.y;
+    if (!validDpi(destinationDpi.x)) destinationDpi.x = cameraDpi.x;
+    if (!validDpi(destinationDpi.y)) destinationDpi.y = cameraDpi.y;
+    affine = TScale(destinationDpi.x / dpiX, destinationDpi.y / dpiY) * affine;
+    for (TStroke &stroke : strokes) {
+      stroke.transform(affine, true);
+      selection->select(stroke);
+    }
+    if (strokes.empty())
+      for (const TRectD &rect : rects) selection->select(affine * rect);
+    selection->makeCurrent();
+    selection->notify();
+  }
+  tool->invalidate();
+}
+
+bool pasteDrawingSelectionInCell(int row, int col, bool chooseType) {
+  const QMimeData *mime = QApplication::clipboard()->mimeData();
+  if (!hasDrawingSelection(mime)) return false;
+  TApp *app         = TApp::instance();
+  TXsheet *xsh      = app->getCurrentXsheet()->getXsheet();
+  ToonzScene *scene = app->getCurrentScene()->getScene();
+  if (row < 0 || col < 0) {
+    DVGui::warning(
+        QObject::tr("Cannot paste a drawing into the camera column."));
+    return true;
+  }
+  TXshColumn *column = xsh->getColumn(col);
+  if (column && (column->isLocked() || !column->getLevelColumn())) {
+    DVGui::warning(QObject::tr("The destination column cannot be edited."));
+    return true;
+  }
+  DrawingPasteData data;
+  try {
+    if (!data.read(mime)) {
+      DVGui::warning(QObject::tr("The clipboard drawing could not be read."));
+      return true;
+    }
+  } catch (...) {
+    DVGui::warning(QObject::tr("The clipboard drawing could not be read."));
+    return true;
+  }
+  TXshCell previous            = xsh->getCell(row, col);
+  TXshCell reference           = drawingPasteReference(xsh, row, col);
+  TXshSimpleLevel *destination = reference.getSimpleLevel();
+  int destinationType          = drawingLevelType(destination);
+  int targetType               = destination ? destinationType : data.type();
+  if (chooseType || (data.external && destinationType != OVL_XSHLEVEL)) {
+    targetType = chooseDrawingPasteType(data.type(), destinationType);
+    if (targetType == NO_XSHLEVEL) return true;
+  }
+  if (scene != app->getCurrentScene()->getScene() ||
+      xsh != app->getCurrentXsheet()->getXsheet() ||
+      previous != xsh->getCell(row, col) ||
+      reference != drawingPasteReference(xsh, row, col)) {
+    DVGui::warning(QObject::tr("The destination changed. Please paste again."));
+    return true;
+  }
+  if (targetType != PLI_XSHLEVEL && targetType != TZP_XSHLEVEL &&
+      targetType != OVL_XSHLEVEL) {
+    DVGui::warning(QObject::tr("A drawing cannot be pasted into this level."));
+    return true;
+  }
+  if (destination && targetType != destinationType) {
+    do {
+      ++col;
+      column = xsh->getColumn(col);
+    } while (column && (!column->isEmpty() || column->isLocked() ||
+                        !column->getLevelColumn()));
+    destination = nullptr;
+  }
+  if (destination &&
+      (destination->isReadOnly() || destination->isSubsequence() ||
+       destination->getPath().isUneditable() ||
+       (!previous.isEmpty() &&
+        destination->isFrameReadOnly(previous.getFrameId())))) {
+    DVGui::warning(QObject::tr("The destination level cannot be edited."));
+    return true;
+  }
+  // Ordinary full-color pastes retain their existing conversion restriction.
+  if (!chooseType && !data.external && data.type() == OVL_XSHLEVEL &&
+      targetType != OVL_XSHLEVEL) {
+    DVGui::warning(
+        QObject::tr("Use Paste As to convert this Raster selection to another "
+                    "level type."));
+    return true;
+  }
+  try {
+    // Keep the established fit-to-canvas behavior for external images pasted
+    // into an existing Raster level. Native selections retain their geometry.
+    if ((targetType == OVL_XSHLEVEL && !data.fitExternalImage(destination)) ||
+        !convertDrawingPaste(data, targetType, destination, scene)) {
+      DVGui::warning(QObject::tr(
+          "The selection could not be converted. No drawing was pasted."));
+      return true;
+    }
+  } catch (...) {
+    DVGui::warning(QObject::tr(
+        "The selection could not be converted. No drawing was pasted."));
+    return true;
+  }
+  TTool *tool = app->getCurrentTool()->getTool();
+  if (tool && tool->getName() == "T_Selection") tool->onDeactivate();
+  app->getCurrentColumn()->setColumnIndex(col);
+  app->getCurrentColumn()->setColumn(xsh->getColumn(col));
+  app->getCurrentFrame()->setFrame(row);
+  const TXshCell existing = xsh->getCell(row, col);
+  if (data.raster && !existing.isEmpty()) {
+    app->getCurrentLevel()->setLevel(existing.getSimpleLevel());
+    tool = app->getCurrentTool()->getTool();
+    if (tool && tool->getName() == "T_Selection") {
+      tool->onActivate();
+      if (RasterSelection *selection =
+              dynamic_cast<RasterSelection *>(tool->getSelection())) {
+        // Keep the pasted pixels floating, so moving them cannot lift
+        // artwork that was already underneath them in this drawing.
+        if (!selection->pasteData(data.raster.get()))
+          DVGui::warning(QObject::tr("The drawing could not be pasted."));
+        return true;
+      }
+    }
+  }
+  std::vector<int> indices;
+  bool success =
+      data.strokes ? pasteStrokesInCell(row, col, data.strokes.get(), &indices)
+                   : pasteRasterImageInCell(row, col, data.raster.get());
+  if (!success) {
+    DVGui::warning(QObject::tr("The drawing could not be pasted."));
+    return true;
+  }
+  const TXshCell cell = xsh->getCell(row, col);
+  app->getCurrentColumn()->setColumn(xsh->getColumn(col));
+  app->getCurrentLevel()->setLevel(cell.getSimpleLevel());
+  cell.getSimpleLevel()->setDirtyFlag(true);
+  app->getCurrentLevel()->notifyLevelChange();
+  app->getCurrentXsheet()->notifyXsheetChanged();
+  app->getCurrentScene()->setDirtyFlag(true);
+  selectPastedDrawing(data, cell, indices);
+  return true;
+}
+
+}  // namespace
+
+bool TApp::pasteDrawingSelection(bool chooseType) {
+  if (getCurrentObject()->isSpline()) return false;
+  if (getCurrentFrame()->isEditingLevel()) {
+    if (chooseType) {
+      DVGui::warning(
+          QObject::tr("Select a destination cell in the Xsheet or Timeline to "
+                      "use Paste As."));
+      return true;
+    }
+    return false;
+  }
+  int row = getCurrentFrame()->getFrame();
+  int col = getCurrentColumn()->getColumnIndex();
+  if (!chooseType &&
+      !getCurrentXsheet()->getXsheet()->getCell(row, col).isEmpty())
+    return false;
+  return pasteDrawingSelectionInCell(row, col, chooseType);
+}
+
+void TCellSelection::pasteAs() {
+  if (isEmpty()) return;
+  int r0, c0, r1, c1;
+  getSelectedCells(r0, c0, r1, c1);
+  if (!pasteDrawingSelectionInCell(r0, c0, true))
+    DVGui::warning(
+        QObject::tr("Copy a drawing selection or image to use Paste As."));
+}
+
+void TCellSelection::shiftPaste() {
+  // The clipboard can change without reselecting a cell. Resolve its kind
+  // when the command runs, not when this selection installs its handlers.
+  if (hasDrawingSelection(QApplication::clipboard()->mimeData())) pasteAs();
 }
 
 //-----------------------------------------------------------------------------
@@ -1854,15 +2477,13 @@ void TCellSelection::pasteCells() {
   getSelectedCells(r0, c0, r1, c1);
   QClipboard *clipboard     = QApplication::clipboard();
   const QMimeData *mimeData = clipboard->mimeData();
-  const StrokesData *strokesData = dynamic_cast<const StrokesData *>(mimeData);
-  std::unique_ptr<StrokesData> transferredStrokes;
-  if (!strokesData) {
-    transferredStrokes.reset(StrokesData::fromClipboard(mimeData));
-    strokesData = transferredStrokes.get();
-  }
+  if (!isEmpty() &&
+      pasteDrawingSelectionInCell(
+          r0, c0,
+          QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier)))
+    return;
   TXsheet *xsh              = TApp::instance()->getCurrentXsheet()->getXsheet();
   XsheetViewer *viewer      = TApp::instance()->getCurrentXsheetViewer();
-  ToolHandle *toolHandle    = TApp::instance()->getCurrentTool();
 
   bool initUndo = false;
   const TCellKeyframeData *cellKeyframeData =
@@ -2028,213 +2649,6 @@ void TCellSelection::pasteCells() {
     TUndoManager::manager()->add(
         new PasteDrawingsInCellUndo(level, frameIds, r0, c0));
   }
-  if (strokesData) {
-    if (isEmpty())  // If the cell selection is empty, return.
-      return;
-
-    TImageP img = xsh->getCell(r0, c0).getImage(false);
-    if (!img && r0 > 0) {
-      TXshCell cell = xsh->getCell(r0 - 1, c0);
-      TXshLevel *xl = cell.m_level.getPointer();
-      if (xl && (xl->getType() != OVL_XSHLEVEL ||
-                 xl->getPath().getFrame() != TFrameId::NO_FRAME))
-        img = cell.getImage(false);
-    }
-    if (!initUndo) {
-      initUndo = true;
-      TUndoManager::manager()->beginBlock();
-    }
-    RasterImageData *rasterImageData = 0;
-    if (TToonzImageP ti = img) {
-      rasterImageData = strokesData->toToonzImageData(ti);
-      pasteRasterImageInCell(r0, c0, rasterImageData);
-    } else if (TRasterImageP ri = img) {
-      double dpix, dpiy;
-      ri->getDpi(dpix, dpiy);
-      if (dpix == 0 || dpiy == 0) {
-        TPointD dpi = xsh->getScene()->getCurrentCamera()->getDpi();
-        dpix        = dpi.x;
-        dpiy        = dpi.y;
-        ri->setDpi(dpix, dpiy);
-      }
-      rasterImageData = strokesData->toFullColorImageData(ri);
-      pasteRasterImageInCell(r0, c0, rasterImageData);
-    } else {
-      // === VECTOR STROKES PASTE ===
-      std::vector<int> indices;
-      PasteStrokesInCellUndo *undo =
-          new PasteStrokesInCellUndo(r0, c0, strokesData);
-
-      bool success =
-          pasteStrokesInCellWithoutUndo(r0, c0, strokesData, indices);
-      if (!success) {
-        delete undo;
-      } else {
-        undo->setIndices(indices);
-        TUndoManager::manager()->add(undo);
-
-        TTool *tool = toolHandle->getTool();
-        if (tool && tool->getName() == "T_Selection") {
-          if (StrokeSelection *ss =
-                  dynamic_cast<StrokeSelection *>(tool->getSelection())) {
-            tool->onActivate();
-            ss->selectNone();
-            for (int index : indices) ss->select(index, true);
-            ss->notifyView();
-            TApp::instance()->getCurrentFrame()->setFrame(r0);
-          }
-        }
-      }
-    }
-  }
-  // Raster Time
-  // See if an image was copied from outside OpenToonz
-  QImage clipImage = clipboard->image();
-  // See if the clipboard contains rasterData
-  const RasterImageData *rasterImageData =
-      dynamic_cast<const RasterImageData *>(mimeData);
-  // StrokesData also carries an image for other applications. Do not paste
-  // that preview as a second raster drawing after pasting the vector strokes.
-  if (!strokesData && (rasterImageData || clipImage.height() > 0)) {
-    if (isEmpty()) return;
-    // Prevent pasting raster images into the camera column (c0 < 0)
-    if (c0 < 0) {
-      DVGui::warning(QObject::tr("Cannot paste into the camera column."));
-      return;
-    }
-
-    // get the current image and find out the type
-    TImageP img = xsh->getCell(r0, c0).getImage(false);
-    if (!img && r0 > 0) {
-      // Try the previous cell.
-      TXshCell cell = xsh->getCell(r0 - 1, c0);
-      TXshLevel *xl = cell.m_level.getPointer();
-      if (xl && (xl->getType() != OVL_XSHLEVEL ||
-                 xl->getPath().getFrame() != TFrameId::NO_FRAME))
-        img = cell.getImage(false);
-    }
-    const FullColorImageData *fullColData =
-        dynamic_cast<const FullColorImageData *>(rasterImageData);
-    TToonzImageP ti(img);
-    TVectorImageP vi(img);
-    if (fullColData && (vi || ti)) {
-      // Bail out if the level is Smart Raster or Vector with normal raster
-      // data.
-      DVGui::error(QObject::tr(
-          "The copied selection cannot be pasted in the current drawing."));
-      return;
-    }
-    // Convert non-plain raster data to strokes data
-    if (!initUndo) {
-      initUndo = true;
-      TUndoManager::manager()->beginBlock();
-    }
-    if (vi && clipImage.isNull()) {
-      // Vector stuff
-      TXshSimpleLevel *sl = xsh->getCell(r0, c0).getSimpleLevel();
-      if (!sl) sl = xsh->getCell(r0 - 1, c0).getSimpleLevel();
-      assert(sl);
-      StrokesData *strokesData = rasterImageData->toStrokesData(sl->getScene());
-      pasteStrokesInCell(r0, c0, strokesData);
-      // end strokes stuff
-    } else {
-      TXshSimpleLevel *sl = xsh->getCell(r0, c0).getSimpleLevel();
-      if (!sl && r0 > 0) sl = xsh->getCell(r0 - 1, c0).getSimpleLevel();
-      bool newLevel = false;
-      TRasterImageP ri(img);
-
-      if (clipImage.height() > 0) {
-        // This stuff is only if we have a pasted image from outside OpenToonz
-        bool cancel = false;
-
-        if (sl && sl->getType() == OVL_XSHLEVEL) {
-          if (sl->getResolution().lx < clipImage.width() ||
-              sl->getResolution().ly < clipImage.height()) {
-            clipImage =
-                clipImage.scaled(sl->getResolution().lx, sl->getResolution().ly,
-                                 Qt::KeepAspectRatio);
-          }
-        } else {
-          QString question = QObject::tr(
-              "Pasting external image from clipboard.\n\nWhat do you want to "
-              "do?");
-          int ret = DVGui::MsgBox(question, QObject::tr("New raster level"),
-                                  QObject::tr("Cancel"), 0);
-          if (ret == 1) {  // New level chosen
-            newLevel = true;
-          } else {  // Cancel or close
-            cancel = true;
-          }
-        }
-
-        if (cancel) {
-          // Cancel or dialog closed
-          if (initUndo) TUndoManager::manager()->endBlock();
-          return;
-        }
-
-        if (newLevel) {
-          if (sl) {
-            // find the next empty column
-            while (!xsh->isColumnEmpty(c0)) {
-              c0 += 1;
-            }
-          }
-          TXshColumn *col =
-              TApp::instance()->getCurrentXsheet()->getXsheet()->getColumn(c0);
-          TApp::instance()->getCurrentColumn()->setColumnIndex(c0);
-          TApp::instance()->getCurrentColumn()->setColumn(col);
-          TApp::instance()->getCurrentFrame()->setFrame(r0);
-        }
-
-        // create variables to go into the Full Color Raster Selection data
-        std::vector<TRectD> rects;
-        const std::vector<TStroke> strokes;
-        const std::vector<TStroke> originalStrokes;
-        TAffine aff;
-        TRasterP ras = rasterFromQImage(clipImage);
-        rects.push_back(TRectD(0.0 - clipImage.width() / 2,
-                               0.0 - clipImage.height() / 2,
-                               clipImage.width() / 2, clipImage.height() / 2));
-        FullColorImageData *qimageData = new FullColorImageData();
-        TPalette *p;
-        if (!ri || !ri->getPalette() || newLevel)
-          p = new TPalette();
-        else
-          p = ri->getPalette()->clone();
-        TDimension dim;
-        if (ri && !newLevel) {
-          dim = ri->getRaster()->getSize();
-        } else {
-          dim = TDimension(clipImage.width(), clipImage.height());
-        }
-        qimageData->setData(ras, p, 120.0, 120.0, dim, rects, strokes,
-                            originalStrokes, aff);
-        rasterImageData = qimageData;
-        // end of pasted from outside OpenToonz stuff
-        // rasterImageData holds all the info either way now.
-      }
-
-      if (sl &&
-          (sl->getType() == OVL_XSHLEVEL || sl->getType() == TZP_XSHLEVEL)) {
-        // make selection always work on new raster cells
-        if (toolHandle->getTool()->getName() == "T_Selection") {
-          TSelection *ts      = toolHandle->getTool()->getSelection();
-          RasterSelection *rs = dynamic_cast<RasterSelection *>(ts);
-          if (rs) {
-            toolHandle->getTool()->onDeactivate();
-            toolHandle->getTool()->onActivate();
-            rs->pasteSelection();
-            assert(initUndo);
-            TUndoManager::manager()->endBlock();
-            return;
-          }
-        }
-      }
-      pasteRasterImageInCell(r0, c0, rasterImageData, newLevel);
-
-    }  // end of full raster stuff
-  }    // end of raster stuff
   if (!initUndo) {
     DVGui::error(QObject::tr(
         "It is not possible to paste data: there is nothing to paste."));

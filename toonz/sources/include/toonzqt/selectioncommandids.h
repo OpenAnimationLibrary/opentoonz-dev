@@ -8,6 +8,7 @@
 #define MI_Insert "MI_Insert"
 #define MI_InsertAbove "MI_InsertAbove"
 #define MI_Paste "MI_Paste"
+#define MI_PasteAs "MI_PasteAs"
 #define MI_PasteAbove "MI_PasteAbove"
 #define MI_PasteInto "MI_PasteInto"
 #define MI_PasteDuplicate "MI_PasteDuplicate"

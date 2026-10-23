@@ -2339,6 +2339,7 @@ void MainWindow::defineActions() {
   createMenuEditAction(MI_Copy, QT_TR_NOOP("&Copy"), "Ctrl+C", "content_copy");
   createMenuEditAction(MI_Paste, QT_TR_NOOP("&Paste Insert"), "Ctrl+V",
                        "paste");
+  createMenuEditAction(MI_PasteAs, QT_TR_NOOP("Paste As..."), "", "paste");
   createMenuEditAction(MI_PasteAbove, QT_TR_NOOP("&Paste Insert Above/After"),
                        "Ctrl+Shift+V", "paste_above_after");
   createMenuEditAction(MI_PasteDuplicate, QT_TR_NOOP("&Paste as a Copy"), "",
