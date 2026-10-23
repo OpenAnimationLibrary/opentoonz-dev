@@ -53,8 +53,8 @@ struct TXshSimpleLevel {
   int type;
   TPaletteP palette;
   bool readOnly = false, subsequence = false;
-  TFilePath path;
-  int saves = 0;
+  TFilePath path = TFilePath();
+  int saves      = 0;
   int getType() { return type; }
   TPalette *getPalette() { return palette.getPointer(); }
   bool isReadOnly() { return readOnly; }
