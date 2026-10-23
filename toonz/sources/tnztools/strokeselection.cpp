@@ -183,10 +183,18 @@ bool pasteStrokesWithoutUndo(TVectorImageP image, std::set<int> &outIndexes,
     transferredData.reset(StrokesData::fromClipboard(clipboard->mimeData()));
     stData = transferredData.get();
   }
+  std::unique_ptr<RasterImageData> transferredRaster;
+  const RasterImageData *rasterData =
+      dynamic_cast<const RasterImageData *>(clipboard->mimeData());
+  if (!stData && !rasterData) {
+    transferredRaster.reset(
+        RasterImageData::fromClipboard(clipboard->mimeData()));
+    rasterData = transferredRaster.get();
+  }
   const ToonzImageData *tiData =
-      dynamic_cast<const ToonzImageData *>(clipboard->mimeData());
+      dynamic_cast<const ToonzImageData *>(rasterData);
   const FullColorImageData *fciData =
-      dynamic_cast<const FullColorImageData *>(clipboard->mimeData());
+      dynamic_cast<const FullColorImageData *>(rasterData);
   std::set<int> indexes = outIndexes;
   if (stData)
     stData->getImage(image, indexes, insert);
@@ -914,6 +922,12 @@ void StrokeSelection::saveSelectedVectors(bool chooseDestination) {
 //
 //-----------------------------------------------------------------------------
 
+void StrokeSelection::pasteAs() {
+  if (!TTool::getApplication()->pasteDrawingSelection(true))
+    DVGui::warning(
+        QObject::tr("Copy a drawing selection or image to use Paste As."));
+}
+
 void StrokeSelection::paste() {
   TTool *tool = TTool::getApplication()->getCurrentTool()->getTool();
   if (!tool) return;
@@ -949,6 +963,10 @@ void StrokeSelection::paste() {
     tool->invalidate();
     return;
   }
+
+  if (TTool::getApplication()->pasteDrawingSelection(
+          QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier)))
+    return;
 
   TVectorImageP tarImg = tool->touchImage();
   if (!tarImg) return;
@@ -1018,10 +1036,13 @@ void StrokeSelection::cut() {
 //-----------------------------------------------------------------------------
 
 void StrokeSelection::enableCommands() {
+  m_alternativeCommandNames[MI_PasteAbove] = QObject::tr("Paste As...");
   enableCommand(this, MI_Clear, &StrokeSelection::deleteStrokes);
   enableCommand(this, MI_Cut, &StrokeSelection::cut);
   enableCommand(this, MI_Copy, &StrokeSelection::copy);
   enableCommand(this, MI_Paste, &StrokeSelection::paste);
+  enableCommand(this, MI_PasteAs, &StrokeSelection::pasteAs);
+  enableCommand(this, MI_PasteAbove, &StrokeSelection::pasteAs);
   enableCommand(this, MI_SaveAsCustomVectorBrush,
                 &StrokeSelection::saveAsCustomVectorBrush);
 

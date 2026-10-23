@@ -215,6 +215,14 @@ bool pasteAreasWithoutUndo(const QMimeData *data, TXshSimpleLevel *sl,
     }
   } else if (const auto *rasterImageData =
                  dynamic_cast<const RasterImageData *>(data)) {
+    if (sl->getType() == PLI_XSHLEVEL &&
+        !dynamic_cast<const FullColorImageData *>(rasterImageData)) {
+      std::unique_ptr<StrokesData> strokesData(
+          rasterImageData->toStrokesData(sl->getScene()));
+      if (!strokesData) return false;
+      return pasteAreasWithoutUndo(strokesData.get(), sl, frames, tileSet,
+                                   indices);
+    }
     for (const TFrameId &fid : frames) {
       if ((sl->getType() == PLI_XSHLEVEL || sl->getType() == TZP_XSHLEVEL) &&
           dynamic_cast<const FullColorImageData *>(rasterImageData)) {
@@ -229,7 +237,6 @@ bool pasteAreasWithoutUndo(const QMimeData *data, TXshSimpleLevel *sl,
       }
       TToonzImageP ti  = img;
       TRasterImageP ri = img;
-      TVectorImageP vi = img;
       if (ti) {
         TRasterP ras;
         double dpiX, dpiY;
@@ -321,11 +328,6 @@ bool pasteAreasWithoutUndo(const QMimeData *data, TXshSimpleLevel *sl,
           TRop::over(ri->getRaster(), app, ri->getPalette(), pos, affine);
         else
           TRop::over(ri->getRaster(), ras, pos, affine);
-      } else if (vi) {
-        std::unique_ptr<StrokesData> strokesData(
-            rasterImageData->toStrokesData(sl->getScene()));
-        return pasteAreasWithoutUndo(strokesData.get(), sl, frames, tileSet,
-                                     indices);
       }
     }
   } else
@@ -1445,6 +1447,41 @@ void FilmstripCmd::paste(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
     }
   }
 
+  if (sl->getType() == PLI_XSHLEVEL) {
+    if (const auto *rasterImageData =
+            dynamic_cast<const RasterImageData *>(data.get())) {
+      std::unique_ptr<StrokesData> strokesData(
+          rasterImageData->toStrokesData(sl->getScene()));
+      if (!strokesData) {
+        DVGui::error(QObject::tr(
+            "The copied selection cannot be pasted in the current drawing."));
+        return;
+      }
+      data.reset(strokesData.release());
+    }
+  } else if (const auto *strokesData =
+                 dynamic_cast<const StrokesData *>(data.get())) {
+    TPointD dpi = sl->getDpi();
+    if (dpi.x <= 0.0 || dpi.y <= 0.0)
+      dpi = sl->getScene()->getCurrentCamera()->getDpi();
+    std::unique_ptr<RasterImageData> rasterImageData;
+    if (sl->getType() == TZP_XSHLEVEL) {
+      TToonzImageP target(new TToonzImage());
+      target->setDpi(dpi.x, dpi.y);
+      rasterImageData.reset(strokesData->toToonzImageData(target));
+    } else if (sl->getType() == OVL_XSHLEVEL) {
+      TRasterImageP target(new TRasterImage());
+      target->setDpi(dpi.x, dpi.y);
+      rasterImageData.reset(strokesData->toFullColorImageData(target));
+    }
+    if (!rasterImageData) {
+      DVGui::error(QObject::tr(
+          "The copied selection cannot be pasted in the current drawing."));
+      return;
+    }
+    data.reset(rasterImageData.release());
+  }
+
   bool isPaste =
       pasteAreasWithoutUndo(data.get(), sl, frames, tileSet, indices);
   if (!isPaste) return;
@@ -1455,35 +1492,8 @@ void FilmstripCmd::paste(TXshSimpleLevel *sl, std::set<TFrameId> &frames) {
           sl, frames, tileSet.release(), rasterImageData, plt.getPointer(),
           isFrameToInsert);
     }
-    if (!indices.empty()) {
-      undo = std::make_unique<PasteVectorAreasUndo>(
-          sl, frames, indices, rasterImageData->toStrokesData(sl->getScene()),
-          plt.getPointer(), isFrameToInsert);
-    }
   } else if (auto *strokesData = dynamic_cast<StrokesData *>(data.get())) {
-    if (tileSet) {
-      TImageP img      = sl->getFrame(*frames.begin(), false);
-      TRasterImageP ri = img;
-      TToonzImageP ti  = img;
-      if (ti) {
-        undo = std::make_unique<PasteRasterAreasUndo>(
-            sl, frames, tileSet.release(), strokesData->toToonzImageData(ti),
-            plt.getPointer(), isFrameToInsert);
-      } else if (ri) {
-        double dpix, dpiy;
-        ri->getDpi(dpix, dpiy);
-        if (dpix == 0 || dpiy == 0) {
-          TPointD dpi = sl->getScene()->getCurrentCamera()->getDpi();
-          dpix        = dpi.x;
-          dpiy        = dpi.y;
-          ri->setDpi(dpix, dpiy);
-        }
-        undo = std::make_unique<PasteRasterAreasUndo>(
-            sl, frames, tileSet.release(),
-            strokesData->toFullColorImageData(ri), plt.getPointer(),
-            isFrameToInsert);
-      }
-    } else if (!indices.empty()) {
+    if (!indices.empty()) {
       undo = std::make_unique<PasteVectorAreasUndo>(
           sl, frames, indices, strokesData, plt.getPointer(), isFrameToInsert);
     }
