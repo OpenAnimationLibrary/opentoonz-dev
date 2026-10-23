@@ -1358,6 +1358,10 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use QuickTime to decode/code .mov and .3gp (If Installed)")},
       {rhubarbPath, tr("Rhubarb Path:")},
       {rhubarbTimeout, tr("Rhubarb Timeout:")},
+      {jxlPath, tr("JPEG XL Tools Path:")},
+      {jxlTimeout, tr("JPEG XL Timeout (seconds):")},
+      {jxlExperimental,
+       tr("Use JPEG XL tools for other formats (Experimental)")},
 
       // Drawing
       {DefRasterFormat, tr("Default Raster / Scan Level Format:")},
@@ -2138,6 +2142,28 @@ QWidget* PreferencesPopup::createCodecPage() {
       lay);
   insertUI(ffmpegMultiThread, lay);
   insertUI(quickTimeBackend, lay);
+
+  putLabel("", lay);
+  putLabel(tr("JPEG XL uses the external cjxl, djxl and jxlinfo tools.\n"
+              "Select their folder to enable JPEG XL import and export."),
+           lay);
+  insertUI(jxlPath, lay);
+  getUI<FileField*>(jxlPath)->setToolTip(tr(
+      "Folder containing cjxl, djxl and jxlinfo, for example C:/libjxl/bin.\n"
+      "The tools are not bundled with OpenToonz."));
+  insertUI(jxlTimeout, lay);
+  getUI<DVGui::IntLineEdit*>(jxlTimeout)
+      ->setToolTip(
+          tr("Maximum time to wait for each JPEG XL tool invocation."));
+  insertUI(jxlExperimental, lay);
+  getUI<CheckBox*>(jxlExperimental)
+      ->setToolTip(tr(
+          "Try the JPEG XL tools when reading or writing other supported "
+          "raster "
+          "formats.\nUnsupported images and failed conversions use the "
+          "standard "
+          "OpenToonz processing when available.\nJPEG XL files always use the "
+          "JPEG XL tools."));
 
   lay->setRowStretch(lay->rowCount(), 1);
   insertFootNote(lay);
