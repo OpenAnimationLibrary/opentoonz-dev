@@ -16,6 +16,11 @@
 // boost includes
 #include <boost/range.hpp>
 
+#include <QFile>
+#include <QSaveFile>
+#include <QTemporaryFile>
+#include <memory>
+
 #ifdef _MSC_VER
 #pragma warning(disable : 4996)
 #endif
@@ -43,6 +48,39 @@ std::map<QString, std::pair<TImageWriterCreateProc *, bool>> ImageWriterTable;
 //-----------------------------------------------------------
 
 bool TImageReader::m_safeMode = false;
+
+namespace {
+
+// Publish only a complete image. QSaveFile keeps the previous destination if
+// copying or committing fails, including when its directory is not writable.
+void publishImage(const TFilePath &path, const QString &stagedPath) {
+  QFile source(stagedPath);
+  QSaveFile destination(path.getQString());
+  destination.setDirectWriteFallback(false);
+  if (!source.open(QIODevice::ReadOnly) ||
+      !destination.open(QIODevice::WriteOnly))
+    throw TImageException(path, "Cannot open staged image for saving");
+
+  while (!source.atEnd()) {
+    const QByteArray data = source.read(65536);
+    if (data.isEmpty() || destination.write(data) != data.size())
+      throw TImageException(path, "Cannot write staged image");
+  }
+  if (source.error() != QFile::NoError || !destination.commit())
+    throw TImageException(path, "Cannot commit staged image");
+}
+
+class RasterWriteLock final {
+  TRasterP m_raster;
+
+public:
+  explicit RasterWriteLock(const TRasterP &raster) : m_raster(raster) {
+    m_raster->lock();
+  }
+  ~RasterWriteLock() { m_raster->unlock(); }
+};
+
+}  // namespace
 
 //-----------------------------------------------------------
 
@@ -133,7 +171,9 @@ void TImageReader::open() {
     } catch (TException &e) {
       close();  // close() chiude il file e setta m_file a NULL.
       QString msg = QString::fromStdWString(e.getMessage());
-      if (msg == QString("Old 4.1 Palette")) throw e;
+      if (type == "jxl" || type == "ppm" || type == "pgm" || type == "pnm" ||
+          type == "pam" || type == "pgx" || msg == QString("Old 4.1 Palette"))
+        throw;
     } catch (std::string str) {
       if (str == "Tiff file closed") m_file = NULL;
     }
@@ -585,13 +625,26 @@ static void convertForWriting(TRasterP &ras, const TRasterP &rin, int bpp) {
 void TImageWriter::save(const TImageP &img) {
   const std::string &type = toLower(m_path.getType());
 
-  Tiio::Writer *writer = Tiio::makeWriter(type);
+  // Keep the FILE alive while a writer destructor emits its format trailer.
+  QTemporaryFile staged;
+  std::unique_ptr<FILE, int (*)(FILE *)> fileGuard(nullptr, fclose);
+  std::unique_ptr<Tiio::Writer> writerGuard(Tiio::makeWriter(type));
+  Tiio::Writer *writer = writerGuard.get();
   if (!writer)
     throw TImageException(m_path, "unsupported format for raster images");
 
   writer->setProperties(m_properties);
 
-  FILE *file = fopen(m_path, "wb");
+  const bool atomicSave = writer->requiresAtomicSave();
+  TFilePath outputPath  = m_path;
+  if (atomicSave) {
+    if (!staged.open())
+      throw TImageException(m_path, "Cannot create temporary image file");
+    staged.close();
+    outputPath = TFilePath(staged.fileName());
+  }
+  fileGuard.reset(fopen(outputPath, "wb"));
+  FILE *file = fileGuard.get();
   if (file == NULL) throw TImageException(m_path, "Can't write file");
 
   if (TRasterImageP ri = img) {
@@ -608,7 +661,7 @@ void TImageWriter::save(const TImageP &img) {
             ? (TEnumProperty *)m_properties->getProperty("Bits Per Pixel")
             : 0;
 
-    if (p && ri->isScanBW()) {
+    if (p && ri->isScanBW() && (type == "tif" || type == "tiff")) {
       const std::vector<std::wstring> &range = p->getRange();
       p->setValue(range[2]);  // Horrible. See tiio_tif.cpp (732 or near) -.-'
     }
@@ -651,7 +704,6 @@ void TImageWriter::save(const TImageP &img) {
       else
         convertForWriting(ras, rasF, bpp);
     } else {
-      fclose(file);
       throw TImageException(m_path, "unsupported raster type");
     }
 
@@ -683,51 +735,52 @@ void TImageWriter::save(const TImageP &img) {
       }  // for other bpp values, do nothing for now
     }
 
-    ras->lock();
+    {
+      RasterWriteLock lock(ras);
 
-    if (writer->getRowOrder() == Tiio::BOTTOM2TOP) {
-      if (bpp == 1 || bpp == 8 || bpp == 24 || bpp == 32 || bpp == 16)
-        for (int i = 0; i < ras->getLy(); i++)
-          writer->writeLine((char *)ras->getRawData(0, i));
-      else if (bpp == 96 || bpp == 128)
-        for (int i = 0; i < ras->getLy(); i++)
-          writer->writeLine((float *)ras->getRawData(0, i));
-      else
-        for (int i = 0; i < ras->getLy(); i++)
-          writer->writeLine((short *)ras->getRawData(0, i));
-    } else {
-      if (bpp == 1 || bpp == 8 || bpp == 24 || bpp == 32 || bpp == 16)
-        for (int i = ras->getLy() - 1; i >= 0; i--)
-          writer->writeLine((char *)ras->getRawData(0, i));
-      else if (bpp == 96 || bpp == 128)
-        for (int i = ras->getLy() - 1; i >= 0; i--)
-          writer->writeLine((float *)ras->getRawData(0, i));
-      else
-        for (int i = ras->getLy() - 1; i >= 0; i--)
-          writer->writeLine((short *)ras->getRawData(0, i));
+      if (writer->getRowOrder() == Tiio::BOTTOM2TOP) {
+        if (bpp == 1 || bpp == 8 || bpp == 24 || bpp == 32 || bpp == 16)
+          for (int i = 0; i < ras->getLy(); i++)
+            writer->writeLine((char *)ras->getRawData(0, i));
+        else if (bpp == 96 || bpp == 128)
+          for (int i = 0; i < ras->getLy(); i++)
+            writer->writeLine((float *)ras->getRawData(0, i));
+        else
+          for (int i = 0; i < ras->getLy(); i++)
+            writer->writeLine((short *)ras->getRawData(0, i));
+      } else {
+        if (bpp == 1 || bpp == 8 || bpp == 24 || bpp == 32 || bpp == 16)
+          for (int i = ras->getLy() - 1; i >= 0; i--)
+            writer->writeLine((char *)ras->getRawData(0, i));
+        else if (bpp == 96 || bpp == 128)
+          for (int i = ras->getLy() - 1; i >= 0; i--)
+            writer->writeLine((float *)ras->getRawData(0, i));
+        else
+          for (int i = ras->getLy() - 1; i >= 0; i--)
+            writer->writeLine((short *)ras->getRawData(0, i));
+      }
     }
 
-    ras->unlock();
-
     writer->flush();
-    delete writer;
+    writerGuard.reset();
   } else if (TVectorImageP vi = img) {
-    Tiio::VectorWriter *writer = Tiio::makeVectorWriter(type);
+    std::unique_ptr<Tiio::VectorWriter> writer(Tiio::makeVectorWriter(type));
     if (!writer) {
-      fclose(file);
       throw TImageException(m_path, "unsupported format for vector images");
     }
 
     writer->open(file);
     writer->write(vi.getPointer());
 
-    delete writer;
+    writer.reset();
   } else {
-    fclose(file);
     throw TImageException(m_path, "Can't write file");
   }
 
-  fclose(file);
+  writerGuard.reset();
+  if (fclose(fileGuard.release()) != 0)
+    throw TImageException(m_path, "Cannot finish writing image");
+  if (atomicSave) publishImage(m_path, staged.fileName());
 }
 
 //-----------------------------------------------------------
