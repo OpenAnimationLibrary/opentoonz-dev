@@ -104,7 +104,7 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y -DWITH_RASTER_PALETTE_SAVE_TEST=ON
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -144,6 +144,13 @@ jobs:
           REM Create portablestuff directory and copy stuff folder
           mkdir Opentoonz\portablestuff
           xcopy /Y /E /I ..\..\stuff .\Opentoonz\portablestuff
+        shell: cmd
+
+      - name: Native raster palette save regression
+        run: |
+          @echo on
+          set "PATH=%CD%\toonz\build\Opentoonz;%QT_PATH%\bin;%PATH%"
+          toonz\build\palette-tests\RelWithDebInfo\raster_palette_save_test.exe
         shell: cmd
 
       # Create artifact from the build
