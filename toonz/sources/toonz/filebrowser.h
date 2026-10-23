@@ -10,6 +10,7 @@
 #include <QCheckBox>
 #include <QList>
 #include <QModelIndex>
+#include <QPersistentModelIndex>
 
 #include "dvitemview.h"
 #include "tfilepath.h"
@@ -242,11 +243,12 @@ private:
   DvDirTreeView *m_folderTreeView;
   QSplitter *m_mainSplitter;
   QLineEdit *m_folderName;
+  QWidget *m_folderStatus;
   DvItemViewer *m_itemViewer;
   FrameCountReader m_frameCountReader;
 
   // folder history
-  QList<QModelIndex> m_indexHistoryList;
+  QList<QPersistentModelIndex> m_indexHistoryList;
   int m_currentPosition = 0;
 
   std::vector<Item> m_items;
@@ -259,6 +261,8 @@ private:
   void readFrameCount(Item &item);
   void readInfo(Item &item);
   void refreshCurrentFolderItems();
+  void showUnavailableFolder();
+  int historyPosition(int direction) const;
 
   DvItemListModel::Status getItemVersionControlStatus(const Item &item);
 

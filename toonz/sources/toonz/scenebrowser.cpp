@@ -225,6 +225,12 @@ SceneBrowser::SceneBrowser(QWidget *parent, Qt::WindowFlags flags,
   connect(MyFileSystemWatcher::instance(),
           &MyFileSystemWatcher::directoryChanged, this,
           &SceneBrowser::onFileSystemChanged);
+  connect(m_folderTreeView, &DvDirTreeView::folderRefreshed, this,
+          [this](const QString &path) {
+            if (path != m_folder.getQString()) return;
+            refreshCurrentFolderItems();
+            m_itemViewer->refresh();
+          });
 
   TSceneHandle *sceneHandle = TApp::instance()->getCurrentScene();
   connect(sceneHandle, &TSceneHandle::nameSceneChanged, this,
@@ -1879,6 +1885,7 @@ void SceneBrowser::newScene() {
 
 void SceneBrowser::showEvent(QShowEvent *) {
   activePreproductionBoards.insert(this);
+  m_folderTreeView->refreshLoadedFolders(true);
   // refresh
   if (getFolder() != TFilePath())
     setFolder(getFolder(), false, true);
@@ -1890,12 +1897,14 @@ void SceneBrowser::showEvent(QShowEvent *) {
   DvDirVersionControlNode *vcNode = dynamic_cast<DvDirVersionControlNode *>(
       m_folderTreeView->getCurrentNode());
   if (vcNode) m_folderTreeView->refreshVersionControl(vcNode);
+  m_folderTreeView->setWatchWhenHidden(true);
 }
 
 //-----------------------------------------------------------------------------
 
 void SceneBrowser::hideEvent(QHideEvent *) {
   activePreproductionBoards.erase(this);
+  m_folderTreeView->setWatchWhenHidden(false);
   m_itemViewer->getPanel()->getItemViewPlayDelegate()->resetPlayWidget();
 }
 

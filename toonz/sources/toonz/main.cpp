@@ -84,6 +84,7 @@
 #include <QHash>
 
 #ifdef _WIN32
+#include <windows.h>
 #ifndef x64
 #include <float.h>
 #endif
@@ -256,6 +257,10 @@ static void script_output(int type, const QString &value) {
 
 int main(int argc, char *argv[]) {
 #ifdef Q_OS_WIN
+  // Return unavailable-media errors to the caller instead of opening a system
+  // dialog while the file browser or a worker inspects a drive.
+  SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS);
+
   // Enable standard input/output on Windows Platform for debug
   if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
     freopen("CON", "r", stdin);

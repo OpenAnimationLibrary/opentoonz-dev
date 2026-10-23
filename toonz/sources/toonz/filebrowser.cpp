@@ -157,6 +157,20 @@ FileBrowser::FileBrowser(QWidget *parent, Qt::WindowFlags flags,
   QFrame *box         = new QFrame(this);
   QLabel *folderLabel = new QLabel(tr("Folder: "), this);
   m_folderName        = new QLineEdit(this);
+  m_folderStatus      = new QWidget(this);
+  m_folderStatus->setObjectName("FileBrowserFolderStatus");
+  auto *statusLayout = new QHBoxLayout(m_folderStatus);
+  statusLayout->setContentsMargins(0, 0, 0, 0);
+  auto *statusLabel = new QLabel(
+      tr("The folder is unavailable. Check the path or reconnect the drive, "
+         "then refresh."),
+      m_folderStatus);
+  statusLabel->setWordWrap(true);
+  auto *retryButton = new QPushButton(tr("Refresh"), m_folderStatus);
+  statusLayout->addWidget(statusLabel, 1);
+  statusLayout->addWidget(retryButton);
+  m_folderStatus->hide();
+  connect(retryButton, &QPushButton::clicked, this, &FileBrowser::refresh);
   m_itemViewer = new DvItemViewer(box, noContextMenu, multiSelectionEnabled,
                                   DvItemViewer::Browser);
   DvItemViewerTitleBar *titleBar = new DvItemViewerTitleBar(m_itemViewer, box);
@@ -199,6 +213,7 @@ FileBrowser::FileBrowser(QWidget *parent, Qt::WindowFlags flags,
       folderLay->addWidget(m_folderName, 1);
     }
     mainLayout->addLayout(folderLay, 0);
+    mainLayout->addWidget(m_folderStatus, 0);
 
     m_mainSplitter->addWidget(m_folderTreeView);
     QVBoxLayout *boxLayout = new QVBoxLayout(box);
@@ -219,6 +234,12 @@ FileBrowser::FileBrowser(QWidget *parent, Qt::WindowFlags flags,
           itemViewPlayDelegate, &DVItemViewPlayDelegate::resetPlayWidget);
   connect(m_folderTreeView, &DvDirTreeView::currentNodeChanged, this,
           &FileBrowser::onTreeFolderChanged);
+  connect(m_folderTreeView, &DvDirTreeView::folderRefreshed, this,
+          [this](const QString &path) {
+            if (path != toQString(m_folder)) return;
+            refreshCurrentFolderItems();
+            m_itemViewer->refresh();
+          });
 
   connect(m_itemViewer, &DvItemViewer::clickedItem, this,
           &FileBrowser::onClickedItem);
@@ -270,6 +291,10 @@ FileBrowser::FileBrowser(QWidget *parent, Qt::WindowFlags flags,
   m_indexHistoryList.append(m_folderTreeView->currentIndex());
   m_currentPosition = 0;
 
+  connect(DvDirModel::instance(), &QAbstractItemModel::layoutChanged, this,
+          &FileBrowser::refreshHistoryButtons);
+  connect(DvDirModel::instance(), &QAbstractItemModel::modelReset, this,
+          &FileBrowser::refreshHistoryButtons);
   refreshHistoryButtons();
 }
 
@@ -281,7 +306,8 @@ FileBrowser::~FileBrowser() = default;  // all child widgets are auto-deleted
 
 void FileBrowser::onFolderEdited() {
   TFilePath inputPath(m_folderName->text().toStdWString());
-  QModelIndex index = DvDirModel::instance()->getIndexByPath(inputPath);
+  QPersistentModelIndex index =
+      DvDirModel::instance()->getIndexByPath(inputPath);
 
   // If there is no node matched
   if (!index.isValid()) {
@@ -294,13 +320,13 @@ void FileBrowser::onFolderEdited() {
   m_folderTreeView->setCurrentIndex(index);
 
   // expand the folder tree
-  QModelIndex tmpIndex = index;
+  QPersistentModelIndex tmpIndex = index;
   while (tmpIndex.isValid()) {
     m_folderTreeView->expand(tmpIndex);
     tmpIndex = tmpIndex.parent();
   }
 
-  m_folderTreeView->scrollTo(index);
+  if (index.isValid()) m_folderTreeView->scrollTo(index);
   m_folderTreeView->update();
 }
 
@@ -337,16 +363,26 @@ void FileBrowser::storeFolderHistory() {
 //-----------------------------------------------------------------------------
 
 void FileBrowser::refreshHistoryButtons() {
-  emit historyChanged(m_currentPosition != 0,
-                      m_currentPosition != m_indexHistoryList.size() - 1);
+  emit historyChanged(historyPosition(-1) >= 0, historyPosition(1) >= 0);
+}
+
+int FileBrowser::historyPosition(int direction) const {
+  for (int i = m_currentPosition + direction;
+       i >= 0 && i < m_indexHistoryList.size(); i += direction) {
+    // The initial invalid index represents the browser's root. Other invalid
+    // entries refer to folders or drives removed since they were visited.
+    if (i == 0 || m_indexHistoryList[i].isValid()) return i;
+  }
+  return -1;
 }
 
 //-----------------------------------------------------------------------------
 
 void FileBrowser::onBackButtonPushed() {
-  if (m_currentPosition == 0) return;
-  --m_currentPosition;
-  QModelIndex currentIndex = m_indexHistoryList[m_currentPosition];
+  int position = historyPosition(-1);
+  if (position < 0) return;
+  m_currentPosition                  = position;
+  QPersistentModelIndex currentIndex = m_indexHistoryList[m_currentPosition];
   m_folderTreeView->setCurrentIndex(currentIndex);
   m_folderTreeView->collapseAll();
   while (currentIndex.isValid()) {
@@ -360,9 +396,10 @@ void FileBrowser::onBackButtonPushed() {
 //-----------------------------------------------------------------------------
 
 void FileBrowser::onFwdButtonPushed() {
-  if (m_currentPosition >= m_indexHistoryList.size() - 1) return;
-  ++m_currentPosition;
-  QModelIndex currentIndex = m_indexHistoryList[m_currentPosition];
+  int position = historyPosition(1);
+  if (position < 0) return;
+  m_currentPosition                  = position;
+  QPersistentModelIndex currentIndex = m_indexHistoryList[m_currentPosition];
   m_folderTreeView->setCurrentIndex(currentIndex);
   m_folderTreeView->collapseAll();
   while (currentIndex.isValid()) {
@@ -513,6 +550,28 @@ void FileBrowser::removeFilterType(const QString &type) {
 
 void FileBrowser::refreshCurrentFolderItems() {
   m_items.clear();
+  m_multiFileItemMap.clear();
+  m_folderStatus->hide();
+
+  DvDirModel *model                  = DvDirModel::instance();
+  QPersistentModelIndex currentIndex = model->getIndexByPath(m_folder);
+  auto *versionControlNode           = currentIndex.isValid()
+                                           ? dynamic_cast<DvDirVersionControlNode *>(
+                                       model->getNode(currentIndex))
+                                           : nullptr;
+
+  if (!m_folder.isEmpty()) {
+    TFileStatus status(m_folder);
+    if (!status.isDirectory() || !status.isReadable()) {
+      // Missing version-control entries still need to be displayed so they
+      // can be restored from the repository.
+      if (!versionControlNode) {
+        showUnavailableFolder();
+        return;
+      }
+      m_folderStatus->show();
+    }
+  }
 
   // put the parent directory item
   TFilePath parentFp = m_folder.getParentDir();
@@ -520,27 +579,40 @@ void FileBrowser::refreshCurrentFolderItems() {
     m_items.emplace_back(parentFp, true, false);
 
   // register all folder items by using the folder tree model
-  DvDirModel *model        = DvDirModel::instance();
-  QModelIndex currentIndex = model->getIndexByPath(m_folder);
   if (currentIndex.isValid()) {
-    for (int i = 0; i < model->rowCount(currentIndex); ++i) {
-      QModelIndex tmpIndex = model->index(i, 0, currentIndex);
-      if (tmpIndex.isValid()) {
-        DvDirModelFileFolderNode *node =
-            dynamic_cast<DvDirModelFileFolderNode *>(model->getNode(tmpIndex));
-        if (node) {
-          TFilePath childFolderPath = node->getPath();
-          if (TFileStatus(childFolderPath).isLink())
-            m_items.emplace_back(childFolderPath, true, true,
-                                 QString::fromStdWString(node->getName()));
-          else
-            m_items.emplace_back(childFolderPath, true, false,
-                                 QString::fromStdWString(node->getName()));
+    try {
+      for (int i = 0; i < model->rowCount(currentIndex); ++i) {
+        QModelIndex tmpIndex = model->index(i, 0, currentIndex);
+        if (tmpIndex.isValid()) {
+          DvDirModelFileFolderNode *node =
+              dynamic_cast<DvDirModelFileFolderNode *>(
+                  model->getNode(tmpIndex));
+          if (node) {
+            TFilePath childFolderPath = node->getPath();
+            if (TFileStatus(childFolderPath).isLink())
+              m_items.emplace_back(childFolderPath, true, true,
+                                   QString::fromStdWString(node->getName()));
+            else
+              m_items.emplace_back(childFolderPath, true, false,
+                                   QString::fromStdWString(node->getName()));
+          }
         }
       }
+    } catch (const TSystemException &) {
+      showUnavailableFolder();
+      return;
     }
-  } else
+    auto *folderNode =
+        dynamic_cast<DvDirModelFileFolderNode *>(model->getNode(currentIndex));
+    if (folderNode && folderNode->isRemovableDrive() &&
+        !folderNode->isDriveAvailable()) {
+      showUnavailableFolder();
+      return;
+    }
+  } else {
     setUnregisteredFolder(m_folder);
+    if (!m_folderStatus->isHidden()) return;
+  }
 
   // register the file items
   if (m_folder != TFilePath()) {
@@ -559,6 +631,13 @@ void FileBrowser::refreshCurrentFolderItems() {
       try {
         TSystem::readDirectory(files, all_files, m_folder);
       } catch (...) {
+        showUnavailableFolder();
+        return;
+      }
+      // The device can disappear after the initial directory check.
+      if (!TFileStatus(m_folder).isDirectory()) {
+        showUnavailableFolder();
+        return;
       }
     }
 
@@ -629,10 +708,8 @@ void FileBrowser::refreshCurrentFolderItems() {
 
   // Set Missing Version Control Items
   int missingItemCount          = 0;
-  DvDirVersionControlNode *node = dynamic_cast<DvDirVersionControlNode *>(
-      m_folderTreeView->getCurrentNode());
-  if (node) {
-    QList<TFilePath> list = node->getMissingFiles();
+  if (versionControlNode) {
+    QList<TFilePath> list = versionControlNode->getMissingFiles();
     missingItemCount      = list.size();
     for (int i = 0; i < missingItemCount; ++i) m_items.emplace_back(list.at(i));
   }
@@ -657,6 +734,18 @@ void FileBrowser::refreshCurrentFolderItems() {
   setOrderType(Name);
   setIsDiscendentOrder(true);
   sortByDataModel(currentDataType, discendentOrder);
+}
+
+//-----------------------------------------------------------------------------
+
+void FileBrowser::showUnavailableFolder() {
+  m_items.clear();
+  m_multiFileItemMap.clear();
+  m_frameCountReader.stopReading();
+  selectNone();
+  m_folderStatus->show();
+  m_itemViewer->updateContentSize();
+  m_itemViewer->getPanel()->update();
 }
 
 //-----------------------------------------------------------------------------
@@ -707,7 +796,12 @@ void FileBrowser::setUnregisteredFolder(const TFilePath &fp) {
         TSystem::readDirectory(files, all_files, fp);
         TSystem::readDirectory_Dir_ReadExe(folders, fp);
       } catch (...) {
+        showUnavailableFolder();
+        return;
       }
+    } else {
+      showUnavailableFolder();
+      return;
     }
 
     // register all folder items
@@ -774,6 +868,8 @@ void FileBrowser::setUnregisteredFolder(const TFilePath &fp) {
 //-----------------------------------------------------------------------------
 
 void FileBrowser::setHistoryDay(std::string dayDateString) {
+  m_folderStatus->hide();
+  m_multiFileItemMap.clear();
   m_folder                = TFilePath();
   m_dayDateString         = dayDateString;
   const History::Day *day = History::instance()->getDay(dayDateString);
@@ -1097,9 +1193,7 @@ QMenu *FileBrowser::getContextMenu(QWidget *parent, int index) {
   if (files.empty()) {
     menu->addAction(cm->getAction(MI_ShowFolderContents));
     menu->addAction(cm->getAction(MI_SelectAll));
-    if (!Preferences::instance()->isWatchFileSystemEnabled()) {
-      menu->addAction(cm->getAction(MI_RefreshTree));
-    }
+    menu->addAction(cm->getAction(MI_RefreshTree));
     return menu.release();
   }
 
@@ -1386,10 +1480,8 @@ QMenu *FileBrowser::getContextMenu(QWidget *parent, int index) {
     }
   }
 
-  if (!Preferences::instance()->isWatchFileSystemEnabled()) {
-    menu->addSeparator();
-    menu->addAction(cm->getAction(MI_RefreshTree));
-  }
+  menu->addSeparator();
+  menu->addAction(cm->getAction(MI_RefreshTree));
 
   return menu.release();
 }
@@ -2169,8 +2261,9 @@ void FileBrowser::folderUp() {
     }
     return;
   }
-  m_folderTreeView->setCurrentIndex(index.parent());
-  m_folderTreeView->scrollTo(index.parent());
+  QPersistentModelIndex parentIndex = index.parent();
+  m_folderTreeView->setCurrentIndex(parentIndex);
+  if (parentIndex.isValid()) m_folderTreeView->scrollTo(parentIndex);
 }
 
 //-----------------------------------------------------------------------------
@@ -2214,6 +2307,7 @@ void FileBrowser::newFolder() {
 
 void FileBrowser::showEvent(QShowEvent *) {
   activeBrowsers.insert(this);
+  m_folderTreeView->refreshLoadedFolders();
   // refresh
   if (getFolder() != TFilePath())
     setFolder(getFolder(), false, true);

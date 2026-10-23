@@ -110,9 +110,13 @@ protected:
   bool m_hasChildren;  //!< Cached info about sub-folders existence
   bool m_peeks;        //!< Whether this folder allows peeking (typically
                        //!< to gather additional data on sub-folders existence)
+  bool m_isRemovableDrive;
+  bool m_driveAvailable;
+
 public:
   DvDirModelFileFolderNode(DvDirModelNode *parent, std::wstring name,
-                           const TFilePath &path);
+                           const TFilePath &path,
+                           bool isRemovableDrive = false);
   DvDirModelFileFolderNode(DvDirModelNode *parent, const TFilePath &path);
 
   QPixmap getPixmap(bool isOpen) const override;
@@ -144,6 +148,10 @@ public:
 
   bool peeks() const { return m_peeks; }
   void setPeeking(bool yes) { m_peeks = yes; }
+
+  // These cached properties never inspect the drive while laying out the view.
+  bool isRemovableDrive() const { return m_isRemovableDrive; }
+  bool isDriveAvailable() const { return m_driveAvailable; }
 };
 
 //-----------------------------------------------------------------------------
