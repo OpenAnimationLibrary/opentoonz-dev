@@ -771,3 +771,10 @@ endif()
 if(BUILD_ENV_UNIXLIKE AND NOT BUILD_TARGET_WIN)
     add_subdirectory(xdg-data)
 endif()
+
+# Opt-in runtime regression using the actual application libraries and streams.
+option(WITH_RASTER_PALETTE_SAVE_TEST "Build native raster palette save regression" OFF)
+if(WITH_RASTER_PALETTE_SAVE_TEST)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../tests/rasterpalette/native"
+                     "${CMAKE_BINARY_DIR}/raster-palette-save-test")
+endif()

@@ -15,6 +15,20 @@ products and test files live in temporary directories. An optional
 `usr/include` when only the runtime libraries are installed (x86-64 Linux).
 No test reads or writes the artist's project or Studio Palette folders.
 
+The OT-Dev Windows job also enables `WITH_RASTER_PALETTE_SAVE_TEST` and runs
+`native/native_save_test.cpp` after packaging. This executable links the actual
+OpenToonz libraries and exercises global/project palette creation, overwrite,
+native serialization/reload and temporary snapshot cleanup, with spaces,
+parentheses and Unicode in the paths. It has no scene/project/stream fixtures.
+It specifically covers the Windows CRT sharing conflict caused by reopening a
+still-owned `QTemporaryFile` through `_wfopen_s`. The writer now uses a normal
+file inside an automatically cleaned temporary directory instead.
+
+To run that test in a developer build, configure with
+`-DWITH_RASTER_PALETTE_SAVE_TEST=ON`, build `raster_palette_save_test`, and run it
+with the built OpenToonz and Qt DLLs on PATH. It is off by default and is not
+included in the application package.
+
 ## What runs
 
 - `palette_io_test.cpp`: the production `FullColorPalette`, native palette
@@ -47,7 +61,7 @@ Save All resource method is exercised, rather than the scene-save dialog.
 Indexed level save destinations are observed as calls; actual TLV/PLI image
 loading, writing and rendering are not covered.
 
-The `FullColorPalette` header omits `Q_OBJECT` in a generated shadow header;
+For the Linux harness, the `FullColorPalette` header omits `Q_OBJECT` in a generated shadow header;
 its QObject base remains. Rendering entry points and image codecs throw if
 called. Generated copies of `tpalette.cpp` and `tcolorstyles.cpp` replace only
 those entry points and use equivalent default construction for a null raster.
