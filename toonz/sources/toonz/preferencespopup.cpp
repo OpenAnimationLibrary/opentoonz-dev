@@ -2854,6 +2854,9 @@ void PreferencesPopup::onChange() {
     return;
 
   if (m_onEditedFuncMap.contains(id)) (this->*m_onEditedFuncMap[id])();
+  if (id == DefLevelType || id == EnableAutocreation)
+    TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+        id == DefLevelType ? "DefLevelType" : "EnableAutocreation");
 }
 
 //-----------------------------------------------------------------------------
