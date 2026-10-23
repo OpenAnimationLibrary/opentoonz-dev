@@ -1,0 +1,94 @@
+name: Experimental Qt6 tcomposer
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'toonz/sources/tcomposer/**'
+      - '.github/workflows/workflow_tcomposer_qt6.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt6-tcomposer-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    runs-on: windows-2025
+    env:
+      BOOST_ROOT: C:\local\boost_1_87_0
+      OpenCV_DIR: C:\tools\opencv\build
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: false
+      - uses: actions/cache@v5
+        id: dependencies
+        with:
+          path: |
+            C:\tools\opencv
+            C:\local\boost_1_87_0
+          key: Windows-opencv-boost-4.13.0-boost-1.87.0
+      - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          choco install opencv --version=4.13.0 -y
+          choco install boost-msvc-14.3 --version=1.87.0 -y
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.12.0'
+          arch: win64_msvc2022_64
+          modules: 'qt5compat qtmultimedia qtsvg qtserialport qttools'
+          cache: true
+      - name: Install third-party libraries
+        shell: cmd
+        run: |
+          curl -fsSL -o thirdparty-libs.zip https://github.com/andeon/opentoonz-thirdparty-libs/releases/download/prebuilt-libs-v1/thirdparty-libs.zip
+          7z x -y thirdparty-libs.zip
+          copy /Y thirdparty\tiff-4.0.3\libtiff\tif_config.vc.h thirdparty\tiff-4.0.3\libtiff\tif_config.h
+          copy /Y thirdparty\tiff-4.0.3\libtiff\tiffconf.vc.h thirdparty\tiff-4.0.3\libtiff\tiffconf.h
+          copy /Y thirdparty\libpng-1.6.21\scripts\pnglibconf.h.prebuilt thirdparty\libpng-1.6.21\pnglibconf.h
+      - name: Configure and build worker
+        shell: pwsh
+        run: |
+          $date = (Get-Date).ToUniversalTime().ToString('yyyyMMdd')
+          "WORKER_DATE=$date" >> $env:GITHUB_ENV
+          cmake -S toonz/sources -B toonz/build-qt6 -G 'Visual Studio 18 2026' -A x64 -DOPENTOONZ_QT6_TCOMPOSER=ON -DTCOMPOSER_BUILD_DATE=$date -DQT_PATH="$env:QT_ROOT_DIR" -DBOOST_ROOT="$env:BOOST_ROOT" -DOpenCV_DIR="$env:OpenCV_DIR" -DWITH_WINTAB=OFF
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build toonz/build-qt6 --config Release --target tcomposer --parallel
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Package isolated runtime and verify identity
+        shell: pwsh
+        run: |
+          $package = Join-Path $PWD "artifact/tcomposer_qt6_$env:WORKER_DATE"
+          New-Item -ItemType Directory -Force $package | Out-Null
+          Copy-Item toonz/build-qt6/Release/*.dll $package
+          Copy-Item "toonz/build-qt6/Release/tcomposer_qt6_$env:WORKER_DATE.exe" $package
+          $dlls = @(
+            'thirdparty/glut/3.7.6/lib/glut64.dll',
+            'thirdparty/glew/glew-1.9.0/bin/64bit/glew32.dll',
+            'thirdparty/libmypaint/dist/64/libiconv-2.dll',
+            'thirdparty/libmypaint/dist/64/libintl-8.dll',
+            'thirdparty/libmypaint/dist/64/libjson-c-2.dll',
+            'thirdparty/libmypaint/dist/64/libmypaint-1-4-0.dll',
+            'C:/tools/opencv/build/x64/vc16/bin/opencv_world4130.dll'
+          )
+          Copy-Item $dlls $package
+          $exe = Join-Path $package "tcomposer_qt6_$env:WORKER_DATE.exe"
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations $exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Copy-Item stuff (Join-Path $package 'portablestuff') -Recurse
+          @('[Paths]', 'Prefix=.', 'Plugins=.') | Set-Content (Join-Path $package 'qt.conf')
+          $json = & $exe --renderer-info
+          if ($LASTEXITCODE) { throw 'Renderer identity probe failed' }
+          $info = $json | ConvertFrom-Json
+          $revision = git rev-parse HEAD
+          if ($info.renderer -ne 'tcomposer' -or $info.qt_version -notlike '6.*' -or $info.build_date -ne $env:WORKER_DATE -or $info.source_revision -ne $revision) { throw 'Unexpected renderer identity' }
+          $json | Set-Content (Join-Path $package 'renderer-info.json')
+      - uses: actions/upload-artifact@v6
+        with:
+          name: tcomposer-qt6-Windows-${{ env.WORKER_DATE }}-${{ github.sha }}
+          path: artifact/
