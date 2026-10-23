@@ -1,0 +1,161 @@
+name: Qt6 Readiness Report
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+  # Upstream-based proposals may not contain this OT-Dev workflow.
+  workflow_run:
+    workflows: ['Linux Build']
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt6-readiness-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  PortingReport:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.event == 'pull_request' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'upstream/master')
+    name: Qt6 porting diagnostics (Qt5/Clazy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      SOURCE_BUILD_URL: ${{ github.event.workflow_run.html_url }}
+      CLANGXX: clang++-15
+      CLAZY_CHECKS: qt6-deprecated-api-fixes,qt6-header-fixes,qt6-qhash-signature,qt6-fwd-fixes
+      CLAZY_IGNORE_DIRS: '(^|/)(thirdparty|build)/|/usr/(include|lib)/'
+    steps:
+      # Follow-up builds also execute proposal code: keep permissions read-only,
+      # expose no secrets, persist no checkout credentials, and use no caches.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Prepare report
+        run: mkdir -p "$RUNNER_TEMP/qt6-readiness"
+
+      - name: Install analysis dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config clang-15 clazy=1.11-4ubuntu2 \
+            libboost-all-dev qtbase5-dev qtscript5-dev qttools5-dev qttools5-dev-tools \
+            libqt5svg5-dev libqt5opengl5-dev qtmultimedia5-dev libqt5serialport5-dev \
+            libsuperlu-dev liblz4-dev libusb-1.0-0-dev liblzo2-dev libpng-dev \
+            libjpeg-dev libglew-dev freeglut3-dev libfreetype6-dev libjson-c-dev \
+            libmypaint-dev libopencv-dev libturbojpeg-dev libomp-15-dev
+          dpkg-query -W -f='${Package} ${Version}\n' clazy clang-15 qtbase5-dev \
+            | tee "$RUNNER_TEMP/qt6-readiness/toolchain.txt"
+          clazy --list > "$RUNNER_TEMP/qt6-readiness/checks.txt"
+          for check in ${CLAZY_CHECKS//,/ }; do
+            grep -Fxq "    $check" "$RUNNER_TEMP/qt6-readiness/checks.txt"
+          done
+
+      - name: Build TIFF dependency
+        working-directory: thirdparty/tiff-4.0.3
+        run: |
+          CFLAGS='-fPIC' CXXFLAGS='-fPIC' ./configure --disable-jbig
+          make -j2
+
+      - name: Configure Qt5 analysis build
+        run: |
+          cmake -S toonz/sources -B toonz/build/qt6-readiness -G Ninja \
+            -DCMAKE_C_COMPILER=clang-15 -DCMAKE_CXX_COMPILER=clazy \
+            -DCMAKE_CXX_FLAGS=-fno-color-diagnostics -DWITH_TRANSLATION=OFF
+
+      - name: Compile with Qt6 porting diagnostics
+        id: analysis
+        run: |
+          cmake --build toonz/build/qt6-readiness --target OpenToonz --parallel 2 \
+            -- -k 0 2>&1 | tee "$RUNNER_TEMP/qt6-readiness/build.log"
+
+      - name: Summarize findings
+        if: always()
+        env:
+          ANALYSIS_OUTCOME: ${{ steps.analysis.outcome }}
+        run: |
+          python3 - <<'PY'
+          from collections import Counter
+          import html
+          import os
+          from pathlib import Path
+          import re
+
+          report_dir = Path(os.environ['RUNNER_TEMP']) / 'qt6-readiness'
+          report_dir.mkdir(exist_ok=True)
+          log = report_dir / 'build.log'
+          outcome = os.environ.get('ANALYSIS_OUTCOME', 'skipped')
+          complete = outcome == 'success'
+          diagnostic = re.compile(
+              r'^(.+?):(\d+):(\d+): warning: (.*?) '
+              r'\[-Wclazy-(qt6-[\w-]+)\]$'
+          )
+          findings = set()
+          root = Path.cwd().resolve()
+          for line in log.read_text(errors='replace').splitlines() if log.exists() else []:
+              match = diagnostic.match(line)
+              if match:
+                  path, line, column, message, check = match.groups()
+                  try:
+                      path = Path(path).resolve().relative_to(root)
+                  except ValueError:
+                      continue
+                  if 'thirdparty' not in path.parts and 'build' not in path.parts:
+                      findings.add((str(path), line, column, message, check))
+          counts = Counter(item[4] for item in findings)
+          lines = [
+              '# Qt6 readiness report',
+              '',
+              'Qt5/Clazy porting diagnostics; this is not a Qt6 build or compatibility verdict.',
+              'Scope: Linux OpenToonz target and dependencies, using selected Clazy checks.',
+              '',
+              'Source commit: `' + os.environ.get('SOURCE_SHA', 'unknown') + '`.',
+              'Analysis: ' + ('completed.' if complete else 'incomplete (' + outcome + ').'),
+              'Findings are informational and require review; no fixits are applied.',
+              '',
+              f'Unique diagnostics: {len(findings)}.',
+          ]
+          source_build = os.environ.get('SOURCE_BUILD_URL')
+          if source_build:
+              lines += ['', 'Triggering Linux build: ' + source_build]
+          if not complete:
+              lines += ['', 'Resolve the analysis failure before interpreting missing diagnostics.']
+          if counts:
+              lines += ['', '| Check | Diagnostics |', '| --- | ---: |']
+              lines += [f'| {check} | {count} |' for check, count in sorted(counts.items())]
+              lines += ['', '## Review candidates', '']
+              for path, line, column, message, check in sorted(findings)[:40]:
+                  item = f'{path}:{line}:{column} — {message} ({check})'
+                  lines.append('- ' + html.escape(item).replace('`', '&#96;'))
+              lines += ['', 'The build log contains all emitted diagnostics.']
+          elif complete:
+              lines += ['', 'No diagnostics from the selected checks; other Qt6 work may remain.']
+          versions = report_dir / 'toolchain.txt'
+          if versions.exists():
+              lines += ['', '## Toolchain', '', '```text', versions.read_text().strip(), '```']
+          report = '\n'.join(lines) + '\n'
+          (report_dir / 'qt6-readiness.md').write_text(report)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write(report)
+          PY
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: qt6-readiness-report
+          path: ${{ runner.temp }}/qt6-readiness
+          retention-days: 90

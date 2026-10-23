@@ -1022,7 +1022,7 @@ TColorStyle &TRasterImagePatternStrokeStyle::copy(const TColorStyle &other) {
   assert(trail);
   if (!trail) return *this;
   TColorStyle::copy(other);
-  m_trailCycle = trail->m_trailCycle;
+  m_trailCycle       = trail->m_trailCycle;
   m_trailFrameOffset = trail->m_trailFrameOffset;
   return *this;
 }
@@ -1652,7 +1652,7 @@ TColorStyle &TVectorImagePatternStrokeStyle::copy(const TColorStyle &other) {
   assert(trail);
   if (!trail) return *this;
   TColorStyle::copy(other);
-  m_trailCycle = trail->m_trailCycle;
+  m_trailCycle       = trail->m_trailCycle;
   m_trailFrameOffset = trail->m_trailFrameOffset;
   return *this;
 }

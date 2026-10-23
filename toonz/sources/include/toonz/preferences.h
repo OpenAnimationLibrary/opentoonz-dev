@@ -241,6 +241,9 @@ public:
   bool isRestoreViewerViewFromLastSessionEnabled() const {
     return getBoolValue(restoreViewerViewFromLastSession);
   }
+  bool isRestoreStyleEditorTabEnabled() const {
+    return getBoolValue(RestoreStyleEditorTab);
+  }
 
   // Visualization  tab
   bool getShow0ThickLines() const { return getBoolValue(show0ThickLines); }
@@ -293,6 +296,7 @@ public:
   // Import Export Tab
   QString getFfmpegPath() const { return getStringValue(ffmpegPath); }
   QString getPdfRendererPath() const { return getStringValue(pdfRendererPath); }
+  QString getOtlutPath() const { return getStringValue(otlutPath); }
   int getFfmpegTimeout() { return getIntValue(ffmpegTimeout); }
   QString getFastRenderPath() const { return getStringValue(fastRenderPath); }
   bool getFfmpegMultiThread() const { return getBoolValue(ffmpegMultiThread); }

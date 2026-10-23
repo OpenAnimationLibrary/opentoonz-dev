@@ -11,6 +11,7 @@
 #include <toonz/strokegenerator.h>
 #include <toonz/rasterstrokegenerator.h>
 #include "toonz/preferences.h"
+#include "toonz/txshsimplelevel.h"
 #include <tools/tool.h>
 #include <tools/cursors.h>
 
@@ -61,6 +62,7 @@ struct BrushData final : public TPersist {
   int m_drawOrder;
   double m_modifierSize, m_modifierOpacity;
   bool m_modifierEraser, m_modifierLockAlpha;
+  int m_eraserMode;
   bool m_assistants;
   
   // Style snapshot information (for strict preset restoration)
@@ -196,6 +198,7 @@ public:
 
 private:
   void updateModifiers();
+  void commitPainting();
 
   enum MouseEventType { ME_DOWN, ME_DRAG, ME_UP, ME_MOVE };
   void handleMouseEvent(MouseEventType type, const TPointD &pos,
@@ -253,6 +256,7 @@ protected:
     // 作業中のFrameIdをクリック時に保存し、マウスリリース時（Undoの登録時）に別のフレームに
     // 移動していたときの不具合を修正する。
     TFrameId frameId;
+    TXshSimpleLevelP level;
 
     // common variables
     TTileSetCM32 *tileSet     = nullptr;
@@ -270,6 +274,8 @@ protected:
 
     struct MyPaint {
       bool isActive = false;
+      bool eraser                       = false;
+      MyPaintToonzEraserMode eraserMode = MyPaintToonzEraserMode::Lines;
       mypaint::Brush baseBrush;
       TRect strokeSegmentRect;
     } myPaint;
@@ -285,6 +291,8 @@ protected:
   TBoolProperty m_pencil;
   TBoolProperty m_pressure;
   TDoubleProperty m_modifierSize;
+  TBoolProperty m_modifierEraser;
+  TEnumProperty m_eraserMode;
   TBoolProperty m_modifierLockAlpha;
   TBoolProperty m_assistants;
 
@@ -314,7 +322,8 @@ protected:
   QElapsedTimer m_brushTimer;
   int m_minCursorThick, m_maxCursorThick;
 
-  bool m_propertyUpdating = false;
+  bool m_propertyUpdating    = false;
+  bool m_skipStrokeUntilDown = false;
 
 protected:
   static void drawLine(const TPointD &point, const TPointD &centre,

@@ -42,9 +42,9 @@ public:
     if (frameCount < 1 ||
         ((mode == Mode::Off || frameCount < 2) && !explicitStart))
       return selection;
-    selection.style      = style;
-    selection.frameCount = frameCount;
-    selection.active     = true;
+    selection.style         = style;
+    selection.frameCount    = frameCount;
+    selection.active        = true;
     selection.updatesCursor = mode != Mode::Off && frameCount > 1;
     switch (mode) {
     case Mode::Off:

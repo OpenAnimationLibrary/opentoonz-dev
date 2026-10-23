@@ -105,7 +105,8 @@ click and pointing along +X. Both renderers have a minimum stamp interval of two
 stage units, so this supplies exactly one placement even with negative Distance.
 The carrier has enough extent to survive PLI coordinate quantization. Normal
 drags (including tiny ones), motion paths, Frame Range, and ordinary brush dots
-are unchanged. Self-snapping must not close the synthesized carrier. Assistant
+are unchanged. Self-snapping and Auto Close must not close the synthesized carrier.
+Auto Group still groups the stamp; Auto Fill does not fill its open carrier. Assistant
 replicas pass through the same completion and undo path and still share one cycle
 selection. There is no new toolbar or Settings toggle.
 
@@ -222,6 +223,9 @@ payloads, signed-magnitude limits and stroke copy/split/transform retention.
 - [ ] Both raster-source and vector-source Trail Settings show all four modes.
 - [ ] Click without dragging stamps once with raster/vector Trails, including Off
       and single-frame sources. Test several Size, Rotation and Distance values.
+- [ ] With Auto Close, Auto Group and Auto Fill enabled, click stamps keep their
+      anchor and direction, remain open and advance the cycle once per gesture.
+      Real drags still use the selected auto options, including Shift bypass.
 - [ ] Tablet tap/release, snapping, zoom and assistant replicas preserve placement
       and advance the cycle once per gesture. A click makes one undoable gesture.
 - [ ] Save/reopen click stamps; verify nonzero carrier length and the same frame.

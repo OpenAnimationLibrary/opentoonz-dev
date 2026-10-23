@@ -465,6 +465,9 @@ void Preferences::definePreferenceItems() {
          true);
   define(restoreViewerViewFromLastSession, "restoreViewerViewFromLastSession",
          QMetaType::Bool, false);
+  define(togglePanelWithShortcut, "togglePanelWithShortcut", QMetaType::Bool,
+         false);
+  define(RestoreStyleEditorTab, "RestoreStyleEditorTab", QMetaType::Bool, true);
 
   // Visualization
   define(show0ThickLines, "show0ThickLines", QMetaType::Bool, true);
@@ -512,6 +515,7 @@ void Preferences::definePreferenceItems() {
   // Import / Export
   define(ffmpegPath, "ffmpegPath", QMetaType::QString, "");
   define(pdfRendererPath, "pdfRendererPath", QMetaType::QString, "");
+  define(otlutPath, "otlutPath", QMetaType::QString, "");
   define(ffmpegTimeout, "ffmpegTimeout", QMetaType::Int, 600, 1,
          std::numeric_limits<int>::max());
   define(fastRenderPath, "fastRenderPath", QMetaType::QString, "desktop");
@@ -557,6 +561,7 @@ void Preferences::definePreferenceItems() {
          QMetaType::Bool, false);
 
   // Tools
+  define(compressInputEvents, "compressInputEvents", QMetaType::Bool, true);
   define(FillOnlysavebox, "FillOnlysavebox", QMetaType::Bool, false);
   define(DefRegionWithPaint, "FillDefRegionWithPaint", QMetaType::Bool, true);
   define(ReferFillPrevailing, "ReferFillPrevailing", QMetaType::Bool, false);

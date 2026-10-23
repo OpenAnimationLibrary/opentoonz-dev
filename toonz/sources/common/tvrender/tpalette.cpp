@@ -1107,7 +1107,7 @@ void TPalette::setFrame(int frame) {
     assert(cs);
 
     // Trail Cycle is a drawing default, not an animated appearance parameter.
-    const auto trailMode = TrailStyles::getMode(cs);
+    const auto trailMode  = TrailStyles::getMode(cs);
     const int trailOffset = TrailStyles::getFrameOffset(cs);
 
     // Build the keyframes interval containing frame

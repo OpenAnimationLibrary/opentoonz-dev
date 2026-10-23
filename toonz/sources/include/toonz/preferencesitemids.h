@@ -45,6 +45,8 @@ enum PreferencesItemId {
   displayIn30bit,
   viewerIndicatorEnabled,
   restoreViewerViewFromLastSession,
+  togglePanelWithShortcut,
+  RestoreStyleEditorTab,
 
   //----------
   // Visualization
@@ -83,6 +85,7 @@ enum PreferencesItemId {
   // Import / Export
   ffmpegPath,
   pdfRendererPath,
+  otlutPath,
   ffmpegTimeout,
   fastRenderPath,
   ffmpegMultiThread,
@@ -129,6 +132,7 @@ enum PreferencesItemId {
   useStrokeEndCursor,
   clickTwiceToCreateArcs,
   tempToolSwitchTimer,
+  compressInputEvents,
   animateToolHandleSize,
   animateToolColor,
   defaultStartupTool,
