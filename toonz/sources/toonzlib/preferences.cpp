@@ -522,6 +522,9 @@ void Preferences::definePreferenceItems() {
   define(rhubarbPath, "rhubarbPath", QMetaType::QString, "");
   define(rhubarbTimeout, "rhubarbTimeout", QMetaType::Int, 600, 0,
          std::numeric_limits<int>::max());
+  define(jxlPath, "jxlPath", QMetaType::QString, "");
+  define(jxlTimeout, "jxlTimeout", QMetaType::Int, 600, 1, 86400);
+  define(jxlExperimental, "jxlExperimental", QMetaType::Bool, false);
 
   // Drawing
   define(DefRasterFormat, "DefRasterFormat", QMetaType::QString, "tif");
