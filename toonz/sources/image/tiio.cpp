@@ -23,6 +23,7 @@
 #include "./sgi/tiio_sgi.h"
 #include "./tga/tiio_tga.h"
 #include "./png/tiio_png.h"
+#include "tiio_jxl.h"
 /* Can't build this on FreeBSD: libtiff requires internal API access.
  * Probably some one get luck to fix this. */
 #ifndef FREEBSD
@@ -154,6 +155,24 @@ void initImageIo(bool lightVersion) {
   Tiio::defineWriterMaker("png", Tiio::makePngWriter, true);
   TFileType::declare("png", TFileType::RASTER_IMAGE);
   Tiio::defineWriterProperties("png", new Tiio::PngWriterProperties());
+
+  // Register independently of the configured tools. A newly selected tools
+  // directory takes effect immediately, including in tcomposer.
+  Tiio::defineReaderMaker("jxl", Tiio::makeJxlReader);
+  Tiio::defineWriterMaker("jxl", Tiio::makeJxlWriter, true);
+  TFileType::declare("jxl", TFileType::RASTER_IMAGE);
+  Tiio::defineWriterProperties("jxl", new Tiio::JxlWriterProperties());
+  // These integer raster formats have no native codec in this build. The
+  // experimental hook owns them and reports unavailable-tool errors directly.
+  for (const char *ext : {"ppm", "pgm", "pnm", "pam", "pgx"}) {
+    Tiio::defineReaderMaker(ext, nullptr);
+    Tiio::defineWriterMaker(ext, nullptr, true);
+    TFileType::declare(ext, TFileType::RASTER_IMAGE);
+    Tiio::defineWriterProperties(
+        ext, new Tiio::JxlWriterProperties(std::string(ext) == "pam"));
+  }
+  Tiio::setRasterFactoryHooks(Tiio::makeJxlRoutedReader,
+                              Tiio::makeJxlRoutedWriter);
 
   Tiio::defineReaderMaker("tga", Tiio::makeTgaReader);
   Tiio::defineWriterMaker("tga", Tiio::makeTgaWriter, true);

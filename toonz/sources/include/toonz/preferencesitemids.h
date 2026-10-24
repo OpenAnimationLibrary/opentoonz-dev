@@ -90,6 +90,9 @@ enum PreferencesItemId {
   quickTimeBackend,
   rhubarbPath,
   rhubarbTimeout,
+  jxlPath,
+  jxlTimeout,
+  jxlExperimental,
 
   //----------
   // Drawing

@@ -301,6 +301,11 @@ public:
   bool isUseQuickTimeBackend() const { return getBoolValue(quickTimeBackend); }
   QString getRhubarbPath() const { return getStringValue(rhubarbPath); }
   int getRhubarbTimeout() { return getIntValue(rhubarbTimeout); }
+  QString getJxlPath() const { return getStringValue(jxlPath); }
+  int getJxlTimeout() { return getIntValue(jxlTimeout); }
+  bool isJxlExperimentalEnabled() const {
+    return getBoolValue(jxlExperimental);
+  }
 
   // Drawing  tab
   QString getDefRasterFormat() const { return getStringValue(DefRasterFormat); }
