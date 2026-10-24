@@ -352,6 +352,7 @@ protected:
   void setCheckboardColors(const TPixel32 &col1, const TPixel32 &col2);
 
   void changeTitleBar(TFx *fx);
+  void showSwatchViewer();
 
 protected slots:
   void updateViewer();

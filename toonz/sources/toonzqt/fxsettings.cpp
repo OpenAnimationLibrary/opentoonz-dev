@@ -24,6 +24,9 @@
 #include "toonz/tscenehandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tobjecthandle.h"
+#include "toonz/txsheethandle.h"
+#include "toonz/txsheet.h"
+#include "toonz/txshcolumn.h"
 #include "toonz/scenefx.h"
 #include "toonz/toonzscene.h"
 #include "toonz/sceneproperties.h"
@@ -1903,10 +1906,7 @@ void FxSettings::setCurrentFx() {
   changeTitleBar(actualFx.getPointer());
 
   // Bind the target before activating preview so its render graph is retained.
-  if (openSwatch) {
-    m_paramViewer->showSwatchViewer();
-    if (!m_viewer->isEnabled()) m_toolBar->actions()[1]->trigger();
-  }
+  if (openSwatch && isVisible()) showSwatchViewer();
 }
 
 //-----------------------------------------------------------------------------
@@ -1927,6 +1927,16 @@ void FxSettings::notifySceneChanged() {
 //-----------------------------------------------------------------------------
 
 void FxSettings::showEvent(QShowEvent *event) {
+  // Opening the panel does not necessarily switch the current column or FX.
+  if (!m_fxHandle->getFx() && m_xsheetHandle && m_objectHandle &&
+      !m_objectHandle->isSpline()) {
+    const TStageObjectId id = m_objectHandle->getObjectId();
+    TXsheet *xsheet         = m_xsheetHandle->getXsheet();
+    TXshColumn *column =
+        id.isColumn() && xsheet ? xsheet->getColumn(id.getIndex()) : nullptr;
+    if (column && column->getLevelColumn())
+      m_fxHandle->setFx(column->getFx(), false);
+  }
   setCurrentFx();
   setCurrentFrame();
   connect(m_frameHandle, SIGNAL(frameSwitched()), SLOT(setCurrentFrame()));
@@ -1949,6 +1959,8 @@ void FxSettings::showEvent(QShowEvent *event) {
     connect(m_levelHandle, SIGNAL(xshLevelChanged()), SLOT(setCurrentFx()));
   if (m_objectHandle)
     connect(m_objectHandle, SIGNAL(objectChanged(bool)), SLOT(setCurrentFx()));
+
+  if (dynamic_cast<TLevelColumnFx *>(m_fxHandle->getFx())) showSwatchViewer();
 }
 
 //-----------------------------------------------------------------------------
@@ -2079,6 +2091,14 @@ void FxSettings::onPreferredSizeChanged(QSize pvBestSize) {
   geom.setSize(popupBestSize);
   popup->setGeometry(geom);
   popup->update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FxSettings::showSwatchViewer() {
+  m_paramViewer->showSwatchViewer();
+  if (widget(1)->isHidden()) onShowSwatchButtonToggled(true);
+  if (!m_viewer->isEnabled()) m_toolBar->actions()[1]->trigger();
 }
 
 //-----------------------------------------------------------------------------
