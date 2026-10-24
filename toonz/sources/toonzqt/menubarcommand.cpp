@@ -25,7 +25,7 @@ namespace {
 
 void updateToolTip(QAction *action) {
   QString tooltip  = action->text();
-  QString shortcut = action->shortcut().toString();
+  QString shortcut = action->shortcut().toString(QKeySequence::NativeText);
   if (shortcut != "") tooltip += " (" + shortcut + ")";
   action->setToolTip(tooltip);
 }
