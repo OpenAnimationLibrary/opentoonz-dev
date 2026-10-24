@@ -25,6 +25,9 @@
 #include "tvectorrenderdata.h"
 #include "toonz/tpalettehandle.h"
 #include "toonz/toonzfolders.h"
+#include "toonz/tscenehandle.h"
+#include "toonz/toonzscene.h"
+#include "toonz/tcamera.h"
 
 #include "toonzqt/selection.h"
 #include "toonzqt/imageutils.h"
@@ -43,9 +46,11 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGroupBox>
 #include <QIntValidator>
 #include <QMimeData>
 #include <QHBoxLayout>
@@ -607,6 +612,10 @@ class TypeTool final : public TTool {
   bool m_isVertical;      // text orientation
 
   TUndo *m_undo;
+  TUndo *m_lastStampUndo            = nullptr;
+  TXshSimpleLevel *m_lastStampLevel = nullptr;
+  TFrameId m_lastStampFid;
+  int m_lastStampHistoryIndex = 0;
   TypeToolTextHistory m_textHistory;
   TypeToolTextHistoryPopup *m_textHistoryPopup;
   TypeToolTextEntry m_formattedEntry;
@@ -672,6 +681,7 @@ public:
   void cursorRight();
   void deleteKey();
   void addTextToImage();
+  bool stampText(double horizontalPx, double verticalPx, bool replacePrevious);
   void addTextToVectorImage(const TVectorImageP &currentImage,
                             std::vector<const TVectorImage *> &images);
   void addTextToToonzImage(const TToonzImageP &currentImage);
@@ -763,8 +773,20 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
   QComboBox *m_formatCombo;
   QCheckBox *m_preserveLineBreaks;
   QPushButton *m_saveEntryButton;
+  QDoubleSpinBox *m_horizontalOffset;
+  QDoubleSpinBox *m_verticalOffset;
+  QPushButton *m_stampButton;
   QTimer *m_saveTimer;
   std::function<void(const QString &)> m_textChanged;
+
+  void savePlacement() const {
+    QSettings settings(typeToolSettingsPath(), QSettings::IniFormat);
+    settings.beginGroup("Placement");
+    settings.setValue("HorizontalOffsetPx", m_horizontalOffset->value());
+    settings.setValue("VerticalOffsetPx", m_verticalOffset->value());
+    settings.endGroup();
+    settings.sync();
+  }
 
   TypeToolTextEntry editorEntry() const {
     TypeToolTextEntry entry;
@@ -829,6 +851,7 @@ class TypeToolTextHistoryPopup final : public DVGui::Dialog {
     QSignalBlocker lineBreakBlocker(m_preserveLineBreaks);
     m_editor->setPlainText(resolvedEntry.source);
     m_saveEntryButton->setEnabled(!resolvedEntry.source.isEmpty());
+    m_stampButton->setEnabled(!resolvedEntry.source.trimmed().isEmpty());
     m_formatCombo->setCurrentIndex(
         resolvedEntry.format == TypeToolTextFormat::Markdown ? 1 : 0);
     m_preserveLineBreaks->setChecked(resolvedEntry.preserveSourceLineBreaks);
@@ -1049,6 +1072,9 @@ public:
       , m_preserveLineBreaks(
             new QCheckBox(tr("Preserve source line breaks for Markdown"), this))
       , m_saveEntryButton(new QPushButton(tr("Save to History"), this))
+      , m_horizontalOffset(new QDoubleSpinBox(this))
+      , m_verticalOffset(new QDoubleSpinBox(this))
+      , m_stampButton(new QPushButton(tr("Stamp"), this))
       , m_saveTimer(new QTimer(this))
       , m_textChanged(std::move(textChanged)) {
     setWindowTitle(tr("Type Tool Text History"));
@@ -1064,6 +1090,25 @@ public:
         new QIntValidator(1, 1000, m_fontSizeCombo));
     m_formatCombo->addItem(tr("Plain Text"));
     m_formatCombo->addItem(tr("Markdown"));
+
+    for (QDoubleSpinBox *offset : {m_horizontalOffset, m_verticalOffset}) {
+      offset->setDecimals(2);
+      offset->setRange(-100000.0, 100000.0);
+      offset->setSingleStep(1.0);
+      offset->setSuffix(tr(" px"));
+    }
+    {
+      QSettings settings(typeToolSettingsPath(), QSettings::IniFormat);
+      settings.beginGroup("Placement");
+      m_horizontalOffset->setValue(
+          settings.value("HorizontalOffsetPx", 0.0).toDouble());
+      m_verticalOffset->setValue(
+          settings.value("VerticalOffsetPx", 0.0).toDouble());
+      settings.endGroup();
+    }
+    m_stampButton->setToolTip(
+        tr("Stamp text at the specified position. Hold Shift while clicking "
+           "to replace the last Stamp on this drawing."));
     QScrollArea *previewArea = new QScrollArea(this);
     previewArea->setWidget(m_preview);
     previewArea->setWidgetResizable(false);
@@ -1096,6 +1141,22 @@ public:
                    this);
     markdownNote->setWordWrap(true);
     layout->addWidget(markdownNote);
+
+    QGroupBox *placementGroup    = new QGroupBox(tr("Precise Placement"), this);
+    QHBoxLayout *placementLayout = new QHBoxLayout;
+    placementLayout->addWidget(new QLabel(tr("Horizontal:"), this));
+    placementLayout->addWidget(m_horizontalOffset);
+    placementLayout->addWidget(new QLabel(tr("Vertical:"), this));
+    placementLayout->addWidget(m_verticalOffset);
+    placementLayout->addWidget(m_stampButton);
+    QVBoxLayout *placementGroupLayout = new QVBoxLayout;
+    placementGroupLayout->addLayout(placementLayout);
+    QLabel *placementNote = new QLabel(tr("Origin: top-left."), this);
+    placementNote->setWordWrap(true);
+    placementGroupLayout->addWidget(placementNote);
+    placementGroup->setLayout(placementGroupLayout);
+    layout->addWidget(placementGroup);
+
     layout->addWidget(
         new QLabel(tr("Recent Text (last %1)").arg(cTextHistoryLimit), this));
     layout->addWidget(m_historyList, 1);
@@ -1132,7 +1193,25 @@ public:
             [this]() { m_history.saveDraft(); });
     connect(m_editor, &QPlainTextEdit::textChanged, this, [this]() {
       m_saveEntryButton->setEnabled(!m_editor->toPlainText().isEmpty());
+      m_stampButton->setEnabled(!m_editor->toPlainText().trimmed().isEmpty());
       scheduleDraftSave();
+    });
+    connect(m_horizontalOffset,
+            static_cast<void (QDoubleSpinBox::*)(double)>(
+                &QDoubleSpinBox::valueChanged),
+            this, [this](double) { savePlacement(); });
+    connect(m_verticalOffset,
+            static_cast<void (QDoubleSpinBox::*)(double)>(
+                &QDoubleSpinBox::valueChanged),
+            this, [this](double) { savePlacement(); });
+    connect(m_stampButton, &QPushButton::clicked, this, [this]() {
+      m_saveTimer->stop();
+      m_history.setDraft(editorEntry());
+      m_history.saveDraft();
+      m_tool->applyFontSettings(m_history.draft().font);
+      m_tool->stampText(
+          m_horizontalOffset->value(), m_verticalOffset->value(),
+          bool(QApplication::keyboardModifiers() & Qt::ShiftModifier));
     });
     connect(
         m_formatCombo,
@@ -1200,6 +1279,7 @@ public:
     QSignalBlocker blocker(m_editor);
     m_editor->setPlainText(normalized);
     m_saveEntryButton->setEnabled(!normalized.isEmpty());
+    m_stampButton->setEnabled(!normalized.trimmed().isEmpty());
     m_history.setDraftSource(normalized);
     refreshTextPreview();
     m_saveTimer->start();
@@ -2275,6 +2355,138 @@ void TypeTool::addTextToImage() {
   m_string.clear();
   m_cursorIndex = 0;
   m_textBox     = TRectD();
+}
+
+//---------------------------------------------------------
+
+bool TypeTool::stampText(double horizontalPx, double verticalPx,
+                         bool replacePrevious) {
+  const QString source = m_textHistory.draft().source;
+  if (!m_textHistoryEnabled.getValue() || !m_validFonts ||
+      source.trimmed().isEmpty())
+    return false;
+
+  TUndoManager *undoManager = TUndoManager::manager();
+  TXshSimpleLevel *currentLevel =
+      getApplication()->getCurrentLevel()->getSimpleLevel();
+  const TFrameId currentFid = getCurrentFid();
+
+  // Never undo an unrelated operation (or a stamp on another drawing).
+  const auto mayReplace = [&]() {
+    const int index = undoManager->getCurrentHistoryIndex();
+    return m_lastStampUndo && currentLevel == m_lastStampLevel &&
+           currentFid == m_lastStampFid && index == m_lastStampHistoryIndex &&
+           undoManager->getUndoItem(index) == m_lastStampUndo;
+  };
+
+  if (replacePrevious && !mayReplace()) {
+    QMessageBox::information(
+        QApplication::activeWindow(), tr("Type Tool"),
+        tr("Shift+Stamp can only replace the last Stamp on the current "
+           "drawing, provided no other edits have been made since."));
+    return false;
+  }
+
+  // Discard an uncommitted canvas preview. The dialog draft is authoritative.
+  if (m_active) {
+    resetInputMethod();
+    stopEditing();
+  }
+
+  if (replacePrevious && !mayReplace()) {
+    QMessageBox::information(
+        QApplication::activeWindow(), tr("Type Tool"),
+        tr("The last Stamp is no longer the latest undoable change."));
+    return false;
+  }
+
+  bool previousUndone = false;
+  if (replacePrevious) {
+    if (!undoManager->undo()) return false;
+    previousUndone = true;
+  }
+
+  if (!touchImage()) {
+    if (previousUndone) undoManager->redo();
+    QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"),
+                         tr("Select an editable vector or Toonz Raster "
+                            "drawing before stamping."));
+    return false;
+  }
+
+  const TImageP image             = getImage(false);
+  const TVectorImageP vectorImage = image;
+  const TToonzImageP toonzImage   = image;
+  TPointD canvasTopLeft;
+  double pixelStepX = 1.0;
+  double pixelStepY = 1.0;
+  if (toonzImage) {
+    const TDimension size = toonzImage->getSize();
+    canvasTopLeft         = TPointD(-0.5 * size.lx, 0.5 * size.ly);
+  } else if (vectorImage) {
+    ToonzScene *scene     = getApplication()->getCurrentScene()->getScene();
+    const TCamera *camera = scene ? scene->getCurrentCamera() : nullptr;
+    if (!camera || camera->getRes().lx <= 0 || camera->getRes().ly <= 0) {
+      if (previousUndone) undoManager->redo();
+      QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"),
+                           tr("The current camera has no valid resolution."));
+      return false;
+    }
+    const TRectD cameraRect = camera->getStageRect();
+    canvasTopLeft           = TPointD(cameraRect.x0, cameraRect.y1);
+    pixelStepX              = cameraRect.getLx() / camera->getRes().lx;
+    pixelStepY              = cameraRect.getLy() / camera->getRes().ly;
+  } else {
+    if (previousUndone) undoManager->redo();
+    QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"),
+                         tr("The Type Tool supports stamping only on vector "
+                            "and Toonz Raster drawings."));
+    return false;
+  }
+
+  setSize(m_size.getValue());
+  m_string.clear();
+  m_cursorIndex = 0;
+  m_startPoint  = TPointD();
+  m_active      = true;
+  setTextFromHistory(source);
+  updateTextBox();
+
+  if (isFormattedText() && !m_formattedError.isEmpty()) {
+    const QString error = m_formattedError;
+    stopEditing();
+    if (previousUndone) undoManager->redo();
+    QMessageBox::warning(QApplication::activeWindow(), tr("Type Tool"), error);
+    return false;
+  }
+
+  // Align the actual text bounds rather than the Type Tool's baseline.
+  // m_textBox has viewer-dependent padding which must not alter placement.
+  const double border = cBorderSize * m_pixelSize;
+  const TPointD textTopLeft(m_textBox.x0 + border, m_textBox.y1 - border);
+  TPointD requestedTopLeft = canvasTopLeft;
+  requestedTopLeft.x += horizontalPx * pixelStepX;
+  requestedTopLeft.y -= verticalPx * pixelStepY;
+  m_startPoint = requestedTopLeft - textTopLeft;
+  updateCharPositions();
+
+  const int oldHistoryIndex = undoManager->getCurrentHistoryIndex();
+  addTextToImage();
+  const int newHistoryIndex = undoManager->getCurrentHistoryIndex();
+  if (newHistoryIndex <= oldHistoryIndex) {
+    stopEditing();
+    if (previousUndone) undoManager->redo();
+    QMessageBox::information(QApplication::activeWindow(), tr("Type Tool"),
+                             tr("No drawable text was stamped."));
+    return false;
+  }
+
+  m_lastStampUndo         = undoManager->getUndoItem(newHistoryIndex);
+  m_lastStampHistoryIndex = newHistoryIndex;
+
+  m_lastStampLevel = getApplication()->getCurrentLevel()->getSimpleLevel();
+  m_lastStampFid   = getCurrentFid();
+  return true;
 }
 
 //---------------------------------------------------------
