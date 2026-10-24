@@ -562,27 +562,23 @@ void XsheetViewer::setCurrentColumn(int col) {
     TObjectHandle *objectHandle = TApp::instance()->getCurrentObject();
     if (col >= 0 && objectHandle->isSpline()) objectHandle->setIsSpline(false);
     updateCellColumnAree();
+    TFx *fx = nullptr;
     if (col >= 0) {
       objectHandle->setObjectId(TStageObjectId::ColumnId(col));
       TXsheet *xsh       = getXsheet();
       TXshColumn *column = xsh->getColumn(col);
-      if (!column) return;
-      // switching the current fx
-      TFx *fx                 = nullptr;
-      bool doSwitchFxSettings = false;
-      if (TXshLevelColumn *lc = column->getLevelColumn())
-        fx = lc->getLevelColumnFx();
-      else if (TXshPaletteColumn *pc =
-                   dynamic_cast<TXshPaletteColumn *>(column))
-        fx = pc->getPaletteColumnFx();
-      else if (TXshZeraryFxColumn *zc =
-                   dynamic_cast<TXshZeraryFxColumn *>(column)) {
-        fx                 = zc->getZeraryColumnFx();
-        doSwitchFxSettings = true;
+      if (column) {
+        if (TXshLevelColumn *lc = column->getLevelColumn())
+          fx = lc->getLevelColumnFx();
+        else if (TXshPaletteColumn *pc =
+                     dynamic_cast<TXshPaletteColumn *>(column))
+          fx = pc->getPaletteColumnFx();
+        else if (TXshZeraryFxColumn *zc =
+                     dynamic_cast<TXshZeraryFxColumn *>(column))
+          fx = zc->getZeraryColumnFx();
       }
-      if (!fx) return;
-      TApp::instance()->getCurrentFx()->setFx(fx, doSwitchFxSettings);
     }
+    TApp::instance()->getCurrentFx()->setFx(fx);
     return;
   }
 }

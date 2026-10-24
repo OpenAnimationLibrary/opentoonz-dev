@@ -243,6 +243,7 @@ class DVAPI ParamViewer final : public QFrame {
   TFxP m_actualFx;
 
   QStackedWidget *m_tablePageSet;
+  QLabel *m_emptyPage;
   QMap<std::string, int> m_tableFxIndex;
 
 public:
@@ -268,6 +269,7 @@ public:
   void updateWarnings(const TFxP &currentFx, bool isFloat);
 
 protected:
+  void showEmptyPage(const QString &text, const TFxP &actualFx);
   ParamsPageSet *getCurrentPageSet() const;
 
 signals:

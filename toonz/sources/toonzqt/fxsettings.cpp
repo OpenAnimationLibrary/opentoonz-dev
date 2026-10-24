@@ -1402,7 +1402,11 @@ void ParamsPageSet::updateWarnings(const TFxP &currentFx, bool isFloat) {
 ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
     : QFrame(parent, flags), m_fx(0) {
   m_tablePageSet = new QStackedWidget(this);
-  m_tablePageSet->addWidget(new QWidget());
+  m_emptyPage    = new QLabel(tr("Select an FX node or image column."), this);
+  m_emptyPage->setAlignment(Qt::AlignCenter);
+  m_emptyPage->setWordWrap(true);
+  m_emptyPage->setMargin(12);
+  m_tablePageSet->addWidget(m_emptyPage);
 
   /*-- SwatchViewerを表示/非表示するボタン --*/
   QPushButton *showSwatchButton = new QPushButton("", this);
@@ -1447,7 +1451,7 @@ ParamViewer::~ParamViewer() {}
 void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
                         ToonzScene *scene) {
   if (!actualFx) {
-    m_tablePageSet->setCurrentIndex(0);
+    showEmptyPage(tr("Select an FX node or image column."), actualFx);
     return;
   }
   std::string name = actualFx->getFxType();
@@ -1474,6 +1478,17 @@ void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
 
   assert(currentIndex >= 0);
 
+  ParamsPageSet *pageSet =
+      static_cast<ParamsPageSet *>(m_tablePageSet->widget(currentIndex));
+  if (pageSet->getParamsPageCount() == 0) {
+    showEmptyPage(dynamic_cast<TLevelColumnFx *>(actualFx.getPointer())
+                      ? tr("This column has no editable FX parameters. "
+                           "Expand Swatch Viewer to preview it.")
+                      : tr("No parameter controls are available for this FX."),
+                  actualFx);
+    return;
+  }
+
   m_tablePageSet->setCurrentIndex(currentIndex);
 
   getCurrentPageSet()->setScene(scene);
@@ -1487,6 +1502,17 @@ void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
       emit preferredSizeChanged(pageViewerPreferredSize);
     }
   }
+}
+
+//-----------------------------------------------------------------------------
+
+void ParamViewer::showEmptyPage(const QString &text, const TFxP &actualFx) {
+  bool changed = m_tablePageSet->currentIndex() != 0 || m_actualFx != actualFx;
+  m_emptyPage->setText(text);
+  m_tablePageSet->setCurrentIndex(0);
+  m_fx       = TFxP();
+  m_actualFx = actualFx;
+  if (changed) emit preferredSizeChanged(QSize(390, 100));
 }
 
 //-----------------------------------------------------------------------------
@@ -1518,6 +1544,7 @@ void ParamViewer::update(int frame, bool onlyParam) {
 void ParamViewer::setPointValue(int index, const TPointD &p) {
   // Search the index-th param among all pages
   ParamsPageSet *pageSet = getCurrentPageSet();
+  if (!pageSet) return;
   ParamsPage *page       = 0;
 
   for (int i = 0; i < pageSet->getParamsPageCount(); ++i) {
@@ -1991,20 +2018,20 @@ void FxSettings::onViewModeChanged(QAction *triggeredAct) {
   QAction *previewAct      = actions[1];
   if (name == previewAct->text()) {
     if (cameraAct->isChecked()) cameraAct->setChecked(false);
+    m_viewer->setEnable(actIsChecked);
     if (actIsChecked) {
       m_isCameraModeView = false;
       m_paramViewer->setIsCameraViewMode(false);
       setCurrentFx();
     }
-    m_viewer->setEnable(actIsChecked);
   } else if (name == cameraAct->text()) {
     if (previewAct->isChecked()) previewAct->setChecked(false);
+    m_viewer->setEnable(actIsChecked);
     if (actIsChecked) {
       m_isCameraModeView = true;
       m_paramViewer->setIsCameraViewMode(true);
       setCurrentFx();
     }
-    m_viewer->setEnable(actIsChecked);
   }
 }
 
