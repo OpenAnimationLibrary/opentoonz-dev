@@ -711,8 +711,10 @@ void PreferencesPopup::onUseNumpadForSwitchingStylesClicked() {
           tr("Numpad keys are assigned to the following commands.\nIs it OK to "
              "release these shortcuts?");
       for (int a = 0; a < actionsList.size(); a++) {
-        msgStr += "\n" + actionsList.at(a)->iconText() + "  (" +
-                  actionsList.at(a)->shortcut().toString() + ")";
+        msgStr +=
+            "\n" + actionsList.at(a)->iconText() + "  (" +
+            actionsList.at(a)->shortcut().toString(QKeySequence::NativeText) +
+            ")";
       }
       int ret = DVGui::MsgBox(msgStr, tr("OK"), tr("Cancel"), 1);
       if (ret == 2 || ret == 0) {  // canceled
