@@ -243,11 +243,16 @@ class DVAPI ParamViewer final : public QFrame {
   TFxP m_actualFx;
 
   QStackedWidget *m_tablePageSet;
+  QLabel *m_emptyPage;
+  QPushButton *m_showSwatchButton;
   QMap<std::string, int> m_tableFxIndex;
 
 public:
   ParamViewer(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
   ~ParamViewer();
+
+  TFx *getActualFx() const { return m_actualFx.getPointer(); }
+  void showSwatchViewer();
 
   void setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
              ToonzScene *scene);
@@ -268,6 +273,7 @@ public:
   void updateWarnings(const TFxP &currentFx, bool isFloat);
 
 protected:
+  void showEmptyPage(const QString &text, const TFxP &actualFx);
   ParamsPageSet *getCurrentPageSet() const;
 
 signals:
@@ -346,6 +352,7 @@ protected:
   void setCheckboardColors(const TPixel32 &col1, const TPixel32 &col2);
 
   void changeTitleBar(TFx *fx);
+  void showSwatchViewer();
 
 protected slots:
   void updateViewer();

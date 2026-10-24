@@ -24,6 +24,9 @@
 #include "toonz/tscenehandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/tobjecthandle.h"
+#include "toonz/txsheethandle.h"
+#include "toonz/txsheet.h"
+#include "toonz/txshcolumn.h"
 #include "toonz/scenefx.h"
 #include "toonz/toonzscene.h"
 #include "toonz/sceneproperties.h"
@@ -1402,19 +1405,23 @@ void ParamsPageSet::updateWarnings(const TFxP &currentFx, bool isFloat) {
 ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
     : QFrame(parent, flags), m_fx(0) {
   m_tablePageSet = new QStackedWidget(this);
-  m_tablePageSet->addWidget(new QWidget());
+  m_emptyPage    = new QLabel(tr("Select an FX node or image column."), this);
+  m_emptyPage->setAlignment(Qt::AlignCenter);
+  m_emptyPage->setWordWrap(true);
+  m_emptyPage->setMargin(12);
+  m_tablePageSet->addWidget(m_emptyPage);
 
   /*-- SwatchViewerを表示/非表示するボタン --*/
-  QPushButton *showSwatchButton = new QPushButton("", this);
+  m_showSwatchButton            = new QPushButton("", this);
   QLabel *swatchLabel           = new QLabel(tr("Swatch Viewer"), this);
 
   swatchLabel->setObjectName("TitleTxtLabel");
-  showSwatchButton->setObjectName("menuToggleButton");
-  showSwatchButton->setFixedSize(15, 15);
-  showSwatchButton->setIcon(createQIcon("menu_toggle"));
-  showSwatchButton->setCheckable(true);
-  showSwatchButton->setChecked(false);
-  showSwatchButton->setFocusPolicy(Qt::NoFocus);
+  m_showSwatchButton->setObjectName("menuToggleButton");
+  m_showSwatchButton->setFixedSize(15, 15);
+  m_showSwatchButton->setIcon(createQIcon("menu_toggle"));
+  m_showSwatchButton->setCheckable(true);
+  m_showSwatchButton->setChecked(false);
+  m_showSwatchButton->setFocusPolicy(Qt::NoFocus);
 
   QVBoxLayout *mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -1426,7 +1433,7 @@ ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
     showPreviewButtonLayout->setContentsMargins(3, 3, 3, 3);
     showPreviewButtonLayout->setSpacing(3);
     {
-      showPreviewButtonLayout->addWidget(showSwatchButton, 0);
+      showPreviewButtonLayout->addWidget(m_showSwatchButton, 0);
       showPreviewButtonLayout->addWidget(swatchLabel, 0);
       showPreviewButtonLayout->addStretch(1);
     }
@@ -1434,7 +1441,7 @@ ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
   }
   setLayout(mainLayout);
 
-  connect(showSwatchButton, SIGNAL(toggled(bool)), this,
+  connect(m_showSwatchButton, SIGNAL(toggled(bool)), this,
           SIGNAL(showSwatchButtonToggled(bool)));
 }
 
@@ -1444,10 +1451,14 @@ ParamViewer::~ParamViewer() {}
 
 //-----------------------------------------------------------------------------
 
+void ParamViewer::showSwatchViewer() { m_showSwatchButton->setChecked(true); }
+
+//-----------------------------------------------------------------------------
+
 void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
                         ToonzScene *scene) {
   if (!actualFx) {
-    m_tablePageSet->setCurrentIndex(0);
+    showEmptyPage(tr("Select an FX node or image column."), actualFx);
     return;
   }
   std::string name = actualFx->getFxType();
@@ -1474,6 +1485,17 @@ void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
 
   assert(currentIndex >= 0);
 
+  ParamsPageSet *pageSet =
+      static_cast<ParamsPageSet *>(m_tablePageSet->widget(currentIndex));
+  if (pageSet->getParamsPageCount() == 0) {
+    showEmptyPage(dynamic_cast<TLevelColumnFx *>(actualFx.getPointer())
+                      ? tr("This column has no editable FX parameters. "
+                           "Use Swatch Viewer to preview it.")
+                      : tr("No parameter controls are available for this FX."),
+                  actualFx);
+    return;
+  }
+
   m_tablePageSet->setCurrentIndex(currentIndex);
 
   getCurrentPageSet()->setScene(scene);
@@ -1487,6 +1509,17 @@ void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
       emit preferredSizeChanged(pageViewerPreferredSize);
     }
   }
+}
+
+//-----------------------------------------------------------------------------
+
+void ParamViewer::showEmptyPage(const QString &text, const TFxP &actualFx) {
+  bool changed = m_tablePageSet->currentIndex() != 0 || m_actualFx != actualFx;
+  m_emptyPage->setText(text);
+  m_tablePageSet->setCurrentIndex(0);
+  m_fx       = TFxP();
+  m_actualFx = actualFx;
+  if (changed) emit preferredSizeChanged(QSize(390, 100));
 }
 
 //-----------------------------------------------------------------------------
@@ -1518,6 +1551,7 @@ void ParamViewer::update(int frame, bool onlyParam) {
 void ParamViewer::setPointValue(int index, const TPointD &p) {
   // Search the index-th param among all pages
   ParamsPageSet *pageSet = getCurrentPageSet();
+  if (!pageSet) return;
   ParamsPage *page       = 0;
 
   for (int i = 0; i < pageSet->getParamsPageCount(); ++i) {
@@ -1808,10 +1842,16 @@ void FxSettings::changeTitleBar(TFx *fx) {
   DockWidget *popup = dynamic_cast<DockWidget *>(parentWidget());
   if (!popup) return;
 
-  QString titleText(tr("Fx Settings"));
+  QString titleText(tr("Settings"));
   if (fx) {
+    std::wstring name = fx->getName();
+    if (TColumnFx *columnFx = dynamic_cast<TColumnFx *>(fx)) {
+      name = columnFx->getColumnName();
+      if (name.empty()) name = columnFx->getColumnId();
+    }
+    if (name.empty()) name = fx->getFxId();
     titleText += tr(" : ");
-    titleText += QString::fromStdWString(fx->getName());
+    titleText += QString::fromStdWString(name);
   }
 
   popup->setWindowTitle(titleText);
@@ -1821,6 +1861,8 @@ void FxSettings::changeTitleBar(TFx *fx) {
 
 void FxSettings::setCurrentFx() {
   TFx *currFx = m_fxHandle->getFx();
+  const bool openSwatch = dynamic_cast<TLevelColumnFx *>(currFx) &&
+                          m_paramViewer->getActualFx() != currFx;
 
   TFxP actualFx, currentFx;
   if (!currFx || 0 != dynamic_cast<TXsheetFx *>(currFx)) {
@@ -1861,7 +1903,10 @@ void FxSettings::setCurrentFx() {
 
   actualFx->getAttributes()->enable(isEnabled);
   setFx(currentFx, actualFx);
-  changeTitleBar(currentFx.getPointer());
+  changeTitleBar(actualFx.getPointer());
+
+  // Bind the target before activating preview so its render graph is retained.
+  if (openSwatch && isVisible()) showSwatchViewer();
 }
 
 //-----------------------------------------------------------------------------
@@ -1882,6 +1927,16 @@ void FxSettings::notifySceneChanged() {
 //-----------------------------------------------------------------------------
 
 void FxSettings::showEvent(QShowEvent *event) {
+  // Opening the panel does not necessarily switch the current column or FX.
+  if (!m_fxHandle->getFx() && m_xsheetHandle && m_objectHandle &&
+      !m_objectHandle->isSpline()) {
+    const TStageObjectId id = m_objectHandle->getObjectId();
+    TXsheet *xsheet         = m_xsheetHandle->getXsheet();
+    TXshColumn *column =
+        id.isColumn() && xsheet ? xsheet->getColumn(id.getIndex()) : nullptr;
+    if (column && column->getLevelColumn())
+      m_fxHandle->setFx(column->getFx(), false);
+  }
   setCurrentFx();
   setCurrentFrame();
   connect(m_frameHandle, SIGNAL(frameSwitched()), SLOT(setCurrentFrame()));
@@ -1904,6 +1959,8 @@ void FxSettings::showEvent(QShowEvent *event) {
     connect(m_levelHandle, SIGNAL(xshLevelChanged()), SLOT(setCurrentFx()));
   if (m_objectHandle)
     connect(m_objectHandle, SIGNAL(objectChanged(bool)), SLOT(setCurrentFx()));
+
+  if (dynamic_cast<TLevelColumnFx *>(m_fxHandle->getFx())) showSwatchViewer();
 }
 
 //-----------------------------------------------------------------------------
@@ -1991,20 +2048,20 @@ void FxSettings::onViewModeChanged(QAction *triggeredAct) {
   QAction *previewAct      = actions[1];
   if (name == previewAct->text()) {
     if (cameraAct->isChecked()) cameraAct->setChecked(false);
+    m_viewer->setEnable(actIsChecked);
     if (actIsChecked) {
       m_isCameraModeView = false;
       m_paramViewer->setIsCameraViewMode(false);
       setCurrentFx();
     }
-    m_viewer->setEnable(actIsChecked);
   } else if (name == cameraAct->text()) {
     if (previewAct->isChecked()) previewAct->setChecked(false);
+    m_viewer->setEnable(actIsChecked);
     if (actIsChecked) {
       m_isCameraModeView = true;
       m_paramViewer->setIsCameraViewMode(true);
       setCurrentFx();
     }
-    m_viewer->setEnable(actIsChecked);
   }
 }
 
@@ -2034,6 +2091,14 @@ void FxSettings::onPreferredSizeChanged(QSize pvBestSize) {
   geom.setSize(popupBestSize);
   popup->setGeometry(geom);
   popup->update();
+}
+
+//-----------------------------------------------------------------------------
+
+void FxSettings::showSwatchViewer() {
+  m_paramViewer->showSwatchViewer();
+  if (widget(1)->isHidden()) onShowSwatchButtonToggled(true);
+  if (!m_viewer->isEnabled()) m_toolBar->actions()[1]->trigger();
 }
 
 //-----------------------------------------------------------------------------
