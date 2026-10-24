@@ -292,7 +292,7 @@ protected:
   void addFlag(PredefinedFlag which, const bool &flag);
 };
 
-// Enumerates all orientations available in the system as global const objects.
+// Enumerates the shared timeline orientations.
 class DVAPI Orientations {
   const Orientation *_topToBottom, *_leftToRight;
   std::vector<const Orientation *> _all;
@@ -308,6 +308,8 @@ public:
 
   static const Orientation *topToBottom();
   static const Orientation *leftToRight();
+  static QString xsheetLayout();
+  static const Orientation *withColumnWidth(int width);
 
   static const std::vector<const Orientation *> &all();
 

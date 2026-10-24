@@ -179,6 +179,7 @@ void TXshSoundLevel::computeValuesFor(const Orientation *o) {
 
   // Adjusting using a fixed scaleFactor
   int desiredAmplitude = o->dimension(PredefinedDimension::SOUND_AMPLITUDE);
+  m_valueAmplitude[index] = desiredAmplitude;
   // results will be in range -desiredAmplitude .. +desiredAmplitude
   double weightA = desiredAmplitude / absMaxPressure;
 
@@ -222,7 +223,11 @@ void TXshSoundLevel::getValueAtPixel(const Orientation *o, int pixel,
                                      DoublePair &values) const {
   int index = o->dimension(PredefinedDimension::INDEX);
   std::map<int, DoublePair>::const_iterator it = m_values[index].find(pixel);
-  if (it != m_values[index].end()) values = it->second;
+  if (it != m_values[index].end()) {
+    double scale = double(o->dimension(PredefinedDimension::SOUND_AMPLITUDE)) /
+                   m_valueAmplitude[index];
+    values = DoublePair(it->second.first * scale, it->second.second * scale);
+  }
 }
 
 //-----------------------------------------------------------------------------

@@ -28,6 +28,7 @@ TXshColumn *TXshPaletteColumn::clone() const {
   column->m_first = m_first;
 
   // column->updateIcon();
+  column->setXsheetColumnWidth(getXsheetColumnWidth());
   return column;
 }
 
