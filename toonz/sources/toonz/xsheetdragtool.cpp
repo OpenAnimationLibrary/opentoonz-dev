@@ -660,16 +660,19 @@ class LevelExtenderTool final : public XsheetGUI::DragTool {
   bool m_insert;
 
   bool m_refreshSound;
+  bool m_blankHolds;  // extended holds become blank drawings on release
 
 public:
   LevelExtenderTool(XsheetViewer *viewer, bool insert = true,
-                    bool invert = false, bool refreshSound = false)
+                    bool invert = false, bool refreshSound = false,
+                    bool blankHolds = false)
       : XsheetGUI::DragTool(viewer)
       , m_colCount(0)
       , m_undo(0)
       , m_insert(insert)
       , m_invert(invert)
-      , m_refreshSound(refreshSound) {}
+      , m_refreshSound(refreshSound)
+      , m_blankHolds(blankHolds && !invert) {}
 
   // called when the smart tab is clicked
   void onClick(const CellPosition &pos) override {
@@ -856,11 +859,20 @@ public:
     if (delta == 0)
       delete m_undo;
     else {
+      bool blankHolds = m_blankHolds && delta > 0;
+      if (blankHolds) TUndoManager::manager()->beginBlock();
       if (delta > 0)
         m_undo->setCells(getViewer()->getXsheet(), m_r0, m_c0, m_r1 - m_r0 + 1,
                          m_colCount);
       m_undo->setDeltaRow(delta);
       TUndoManager::manager()->add(m_undo);
+      if (blankHolds) {
+        std::vector<int> cols;
+        for (int c = 0; c < m_colCount; c++) cols.push_back(m_c0 + c);
+        TCellSelection::createBlankDrawingsOnHolds(cols, m_r1 - delta + 1,
+                                                   m_r1);
+        TUndoManager::manager()->endBlock();
+      }
       TApp::instance()->getCurrentScene()->setDirtyFlag(true);
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
       if (m_refreshSound)
@@ -873,8 +885,8 @@ public:
 //-----------------------------------------------------------------------------
 
 XsheetGUI::DragTool *XsheetGUI::DragTool::makeLevelExtenderTool(
-    XsheetViewer *viewer, bool insert, bool invert) {
-  return new LevelExtenderTool(viewer, insert, invert);
+    XsheetViewer *viewer, bool insert, bool invert, bool blankHolds) {
+  return new LevelExtenderTool(viewer, insert, invert, false, blankHolds);
 }
 
 //=============================================================================
