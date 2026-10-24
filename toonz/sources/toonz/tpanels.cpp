@@ -1662,7 +1662,7 @@ public:
     FxSettingsPanel *panel = new FxSettingsPanel(parent);
     panel->move(qApp->desktop()->screenGeometry(panel).center());
     panel->setObjectName(getPanelType());
-    panel->setWindowTitle(QObject::tr("Fx Settings"));
+    panel->setWindowTitle(QObject::tr("Settings"));
     panel->setMinimumSize(390, 85);
     panel->allowMultipleInstances(false);
     return panel;
@@ -1674,7 +1674,7 @@ public:
 
 //=============================================================================
 OpenFloatingPanel openFxSettingsCommand(MI_FxParamEditor, "FxSettings",
-                                        QObject::tr("Fx Settings"));
+                                        QObject::tr("Settings"));
 
 //=========================================================
 // VectorGuidedDrawingPanel

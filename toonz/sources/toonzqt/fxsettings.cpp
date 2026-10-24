@@ -1839,7 +1839,7 @@ void FxSettings::changeTitleBar(TFx *fx) {
   DockWidget *popup = dynamic_cast<DockWidget *>(parentWidget());
   if (!popup) return;
 
-  QString titleText(tr("Fx Settings"));
+  QString titleText(tr("Settings"));
   if (fx) {
     std::wstring name = fx->getName();
     if (TColumnFx *columnFx = dynamic_cast<TColumnFx *>(fx)) {
