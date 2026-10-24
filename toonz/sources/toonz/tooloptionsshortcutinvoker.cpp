@@ -362,6 +362,20 @@ void BoolWorker::doCheck(bool checked) {
   // Ignore if it is not the current tool
   if (TApp::instance()->getCurrentTool()->getTool() != m_tool) return;
 
+  if (m_tool->getName() == T_PaintBrush) {
+    const std::string id = m_property->getId();
+    if (id == "Selective" || id == "EmptyOnly" || id == "LockAlpha" ||
+        id == "FillingMode") {
+      TEnumProperty* mode = dynamic_cast<TEnumProperty*>(
+          m_tool->getProperties(0)->getProperty("Mode:"));
+      if (mode && mode->getValue() == L"Lines") {
+        // QAction toggles before this slot runs. Restore the property's state.
+        syncActionState();
+        return;
+      }
+    }
+  }
+
   if (m_property->getValue() == checked) return;
 
   m_property->setValue(checked);
