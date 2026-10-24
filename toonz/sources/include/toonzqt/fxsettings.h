@@ -244,11 +244,15 @@ class DVAPI ParamViewer final : public QFrame {
 
   QStackedWidget *m_tablePageSet;
   QLabel *m_emptyPage;
+  QPushButton *m_showSwatchButton;
   QMap<std::string, int> m_tableFxIndex;
 
 public:
   ParamViewer(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
   ~ParamViewer();
+
+  TFx *getActualFx() const { return m_actualFx.getPointer(); }
+  void showSwatchViewer();
 
   void setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
              ToonzScene *scene);

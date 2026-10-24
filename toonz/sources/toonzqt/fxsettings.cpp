@@ -1409,16 +1409,16 @@ ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
   m_tablePageSet->addWidget(m_emptyPage);
 
   /*-- SwatchViewerを表示/非表示するボタン --*/
-  QPushButton *showSwatchButton = new QPushButton("", this);
+  m_showSwatchButton            = new QPushButton("", this);
   QLabel *swatchLabel           = new QLabel(tr("Swatch Viewer"), this);
 
   swatchLabel->setObjectName("TitleTxtLabel");
-  showSwatchButton->setObjectName("menuToggleButton");
-  showSwatchButton->setFixedSize(15, 15);
-  showSwatchButton->setIcon(createQIcon("menu_toggle"));
-  showSwatchButton->setCheckable(true);
-  showSwatchButton->setChecked(false);
-  showSwatchButton->setFocusPolicy(Qt::NoFocus);
+  m_showSwatchButton->setObjectName("menuToggleButton");
+  m_showSwatchButton->setFixedSize(15, 15);
+  m_showSwatchButton->setIcon(createQIcon("menu_toggle"));
+  m_showSwatchButton->setCheckable(true);
+  m_showSwatchButton->setChecked(false);
+  m_showSwatchButton->setFocusPolicy(Qt::NoFocus);
 
   QVBoxLayout *mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -1430,7 +1430,7 @@ ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
     showPreviewButtonLayout->setContentsMargins(3, 3, 3, 3);
     showPreviewButtonLayout->setSpacing(3);
     {
-      showPreviewButtonLayout->addWidget(showSwatchButton, 0);
+      showPreviewButtonLayout->addWidget(m_showSwatchButton, 0);
       showPreviewButtonLayout->addWidget(swatchLabel, 0);
       showPreviewButtonLayout->addStretch(1);
     }
@@ -1438,13 +1438,17 @@ ParamViewer::ParamViewer(QWidget *parent, Qt::WindowFlags flags)
   }
   setLayout(mainLayout);
 
-  connect(showSwatchButton, SIGNAL(toggled(bool)), this,
+  connect(m_showSwatchButton, SIGNAL(toggled(bool)), this,
           SIGNAL(showSwatchButtonToggled(bool)));
 }
 
 //-----------------------------------------------------------------------------
 
 ParamViewer::~ParamViewer() {}
+
+//-----------------------------------------------------------------------------
+
+void ParamViewer::showSwatchViewer() { m_showSwatchButton->setChecked(true); }
 
 //-----------------------------------------------------------------------------
 
@@ -1483,7 +1487,7 @@ void ParamViewer::setFx(const TFxP &currentFx, const TFxP &actualFx, int frame,
   if (pageSet->getParamsPageCount() == 0) {
     showEmptyPage(dynamic_cast<TLevelColumnFx *>(actualFx.getPointer())
                       ? tr("This column has no editable FX parameters. "
-                           "Expand Swatch Viewer to preview it.")
+                           "Use Swatch Viewer to preview it.")
                       : tr("No parameter controls are available for this FX."),
                   actualFx);
     return;
@@ -1848,6 +1852,8 @@ void FxSettings::changeTitleBar(TFx *fx) {
 
 void FxSettings::setCurrentFx() {
   TFx *currFx = m_fxHandle->getFx();
+  const bool openSwatch = dynamic_cast<TLevelColumnFx *>(currFx) &&
+                          m_paramViewer->getActualFx() != currFx;
 
   TFxP actualFx, currentFx;
   if (!currFx || 0 != dynamic_cast<TXsheetFx *>(currFx)) {
@@ -1889,6 +1895,12 @@ void FxSettings::setCurrentFx() {
   actualFx->getAttributes()->enable(isEnabled);
   setFx(currentFx, actualFx);
   changeTitleBar(currentFx.getPointer());
+
+  // Bind the target before activating preview so its render graph is retained.
+  if (openSwatch) {
+    m_paramViewer->showSwatchViewer();
+    if (!m_viewer->isEnabled()) m_toolBar->actions()[1]->trigger();
+  }
 }
 
 //-----------------------------------------------------------------------------
