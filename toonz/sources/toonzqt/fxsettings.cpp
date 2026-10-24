@@ -1841,8 +1841,14 @@ void FxSettings::changeTitleBar(TFx *fx) {
 
   QString titleText(tr("Fx Settings"));
   if (fx) {
+    std::wstring name = fx->getName();
+    if (TColumnFx *columnFx = dynamic_cast<TColumnFx *>(fx)) {
+      name = columnFx->getColumnName();
+      if (name.empty()) name = columnFx->getColumnId();
+    }
+    if (name.empty()) name = fx->getFxId();
     titleText += tr(" : ");
-    titleText += QString::fromStdWString(fx->getName());
+    titleText += QString::fromStdWString(name);
   }
 
   popup->setWindowTitle(titleText);
@@ -1894,7 +1900,7 @@ void FxSettings::setCurrentFx() {
 
   actualFx->getAttributes()->enable(isEnabled);
   setFx(currentFx, actualFx);
-  changeTitleBar(currentFx.getPointer());
+  changeTitleBar(actualFx.getPointer());
 
   // Bind the target before activating preview so its render graph is retained.
   if (openSwatch) {
