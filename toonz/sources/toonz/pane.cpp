@@ -5,6 +5,8 @@
 // Tnz6 includes
 #include "tapp.h"
 #include "mainwindow.h"
+#include "menubarcommandids.h"
+#include "toonzqt/menubarcommand.h"
 #include "tenv.h"
 #include "saveloadqsettings.h"
 #include "custompanelmanager.h"
@@ -679,6 +681,8 @@ void TPanelTitleBarButtonForSafeArea::mousePressEvent(QMouseEvent *e) {
 
 void TPanelTitleBarButtonForSafeArea::contextMenuEvent(QContextMenuEvent *e) {
   QMenu menu(this);
+  menu.addAction(CommandManager::instance()->getAction(MI_CenterCutGuide));
+  menu.addSeparator();
 
   QList<QString> safeAreaNameList;
   getSafeAreaNameList(safeAreaNameList);
