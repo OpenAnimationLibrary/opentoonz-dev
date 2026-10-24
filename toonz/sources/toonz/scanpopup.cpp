@@ -83,7 +83,11 @@ bool defineScanner(const QString &scannerType) {
   bool ret = false;
   QApplication::setOverrideCursor(Qt::WaitCursor);
 
-  TScanner::m_isWia   = (scannerType == "WIA");
+#ifdef _WIN32
+  TScanner::m_isWia = (scannerType == "WIA");
+#else
+  TScanner::m_isWia = false;
+#endif
   TScanner::m_isTwain = (scannerType == "TWAIN");
 
   try {
@@ -101,10 +105,8 @@ indent も腐っておりつらいので後で直す */
       return false;
     }
     TScanner::instance()->selectDevice();
-    if (!TScanner::instance()->isDeviceSelected()) {
-      DVGui::warning(TScanner::m_isWia
-                         ? QObject::tr("No WIA scanner was selected")
-                         : QObject::tr("No scanner was selected"));
+    if (TScanner::m_isWia && !TScanner::instance()->isDeviceSelected()) {
+      DVGui::warning(QObject::tr("No WIA scanner was selected"));
       QApplication::restoreOverrideCursor();
       return false;
     }
@@ -1010,12 +1012,9 @@ static void doScan() {
 
     int rc = scanner->isDeviceAvailable();
     if (!rc) {
-      DVGui::warning(
-          TScanner::m_isWia
-              ? QObject::tr("WIA is not available.")
-              : (TScanner::m_isTwain
-                     ? QObject::tr("TWAIN is not available.")
-                     : QObject::tr("The scanner is not available.")));
+      DVGui::warning(TScanner::m_isWia
+                         ? QObject::tr("WIA is not available.")
+                         : QObject::tr("TWAIN is not available."));
       return;
     }
 
