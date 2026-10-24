@@ -1490,6 +1490,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   cellsMenu->addSeparator();
   addMenuItem(cellsMenu, MI_Autorenumber);
   addMenuItem(cellsMenu, MI_CreateBlankDrawing);
+  addMenuItem(cellsMenu, MI_CreateBlankHoldDrawings);
   addMenuItem(cellsMenu, MI_InsertBlankDrawing);
   addMenuItem(cellsMenu, MI_Duplicate);
   addMenuItem(cellsMenu, MI_MergeFrames);

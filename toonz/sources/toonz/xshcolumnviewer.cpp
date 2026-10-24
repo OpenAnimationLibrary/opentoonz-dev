@@ -3088,6 +3088,7 @@ void ColumnArea::contextMenuEvent(QContextMenuEvent *event) {
             cmdManager->getAction(MI_ReframeWithEmptyInbetweens));
       }
       menu.addMenu(reframeSubMenu);
+      menu.addAction(cmdManager->getAction(MI_CreateBlankHoldDrawings));
       menu.addAction(cmdManager->getAction(MI_AutoInputCellNumber));
     }
 

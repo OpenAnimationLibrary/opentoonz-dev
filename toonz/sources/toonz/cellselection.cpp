@@ -1571,6 +1571,8 @@ void TCellSelection::enableCommands() {
   enableCommand(this, MI_PasteCellContent, &TCellSelection::pasteCells);
   enableCommand(this, MI_CreateBlankDrawing,
                 &TCellSelection::createBlankDrawings);
+  enableCommand(this, MI_CreateBlankHoldDrawings,
+                &TCellSelection::createBlankHoldDrawings);
   enableCommand(this, MI_Duplicate, &TCellSelection::duplicateFrames);
   enableCommand(this, MI_PasteDuplicate, &TCellSelection::pasteDuplicateCells);
 }
@@ -1630,6 +1632,7 @@ bool TCellSelection::isEnabledCommand(
                                         MI_PasteCellContent,
                                         MI_ConvertVectorToVector,
                                         MI_CreateBlankDrawing,
+                                        MI_CreateBlankHoldDrawings,
                                         MI_FillEmptyCell};
   return commands.contains(commandId);
 }
@@ -2920,6 +2923,15 @@ void TCellSelection::createBlankDrawings() {
 
   TApp::instance()->getCurrentColumn()->setColumnIndex(col);
   TApp::instance()->getCurrentFrame()->setCurrentFrame(row + 1);
+}
+
+//-----------------------------------------------------------------------------
+
+void TCellSelection::createBlankHoldDrawings() {
+  if (isEmpty()) return;
+  std::vector<int> cols;
+  for (int c = m_range.m_c0; c <= m_range.m_c1; c++) cols.push_back(c);
+  createBlankDrawingsOnHolds(cols, m_range.m_r0, m_range.m_r1);
 }
 
 //-----------------------------------------------------------------------------

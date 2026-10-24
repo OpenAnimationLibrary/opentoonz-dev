@@ -48,6 +48,7 @@ public:
   void fullCloneChild();
 
   void hideColumns();
+  void createBlankHoldDrawings();
 
   void reframeCells(int count);
   void reframe1Cells() { reframeCells(1); }
