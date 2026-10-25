@@ -84,27 +84,6 @@ int vectorStrokeCount(TXshSimpleLevel *sl, const TFrameId &fid) {
   return (int)vi->getStrokeCount();
 }
 
-void drawingHoldRange(TXsheet *xsh, int row, int col, const TXshCell &cell,
-                      int &hold0, int &hold1) {
-  hold0 = row;
-  hold1 = row;
-  while (hold0 > 0) {
-    TXshCell prev = xsh->getCell(hold0 - 1, col);
-    if (prev.m_level.getPointer() != cell.m_level.getPointer() ||
-        prev.m_frameId != cell.m_frameId)
-      break;
-    --hold0;
-  }
-  int frameCount = xsh->getFrameCount();
-  while (hold1 + 1 < frameCount) {
-    TXshCell next = xsh->getCell(hold1 + 1, col);
-    if (next.m_level.getPointer() != cell.m_level.getPointer() ||
-        next.m_frameId != cell.m_frameId)
-      break;
-    ++hold1;
-  }
-}
-
 const bool checkContainsSingleLevel(TXshColumn *column,
                                     const std::string &columnName) {
   TXshLevel *level           = nullptr;
@@ -2146,24 +2125,20 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
 
   bool timelineRoom =
       o->isVerticalTimeline() || m_viewer->getFrameZoomFactor() >= 100;
+  bool holdStart = !(sameLevel && prevCell.m_frameId == cell.m_frameId);
   int strokeCount = -1;
   bool drawCount  = false;
-  if (!isSimpleView && timelineRoom && m_viewer->isShowStrokeCountEnabled()) {
+  if (!isSimpleView && timelineRoom && holdStart &&
+      m_viewer->isShowStrokeCountEnabled()) {
     strokeCount = vectorStrokeCount(cell.getSimpleLevel(), cell.m_frameId);
-    if (strokeCount >= 0) {
-      int hold0 = row, hold1 = row;
-      drawingHoldRange(xsh, row, col, cell, hold0, hold1);
-      drawCount = row == (hold0 + hold1 + 1) / 2;
-    }
+    drawCount   = strokeCount >= 0;
   }
 
   // if the same level & same fId with the previous cell,
   // draw continue line
   QString fnum;
   if (sameLevel && prevCell.m_frameId == cell.m_frameId) {
-    bool centerLine =
-        !Preferences::instance()->isLevelNameOnEachMarkerEnabled();
-    if (o->isVerticalTimeline() && !(drawCount && centerLine)) {
+    if (o->isVerticalTimeline()) {
       // not on line marker
       PredefinedLine which =
           Preferences::instance()->isLevelNameOnEachMarkerEnabled()
@@ -2218,7 +2193,7 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
       fnum = frameNumber;
     }
 
-    if (o->isVerticalTimeline() || !drawCount) {
+    if (!drawCount || o->isVerticalTimeline()) {
       int alignFlag = (showLevelName || drawCount)
                           ? Qt::AlignRight | Qt::AlignBottom
                           : Qt::AlignCenter;
@@ -2253,22 +2228,18 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
     p.drawText(nameRect, Qt::AlignLeft | Qt::AlignBottom, elidaName);
   }
 
-  if (drawCount) {
+  if (drawCount && strokeCount > 0) {
     QColor countColor = penColor;
     countColor.setAlphaF(1.0);
     p.setPen(countColor);
     p.setFont(font);
-    if (o->isVerticalTimeline()) {
-      bool shareCellWithFrameNumber =
-          !(sameLevel && prevCell.m_frameId == cell.m_frameId);
-      int countAlign = (showLevelName || shareCellWithFrameNumber)
-                           ? Qt::AlignHCenter | Qt::AlignBottom
-                           : Qt::AlignCenter;
-      p.drawText(nameRect, countAlign, QString::number(strokeCount));
-    } else
-      p.drawText(cellRect.adjusted(1, 0, -1, 0),
-                 Qt::AlignHCenter | Qt::AlignBottom,
-                 QString::number(strokeCount));
+    QRect countRect = o->isVerticalTimeline()
+                          ? nameRect
+                          : cellRect.adjusted(1, 0, -1, 0);
+    int countAlign  = o->isVerticalTimeline()
+                          ? Qt::AlignLeft | Qt::AlignBottom
+                          : Qt::AlignHCenter | Qt::AlignBottom;
+    p.drawText(countRect, countAlign, QString::number(strokeCount));
   }
 }
 
