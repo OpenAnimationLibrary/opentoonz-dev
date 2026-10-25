@@ -1129,6 +1129,9 @@ void XsheetViewer::showEvent(QShowEvent *) {
   ret = ret &&
         connect(app->getCurrentLevel(), SIGNAL(xshLevelSwitched(TXshLevel *)),
                 this, SLOT(changeWindowTitle()));
+  ret = ret &&
+        connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
+                &XsheetViewer::updateCells);
 
   ret = ret && connect(IconGenerator::instance(), SIGNAL(iconGenerated()), this,
                        SLOT(updateColumnArea()));
@@ -1180,6 +1183,8 @@ void XsheetViewer::hideEvent(QHideEvent *) {
 
   disconnect(app->getCurrentLevel(), SIGNAL(xshLevelSwitched(TXshLevel *)),
              this, SLOT(changeWindowTitle()));
+  disconnect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
+             &XsheetViewer::updateCells);
 
   disconnect(IconGenerator::instance(), SIGNAL(iconGenerated()), this,
              SLOT(updateColumnArea()));
