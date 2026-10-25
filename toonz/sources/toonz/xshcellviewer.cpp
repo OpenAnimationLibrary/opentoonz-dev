@@ -2266,7 +2266,8 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
                            : Qt::AlignCenter;
       p.drawText(nameRect, countAlign, QString::number(strokeCount));
     } else
-      p.drawText(cellRect.adjusted(1, 0, -1, 0), Qt::AlignCenter,
+      p.drawText(cellRect.adjusted(1, 0, -1, 0),
+                 Qt::AlignHCenter | Qt::AlignBottom,
                  QString::number(strokeCount));
   }
 }
