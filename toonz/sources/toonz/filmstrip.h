@@ -51,6 +51,7 @@ public:
   bool m_showNavigator        = true;
   bool m_showComboBox         = true;
   bool m_responsiveThumbnails = true;
+  bool m_showStrokeCount      = true;
 
   void setBGColor(const QColor &color) { m_bgColor = color; }
   QColor getBGColor() const { return m_bgColor; }
@@ -126,6 +127,7 @@ public:
   void setComboBox(bool showComboBox);
   void setResponsiveThumbnails(bool responsive);
   bool isResponsiveThumbnails() const { return m_responsiveThumbnails; }
+  void setShowStrokeCount(bool show);
   void updateIconLayout();
 
 signals:
@@ -133,6 +135,7 @@ signals:
   void comboBoxToggledSignal();
   void navigatorToggledSignal();
   void responsiveThumbnailsToggledSignal(bool responsive);
+  void showStrokeCountToggledSignal(bool show);
   void levelSelectedSignal(int);
 
 protected:
@@ -177,6 +180,7 @@ protected slots:
   void comboBoxToggled(bool);
   void navigatorToggled(bool);
   void responsiveThumbnailsToggled(bool);
+  void showStrokeCountToggled(bool);
   void levelSelected(int);
   void onViewerAboutToBeDestroyed();
   void commitResponsiveRenderSize();
@@ -254,6 +258,7 @@ class Filmstrip final : public QWidget, public SaveLoadQSettings {
   bool m_showNavigator        = true;
   bool m_showComboBox         = true;
   bool m_responsiveThumbnails = true;
+  bool m_showStrokeCount      = true;
 
 public:
   Filmstrip(QWidget *parent = 0, Qt::WindowFlags flags = Qt::WindowFlags());
@@ -290,6 +295,7 @@ public slots:
   void comboBoxToggled();
   void navigatorToggled();
   void responsiveThumbnailsToggled(bool responsive);
+  void showStrokeCountToggled(bool show);
 
 private:
   void updateWindowTitle();
