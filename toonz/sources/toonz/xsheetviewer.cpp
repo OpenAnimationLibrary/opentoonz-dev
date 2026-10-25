@@ -1883,6 +1883,7 @@ void XsheetViewer::setFrameDisplayStyle(FrameDisplayStyle style) {
 void XsheetViewer::save(QSettings &settings) const {
   settings.setValue("orientation", orientation()->name());
   settings.setValue("frameZoomFactor", m_frameZoomFactor);
+  settings.setValue("showStrokeCount", m_showStrokeCount ? 1 : 0);
 }
 
 void XsheetViewer::load(QSettings &settings) {
@@ -1898,6 +1899,8 @@ void XsheetViewer::load(QSettings &settings) {
     m_orientation = Orientations::byName(name.toString());
     emit orientationChanged(orientation());
   }
+
+  m_showStrokeCount = settings.value("showStrokeCount", 1).toInt() != 0;
 }
 
 //-----------------------------------------------------------------------------

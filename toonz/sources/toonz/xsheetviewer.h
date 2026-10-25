@@ -662,6 +662,7 @@ class XsheetViewer final : public QFrame, public SaveLoadQSettings {
   QString m_xsheetLayout;
 
   int m_frameZoomFactor;
+  bool m_showStrokeCount = true;
 
 public:
   enum FrameDisplayStyle { Frame = 0, SecAndFrame, SixSecSheet, ThreeSecSheet };
@@ -1451,6 +1452,8 @@ public slots:
 
   void setFrameZoomFactor(int f) { m_frameZoomFactor = f; }
   int getFrameZoomFactor() const;
+  bool isShowStrokeCountEnabled() const { return m_showStrokeCount; }
+  void setShowStrokeCount(bool show) { m_showStrokeCount = show; }
   QPoint getFrameZoomAdjustment();
 
   void zoomOnFrame(int frame, int factor);
