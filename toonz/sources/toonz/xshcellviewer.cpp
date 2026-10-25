@@ -4165,21 +4165,13 @@ void CellArea::createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell,
     menu.addMenu(marksMenu);
   }
 
-  menu.addSeparator();
-  QMenu *drawingMenu = new QMenu(tr("Drawing"), this);
-  QAction *showStrokeCount =
-      drawingMenu->addAction(createQIcon("stroke_count", true), tr("Show Stroke Count"));
-  showStrokeCount->setCheckable(true);
-  showStrokeCount->setChecked(m_viewer->isShowStrokeCountEnabled());
-#if !defined(_WIN32)
-  showStrokeCount->setIconVisibleInMenu(
-      Preferences::instance()->getBoolValue(showIconsInMenu));
-#endif
-  connect(showStrokeCount, &QAction::triggered, this, [this](bool on) {
-    m_viewer->setShowStrokeCount(on);
-    update();
-  });
-  menu.addMenu(drawingMenu);
+  QAction *showStrokeCount = cmdManager->getAction(MI_ShowStrokeCount);
+  if (showStrokeCount) {
+    menu.addSeparator();
+    QMenu *drawingMenu = new QMenu(tr("Drawing"), this);
+    drawingMenu->addAction(showStrokeCount);
+    menu.addMenu(drawingMenu);
+  }
 }
 
 //-----------------------------------------------------------------------------

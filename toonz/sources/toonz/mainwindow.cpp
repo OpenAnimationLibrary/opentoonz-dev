@@ -2937,6 +2937,8 @@ void MainWindow::defineActions() {
                              "view_file");
   createRightClickMenuAction(MI_ToggleXSheetToolbar,
                              QT_TR_NOOP("Toggle XSheet Toolbar"), "");
+  createToggle(MI_ShowStrokeCount, QT_TR_NOOP("Show Stroke Count"), "", true,
+               RightClickMenuCommandType, "stroke_count");
   createRightClickMenuAction(MI_ToggleXsheetBreadcrumbs,
                              QT_TR_NOOP("Toggle Sub-Xsheet Navigation Bar"), "",
                              "toggle_sub_nav");
