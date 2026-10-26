@@ -6,6 +6,9 @@ environment:
   OPENCV_DLL: "C:\\Tools\\opencv\\build\\x64\\vc16\\bin\\opencv_world4130.dll"
   BOOST_ROOT: "C:\\Libraries\\boost_1_89_0"
   MSVC_VERSION: "Visual Studio 17 2022"
+  matrix:
+    - BUILD_LOGGER: appveyor
+    - BUILD_LOGGER: native
 
 init:
   - git lfs install --skip-smudge  # Avoid issue with GitHub LFS quota
@@ -28,10 +31,12 @@ cache:
 
 install:
   # Install OpenCV if not cached
+  - ps: Write-Host ("PHASE setup.opencv started {0:o}" -f (Get-Date))
   - cmd: >-
       if exist "%OPENCV_DLL%" (echo OpenCV cached, skipping install) else (choco install opencv --version=%OPENCV_VERSION% --no-progress --yes --force || exit /b 1 & echo Installed OpenCV)
 
   # Download and extract custom Qt 5.15.2 with WinTab support
+  - ps: Write-Host ("PHASE setup.qt started {0:o}" -f (Get-Date))
   - cmd: >-
       mkdir thirdparty\qt
 
@@ -56,6 +61,7 @@ install:
       echo Created junction C:\Qt\5.15.2\msvc2019_64 pointing to %APPVEYOR_BUILD_FOLDER%\thirdparty\qt\5.15.2_wintab\msvc2019_64
 
   # Download and extract third-party libraries (GitHub LFS quota issue)
+  - ps: Write-Host ("PHASE setup.thirdparty started {0:o}" -f (Get-Date))
   - cmd: >-
       curl -fsSL -o thirdparty-libs.zip https://github.com/andeon/opentoonz-thirdparty-libs/releases/download/prebuilt-libs-v1/thirdparty-libs.zip || exit /b 1
 
@@ -64,6 +70,7 @@ install:
       echo Extracted third-party libraries
 
   # Configure third-party libraries
+  - ps: Write-Host ("PHASE setup.headers started {0:o}" -f (Get-Date))
   - cmd: >-
       cd thirdparty
 
@@ -78,6 +85,7 @@ install:
       echo Configured third-party libraries
 
   # Configure CMake
+  - ps: Write-Host ("PHASE setup.cmake started {0:o}" -f (Get-Date))
   - cmd: >-
       if not exist "%QT_PATH%\bin\qmake.exe" (echo QT_PATH does not exist or is invalid: %QT_PATH% & exit /b 1)
 
@@ -91,13 +99,50 @@ install:
 
       echo CMake configuration completed
 
-build:
-  project: $(APPVEYOR_BUILD_FOLDER)\toonz\$(PLATFORM)\ALL_BUILD.vcxproj
-  parallel: true
-  verbosity: minimal
+build_script:
+  # Compare the annotation logger with native output on the same source.
+  - ps: |
+      $ErrorActionPreference = 'Stop'
+      Set-Location (Join-Path $env:APPVEYOR_BUILD_FOLDER "toonz\$env:PLATFORM")
+      $logPath = Join-Path $PWD "appveyor-msbuild-$env:BUILD_LOGGER.log"
+      $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+      Write-Host ("PHASE compile started {0:o}" -f (Get-Date))
+      Write-Host "Logger: $env:BUILD_LOGGER"
+      Write-Host "Worker: $env:APPVEYOR_BUILD_WORKER_CLOUD / $env:APPVEYOR_BUILD_WORKER_IMAGE"
+      Write-Host ("Logical CPUs: {0}; RAM: {1:N1} GiB" -f [Environment]::ProcessorCount, ($machine.TotalPhysicalMemory / 1GB))
+      $msbuildArgs = @(
+        'ALL_BUILD.vcxproj'
+        '/m'
+        '/verbosity:minimal'
+        '/clp:PerformanceSummary'
+        "/p:Configuration=$env:CONFIGURATION"
+        "/p:Platform=$env:PLATFORM"
+        "/flp:LogFile=$logPath;Verbosity=minimal;Encoding=UTF-8;PerformanceSummary"
+      )
+      if ($env:BUILD_LOGGER -eq 'appveyor') {
+        $logger = Join-Path $env:ProgramFiles 'AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll'
+        if (!(Test-Path $logger)) { throw "AppVeyor MSBuild logger not found: $logger" }
+        $msbuildArgs += "/logger:$logger"
+      } elseif ($env:BUILD_LOGGER -ne 'native') {
+        throw "Unknown BUILD_LOGGER: $env:BUILD_LOGGER"
+      }
+      $buildExitCode = 1
+      $timer = [Diagnostics.Stopwatch]::StartNew()
+      try {
+        & msbuild.exe @msbuildArgs
+        $buildExitCode = $LASTEXITCODE
+      } finally {
+        $timer.Stop()
+        Write-Host ("PHASE compile ended {0:o}; elapsed: {1}; exit code: {2}" -f (Get-Date), $timer.Elapsed, $buildExitCode)
+        if (Test-Path $logPath) {
+          Push-AppveyorArtifact $logPath -FileName "appveyor-msbuild-$env:BUILD_LOGGER.log"
+        }
+      }
+      if ($buildExitCode -ne 0) { exit $buildExitCode }
 
 after_build:
   # Deploy Qt dependencies
+  - ps: Write-Host ("PHASE deploy.qt started {0:o}" -f (Get-Date))
   - cmd: >-
       if not exist "%CONFIGURATION%\OpenToonz.exe" (echo OpenToonz.exe not found & exit /b 1)
 
@@ -106,6 +151,7 @@ after_build:
       echo Deployed Qt dependencies
 
   # Copy required DLLs
+  - ps: Write-Host ("PHASE deploy.dlls started {0:o}" -f (Get-Date))
   - cmd: >-
       copy /Y ..\..\thirdparty\glut\3.7.6\lib\glut64.dll %CONFIGURATION% || exit /b 1
 
@@ -118,6 +164,7 @@ after_build:
       echo Copied required DLLs
 
   # Package portable resources
+  - ps: Write-Host ("PHASE package.resources started {0:o}" -f (Get-Date))
   - cmd: >-
       mkdir "%CONFIGURATION%\portablestuff" || exit /b 1
 
