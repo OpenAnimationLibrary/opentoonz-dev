@@ -10,6 +10,9 @@
 
 #ifndef TNZCORE_LIGHT
 #include <QMutex>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRecursiveMutex>
+#endif
 #else
 #include <windows.h>
 #endif
@@ -82,9 +85,15 @@ public:
 
 #else
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+class DVAPI Mutex final : public QRecursiveMutex {
+public:
+  Mutex() = default;
+#else
 class DVAPI Mutex final : public QMutex {
 public:
   Mutex() : QMutex(QMutex::Recursive) {}
+#endif
 
 private:
   // not implemented
@@ -92,7 +101,11 @@ private:
   Mutex &operator=(const Mutex &);
 };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+typedef QMutexLocker<Mutex> MutexLocker;
+#else
 typedef QMutexLocker MutexLocker;
+#endif
 
 #endif
 

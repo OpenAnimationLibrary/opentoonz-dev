@@ -11,6 +11,9 @@
 #include <QString>
 #include <QSettings>
 #include <QMutex>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRecursiveMutex>
+#endif
 
 #undef DVAPI
 #undef DVVAR
@@ -38,7 +41,11 @@ class DVAPI TCacheResourcePool final : public QObject {
 
   typedef std::map<std::string, TCacheResource *> MemResources;
   MemResources m_memResources;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QRecursiveMutex m_memMutex;
+#else
   QMutex m_memMutex;
+#endif
 
   unsigned int m_searchCount;
   bool m_foundIterator;
