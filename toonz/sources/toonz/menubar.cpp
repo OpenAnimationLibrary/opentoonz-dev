@@ -123,6 +123,19 @@ bool menuContainsAction(QMenu *menu, QAction *target) {
   return false;
 }
 
+void ensureViewerStrokeCountMenu(QMenu *viewMenu) {
+  QAction *current =
+      CommandManager::instance()->getAction(MI_ViewerStrokeCount);
+  QAction *neighbors =
+      CommandManager::instance()->getAction(MI_ViewerNeighborStrokeCount);
+  if (!current || !neighbors || menuContainsAction(viewMenu, current)) return;
+
+  QMenu *menu = viewMenu->addMenu(
+      QCoreApplication::translate("StackedMenuBar", "Show Stroke Count"));
+  menu->addAction(current);
+  menu->addAction(neighbors);
+}
+
 void ensureAlignmentPanelAction(QMenu *windowsMenu) {
   QAction *alignment =
       CommandManager::instance()->getAction(MI_OpenAlignmentPanel);
@@ -377,6 +390,8 @@ QMenuBar *StackedMenuBar::loadMenuBar(const TFilePath &fp) {
             // Older Windows profiles keep private menu XML files. Add the new
             // built-in command without replacing the user's customized menu.
             if (title == QStringLiteral("Help")) ensureHelpActions(menu);
+            if (title == QStringLiteral("View"))
+              ensureViewerStrokeCountMenu(menu);
             if (title == QStringLiteral("Windows"))
               ensureAlignmentPanelAction(menu);
             menuBar->addMenu(menu);
@@ -1543,6 +1558,10 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(viewMenu, MI_FieldGuide);
   addMenuItem(viewMenu, MI_ViewRuler);
   addMenuItem(viewMenu, MI_ViewGuide);
+  viewMenu->addSeparator();
+  QMenu *strokeCountMenu = viewMenu->addMenu(tr("Show Stroke Count"));
+  addMenuItem(strokeCountMenu, MI_ViewerStrokeCount);
+  addMenuItem(strokeCountMenu, MI_ViewerNeighborStrokeCount);
   viewMenu->addSeparator();
   addMenuItem(viewMenu, MI_TCheck);
   addMenuItem(viewMenu, MI_ICheck);

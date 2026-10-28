@@ -342,6 +342,7 @@ protected:
   void drawPreview();
   void drawOverlay();
   void drawViewerIndicators();
+  void drawViewerStrokeCount();
 
   void drawScene();
   void drawToolGadgets();

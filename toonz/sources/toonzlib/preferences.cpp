@@ -725,6 +725,16 @@ void Preferences::definePreferenceItems() {
   // Others (not appearing in the popup)
   // Tape Tool: 0 = ask, 1 = continue, 2 = cancel.
   define(tapeToolFillRiskPolicy, "tapeToolFillRiskPolicy", QMetaType::Int, 0);
+  define(viewerStrokeCountEnabled, "viewerStrokeCountEnabled", QMetaType::Bool,
+         true);
+  define(viewerNeighborStrokeCountEnabled, "viewerNeighborStrokeCountEnabled",
+         QMetaType::Bool, false);
+  define(viewerPreviousStrokeCountColor, "viewerPreviousStrokeCountColor",
+         QMetaType::QColor, QColor(255, 160, 0));
+  define(viewerCurrentStrokeCountColor, "viewerCurrentStrokeCountColor",
+         QMetaType::QColor, QColor(Qt::red));
+  define(viewerNextStrokeCountColor, "viewerNextStrokeCountColor",
+         QMetaType::QColor, QColor(80, 170, 255));
   // Shortcut popup settings
   define(shortcutPreset, "shortcutPreset", QMetaType::QString, "defopentoonz");
   // Viewer context menu

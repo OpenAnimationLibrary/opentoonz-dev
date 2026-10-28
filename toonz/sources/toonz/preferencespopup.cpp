@@ -1493,6 +1493,9 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {viewerBGColor, tr("Viewer BG Color:")},
       {tableColor, tr("Table Color:")},
       {previewBGColor, tr("Preview BG Color:")},
+      {viewerPreviousStrokeCountColor, tr("Previous:")},
+      {viewerCurrentStrokeCountColor, tr("Current:")},
+      {viewerNextStrokeCountColor, tr("Next:")},
       {levelEditorBoxColor, tr("Level Editor Box Color:")},
       {chessboardColor1, tr("Chessboard Color 1:")},
       {chessboardColor2, tr("Chessboard Color 2:")},
@@ -2584,6 +2587,12 @@ QWidget* PreferencesPopup::createColorsPage() {
     insertUI(ink1CheckColor, ipcLay);
     insertUI(paintCheckColor, ipcLay);
   }
+  QGridLayout* strokeCountLay = insertGroupBox(tr("Stroke Count"), lay);
+  {
+    insertUI(viewerPreviousStrokeCountColor, strokeCountLay);
+    insertUI(viewerCurrentStrokeCountColor, strokeCountLay);
+    insertUI(viewerNextStrokeCountColor, strokeCountLay);
+  }
 
   lay->setRowStretch(lay->rowCount(), 1);
   widget->setLayout(lay);
@@ -2592,6 +2601,12 @@ QWidget* PreferencesPopup::createColorsPage() {
                            &PreferencesPopup::notifySceneChanged);
   m_onEditedFuncMap.insert(tableColor, &PreferencesPopup::notifySceneChanged);
   m_onEditedFuncMap.insert(previewBGColor,
+                           &PreferencesPopup::notifySceneChanged);
+  m_onEditedFuncMap.insert(viewerPreviousStrokeCountColor,
+                           &PreferencesPopup::notifySceneChanged);
+  m_onEditedFuncMap.insert(viewerCurrentStrokeCountColor,
+                           &PreferencesPopup::notifySceneChanged);
+  m_onEditedFuncMap.insert(viewerNextStrokeCountColor,
                            &PreferencesPopup::notifySceneChanged);
   m_onEditedFuncMap.insert(levelEditorBoxColor,
                            &PreferencesPopup::notifySceneChanged);

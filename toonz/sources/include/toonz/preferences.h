@@ -552,6 +552,21 @@ public:
   TPixel getInkCheckColor() const { return getColorValue(inkCheckColor); }
   TPixel getInk1CheckColor() const { return getColorValue(ink1CheckColor); }
   TPixel getPaintCheckColor() const { return getColorValue(paintCheckColor); }
+  bool isViewerStrokeCountEnabled() const {
+    return getBoolValue(viewerStrokeCountEnabled);
+  }
+  bool isViewerNeighborStrokeCountEnabled() const {
+    return getBoolValue(viewerNeighborStrokeCountEnabled);
+  }
+  TPixel getViewerPreviousStrokeCountColor() const {
+    return getColorValue(viewerPreviousStrokeCountColor);
+  }
+  TPixel getViewerCurrentStrokeCountColor() const {
+    return getColorValue(viewerCurrentStrokeCountColor);
+  }
+  TPixel getViewerNextStrokeCountColor() const {
+    return getColorValue(viewerNextStrokeCountColor);
+  }
 
   // Version Control  tab
   bool isSVNEnabled() const { return getBoolValue(SVNEnabled); }

@@ -274,6 +274,11 @@
         <command>MI_ViewRuler</command>
         <command>MI_ViewGuide</command>
         <separator/>
+        <menu title="Show Stroke Count">
+            <command>MI_ViewerStrokeCount</command>
+            <command>MI_ViewerNeighborStrokeCount</command>
+        </menu>
+        <separator/>
         <command>MI_TCheck</command>
         <command>MI_ICheck</command>
         <command>MI_Ink1Check</command>
