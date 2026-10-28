@@ -91,6 +91,7 @@ private:
   int m_threadIndex;
 
   bool m_subcameraPreview;
+  bool m_previewTimerBypass;
 
   BoardSettings *m_boardSettings;
 
@@ -230,6 +231,11 @@ machine's CPU).
 
   bool isSubcameraPreview() const { return m_subcameraPreview; }
   void setSubcameraPreview(bool enabled) { m_subcameraPreview = enabled; }
+
+  bool isPreviewTimerBypassEnabled() const { return m_previewTimerBypass; }
+  void setPreviewTimerBypassEnabled(bool enabled) {
+    m_previewTimerBypass = enabled;
+  }
 
   BoardSettings *getBoardSettings() const { return m_boardSettings; }
 
