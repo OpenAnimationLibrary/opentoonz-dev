@@ -10,6 +10,9 @@
 #include "scriptconsolepanel.h"
 #include "brushpresetpanel.h"
 #include "toolpropertiespanel.h"
+#ifdef _WIN32
+#include "handwritingpanel.h"
+#endif
 
 #include "floatingpanelcommand.h"
 #include "subscenecommand.h"
@@ -1819,3 +1822,21 @@ public:
 OpenFloatingPanel openVectorAlignmentPanelCommand(
     MI_OpenAlignmentPanel, "AlignmentPanel",
     QObject::tr("Align and Distribute"));
+
+#ifdef _WIN32
+class HandwritingPanelFactory final : public TPanelFactory {
+public:
+  HandwritingPanelFactory() : TPanelFactory("Handwriting") {}
+  void initialize(TPanel *) override {}
+  TPanel *createPanel(QWidget *parent) override {
+    HandwritingPanel *panel = new HandwritingPanel(parent);
+    panel->setObjectName(getPanelType());
+    panel->setWindowTitle(QObject::tr("Transcribe Handwriting"));
+    return panel;
+  }
+} handwritingPanelFactory;
+
+OpenFloatingPanel openHandwritingPanelCommand(
+    MI_TranscribeHandwriting, "Handwriting",
+    QObject::tr("Transcribe Handwriting"));
+#endif

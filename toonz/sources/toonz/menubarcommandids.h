@@ -341,6 +341,7 @@
 #define MI_RemoveBrushPreset "MI_RemoveBrushPreset"
 #define MI_RemoveBrushPresetByName "MI_RemoveBrushPresetByName"
 #define MI_OpenToolPropertiesPanel "MI_OpenToolPropertiesPanel"
+#define MI_TranscribeHandwriting "MI_TranscribeHandwriting"
 #define MI_ReplaceParentDirectory "MI_ReplaceParentDirectory"
 #define MI_Reframe1 "MI_Reframe1"
 #define MI_Reframe2 "MI_Reframe2"

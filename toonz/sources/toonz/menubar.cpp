@@ -136,6 +136,15 @@ void ensureAlignmentPanelAction(QMenu *windowsMenu) {
     windowsMenu->addAction(alignment);
 }
 
+#ifdef _WIN32
+void ensureHandwritingPanelAction(QMenu *windowsMenu) {
+  QAction *action =
+      CommandManager::instance()->getAction(MI_TranscribeHandwriting);
+  if (action && !menuContainsAction(windowsMenu, action))
+    windowsMenu->addAction(action);
+}
+#endif
+
 }  // namespace
 
 //=============================================================================
@@ -377,8 +386,12 @@ QMenuBar *StackedMenuBar::loadMenuBar(const TFilePath &fp) {
             // Older Windows profiles keep private menu XML files. Add the new
             // built-in command without replacing the user's customized menu.
             if (title == QStringLiteral("Help")) ensureHelpActions(menu);
-            if (title == QStringLiteral("Windows"))
+            if (title == QStringLiteral("Windows")) {
               ensureAlignmentPanelAction(menu);
+#ifdef _WIN32
+              ensureHandwritingPanelAction(menu);
+#endif
+            }
             menuBar->addMenu(menu);
           } else {
             reader.raiseError(tr("Failed to load menu %1").arg(title));
@@ -568,6 +581,9 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
     addMenuItem(otherWindowsMenu, MI_OpenHistoryPanel);
     addMenuItem(otherWindowsMenu, MI_OpenBrushPresetPanel);
     addMenuItem(otherWindowsMenu, MI_OpenToolPropertiesPanel);
+#ifdef _WIN32
+    addMenuItem(otherWindowsMenu, MI_TranscribeHandwriting);
+#endif
     addMenuItem(otherWindowsMenu, MI_OpenTMessage);
   }
 
@@ -740,6 +756,9 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
     addMenuItem(otherWindowsMenu, MI_OpenHistoryPanel);
     addMenuItem(otherWindowsMenu, MI_OpenBrushPresetPanel);
     addMenuItem(otherWindowsMenu, MI_OpenToolPropertiesPanel);
+#ifdef _WIN32
+    addMenuItem(otherWindowsMenu, MI_TranscribeHandwriting);
+#endif
     addMenuItem(otherWindowsMenu, MI_OpenTMessage);
   }
 
@@ -921,6 +940,9 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
     addMenuItem(otherWindowsMenu, MI_OpenHistoryPanel);
     addMenuItem(otherWindowsMenu, MI_OpenBrushPresetPanel);
     addMenuItem(otherWindowsMenu, MI_OpenToolPropertiesPanel);
+#ifdef _WIN32
+    addMenuItem(otherWindowsMenu, MI_TranscribeHandwriting);
+#endif
     addMenuItem(otherWindowsMenu, MI_OpenTMessage);
   }
 
@@ -1108,6 +1130,9 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
     addMenuItem(otherWindowsMenu, MI_OpenHistoryPanel);
     addMenuItem(otherWindowsMenu, MI_OpenBrushPresetPanel);
     addMenuItem(otherWindowsMenu, MI_OpenToolPropertiesPanel);
+#ifdef _WIN32
+    addMenuItem(otherWindowsMenu, MI_TranscribeHandwriting);
+#endif
     addMenuItem(otherWindowsMenu, MI_OpenTMessage);
   }
 
@@ -1558,6 +1583,9 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   addMenuItem(windowsMenu, MI_OpenToolOptionBar);
   addMenuItem(windowsMenu, MI_OpenBrushPresetPanel);
   addMenuItem(windowsMenu, MI_OpenToolPropertiesPanel);
+#ifdef _WIN32
+  addMenuItem(windowsMenu, MI_TranscribeHandwriting);
+#endif
   windowsMenu->addSeparator();
   addMenuItem(windowsMenu, MI_OpenStyleControl);
   addMenuItem(windowsMenu, MI_OpenPalette);
