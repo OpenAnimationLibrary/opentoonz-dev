@@ -64,6 +64,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QComboBox *m_dominantFieldOm;
   DVGui::CheckBox *m_applyShrinkChk;
   DVGui::CheckBox *m_subcameraChk;
+  DVGui::CheckBox *m_previewTimerBypassChk;
   DVGui::DoubleLineEdit *m_stretchFromFld, *m_stretchToFld;
   DVGui::CheckBox *m_doStereoscopy;
   DVGui::DoubleLineEdit *m_stereoShift;
@@ -85,6 +86,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QFrame *m_cameraBox, *m_colorBox, *m_fileBox, *m_moreBox;
 
   DVGui::CheckBox *m_syncColorSettingsButton;
+  DVGui::CheckBox *m_optimizePreviewForDrawingChk;
 
   bool m_isPreviewSettings;
 
@@ -125,6 +127,7 @@ protected slots:
   void onStretchFldEditFinished();
   void onApplyShrinkChecked(int state);
   void onSubcameraChecked(int state);
+  void onPreviewTimerBypassChecked(int state);
   void onMultimediaChanged(int mode);
   void onThreadsComboChanged(int type);
   void onRasterGranularityChanged(int type);
@@ -132,6 +135,7 @@ protected slots:
   void onStereoChanged();
   void onSyncColorSettingsChecked(int state);
   void onRenderClicked();
+  void onOptimizePreviewForDrawingChecked(int state);
 
   /*-- OutputSettingsのPreset登録/削除/選択 --*/
   void onAddPresetButtonPressed();

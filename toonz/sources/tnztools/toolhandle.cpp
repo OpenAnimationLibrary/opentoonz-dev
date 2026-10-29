@@ -110,7 +110,9 @@ void ToolHandle::unsetPseudoTool() {
 //-----------------------------------------------------------------------------
 
 void ToolHandle::setToolBusy(bool value) {
+  bool changed = m_toolIsBusy != value;
   m_toolIsBusy = value;
+  if (changed) emit toolBusyChanged(value);
   if (!m_toolIsBusy) emit toolEditingFinished();
 }
 

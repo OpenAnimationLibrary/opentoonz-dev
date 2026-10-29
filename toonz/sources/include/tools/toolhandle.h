@@ -74,6 +74,7 @@ public:
   }
 
 signals:
+  void toolBusyChanged(bool busy);
   void toolComboBoxListChanged(std::string);
   void toolSwitched();
   void toolChanged();
