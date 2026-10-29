@@ -1077,15 +1077,39 @@ void AdjustThicknessUndo::undo() const {
 //    Apply stuff
 //**************************************************************************
 
+namespace {
+
+bool canAdjustThickness(const AdjustThicknessPopup::SelectionData &data) {
+  if (!data || data.m_sl->isReadOnly()) return false;
+  TSelection *selection =
+      TApp::instance()->getCurrentSelection()->getSelection();
+  if (auto strokes = dynamic_cast<StrokeSelection *>(selection))
+    return strokes->isEditable();
+  if (auto cells = dynamic_cast<TCellSelection *>(selection))
+    return !cells->areAllColSelectedLocked();
+  return true;
+}
+
+}  // namespace
+
 void AdjustThicknessPopup::apply() {
-  if (!m_selectionData) {
+  double fromTransform[2], toTransform[2];
+  getTransformParameters(fromTransform, toTransform);
+  applyParameters({fromTransform[0], fromTransform[1]},
+                  {toTransform[0], toTransform[1]});
+}
+
+void AdjustThicknessPopup::applyParameters(std::array<double, 2> from,
+                                           std::array<double, 2> to) {
+  updateSelectionData();
+  if (!canAdjustThickness(m_selectionData)) {
     DVGui::error(QObject::tr("The current selection is invalid."));
     return;
   }
 
   // Retrieve parameters
-  double fromTransform[2], toTransform[2];
-  getTransformParameters(fromTransform, toTransform);
+  double fromTransform[2] = {from[0], from[1]};
+  double toTransform[2]   = {to[0], to[1]};
 
   std::unique_ptr<TUndo> undo(
       new AdjustThicknessUndo(m_selectionData, fromTransform, toTransform));
@@ -1095,6 +1119,14 @@ void AdjustThicknessPopup::apply() {
   TUndoManager::manager()->add(undo.release());
 
   close();
+  CommandManager::instance()->recordRepeatAction(
+      this, tr("Adjust Thickness"),
+      [this, from, to]() { applyParameters(from, to); },
+      []() {
+        SelectionData selection(
+            TApp::instance()->getCurrentSelection()->getSelection());
+        return canAdjustThickness(selection);
+      });
 }
 
 //**************************************************************************

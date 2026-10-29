@@ -50,6 +50,7 @@ private:
   int m_timerId;
 
   int getSelectedFrames();
+  void applyWithAlpha(bool alpha);
   void computePreview();
 
 protected slots:

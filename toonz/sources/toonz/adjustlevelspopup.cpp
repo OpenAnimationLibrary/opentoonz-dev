@@ -18,6 +18,7 @@
 
 // TnzLib includes
 #include "toonz/txshcell.h"
+#include "toonz/txshcolumn.h"
 #include "toonz/txshsimplelevel.h"
 #include "toonz/tframehandle.h"
 #include "toonz/txshlevelhandle.h"
@@ -556,14 +557,15 @@ void AdjustLevelsPopup::autoAdjust() {
 
 class AdjustLevelsUndo final : public TUndo {
   int m_in0[5], m_in1[5], m_out0[5], m_out1[5];
-  int m_r, m_c;
+  TXshSimpleLevelP m_level;
+  TFrameId m_fid;
 
   QString m_rasId;
   int m_rasSize;
 
 public:
-  AdjustLevelsUndo(int *in0, int *in1, int *out0, int *out1, int r, int c,
-                   TRasterP ras);
+  AdjustLevelsUndo(int *in0, int *in1, int *out0, int *out1,
+                   TXshSimpleLevel *level, const TFrameId &fid, TRasterP ras);
   ~AdjustLevelsUndo();
 
   void undo() const override;
@@ -575,9 +577,10 @@ public:
 //--------------------------------------------------------------
 
 AdjustLevelsUndo::AdjustLevelsUndo(int *in0, int *in1, int *out0, int *out1,
-                                   int r, int c, TRasterP ras)
-    : m_r(r)
-    , m_c(c)
+                                   TXshSimpleLevel *level, const TFrameId &fid,
+                                   TRasterP ras)
+    : m_level(level)
+    , m_fid(fid)
     , m_rasSize(ras->getLx() * ras->getLy() * ras->getPixelSize()) {
   memcpy(m_in0, in0, sizeof(m_in0));
   memcpy(m_in1, in1, sizeof(m_in1));
@@ -599,10 +602,7 @@ AdjustLevelsUndo::~AdjustLevelsUndo() {
 //--------------------------------------------------------------
 
 void AdjustLevelsUndo::undo() const {
-  TXsheet *xsheet = TApp::instance()->getCurrentXsheet()->getXsheet();
-  TXshCell cell   = xsheet->getCell(m_r, m_c);
-
-  TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+  TRasterImageP rasImage = (TRasterImageP)m_level->getFrame(m_fid, true);
   if (!rasImage) return;  //...Should never happen, though...
 
   rasImage->setRaster(
@@ -610,11 +610,11 @@ void AdjustLevelsUndo::undo() const {
           ->getRaster()
           ->clone());
 
-  TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+  TXshSimpleLevel *simpleLevel = m_level.getPointer();
   assert(simpleLevel);
-  simpleLevel->touchFrame(cell.getFrameId());
+  simpleLevel->touchFrame(m_fid);
   simpleLevel->setDirtyFlag(true);
-  IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+  IconGenerator::instance()->invalidate(simpleLevel, m_fid);
 
   if (m_isLastInBlock)
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -623,10 +623,7 @@ void AdjustLevelsUndo::undo() const {
 //--------------------------------------------------------------
 
 void AdjustLevelsUndo::redo() const {
-  TXsheet *xsheet = TApp::instance()->getCurrentXsheet()->getXsheet();
-  TXshCell cell   = xsheet->getCell(m_r, m_c);
-
-  TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+  TRasterImageP rasImage = (TRasterImageP)m_level->getFrame(m_fid, true);
   if (!rasImage) return;
 
   TRasterP ras = rasImage->getRaster();
@@ -634,11 +631,11 @@ void AdjustLevelsUndo::redo() const {
 
   TRop::rgbmAdjust(ras, ras, m_in0, m_in1, m_out0, m_out1);
 
-  TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+  TXshSimpleLevel *simpleLevel = m_level.getPointer();
   assert(simpleLevel);
-  simpleLevel->touchFrame(cell.getFrameId());
+  simpleLevel->touchFrame(m_fid);
   simpleLevel->setDirtyFlag(true);
-  IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+  IconGenerator::instance()->invalidate(simpleLevel, m_fid);
 
   if (m_isLastInBlock)
     TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -649,96 +646,130 @@ void AdjustLevelsUndo::redo() const {
 //**************************************************************************
 
 void AdjustLevelsPopup::apply() {
-  // Retrieve parameters
-  int in0[5], in1[5], out0[5], out1[5];
-  getParameters(in0, in1, out0, out1);
+  std::array<int, 20> parameters;
+  getParameters(parameters.data(), parameters.data() + 5,
+                parameters.data() + 10, parameters.data() + 15);
+  applyParameters(parameters);
+}
 
-  // Operate depending on the selection kind
-  TCellSelection *cellSelection =
-      dynamic_cast<TCellSelection *>(TSelection::getCurrent());
-  if (cellSelection) {
-    std::set<TRasterImage *>
-        images;  // Multiple cells may yield the same image...
+void AdjustLevelsPopup::applyParameters(std::array<int, 20> parameters) {
+  const auto applyToSelection = [&]() -> bool {
+    TUndoScopedBlock undoBlock;
+    // Retrieve parameters
+    int in0[5], in1[5], out0[5], out1[5];
+    std::copy_n(parameters.data(), 5, in0);
+    std::copy_n(parameters.data() + 5, 5, in1);
+    std::copy_n(parameters.data() + 10, 5, out0);
+    std::copy_n(parameters.data() + 15, 5, out1);
 
-    int r0, c0, r1, c1;
-    cellSelection->getSelectedCells(r0, c0, r1, c1);
-    TXsheet *xsheet      = TApp::instance()->getCurrentXsheet()->getXsheet();
-    bool oneImageChanged = false;
+    // Operate depending on the selection kind
+    TCellSelection *cellSelection =
+        dynamic_cast<TCellSelection *>(TSelection::getCurrent());
+    if (cellSelection) {
+      std::set<TRasterImage *>
+          images;  // Multiple cells may yield the same image...
 
-    TUndoManager::manager()->beginBlock();
-    {
-      int c, r;
-      for (c = c0; c <= c1; c++) {
-        for (r = r0; r <= r1; r++) {
-          const TXshCell &cell = xsheet->getCell(r, c);
+      int r0, c0, r1, c1;
+      cellSelection->getSelectedCells(r0, c0, r1, c1);
+      TXsheet *xsheet      = TApp::instance()->getCurrentXsheet()->getXsheet();
+      bool oneImageChanged = false;
 
-          TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+      TUndoManager::manager()->beginBlock();
+      {
+        int c, r;
+        for (c = c0; c <= c1; c++) {
+          for (r = r0; r <= r1; r++) {
+            const TXshCell &cell = xsheet->getCell(r, c);
+            if (!cell.getSimpleLevel() || cell.getSimpleLevel()->isReadOnly() ||
+                (xsheet->getColumn(c) && xsheet->getColumn(c)->isLocked()))
+              continue;
+
+            TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+            if (!rasImage) continue;
+
+            if (images.find(rasImage.getPointer()) != images.end()) continue;
+
+            TRasterP ras = rasImage->getRaster();
+            if (!ras) continue;
+
+            images.insert(rasImage.getPointer());
+            oneImageChanged = true;
+
+            TUndoManager::manager()->add(new AdjustLevelsUndo(
+                in0, in1, out0, out1, cell.getSimpleLevel(), cell.getFrameId(),
+                ras->clone()));
+            TRop::rgbmAdjust(ras, ras, in0, in1, out0, out1);
+
+            TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+            assert(simpleLevel);
+            simpleLevel->touchFrame(cell.getFrameId());
+            simpleLevel->setDirtyFlag(true);
+
+            IconGenerator::instance()->invalidate(simpleLevel,
+                                                  cell.getFrameId());
+          }
+        }
+      }
+      TUndoManager::manager()->endBlock();
+
+      if (oneImageChanged) {
+        return true;
+      }
+    }
+
+    TFilmstripSelection *filmstripSelection =
+        dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
+    if (filmstripSelection) {
+      TXshSimpleLevel *simpleLevel =
+          TApp::instance()->getCurrentLevel()->getSimpleLevel();
+      if (simpleLevel && !simpleLevel->isReadOnly()) {
+        std::set<TFrameId> fids = filmstripSelection->getSelectedFids();
+        bool oneImageChanged    = false;
+
+        for (auto const &fid : fids) {
+          TRasterImageP rasImage =
+              (TRasterImageP)simpleLevel->getFrame(fid, true);
           if (!rasImage) continue;
-
-          if (images.find(rasImage.getPointer()) != images.end()) continue;
 
           TRasterP ras = rasImage->getRaster();
           if (!ras) continue;
 
-          images.insert(rasImage.getPointer());
+          TUndoManager::manager()->add(new AdjustLevelsUndo(
+              in0, in1, out0, out1, simpleLevel, fid, ras->clone()));
           oneImageChanged = true;
-
-          TUndoManager::manager()->add(
-              new AdjustLevelsUndo(in0, in1, out0, out1, r, c, ras->clone()));
           TRop::rgbmAdjust(ras, ras, in0, in1, out0, out1);
 
-          TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
-          assert(simpleLevel);
-          simpleLevel->touchFrame(cell.getFrameId());
+          simpleLevel->touchFrame(fid);
           simpleLevel->setDirtyFlag(true);
 
-          IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+          IconGenerator::instance()->invalidate(simpleLevel, fid);
+        }
+
+        if (oneImageChanged) {
+          return true;
         }
       }
     }
-    TUndoManager::manager()->endBlock();
 
-    if (oneImageChanged) {
-      close();
-      return;
-    }
+    return false;
+  };
+
+  if (!applyToSelection()) {
+    DVGui::error(QObject::tr("The current selection is invalid."));
+    return;
   }
-
-  TFilmstripSelection *filmstripSelection =
-      dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
-  if (filmstripSelection) {
-    TXshSimpleLevel *simpleLevel =
-        TApp::instance()->getCurrentLevel()->getSimpleLevel();
-    if (simpleLevel) {
-      std::set<TFrameId> fids = filmstripSelection->getSelectedFids();
-      bool oneImageChanged    = false;
-
-      for (auto const &fid : fids) {
-        TRasterImageP rasImage =
-            (TRasterImageP)simpleLevel->getFrame(fid, true);
-        if (!rasImage) continue;
-
-        TRasterP ras = rasImage->getRaster();
-        if (!ras) continue;
-
-        oneImageChanged = true;
-        TRop::rgbmAdjust(ras, ras, in0, in1, out0, out1);
-
-        simpleLevel->touchFrame(fid);
-        simpleLevel->setDirtyFlag(true);
-
-        IconGenerator::instance()->invalidate(simpleLevel, fid);
-      }
-
-      if (oneImageChanged) {
-        close();
-        return;
-      }
-    }
-  }
-
-  DVGui::error(QObject::tr("The current selection is invalid."));
-  return;
+  TApp::instance()->getCurrentLevel()->notifyLevelChange();
+  TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  close();
+  CommandManager::instance()->recordRepeatAction(
+      this, windowTitle(),
+      [this, parameters]() { applyParameters(parameters); },
+      []() {
+        TSelection *selection = TSelection::getCurrent();
+        return selection && !selection->isEmpty() &&
+               (dynamic_cast<TCellSelection *>(selection) ||
+                dynamic_cast<TFilmstripSelection *>(selection));
+      });
 }
 
 //**************************************************************************

@@ -439,16 +439,16 @@ QPair<TDoubleParam *, int> FunctionSelection::getSelectedSegment() const {
 }
 
 void FunctionSelection::enableCommands() {
-  enableCommand(this, "MI_Copy", &FunctionSelection::doCopy);
-  enableCommand(this, "MI_Paste", &FunctionSelection::doPaste);
-  enableCommand(this, "MI_Cut", &FunctionSelection::doCut);
-  enableCommand(this, "MI_Clear", &FunctionSelection::doDelete);
-  enableCommand(this, "MI_Insert", &FunctionSelection::insertCells);
+  enableRepeatableCommand(this, "MI_Copy", &FunctionSelection::doCopy);
+  enableRepeatableCommand(this, "MI_Paste", &FunctionSelection::doPaste);
+  enableRepeatableCommand(this, "MI_Cut", &FunctionSelection::doCut);
+  enableRepeatableCommand(this, "MI_Clear", &FunctionSelection::doDelete);
+  enableRepeatableCommand(this, "MI_Insert", &FunctionSelection::insertCells);
 
-  enableCommand(this, "MI_ResetStep", &FunctionSelection::setStep1);
-  enableCommand(this, "MI_Step2", &FunctionSelection::setStep2);
-  enableCommand(this, "MI_Step3", &FunctionSelection::setStep3);
-  enableCommand(this, "MI_Step4", &FunctionSelection::setStep4);
+  enableRepeatableCommand(this, "MI_ResetStep", &FunctionSelection::setStep1);
+  enableRepeatableCommand(this, "MI_Step2", &FunctionSelection::setStep2);
+  enableRepeatableCommand(this, "MI_Step3", &FunctionSelection::setStep3);
+  enableRepeatableCommand(this, "MI_Step4", &FunctionSelection::setStep4);
 }
 void FunctionSelection::doCopy() {
   if (isEmpty()) return;

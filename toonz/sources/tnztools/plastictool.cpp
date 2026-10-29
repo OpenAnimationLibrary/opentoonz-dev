@@ -1075,11 +1075,13 @@ void PlasticTool::onSelectionChanged() {
 
 void PlasticTool::enableCommands() {
   if (TSelection::getCurrent() == &m_svSel)
-    m_svSel.enableCommand(this, MI_Clear,
-                          &PlasticTool::deleteSelectedVertex_undo);
+    m_svSel.enableRepeatableCommand(this, MI_Clear,
+                                    &PlasticTool::deleteSelectedVertex_undo);
   else if (TSelection::getCurrent() == &m_meSel) {
-    m_meSel.enableCommand(this, MI_Clear, &PlasticTool::collapseEdge_mesh_undo);
-    m_meSel.enableCommand(this, MI_Insert, &PlasticTool::splitEdge_mesh_undo);
+    m_meSel.enableRepeatableCommand(this, MI_Clear,
+                                    &PlasticTool::collapseEdge_mesh_undo);
+    m_meSel.enableRepeatableCommand(this, MI_Insert,
+                                    &PlasticTool::splitEdge_mesh_undo);
   }
 }
 

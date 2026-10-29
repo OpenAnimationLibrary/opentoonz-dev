@@ -3720,7 +3720,26 @@ void MainWindow::defineActions() {
                        MI_DrawingSubForward,
                        MI_DrawingSubBackward,
                        MI_DrawingSubGroupForward,
-                       MI_DrawingSubGroupBackward})
+                       MI_DrawingSubGroupBackward,
+                       MI_InsertSceneFrame,
+                       MI_RemoveSceneFrame,
+                       MI_RemoveSelectedSceneFrames,
+                       MI_InsertGlobalKeyframe,
+                       MI_RemoveGlobalKeyframe,
+                       MI_SetAcceleration,
+                       MI_SetDeceleration,
+                       MI_SetConstantSpeed,
+                       MI_ResetInterpolation,
+                       MI_UseLinearInterpolation,
+                       MI_UseSpeedInOutInterpolation,
+                       MI_UseEaseInOutInterpolation,
+                       MI_UseEaseInOutPctInterpolation,
+                       MI_UseExponentialInterpolation,
+                       MI_UseConstantInterpolation,
+                       "A_ToolOption_FlipHorizontal",
+                       "A_ToolOption_FlipVertical",
+                       "A_ToolOption_RotateLeft",
+                       "A_ToolOption_RotateRight"})
     CommandManager::instance()->setRepeatable(id);
 
   // create cell mark actions

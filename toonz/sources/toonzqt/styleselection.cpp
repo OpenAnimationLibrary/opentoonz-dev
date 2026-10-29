@@ -490,26 +490,30 @@ TStyleSelection::~TStyleSelection() {}
 void TStyleSelection::enableCommands() {
   if (m_paletteHandle && m_paletteHandle->getPalette() &&
       !m_paletteHandle->getPalette()->isCleanupPalette()) {
-    enableCommand(this, MI_Cut, &TStyleSelection::cutStyles);
-    enableCommand(this, MI_Copy, &TStyleSelection::copyStyles);
-    enableCommand(this, MI_Paste, &TStyleSelection::pasteStyles);
-    enableCommand(this, MI_PasteValues, &TStyleSelection::pasteStylesValue);
-    enableCommand(this, MI_PasteColors, &TStyleSelection::pasteStylesColor);
-    enableCommand(this, MI_PasteNames, &TStyleSelection::pasteStylesName);
+    enableRepeatableCommand(this, MI_Cut, &TStyleSelection::cutStyles);
+    enableRepeatableCommand(this, MI_Copy, &TStyleSelection::copyStyles);
+    enableRepeatableCommand(this, MI_Paste, &TStyleSelection::pasteStyles);
+    enableRepeatableCommand(this, MI_PasteValues,
+                            &TStyleSelection::pasteStylesValue);
+    enableRepeatableCommand(this, MI_PasteColors,
+                            &TStyleSelection::pasteStylesColor);
+    enableRepeatableCommand(this, MI_PasteNames,
+                            &TStyleSelection::pasteStylesName);
 
     // available only for level palette
     if (m_paletteHandle->getPalette()->getGlobalName().empty()) {
       enableCommand(this, MI_ToggleLinkToStudioPalette,
                     &TStyleSelection::toggleLink);
     }
-    enableCommand(this, MI_GetColorFromStudioPalette,
-                  &TStyleSelection::getBackOriginalStyle);
-    enableCommand(this, MI_RemoveReferenceToStudioPalette,
-                  &TStyleSelection::removeLink);
+    enableRepeatableCommand(this, MI_GetColorFromStudioPalette,
+                            &TStyleSelection::getBackOriginalStyle);
+    enableRepeatableCommand(this, MI_RemoveReferenceToStudioPalette,
+                            &TStyleSelection::removeLink);
   }
-  enableCommand(this, MI_Clear, &TStyleSelection::deleteStyles);
-  enableCommand(this, MI_EraseUnusedStyles, &TStyleSelection::eraseUnusedStyle);
-  enableCommand(this, MI_BlendColors, &TStyleSelection::blendStyles);
+  enableRepeatableCommand(this, MI_Clear, &TStyleSelection::deleteStyles);
+  enableRepeatableCommand(this, MI_EraseUnusedStyles,
+                          &TStyleSelection::eraseUnusedStyle);
+  enableRepeatableCommand(this, MI_BlendColors, &TStyleSelection::blendStyles);
 }
 
 //-------------------------------------------------------------------

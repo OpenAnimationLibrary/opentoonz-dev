@@ -1,5 +1,7 @@
 #include "toonzqt/menubarcommand.h"
 #include "tundo.h"
+#include "toonzqt/selection.h"
+#include "../../tnztools/selectionrepeat.h"
 
 #include <QApplication>
 #include <algorithm>
@@ -36,6 +38,39 @@ public:
   int getSize() const override { return sizeof(*this); }
   void undo() const override { m_order = m_before; }
   void redo() const override { m_order = m_after; }
+};
+
+class ValueUndo final : public TUndo {
+  int &m_value;
+  int m_before, m_after;
+
+public:
+  ValueUndo(int &value, int before)
+      : m_value(value), m_before(before), m_after(value) {}
+  int getSize() const override { return sizeof(*this); }
+  void undo() const override { m_value = m_before; }
+  void redo() const override { m_value = m_after; }
+};
+
+class EditorSelection final : public TSelection {
+  bool m_safe;
+
+public:
+  int edits = 0;
+  explicit EditorSelection(bool safe) : m_safe(safe) {}
+  bool isEmpty() const override { return false; }
+  void selectNone() override {}
+  void edit() { ++edits; }
+  void step(int value) { edits += value; }
+  void enableCommands() override {
+    if (m_safe) {
+      enableRepeatableCommand(this, "scoped", &EditorSelection::edit);
+      enableRepeatableCommand(this, "scopedStep", &EditorSelection::step, 3);
+    } else {
+      enableCommand(this, "scoped", &EditorSelection::edit);
+      enableCommand(this, "scopedStep", &EditorSelection::step, 3);
+    }
+  }
 };
 
 }  // namespace
@@ -155,5 +190,124 @@ int main(int argc, char **argv) {
         "Repeat at the ordering boundary must not change history");
   um->reset();
   check(!repeat->isEnabled(), "Scene/history reset must clear Repeat");
+  um->setUndoMemorySize(10);
+
+  // Repeat permission belongs to the current editor, not a shared clipboard ID.
+  QAction *scoped     = define("scoped", "Scoped Paste", []() {});
+  QAction *scopedStep = define("scopedStep", "Scoped Step", []() {});
+  {
+    EditorSelection drawing(true), browser(false);
+    TSelection::setCurrent(&drawing);
+    scoped->trigger();
+    repeat->trigger();
+    check(drawing.edits == 2, "Editor-specific repeatable command failed");
+    TSelection::setCurrent(&browser);
+    check(!repeat->isEnabled(), "File browser inherited Repeat permission");
+    cm->execute("repeat");
+    check(browser.edits == 0, "Repeat invoked an ineligible current handler");
+    TSelection::setCurrent(&drawing);
+    scopedStep->trigger();
+    repeat->trigger();
+    check(drawing.edits == 8, "Repeat lost the parameterized editor handler");
+    TSelection::setCurrent(nullptr);
+  }
+
+  // An Apply operation captures values, then resolves current targets at
+  // replay.
+  int first = 0, second = 0, setting = 7;
+  int *current  = &first;
+  bool editable = true;
+  QObject context;
+  const auto remember = [&](QObject *owner, int amount) {
+    cm->recordRepeatAction(
+        owner, "Parameter Edit",
+        [&, amount]() {
+          int before = *current;
+          *current += amount;
+          um->add(new ValueUndo(*current, before));
+        },
+        [&]() { return editable; });
+  };
+  remember(&context, setting);
+  setting = 42;  // subsequent UI changes do not alter the applied parameters
+  repeat->trigger();
+  current = &second;
+  repeat->trigger();
+  check(first == 7 && second == 7,
+        "Repeat lost captured parameters/current target");
+  check(um->getHistoryCount() == 2,
+        "Parameter replay must add normal undo steps");
+  um->undo();
+  check(second == 0 && !repeat->isEnabled(),
+        "Parameter Undo must clear Repeat");
+  um->redo();
+  check(second == 7, "Parameter redo failed");
+  remember(&context, 2);
+  editable = false;
+  cm->refreshRepeatAction();
+  check(!repeat->isEnabled(), "Invalid parameter target must disable Repeat");
+  cm->execute("repeat");
+  check(second == 7, "Parameter replay ignored eligibility");
+  editable = true;
+  cm->refreshRepeatAction();
+  repeat->trigger();
+  check(second == 9,
+        "Parameter recipe did not survive a temporary invalid target");
+
+  // Recipes can replace themselves; destroying their UI owner clears them.
+  int recipeRuns = 0;
+  cm->recordRepeatAction(
+      &context, "Replace Recipe",
+      [&]() {
+        ++recipeRuns;
+        remember(&context, 3);
+        cm->repeatLastCommand();  // re-entrant Repeat is ignored
+      },
+      []() { return true; });
+  repeat->trigger();
+  repeat->trigger();
+  check(recipeRuns == 1 && second == 12,
+        "Recipe replacement or recursion guard failed");
+  {
+    QObject temporary;
+    remember(&temporary, 9);
+  }
+  check(!repeat->isEnabled(), "Destroyed recipe owner must clear Repeat");
+  cm->execute("repeat");
+  check(second == 12, "Repeat invoked a destroyed owner");
+  remember(&context, 3);
+  selected = 1;
+  back->trigger();
+  check(repeat->toolTip().contains("Move Back One"),
+        "Command failed to replace recipe");
+  remember(&context, 3);
+  um->reset();
+  check(!repeat->isEnabled(), "History reset failed to clear a recipe");
+
+  // Use production affine capture/rebasing: four repeated quarter turns return
+  // to the starting point, scaling compounds, and nudges retain world distance.
+  const auto near = [](TPointD a, TPointD b) { return norm2(a - b) < 1e-16; };
+  TAffine affine;
+  check(SelectionRepeat::capture({0, 0}, {2, 0}, {0, 2}, {0, 0}, {0, 2},
+                                 {-2, 0}, affine),
+        "Rotation capture failed");
+  TPointD point(11, 10), center(10, 10);
+  TAffine rotation = SelectionRepeat::rebase(affine, {0, 0}, center);
+  check(near(rotation * point, {10, 11}),
+        "Repeat did not use the current pivot");
+  for (int i = 0; i < 4; ++i) point = rotation * point;
+  check(near(point, {11, 10}), "Repeated rotation did not compound");
+  check(SelectionRepeat::capture({0, 0}, {2, 0}, {0, 2}, {0, 0}, {4, 0}, {0, 4},
+                                 affine),
+        "Scale capture failed");
+  TAffine scale = SelectionRepeat::rebase(affine, {0, 0}, center);
+  check(near(scale * (scale * point), {14, 10}),
+        "Repeated scale did not compound");
+  TAffine nudge = SelectionRepeat::rebase(TTranslation(7, -3), {1, 2}, center);
+  check(near(nudge * center, {17, 7}),
+        "Nudge distance changed with selection pivot");
+  check(!SelectionRepeat::capture({0, 0}, {0, 0}, {0, 2}, {0, 0}, {1, 0},
+                                  {0, 2}, affine),
+        "Singular selection frame must not be repeatable");
   std::cout << "Repeat command tests passed" << std::endl;
 }

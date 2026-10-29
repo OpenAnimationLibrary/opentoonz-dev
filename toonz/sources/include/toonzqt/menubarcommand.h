@@ -6,11 +6,13 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <functional>
 #include "tcommon.h"
 
 #include <QAction>
 #include <QKeySequence>
 #include <QMenu>
+#include <QPointer>
 
 #undef DVAPI
 #undef DVVAR
@@ -34,6 +36,7 @@ class DVAPI CommandHandlerInterface {
 public:
   virtual ~CommandHandlerInterface() {}
   virtual void execute() = 0;
+  virtual bool canRepeat() const { return false; }
 };
 
 //-----------------------------------------------------------------------------
@@ -143,6 +146,11 @@ class DVAPI CommandManager {  // singleton
   Node *m_lastRepeatableCommand;
   Node *m_executingCommand;
   bool m_repeating;
+  QPointer<QObject> m_repeatContext;
+  QMetaObject::Connection m_repeatContextConnection;
+  QString m_repeatName;
+  std::function<void()> m_repeatFunction;
+  std::function<bool()> m_repeatEnabled;
 
   CommandManager();
 
@@ -151,6 +159,8 @@ class DVAPI CommandManager {  // singleton
   void createAuxActions();
   void executeNode(Node *node);
   void updateRepeatAction();
+  void clearRepeatAction();
+  bool canRepeat(Node *node) const;
 
 public:
   static CommandManager *instance();
@@ -191,6 +201,13 @@ public:
   void setRepeatable(CommandId id);
   void setRepeatCommand(CommandId id);
   void repeatLastCommand();
+  // Remember a completed gesture or an Apply operation. Capture parameter
+  // values, not widgets, selections or undo items; resolve the selection when
+  // run again.
+  void recordRepeatAction(QObject *context, const QString &name,
+                          std::function<void()> execute,
+                          std::function<bool()> enabled);
+  void refreshRepeatAction() { updateRepeatAction(); }
   bool executeTriggeredByShortcut() const {
     return m_executeTriggeredByShortcut;
   }
@@ -224,11 +241,13 @@ template <class T>
 class CommandHandlerHelper final : public CommandHandlerInterface {
   T *m_target;
   void (T::*m_method)();
+  bool m_repeatable;
 
 public:
-  CommandHandlerHelper(T *target, void (T::*method)())
-      : m_target(target), m_method(method) {}
+  CommandHandlerHelper(T *target, void (T::*method)(), bool repeatable = false)
+      : m_target(target), m_method(method), m_repeatable(repeatable) {}
   void execute() override { (m_target->*m_method)(); }
+  bool canRepeat() const override { return m_repeatable; }
 };
 
 template <class T, typename R>
@@ -236,11 +255,17 @@ class CommandHandlerHelper2 final : public CommandHandlerInterface {
   T *m_target;
   void (T::*m_method)(R value);
   R m_value;
+  bool m_repeatable;
 
 public:
-  CommandHandlerHelper2(T *target, void (T::*method)(R), R value)
-      : m_target(target), m_method(method), m_value(value) {}
+  CommandHandlerHelper2(T *target, void (T::*method)(R), R value,
+                        bool repeatable = false)
+      : m_target(target)
+      , m_method(method)
+      , m_value(value)
+      , m_repeatable(repeatable) {}
   void execute() override { (m_target->*m_method)(m_value); }
+  bool canRepeat() const override { return m_repeatable; }
 };
 
 //-----------------------------------------------------------------------------

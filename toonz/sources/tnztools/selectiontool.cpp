@@ -12,6 +12,7 @@
 #include "toonz/tobjecthandle.h"
 
 #include <QKeyEvent>
+#include "selectionrepeat.h"
 
 #include <memory>
 
@@ -1092,7 +1093,12 @@ void SelectionTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
       m_dragTool = createNewFreeDeformTool(this);
     else if (m_what == GLOBAL_THICKNESS)
       m_dragTool = new VectorChangeThicknessTool((VectorSelectionTool *)this);
-    if (m_dragTool) m_dragTool->leftButtonDown(pos, e);
+    if (m_dragTool) {
+      m_repeatStartBBox   = getBBox();
+      m_repeatStartCenter = getCenter();
+      m_repeatStartValues = m_deformValues;
+      m_dragTool->leftButtonDown(pos, e);
+    }
   } else
     m_selecting = true;
   if (m_selecting) {
@@ -1157,23 +1163,99 @@ bool SelectionTool::keyDown(QKeyEvent *event) {
   }
 
   TImageP image = getImage(true);
-
-  TToonzImageP ti  = (TToonzImageP)image;
-  TRasterImageP ri = (TRasterImageP)image;
-  TVectorImageP vi = (TVectorImageP)image;
-
-  if (!ti && !vi && !ri) return false;
-
+  if (!TVectorImageP(image) && !TRasterImageP(image) && !TToonzImageP(image))
+    return false;
+  const TPointD anchor = getCenter();
+  const TAffine affine = TTranslation(delta);
   std::unique_ptr<DragTool> dragTool(createNewMoveSelectionTool(this));
-  TAffine aff = TTranslation(delta);
-  dragTool->transform(aff);
-  double factor = 1.0 / Stage::inch;
-  m_deformValues.m_moveValue += factor * delta;
+  dragTool->transform(affine);
+  m_deformValues.m_moveValue += delta / Stage::inch;
   dragTool->addTransformUndo();
   TTool::getApplication()->getCurrentTool()->notifyToolChanged();
-
   invalidate();
+  if (canRepeatSelectionTransform())
+    CommandManager::instance()->recordRepeatAction(
+        qApp, tr("Move Selection"),
+        [affine, anchor]() {
+          auto tool = dynamic_cast<SelectionTool *>(
+              TTool::getApplication()->getCurrentTool()->getTool());
+          if (tool)
+            tool->repeatSelectionTransform(affine, anchor, 0.0, TPointD(1, 1));
+        },
+        []() {
+          auto tool = dynamic_cast<SelectionTool *>(
+              TTool::getApplication()->getCurrentTool()->getTool());
+          return tool && tool->canRepeatSelectionTransform();
+        });
   return true;
+}
+
+//-----------------------------------------------------------------------------
+
+bool SelectionTool::canRepeatSelectionTransform() {
+  return TTool::getApplication()->getCurrentTool()->getTool() == this &&
+         !m_leftButtonMousePressed && !isSelectionEmpty() &&
+         isSelectionEditable() &&
+         !TTool::getApplication()->getCurrentObject()->isSpline();
+}
+
+void SelectionTool::repeatSelectionTransform(const TAffine &affine,
+                                             const TPointD &anchor,
+                                             double angle,
+                                             const TPointD &scale) {
+  if (!canRepeatSelectionTransform()) return;
+  TImageP image = getImage(true);
+  if (!TVectorImageP(image) && !TRasterImageP(image) && !TToonzImageP(image))
+    return;
+  TUndoScopedBlock block;
+  const TPointD center    = getCenter();
+  const TAffine transform = SelectionRepeat::rebase(affine, anchor, center);
+  std::unique_ptr<DragTool> dragTool(createNewMoveSelectionTool(this));
+  if (!dragTool) return;
+  m_deformValues.m_rotationAngle += angle;
+  m_deformValues.m_scaleValue.x *= scale.x;
+  m_deformValues.m_scaleValue.y *= scale.y;
+  m_deformValues.m_moveValue += (transform * center - center) / Stage::inch;
+  dragTool->transform(transform);
+  dragTool->addTransformUndo();
+  TTool::getApplication()->getCurrentTool()->notifyToolChanged();
+  invalidate();
+}
+
+void SelectionTool::rememberSelectionTransform(const FourPoints &after,
+                                               const DeformValues &values) {
+  if (!canRepeatSelectionTransform()) return;
+  // A quadrilateral deformation or thickness/center edit is not an affine
+  // selection transform. Restrict this recipe to move/rotate/scale gestures.
+  if (m_what != Inside && m_what != ROTATION && m_what != SCALE &&
+      m_what != SCALE_X && m_what != SCALE_Y)
+    return;
+  if (after == m_repeatStartBBox) return;
+  TAffine affine;
+  if (!SelectionRepeat::capture(m_repeatStartBBox.getP00(),
+                                m_repeatStartBBox.getP10(),
+                                m_repeatStartBBox.getP01(), after.getP00(),
+                                after.getP10(), after.getP01(), affine))
+    return;
+  const TPointD anchor = m_repeatStartCenter;
+  const double angle =
+      values.m_rotationAngle - m_repeatStartValues.m_rotationAngle;
+  const TPointD oldScale = m_repeatStartValues.m_scaleValue;
+  if (std::abs(oldScale.x) < 1e-8 || std::abs(oldScale.y) < 1e-8) return;
+  const TPointD scale(values.m_scaleValue.x / oldScale.x,
+                      values.m_scaleValue.y / oldScale.y);
+  CommandManager::instance()->recordRepeatAction(
+      qApp, tr("Transform Selection"),
+      [affine, anchor, angle, scale]() {
+        auto tool = dynamic_cast<SelectionTool *>(
+            TTool::getApplication()->getCurrentTool()->getTool());
+        if (tool) tool->repeatSelectionTransform(affine, anchor, angle, scale);
+      },
+      []() {
+        auto tool = dynamic_cast<SelectionTool *>(
+            TTool::getApplication()->getCurrentTool()->getTool());
+        return tool && tool->canRepeatSelectionTransform();
+      });
 }
 
 //-----------------------------------------------------------------------------

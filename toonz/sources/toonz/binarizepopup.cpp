@@ -30,6 +30,7 @@
 #include "toonz/toonzscene.h"
 #include "toonz/sceneproperties.h"
 #include "toonz/txsheet.h"
+#include "toonz/txshcolumn.h"
 #include "toonz/tbinarizer.h"
 #include "toonz/preferences.h"
 
@@ -321,6 +322,9 @@ int BinarizePopup::getSelectedFrames() {
     for (c = c0; c <= c1; c++) {
       for (r = r0; r <= r1; r++) {
         TXshCell cell          = xsheet->getCell(r, c);
+        if (!cell.getSimpleLevel() || cell.getSimpleLevel()->isReadOnly() ||
+            (xsheet->getColumn(c) && xsheet->getColumn(c)->isLocked()))
+          continue;
         TRasterImageP rasImage = cell.getImage(false);
         if (!rasImage || !rasImage->getRaster()) continue;
         Frames::value_type item(cell.getSimpleLevel(), cell.getFrameId());
@@ -335,7 +339,7 @@ int BinarizePopup::getSelectedFrames() {
   } else if ((filmstripSelection =
                   dynamic_cast<TFilmstripSelection *>(selection))) {
     TXshSimpleLevel *sl = TApp::instance()->getCurrentLevel()->getSimpleLevel();
-    if (sl) {
+    if (sl && !sl->isReadOnly()) {
       std::set<TFrameId> fids = filmstripSelection->getSelectedFids();
       std::set<TFrameId>::iterator it;
       for (it = fids.begin(); it != fids.end(); ++it) {
@@ -352,6 +356,7 @@ int BinarizePopup::getSelectedFrames() {
       for (auto level : levels){
           if (!level)continue;
           auto sl = level->getSimpleLevel();
+          if (!sl || sl->isReadOnly()) continue;
           std::vector<TFrameId> ids;
           sl->getFids(ids);
           for (auto id : ids) {
@@ -421,7 +426,9 @@ void BinarizePopup::fetchSample() {
   }
 }
 
-void BinarizePopup::apply() {
+void BinarizePopup::apply() { applyWithAlpha(!!m_alphaChk->checkState()); }
+
+void BinarizePopup::applyWithAlpha(bool alpha) {
   if (getSelectedFrames() <= 0) {
     DVGui::error(tr("No raster frames selected"));
     return;
@@ -433,22 +440,20 @@ void BinarizePopup::apply() {
   qApp->processEvents();
 
   TBinarizer binarizer;
-  binarizer.enableAlpha(!!m_alphaChk->checkState());
+  binarizer.enableAlpha(alpha);
 
   TUndoManager::manager()->beginBlock();
   int count = 0;
   Frames::iterator it;
   for (it = m_frames.begin(); it != m_frames.end(); ++it) {
     TXshSimpleLevel *sl = it->first;
-    if (!!m_alphaChk->checkState()) sl->getProperties()->setHasAlpha(true);
+    if (alpha) sl->getProperties()->setHasAlpha(true);
     TFrameId fid = it->second;
-    TBinarizeUndo *undo =
-        new TBinarizeUndo(sl, fid, binarizer.isAlphaEnabled());
-    TUndoManager::manager()->add(undo);
     TRasterImageP ri = sl->getFrame(fid, true);
     if (!ri) continue;  // should never happen
     TRaster32P ras32 = ri->getRaster();
     if (!ras32) continue;  // not yet handled
+    TUndoManager::manager()->add(new TBinarizeUndo(sl, fid, alpha));
     binarizer.process(ras32);
     pd.setValue(count++);
     qApp->processEvents();
@@ -459,6 +464,15 @@ void BinarizePopup::apply() {
   TUndoManager::manager()->endBlock();
   TApp::instance()->getCurrentLevel()->notifyLevelChange();
   TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  if (count > 0)
+    CommandManager::instance()->recordRepeatAction(
+        this, tr("Binarize"), [this, alpha]() { applyWithAlpha(alpha); },
+        []() {
+          TSelection *selection = TSelection::getCurrent();
+          return selection && !selection->isEmpty() &&
+                 (dynamic_cast<TCellSelection *>(selection) ||
+                  dynamic_cast<TFilmstripSelection *>(selection));
+        });
 }
 
 OpenPopupCommandHandler<BinarizePopup> openBinarizePopup(MI_Binarize);

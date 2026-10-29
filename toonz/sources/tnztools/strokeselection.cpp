@@ -1018,10 +1018,10 @@ void StrokeSelection::cut() {
 //-----------------------------------------------------------------------------
 
 void StrokeSelection::enableCommands() {
-  enableCommand(this, MI_Clear, &StrokeSelection::deleteStrokes);
-  enableCommand(this, MI_Cut, &StrokeSelection::cut);
-  enableCommand(this, MI_Copy, &StrokeSelection::copy);
-  enableCommand(this, MI_Paste, &StrokeSelection::paste);
+  enableRepeatableCommand(this, MI_Clear, &StrokeSelection::deleteStrokes);
+  enableRepeatableCommand(this, MI_Cut, &StrokeSelection::cut);
+  enableRepeatableCommand(this, MI_Copy, &StrokeSelection::copy);
+  enableRepeatableCommand(this, MI_Paste, &StrokeSelection::paste);
   enableCommand(this, MI_SaveAsCustomVectorBrush,
                 &StrokeSelection::saveAsCustomVectorBrush);
 
@@ -1036,8 +1036,10 @@ void StrokeSelection::enableCommands() {
                 &TGroupCommand::enterGroup);
   enableCommand(m_groupCommand.get(), MI_ExitGroup, &TGroupCommand::exitGroup);
 
-  enableCommand(this, MI_RemoveEndpoints, &StrokeSelection::removeEndpoints);
-  enableCommand(this, MI_SortWithPaletteOrder, &StrokeSelection::sortWithPaletteOrder);
+  enableRepeatableCommand(this, MI_RemoveEndpoints,
+                          &StrokeSelection::removeEndpoints);
+  enableRepeatableCommand(this, MI_SortWithPaletteOrder,
+                          &StrokeSelection::sortWithPaletteOrder);
   enableCommand(this, MI_SelectAll, &StrokeSelection::selectAll);
   enableCommand(this, MI_AlignLeft, &StrokeSelection::alignStrokes,
                 VectorAlignment::ALIGN_LEFT);

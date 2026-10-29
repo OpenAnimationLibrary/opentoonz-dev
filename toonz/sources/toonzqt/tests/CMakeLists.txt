@@ -17,8 +17,12 @@ enable_testing()
 add_executable(repeatcommand_test
     repeatcommand_test.cpp
     ../menubarcommand.cpp
+    ../selection.cpp
+    ../tselectionhandle.cpp
     ../../common/tcore/tundo.cpp
+    ../../common/tgeometry/tgeometry.cpp
     ../../include/toonzqt/menubarcommand.h
+    ../../include/toonzqt/tselectionhandle.h
     ../../include/tundo.h
 )
 target_include_directories(repeatcommand_test PRIVATE ../../include)

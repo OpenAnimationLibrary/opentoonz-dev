@@ -34,10 +34,14 @@ TCellKeyframeSelection::TCellKeyframeSelection(
 //-----------------------------------------------------------------------------
 
 void TCellKeyframeSelection::enableCommands() {
-  enableCommand(this, MI_Copy, &TCellKeyframeSelection::copyCellsKeyframes);
-  enableCommand(this, MI_Paste, &TCellKeyframeSelection::pasteCellsKeyframes);
-  enableCommand(this, MI_Cut, &TCellKeyframeSelection::cutCellsKeyframes);
-  enableCommand(this, MI_Clear, &TCellKeyframeSelection::deleteCellsKeyframes);
+  enableRepeatableCommand(this, MI_Copy,
+                          &TCellKeyframeSelection::copyCellsKeyframes);
+  enableRepeatableCommand(this, MI_Paste,
+                          &TCellKeyframeSelection::pasteCellsKeyframes);
+  enableRepeatableCommand(this, MI_Cut,
+                          &TCellKeyframeSelection::cutCellsKeyframes);
+  enableRepeatableCommand(this, MI_Clear,
+                          &TCellKeyframeSelection::deleteCellsKeyframes);
 }
 
 //-----------------------------------------------------------------------------
