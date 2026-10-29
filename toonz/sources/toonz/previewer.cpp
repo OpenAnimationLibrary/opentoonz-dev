@@ -108,7 +108,14 @@ Previewer *previewerInstanceSC = nullptr;
 
 QTimer levelChangedTimer, fxChangedTimer, xsheetChangedTimer,
     objectChangedTimer;
-const int notificationDelay = 300;
+int previewNotificationDelay() {
+  ToonzScene *scene = TApp::instance()->getCurrentScene()->getScene();
+  return scene->getProperties()
+                 ->getPreviewProperties()
+                 ->isPreviewTimerBypassEnabled()
+             ? 0
+             : 300;
+}
 
 //-------------------------------------------------------------------------
 
@@ -1173,23 +1180,20 @@ Previewer::Previewer(bool subcamera) : m_imp(std::make_unique<Imp>(this)) {
   connect(app->getPaletteController()->getCurrentLevelPalette(),
           &TPaletteHandle::paletteChanged, this, &Previewer::onLevelChanged);
 
-  levelChangedTimer.setInterval(notificationDelay);
-  fxChangedTimer.setInterval(notificationDelay);
-  xsheetChangedTimer.setInterval(notificationDelay);
-  objectChangedTimer.setInterval(notificationDelay);
   levelChangedTimer.setSingleShot(true);
   fxChangedTimer.setSingleShot(true);
   xsheetChangedTimer.setSingleShot(true);
   objectChangedTimer.setSingleShot(true);
 
   connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
-          [this]() { levelChangedTimer.start(); });
+          [this]() { levelChangedTimer.start(previewNotificationDelay()); });
   connect(app->getCurrentFx(), &TFxHandle::fxChanged, this,
-          [this]() { fxChangedTimer.start(); });
+          [this]() { fxChangedTimer.start(previewNotificationDelay()); });
   connect(app->getCurrentXsheet(), &TXsheetHandle::xsheetChanged, this,
-          [this]() { xsheetChangedTimer.start(); });
-  connect(app->getCurrentObject(), &TObjectHandle::objectChanged, this,
-          [this](bool) { objectChangedTimer.start(); });
+          [this]() { xsheetChangedTimer.start(previewNotificationDelay()); });
+  connect(
+      app->getCurrentObject(), &TObjectHandle::objectChanged, this,
+      [this](bool) { objectChangedTimer.start(previewNotificationDelay()); });
 
   connect(&levelChangedTimer, &QTimer::timeout, this,
           &Previewer::onLevelChanged);

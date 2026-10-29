@@ -64,6 +64,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QComboBox *m_dominantFieldOm;
   DVGui::CheckBox *m_applyShrinkChk;
   DVGui::CheckBox *m_subcameraChk;
+  DVGui::CheckBox *m_previewTimerBypassChk;
   DVGui::DoubleLineEdit *m_stretchFromFld, *m_stretchToFld;
   DVGui::CheckBox *m_doStereoscopy;
   DVGui::DoubleLineEdit *m_stereoShift;
@@ -126,6 +127,7 @@ protected slots:
   void onStretchFldEditFinished();
   void onApplyShrinkChecked(int state);
   void onSubcameraChecked(int state);
+  void onPreviewTimerBypassChecked(int state);
   void onMultimediaChanged(int mode);
   void onThreadsComboChanged(int type);
   void onRasterGranularityChanged(int type);

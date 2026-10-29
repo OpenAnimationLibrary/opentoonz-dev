@@ -179,6 +179,7 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
     : Dialog(TApp::instance()->getMainWindow(), false, isPreview,
              isPreview ? "PreviewSettings" : "OutputSettings")
     , m_subcameraChk(nullptr)
+    , m_previewTimerBypassChk(nullptr)
     , m_applyShrinkChk(nullptr)
     , m_outputCameraOm(nullptr)
     , m_isPreviewSettings(isPreview)
@@ -417,6 +418,12 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     m_outputCameraOm->setFocusPolicy(Qt::StrongFocus);
     m_outputCameraOm->installEventFilter(this);
   } else {
+    m_previewTimerBypassChk =
+        new DVGui::CheckBox(tr("Bypass Preview Update Timer (300 ms)"), this);
+    m_previewTimerBypassChk->setToolTip(
+        tr("Update the main Viewer Preview on the next event-loop turn instead "
+           "of waiting 300 ms after drawing, FX, Xsheet or object changes. "
+           "May increase rendering activity during continuous edits."));
     // Subcamera checkbox
     m_subcameraChk = new DVGui::CheckBox(tr("Use Sub-Camera"));
     m_applyShrinkChk =
@@ -484,6 +491,7 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     frameShrinkLay->setColumnStretch(8, 1);
 
     lay->addLayout(frameShrinkLay);
+    if (isPreview) lay->addWidget(m_previewTimerBypassChk);
   }
   cameraSettingsBox->setLayout(lay);
 
@@ -505,6 +513,8 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     ret = ret && connect(m_cameraSettings, SIGNAL(changed()), this,
                          SLOT(onCameraSettingsChanged()));
   } else {
+    ret = ret && connect(m_previewTimerBypassChk, SIGNAL(stateChanged(int)),
+                         SLOT(onPreviewTimerBypassChecked(int)));
     ret = ret && connect(m_applyShrinkChk, SIGNAL(stateChanged(int)),
                          SLOT(onApplyShrinkChecked(int)));
   }
@@ -925,6 +935,17 @@ void OutputSettingsPopup::onApplyShrinkChecked(int state) {
 
 //-----------------------------------------------------------------------------
 
+void OutputSettingsPopup::onPreviewTimerBypassChecked(int state) {
+  TOutputProperties *prop = getProperties();
+  if (!prop) return;
+  bool enabled = state == Qt::Checked;
+  if (prop->isPreviewTimerBypassEnabled() == enabled) return;
+  prop->setPreviewTimerBypassEnabled(enabled);
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+}
+
+//-----------------------------------------------------------------------------
+
 void OutputSettingsPopup::onSubcameraChecked(int state) {
   getProperties()->setSubcameraPreview(state == Qt::Checked);
 }
@@ -955,6 +976,11 @@ void OutputSettingsPopup::onRenderClicked() {
 void OutputSettingsPopup::updateField() {
   ToonzScene *scene       = getCurrentScene();
   TOutputProperties *prop = getProperties();
+  if (m_previewTimerBypassChk) {
+    const QSignalBlocker blocker(m_previewTimerBypassChk);
+    m_previewTimerBypassChk->setChecked(prop &&
+                                        prop->isPreviewTimerBypassEnabled());
+  }
   if (!prop) {
     if (!m_isPreviewSettings) {
       m_saveInFileFld->setPath(QString());

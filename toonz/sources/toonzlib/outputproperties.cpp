@@ -41,6 +41,7 @@ TOutputProperties::TOutputProperties()
     , m_maxTileSizeIndex(0)
     , m_threadIndex(2)
     , m_subcameraPreview(false)
+    , m_previewTimerBypass(false)
     , m_boardSettings(new BoardSettings())
     , m_formatTemplateFId()
     , m_syncColorSettings(true)
@@ -65,6 +66,7 @@ TOutputProperties::TOutputProperties(const TOutputProperties &src)
     , m_maxTileSizeIndex(src.m_maxTileSizeIndex)
     , m_threadIndex(src.m_threadIndex)
     , m_subcameraPreview(src.m_subcameraPreview)
+    , m_previewTimerBypass(src.m_previewTimerBypass)
     , m_boardSettings(new BoardSettings(*src.m_boardSettings))
     , m_formatTemplateFId(src.m_formatTemplateFId)
     , m_syncColorSettings(src.m_syncColorSettings)
@@ -101,6 +103,7 @@ TOutputProperties &TOutputProperties::operator=(const TOutputProperties &src) {
   m_maxTileSizeIndex    = src.m_maxTileSizeIndex;
   m_threadIndex         = src.m_threadIndex;
   m_subcameraPreview    = src.m_subcameraPreview;
+  m_previewTimerBypass  = src.m_previewTimerBypass;
 
   delete m_renderSettings;
   m_renderSettings = new TRenderSettings(*src.m_renderSettings);

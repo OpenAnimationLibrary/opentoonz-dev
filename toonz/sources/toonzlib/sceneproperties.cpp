@@ -261,8 +261,11 @@ void TSceneProperties::saveData(TOStream &os) const {
     if (rs.m_colorSpaceGamma >= 1. &&
         !areAlmostEqual(rs.m_colorSpaceGamma, 2.2))
       os.child("colorSpaceGamma") << rs.m_colorSpaceGamma;
-    if (i == 1)  // preview
+    if (i == 1) {  // preview
       os.child("syncColorSettings") << (out.isColorSettingsSynced() ? 1 : 0);
+      os.child("previewTimerBypass")
+          << (out.isPreviewTimerBypassEnabled() ? 1 : 0);
+    }
 
     os.child("multimedia") << out.getMultimediaRendering();
     os.child("threadsIndex") << out.getThreadIndex();
@@ -598,6 +601,11 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
               int syncColorSettings;
               is >> syncColorSettings;
               out.syncColorSettings(syncColorSettings != 0);
+            } else if (tagName == "previewTimerBypass") {
+              int enabled;
+              is >> enabled;
+              if (name == "preview")
+                out.setPreviewTimerBypassEnabled(enabled != 0);
             } else if (tagName == "multimedia") {
               int j;
               is >> j;
