@@ -115,6 +115,7 @@ class DVAPI CommandManager {  // singleton
     QAction *m_qaction;
     CommandHandlerInterface *m_handler;
     bool m_enabled;
+    bool m_repeatable;
     QString m_onText,
         m_offText;  // for toggle commands. e.g. show/hide something
     const char *m_iconSVGName;
@@ -125,6 +126,7 @@ class DVAPI CommandManager {  // singleton
         , m_qaction(0)
         , m_handler(0)
         , m_enabled(true)
+        , m_repeatable(false)
         , m_iconSVGName("") {}
 
     ~Node() {
@@ -137,12 +139,18 @@ class DVAPI CommandManager {  // singleton
   std::map<std::string, Node *> m_shortcutTable;
   bool m_executeTriggeredByShortcut;
   QAction *m_pendingShortcutAction;
+  Node *m_repeatCommand;
+  Node *m_lastRepeatableCommand;
+  Node *m_executingCommand;
+  bool m_repeating;
 
   CommandManager();
 
   Node *getNode(CommandId id, bool createIfNeeded = true);
   void setShortcut(CommandId id, QAction *action, std::string shortcutString);
   void createAuxActions();
+  void executeNode(Node *node);
+  void updateRepeatAction();
 
 public:
   static CommandManager *instance();
@@ -178,6 +186,11 @@ public:
    * otherwise recall execute(menuAction).*/
   void execute(QAction *action, QAction *menuAction);
   void execute(CommandId id);
+  // Opt in direct editing commands that can run again on the current selection.
+  // Dialogs, toggles and interactive tool gestures cannot repeat.
+  void setRepeatable(CommandId id);
+  void setRepeatCommand(CommandId id);
+  void repeatLastCommand();
   bool executeTriggeredByShortcut() const {
     return m_executeTriggeredByShortcut;
   }

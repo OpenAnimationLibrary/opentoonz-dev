@@ -24,6 +24,7 @@
  
     <item>MI_Undo</item>
     <item>MI_Redo</item>
+    <item>MI_Repeat</item>
     <separator/>
     <item>MI_Cut</item>
     <item>MI_Copy</item>

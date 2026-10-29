@@ -6,6 +6,7 @@
 #include "toonzqt/gutil.h"
 #include "toonz/toonzfolders.h"
 #include "tsystem.h"
+#include "tundo.h"
 #include <assert.h>
 #include <QObject>
 #include <QAction>
@@ -14,6 +15,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QShortcutEvent>
+#include <QScopedValueRollback>
 
 #include <sys/types.h>
 
@@ -62,7 +64,12 @@ void AuxActionsCreatorManager::createAuxActions(QObject *parent) {
 //=========================================================
 
 CommandManager::CommandManager()
-    : m_executeTriggeredByShortcut(false), m_pendingShortcutAction(nullptr) {}
+    : m_executeTriggeredByShortcut(false)
+    , m_pendingShortcutAction(nullptr)
+    , m_repeatCommand(nullptr)
+    , m_lastRepeatableCommand(nullptr)
+    , m_executingCommand(nullptr)
+    , m_repeating(false) {}
 
 //---------------------------------------------------------
 
@@ -171,6 +178,7 @@ void CommandManager::setHandler(CommandId id,
         node->m_enabled &&
         (!!node->m_handler || node->m_qaction->actionGroup() != 0));
   }
+  updateRepeatAction();
 }
 
 //---------------------------------------------------------
@@ -183,10 +191,10 @@ void CommandManager::execute(QAction *qaction) {
   std::map<QAction *, Node *>::iterator it = m_qactionTable.find(qaction);
   assert(it != m_qactionTable.end());
   if (it != m_qactionTable.end() && it->second->m_handler) {
-    m_executeTriggeredByShortcut = (qaction == m_pendingShortcutAction);
-    m_pendingShortcutAction      = nullptr;
-    it->second->m_handler->execute();
-    m_executeTriggeredByShortcut = false;
+    QScopedValueRollback<bool> shortcut(m_executeTriggeredByShortcut,
+                                        qaction == m_pendingShortcutAction);
+    m_pendingShortcutAction = nullptr;
+    executeNode(it->second);
   }
 }
 
@@ -210,9 +218,96 @@ void CommandManager::execute(CommandId id) {
       // principalmente per i tool
       action->setChecked(true);
     }
-    m_executeTriggeredByShortcut = false;
-    node->m_handler->execute();
+    QScopedValueRollback<bool> shortcut(m_executeTriggeredByShortcut, false);
+    executeNode(node);
   }
+}
+
+//---------------------------------------------------------
+
+void CommandManager::executeNode(Node *node) {
+  // Nested helper commands belong to their outer editing command. Repeat itself
+  // is only a dispatcher, so its target becomes the active editing command.
+  bool outermost = !m_executingCommand || m_executingCommand == m_repeatCommand;
+  QScopedValueRollback<Node *> executing(m_executingCommand,
+                                         outermost ? node : m_executingCommand);
+  node->m_handler->execute();
+  if (outermost && node->m_repeatable) m_lastRepeatableCommand = node;
+  updateRepeatAction();
+}
+
+//---------------------------------------------------------
+
+void CommandManager::setRepeatable(CommandId id) {
+  Node *node = getNode(id, false);
+  assert(node && node->m_qaction);
+  if (!node || !node->m_qaction || node->m_repeatable) return;
+  assert(!node->m_qaction->isCheckable());
+  if (node->m_qaction->isCheckable() || node == m_repeatCommand) return;
+  node->m_repeatable = true;
+  QObject::connect(node->m_qaction, &QAction::changed, node->m_qaction,
+                   [this]() { updateRepeatAction(); });
+}
+
+//---------------------------------------------------------
+
+void CommandManager::setRepeatCommand(CommandId id) {
+  assert(!m_repeatCommand);
+  if (m_repeatCommand) return;
+  Node *node = getNode(id, false);
+  assert(node && node->m_qaction);
+  if (!node || !node->m_qaction) return;
+  m_repeatCommand    = node;
+  node->m_repeatable = false;
+  setCommandHandler(id, this, &CommandManager::repeatLastCommand);
+  // A gesture, an unsupported edit, Undo/Redo (including the History panel), or
+  // a scene reset invalidates the old target. Navigation alone preserves it.
+  QObject::connect(
+      TUndoManager::manager(), &TUndoManager::historyChanged, node->m_qaction,
+      [this]() {
+        if (!m_executingCommand || !m_executingCommand->m_repeatable) {
+          m_lastRepeatableCommand = nullptr;
+          updateRepeatAction();
+        }
+      });
+  updateRepeatAction();
+}
+
+//---------------------------------------------------------
+
+void CommandManager::updateRepeatAction() {
+  if (!m_repeatCommand) return;
+  Node *target = m_lastRepeatableCommand;
+  bool enabled = target && target->m_enabled && target->m_handler &&
+                 target->m_qaction && target->m_qaction->isEnabled();
+  m_repeatCommand->m_qaction->setEnabled(
+      enabled && m_repeatCommand->m_enabled && !m_repeating);
+  QString tooltip = m_repeatCommand->m_qaction->text();
+  tooltip.remove('&');
+  if (target) {
+    QString name = target->m_qaction->text();
+    name.remove('&');
+    tooltip = QObject::tr("Repeat: %1").arg(name);
+  }
+  QString shortcut = m_repeatCommand->m_qaction->shortcut().toString();
+  if (!shortcut.isEmpty()) tooltip += " (" + shortcut + ")";
+  m_repeatCommand->m_qaction->setToolTip(tooltip);
+}
+
+//---------------------------------------------------------
+
+void CommandManager::repeatLastCommand() {
+  Node *target = m_lastRepeatableCommand;
+  if (m_repeating || !target || !target->m_enabled || !target->m_handler ||
+      !target->m_qaction || !target->m_qaction->isEnabled())
+    return;
+  {
+    QScopedValueRollback<bool> repeating(m_repeating, true);
+    // Re-enter normal dispatch to use the current handler and selection and
+    // produce a fresh undo item, rather than replaying a saved undo snapshot.
+    execute(target->m_id.c_str());
+  }
+  updateRepeatAction();
 }
 
 //---------------------------------------------------------

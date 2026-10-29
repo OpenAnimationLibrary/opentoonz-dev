@@ -2360,6 +2360,8 @@ void MainWindow::defineActions() {
                        "invert_selection");
   createMenuEditAction(MI_Undo, QT_TR_NOOP("&Undo"), "Ctrl+Z", "undo");
   createMenuEditAction(MI_Redo, QT_TR_NOOP("&Redo"), "Ctrl+Y", "redo");
+  createMenuEditAction(MI_Repeat, QT_TR_NOOP("&Repeat"), "");
+  CommandManager::instance()->setRepeatCommand(MI_Repeat);
   createMenuEditAction(MI_Cut, QT_TR_NOOP("&Cut"), "Ctrl+X", "cut");
   createMenuEditAction(MI_Copy, QT_TR_NOOP("&Copy"), "Ctrl+C", "content_copy");
   createMenuEditAction(MI_Paste, QT_TR_NOOP("&Paste Insert"), "Ctrl+V",
@@ -3694,6 +3696,32 @@ void MainWindow::defineActions() {
 
   // Special Modifier Keys
   createSpecialModifierAction(V_Scrub, QT_TR_NOOP("Viewer Scrub"), "#");
+
+  // Direct edits that can be applied again using the current selection.
+  // Dialog-based commands and clipboard/file operations do not opt in.
+  for (CommandId id : {MI_SendBackward,
+                       MI_BringForward,
+                       MI_SendBack,
+                       MI_BringToFront,
+                       MI_Group,
+                       MI_Ungroup,
+                       MI_AlignLeft,
+                       MI_AlignRight,
+                       MI_AlignTop,
+                       MI_AlignBottom,
+                       MI_AlignCenterHorizontal,
+                       MI_AlignCenterVertical,
+                       MI_DistributeHorizontal,
+                       MI_DistributeVertical,
+                       MI_IncreaseStep,
+                       MI_DecreaseStep,
+                       MI_Rollup,
+                       MI_Rolldown,
+                       MI_DrawingSubForward,
+                       MI_DrawingSubBackward,
+                       MI_DrawingSubGroupForward,
+                       MI_DrawingSubGroupBackward})
+    CommandManager::instance()->setRepeatable(id);
 
   // create cell mark actions
   for (int markId = 0; markId < 12; markId++) {
