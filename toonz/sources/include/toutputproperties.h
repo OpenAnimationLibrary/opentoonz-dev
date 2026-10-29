@@ -103,6 +103,7 @@ private:
   bool m_syncColorSettings;
   // for restoring bpp when setting the color space back to nonlinear
   int m_nonlinearBpp;
+  bool m_optimizePreviewForDrawing;
 
 public:
   /*!
@@ -239,6 +240,13 @@ machine's CPU).
   void syncColorSettings(bool sync) { m_syncColorSettings = sync; }
   int getNonlinearBpp() { return m_nonlinearBpp; }
   void setNonlinearBpp(int bpp) { m_nonlinearBpp = bpp; }
+
+  bool isPreviewOptimizedForDrawing() const {
+    return m_optimizePreviewForDrawing;
+  }
+  void setPreviewOptimizedForDrawing(bool enabled) {
+    m_optimizePreviewForDrawing = enabled;
+  }
 };
 
 //--------------------------------------------

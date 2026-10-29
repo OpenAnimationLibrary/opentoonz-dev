@@ -85,6 +85,7 @@ class OutputSettingsPopup : public DVGui::Dialog {
   QFrame *m_cameraBox, *m_colorBox, *m_fileBox, *m_moreBox;
 
   DVGui::CheckBox *m_syncColorSettingsButton;
+  DVGui::CheckBox *m_optimizePreviewForDrawingChk;
 
   bool m_isPreviewSettings;
 
@@ -132,6 +133,7 @@ protected slots:
   void onStereoChanged();
   void onSyncColorSettingsChecked(int state);
   void onRenderClicked();
+  void onOptimizePreviewForDrawingChecked(int state);
 
   /*-- OutputSettingsのPreset登録/削除/選択 --*/
   void onAddPresetButtonPressed();

@@ -268,6 +268,9 @@ void TSceneProperties::saveData(TOStream &os) const {
     os.child("threadsIndex") << out.getThreadIndex();
     os.child("maxTileSizeIndex") << out.getMaxTileSizeIndex();
     os.child("subcameraPrev") << (out.isSubcameraPreview() ? 1 : 0);
+    if (i == 1)
+      os.child("optimizePreviewForDrawing")
+          << (out.isPreviewOptimizedForDrawing() ? 1 : 0);
     os.child("stereoscopic")
         << (rs.m_stereoscopic ? 1 : 0) << rs.m_stereoscopicShift;
 
@@ -611,6 +614,11 @@ void TSceneProperties::loadData(TIStream &is, bool isLoadingProject) {
               int j;
               is >> j;
               out.setSubcameraPreview(j != 0);
+            } else if (tagName == "optimizePreviewForDrawing") {
+              int enabled;
+              is >> enabled;
+              if (name == "preview")
+                out.setPreviewOptimizedForDrawing(enabled != 0);
             } else if (tagName == "resquality") {
               int j;
               is >> j;

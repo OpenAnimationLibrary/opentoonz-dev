@@ -57,6 +57,8 @@
 #include <QMetaType>
 
 #include "previewer.h"
+#include "previewdrawingscheduler.h"
+#include "tools/toolhandle.h"
 
 // C++ includes
 #include <memory>
@@ -154,7 +156,7 @@ public:
   std::set<Previewer::Listener *> m_listeners;
   std::map<int, FrameInfo> m_frames;
   std::vector<UCHAR> m_pbStatus;
-  int m_computingFrameCount;
+  std::set<std::pair<unsigned long, unsigned long>> m_computingTasks;
 
   TRenderSettings m_renderSettings;
 
@@ -168,6 +170,7 @@ public:
   TRect m_previewRect;
 
   TRenderer m_renderer;
+  PreviewDrawingScheduler m_drawingScheduler;
 
   // Save command stuff
   TLevelWriterP m_lw;
@@ -201,6 +204,9 @@ public:
   // Use this method to re-render the passed frame. Infos specified with the
   // update* methods are assumed correct.
   void refreshFrame(int frame);
+  bool renderFrame(int frame);
+  void cancelDrawingFrame(int frame);
+  void syncDrawingMode();
 
   void addRenderData(std::vector<TRenderer::RenderData> &datas, int frame);
   void addFramesToRenderQueue(const std::vector<int> &frames);
@@ -249,7 +255,9 @@ Previewer::Imp::Imp(Previewer *owner)
     : m_owner(owner)
     , m_cameraRes(0, 0)
     , m_renderer(TSystem::getProcessorCount())
-    , m_computingFrameCount(0)
+    , m_drawingScheduler(
+          owner, [this](int frame) { return renderFrame(frame); },
+          [this](int frame) { cancelDrawingFrame(frame); })
     , m_currentFrameToSave(0)
     , m_subcamera(false)
     , m_lw() {
@@ -337,6 +345,7 @@ void Previewer::Imp::updateCamera() {
 
   // Invalidate the old camera size
   if (m_cameraRes != cameraRes || m_renderArea != renderArea) {
+    m_drawingScheduler.clear();
     m_cameraRes  = cameraRes;
     m_renderArea = renderArea;
     m_cameraPos  = cameraPos;
@@ -346,6 +355,58 @@ void Previewer::Imp::updateCamera() {
       TImageCache::instance()->remove(m_cachePrefix + std::to_string(frame));
 
     m_frames.clear();
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void Previewer::Imp::cancelDrawingFrame(int frame) {
+  auto it = m_frames.find(frame);
+  if (it == m_frames.end()) return;
+  unsigned long renderId = it->second.m_renderId;
+  m_renderer.abortRendering(renderId);
+  // startRendering itself is queued. Also cancel after its queued invocation
+  // in case this job had not entered TRenderer's active-instance table yet.
+  QTimer::singleShot(0, m_owner, [renderer = m_renderer, renderId]() mutable {
+    renderer.abortRendering(renderId);
+  });
+  // Reject late completion signals from cooperatively canceled jobs.
+  it->second.m_renderId        = (unsigned long)-1;
+  it->second.m_rectUnderRender = TRect();
+  updateProgressBarStatus();
+}
+
+//-----------------------------------------------------------------------------
+
+void Previewer::Imp::syncDrawingMode() {
+  TApp *app    = TApp::instance();
+  bool enabled = !suspendedRendering && !m_listeners.empty() &&
+                 m_currentFrameToSave == 0 &&
+                 !app->getCurrentFrame()->isPlaying() &&
+                 app->getCurrentScene()
+                     ->getScene()
+                     ->getProperties()
+                     ->getPreviewProperties()
+                     ->isPreviewOptimizedForDrawing();
+  if (enabled != m_drawingScheduler.isEnabled()) {
+    std::vector<int> pending;
+    if (enabled) {
+      for (auto &[frame, info] : m_frames) {
+        if (!info.m_rectUnderRender.isEmpty()) {
+          pending.push_back(frame);
+          cancelDrawingFrame(frame);
+        }
+      }
+    }
+    m_drawingScheduler.setEnabled(enabled);
+    if (enabled) {
+      m_drawingScheduler.setBusy(app->getCurrentTool()->isToolBusy());
+      int currentFrame = app->getCurrentFrame()->getFrame();
+      if (std::find(pending.begin(), pending.end(), currentFrame) !=
+          pending.end())
+        m_drawingScheduler.requestForeground(currentFrame);
+      m_drawingScheduler.requestBackground(pending);
+    }
   }
 }
 
@@ -363,6 +424,7 @@ void Previewer::Imp::updateRenderSettings() {
 
   // In case the settings changed, erase all previously cached images
   if (renderSettings != m_renderSettings) {
+    m_drawingScheduler.clear();
     m_renderSettings = renderSettings;
 
     for (auto &[frame, info] : m_frames)
@@ -380,8 +442,10 @@ void Previewer::Imp::updateFrameRange() {
       TApp::instance()->getCurrentScene()->getScene()->getFrameCount();
 
   auto it = m_frames.lower_bound(newFrameCount);
-  for (auto jt = it; jt != m_frames.end(); ++jt)
+  for (auto jt = it; jt != m_frames.end(); ++jt) {
+    m_drawingScheduler.invalidate(jt->first);
     TImageCache::instance()->remove(m_cachePrefix + std::to_string(jt->first));
+  }
 
   m_frames.erase(it, m_frames.end());
 
@@ -481,6 +545,7 @@ void Previewer::Imp::updateAliases() {
                          : "");
 
     if (newAlias != info.m_alias) {
+      m_drawingScheduler.invalidate(frame);
       // Clear the remaining frame infos
       info.m_renderedRegion = QRegion();
     }
@@ -492,6 +557,7 @@ void Previewer::Imp::updateAliases() {
 void Previewer::Imp::updateAliasKeyword(const std::string &keyword) {
   for (auto &[frame, info] : m_frames) {
     if (info.m_alias.find(keyword) != std::string::npos) {
+      m_drawingScheduler.invalidate(frame);
       TFxPair fxPair = buildSceneFx(frame);
       info.m_alias   = fxPair.m_frameA
                            ? fxPair.m_frameA->getAlias(frame, m_renderSettings)
@@ -515,23 +581,36 @@ void Previewer::Imp::updateAliasKeyword(const std::string &keyword) {
 
 //! Starts rendering the passed frame.
 void Previewer::Imp::refreshFrame(int frame) {
-  if (suspendedRendering) return;
+  syncDrawingMode();
+  if (m_drawingScheduler.isEnabled())
+    m_drawingScheduler.requestForeground(frame);
+  else
+    renderFrame(frame);
+}
+
+//-----------------------------------------------------------------------------
+
+bool Previewer::Imp::renderFrame(int frame) {
+  if (suspendedRendering || frame < 0) return false;
+  if (m_drawingScheduler.isEnabled() &&
+      frame >= TApp::instance()->getCurrentScene()->getScene()->getFrameCount())
+    return false;
 
   // Build the region to render
   updatePreviewRect();
 
-  if (m_previewRect.getLx() <= 0 || m_previewRect.getLy() <= 0) return;
+  if (m_previewRect.getLx() <= 0 || m_previewRect.getLy() <= 0) return false;
 
   // Retrieve the FrameInfo for passed frame
   auto it = m_frames.find(frame);
   if (it != m_frames.end()) {
     // In case the rect we would render is contained in the frame's rendered
     // region, quit
-    if (::contains(it->second.m_renderedRegion, m_previewRect)) return;
+    if (::contains(it->second.m_renderedRegion, m_previewRect)) return false;
 
     // Then, check the m_previewRect against the frame's m_rectUnderRendering.
     // Ensure that we're not re-launching the very same render.
-    if (it->second.m_rectUnderRender == m_previewRect) return;
+    if (it->second.m_rectUnderRender == m_previewRect) return false;
 
     // Stop any frame's previously running render process
     m_renderer.abortRendering(it->second.m_renderId);
@@ -562,11 +641,13 @@ void Previewer::Imp::refreshFrame(int frame) {
 
   // Start the render
   m_renderer.startRendering(frame, m_renderSettings, fxPair);
+  return true;
 }
 
 //-----------------------------------------------------------------------------
 
 void Previewer::Imp::remove(int frame) {
+  m_drawingScheduler.invalidate(frame);
   // Search the frame among rendered ones
   auto it = m_frames.find(frame);
   if (it != m_frames.end()) {
@@ -581,6 +662,7 @@ void Previewer::Imp::remove(int frame) {
 //-----------------------------------------------------------------------------
 
 void Previewer::Imp::remove() {
+  m_drawingScheduler.clear();
   m_renderer.stopRendering(false);
 
   // Remove all cached images
@@ -627,7 +709,10 @@ void Previewer::Imp::onRenderRasterStarted(const RenderData &renderData) {
 void Previewer::Imp::doOnRenderRasterStarted(const RenderData &renderData) {
   int frame = renderData.m_frames[0];
 
-  m_computingFrameCount++;
+  m_computingTasks.emplace(renderData.m_renderId, renderData.m_taskId);
+  auto it = m_frames.find(frame);
+  if (it == m_frames.end() || it->second.m_renderId != renderData.m_renderId)
+    return;
 
   // Update the progress bar status
   if (frame < int(m_pbStatus.size()))
@@ -679,7 +764,7 @@ void Previewer::Imp::doOnRenderRasterCompleted(const RenderData &renderData) {
     TRop::tosRGB(ras, m_renderSettings.m_colorSpaceGamma);
   }
 
-  m_computingFrameCount--;
+  m_computingTasks.erase({renderData.m_renderId, renderData.m_taskId});
 
   // Find the render infos in the Previewer
   auto it = m_frames.find(frame);
@@ -735,6 +820,7 @@ void Previewer::Imp::doOnRenderRasterCompleted(const RenderData &renderData) {
     // Notify listeners
     notifyCompleted(f);
   }
+  m_drawingScheduler.completed(frame);
 }
 
 //-----------------------------------------------------------------------------
@@ -750,7 +836,7 @@ void Previewer::Imp::onRenderFailure(const RenderData &renderData,
 
 //! Adds the renderized image to TImageCache; listeners are advised too.
 void Previewer::Imp::doOnRenderRasterFailed(const RenderData &renderData) {
-  m_computingFrameCount--;
+  m_computingTasks.erase({renderData.m_renderId, renderData.m_taskId});
 
   int frame = renderData.m_frames[0];
 
@@ -767,6 +853,7 @@ void Previewer::Imp::doOnRenderRasterFailed(const RenderData &renderData) {
     m_pbStatus[frame] = FlipSlider::PBFrameNotStarted;
 
   notifyCompleted(frame);  // Completed!?
+  m_drawingScheduler.completed(frame);
 }
 
 //-----------------------------------------------------------------------------
@@ -1025,6 +1112,14 @@ void Previewer::Imp::addRenderData(std::vector<TRenderer::RenderData> &datas,
 
 void Previewer::Imp::addFramesToRenderQueue(const std::vector<int> &frames) {
   if (suspendedRendering) return;
+  syncDrawingMode();
+  if (m_drawingScheduler.isEnabled()) {
+    int frame = TApp::instance()->getCurrentFrame()->getFrame();
+    if (std::find(frames.begin(), frames.end(), frame) != frames.end())
+      m_drawingScheduler.requestForeground(frame);
+    m_drawingScheduler.requestBackground(frames);
+    return;
+  }
   // Build the region to render
   updatePreviewRect();
   if (m_previewRect.getLx() <= 0 || m_previewRect.getLy() <= 0) return;
@@ -1104,6 +1199,34 @@ Previewer::Previewer(bool subcamera) : m_imp(std::make_unique<Imp>(this)) {
   connect(&objectChangedTimer, &QTimer::timeout, this,
           &Previewer::onObjectChanged);
 
+  connect(app->getCurrentTool(), &ToolHandle::toolBusyChanged, this,
+          [this](bool busy) {
+            // Resume after toolEditingFinished has invalidated the drawing.
+            if (busy) m_imp->m_drawingScheduler.setBusy(true);
+          });
+  connect(
+      app->getCurrentTool(), &ToolHandle::toolEditingFinished, this, [this]() {
+        if (!m_imp->m_drawingScheduler.isEnabled()) return;
+        QTimer::singleShot(0, this, [this]() {
+          if (suspendedRendering || m_imp->m_listeners.empty() ||
+              !m_imp->m_drawingScheduler.isEnabled())
+            return;
+          // Stroke notifications may still be waiting in the 300 ms timer.
+          // In drawing mode, invalidate once the completed edit is safe.
+          levelChangedTimer.stop();
+          onLevelChanged();
+          m_imp->m_drawingScheduler.setBusy(
+              TApp::instance()->getCurrentTool()->isToolBusy());
+          m_imp->refreshFrame(TApp::instance()->getCurrentFrame()->getFrame());
+        });
+      });
+  connect(app->getCurrentFrame(), &TFrameHandle::isPlayingStatusChanged, this,
+          [this]() { m_imp->syncDrawingMode(); });
+  connect(app->getCurrentScene(), &TSceneHandle::sceneSwitched, this, [this]() {
+    m_imp->m_drawingScheduler.clear();
+    m_imp->m_drawingScheduler.setEnabled(false);
+  });
+
   qRegisterMetaType<TRenderPort::RenderData>("TRenderPort::RenderData");
 
   connect(this, &Previewer::startedFrame, this, &Previewer::onStartedFrame);
@@ -1157,6 +1280,8 @@ void Previewer::removeListener(Listener *listener) {
              &Previewer::updateView);
 
   if (m_imp->m_listeners.empty()) {
+    m_imp->m_drawingScheduler.clear();
+    m_imp->m_drawingScheduler.setEnabled(false);
     m_imp->m_renderer.stopRendering(false);
 
     // Release all used context names
@@ -1213,6 +1338,7 @@ void Previewer::saveRenderedFrames() {
     otherwise start calculating it */
 TRasterP Previewer::getRaster(int frame, bool renderIfNeeded) const {
   if (frame < 0) return TRasterP();
+  m_imp->syncDrawingMode();
   auto it = m_imp->m_frames.find(frame);
   if (it != m_imp->m_frames.end()) {
     if (frame < int(m_imp->m_pbStatus.size())) {
@@ -1286,7 +1412,7 @@ bool Previewer::isActive() const { return !m_imp->m_listeners.empty(); }
 //-----------------------------------------------------------------------------
 
 bool Previewer::isBusy() const {
-  return !m_imp->m_listeners.empty() && m_imp->m_computingFrameCount > 0;
+  return !m_imp->m_listeners.empty() && !m_imp->m_computingTasks.empty();
 }
 
 //-----------------------------------------------------------------------------
@@ -1333,6 +1459,7 @@ void Previewer::clearAll() {
 
 //! Refreshes all scene frames
 void Previewer::update() {
+  m_imp->syncDrawingMode();
   if (m_imp->m_listeners.empty()) return;
 
   m_imp->updateAliases();
@@ -1484,8 +1611,14 @@ void Previewer::onFailedFrame(TRenderPort::RenderData renderData) {
 //! is allowed to bypass such limitation.
 void Previewer::suspendRendering(bool suspend) {
   suspendedRendering = suspend;
-  if (suspend && previewerInstance)
+  if (suspend && previewerInstance) {
+    previewerInstance->m_imp->m_drawingScheduler.clear();
+    previewerInstance->m_imp->m_drawingScheduler.setEnabled(false);
     previewerInstance->m_imp->m_renderer.stopRendering(true);
-  if (suspend && previewerInstanceSC)
+  }
+  if (suspend && previewerInstanceSC) {
+    previewerInstanceSC->m_imp->m_drawingScheduler.clear();
+    previewerInstanceSC->m_imp->m_drawingScheduler.setEnabled(false);
     previewerInstanceSC->m_imp->m_renderer.stopRendering(true);
+  }
 }
