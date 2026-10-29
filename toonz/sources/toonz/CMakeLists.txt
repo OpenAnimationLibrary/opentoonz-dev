@@ -139,6 +139,10 @@ set(MOC_HEADERS
     exportcameratrackpopup.h
 )
 
+if(BUILD_TARGET_WIN)
+    list(APPEND MOC_HEADERS handwritingpanel.h handwritingsurface.h winhandwritingrecognizer.h)
+endif()
+
 if(PLATFORM EQUAL 64)
     set(MOC_HEADERS
         ${MOC_HEADERS}
@@ -438,6 +442,10 @@ else()
 endif()
 
 
+if(BUILD_TARGET_WIN)
+    list(APPEND SOURCES handwritingpanel.cpp handwritingsurface.cpp winhandwritingrecognizer.cpp)
+endif()
+
 set(OBJCSOURCES filebrowsermodel.cpp)
 
 # Resource file(s)
@@ -471,6 +479,10 @@ else()
     #    -DTAPPTOOLS_EXPORTS
     #    -DTTEST_EXPORTS
     #)
+endif()
+
+if(BUILD_TARGET_WIN)
+    target_link_libraries(OpenToonz ole32 oleaut32)
 endif()
 
 if(WITH_TRANSLATION)
