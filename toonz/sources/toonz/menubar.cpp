@@ -140,7 +140,13 @@ void ensureAlignmentPanelAction(QMenu *windowsMenu) {
 void ensureHandwritingPanelAction(QMenu *windowsMenu) {
   QAction *action =
       CommandManager::instance()->getAction(MI_TranscribeHandwriting);
-  if (action && !menuContainsAction(windowsMenu, action))
+  if (!action || menuContainsAction(windowsMenu, action)) return;
+
+  QAction *customPanels =
+      CommandManager::instance()->getAction(MI_OpenCustomPanels);
+  if (windowsMenu->actions().contains(customPanels))
+    windowsMenu->insertAction(customPanels, action);
+  else
     windowsMenu->addAction(action);
 }
 #endif
@@ -340,8 +346,12 @@ void StackedMenuBar::createMenuBarByName(const QString &roomName) {
   QMenuBar *menuBar = qobject_cast<QMenuBar *>(widget(count() - 1));
   if (menuBar) {
     for (QAction *action : menuBar->actions()) {
-      if (action->menu() && action->menu()->title() == tr("Windows"))
+      if (action->menu() && action->menu()->title() == tr("Windows")) {
         ensureAlignmentPanelAction(action->menu());
+#ifdef _WIN32
+        ensureHandwritingPanelAction(action->menu());
+#endif
+      }
     }
   }
 }

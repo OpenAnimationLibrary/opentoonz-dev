@@ -2848,6 +2848,10 @@ void MainWindow::defineActions() {
                           "Alt+S", "opentoonz");
   createMenuWindowsAction(MI_OpenAlignmentPanel,
                           QT_TR_NOOP("Align and Distribute Panel"), "", "");
+#ifdef _WIN32
+  createMenuWindowsAction(MI_TranscribeHandwriting,
+                          QT_TR_NOOP("Transcribe Handwriting"), "", "");
+#endif
   createMenuWindowsAction(MI_OpenGuidedDrawingControls,
                           QT_TR_NOOP("Guided Drawing Controls"), "",
                           "guided_drawing");
