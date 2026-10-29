@@ -68,29 +68,40 @@ void TFilmstripSelection::enableCommands() {
        (ri && ri->isScanBW()));
 
   if (doEnable && !isNotEditableFullColorLevel) {
-    enableCommand(this, MI_Cut, &TFilmstripSelection::cutFrames);
-    enableCommand(this, MI_Copy, &TFilmstripSelection::copyFrames);
-    enableCommand(this, MI_Paste, &TFilmstripSelection::pasteFrames);
-    enableCommand(this, MI_PasteInto, &TFilmstripSelection::pasteInto);
-    enableCommand(this, MI_Clear, &TFilmstripSelection::deleteFrames);
-    enableCommand(this, MI_Reverse, &TFilmstripSelection::reverseFrames);
-    enableCommand(this, MI_Swing, &TFilmstripSelection::swingFrames);
-    enableCommand(this, MI_Step2, &TFilmstripSelection::stepFrames, 2);
-    enableCommand(this, MI_Step3, &TFilmstripSelection::stepFrames, 3);
-    enableCommand(this, MI_Step4, &TFilmstripSelection::stepFrames, 4);
-    enableCommand(this, MI_Each2, &TFilmstripSelection::eachFrames, 2);
-    enableCommand(this, MI_Each3, &TFilmstripSelection::eachFrames, 3);
-    enableCommand(this, MI_Each4, &TFilmstripSelection::eachFrames, 4);
-    enableCommand(this, MI_Duplicate, &TFilmstripSelection::duplicateFrames);
+    enableRepeatableCommand(this, MI_Cut, &TFilmstripSelection::cutFrames);
+    enableRepeatableCommand(this, MI_Copy, &TFilmstripSelection::copyFrames);
+    enableRepeatableCommand(this, MI_Paste, &TFilmstripSelection::pasteFrames);
+    enableRepeatableCommand(this, MI_PasteInto,
+                            &TFilmstripSelection::pasteInto);
+    enableRepeatableCommand(this, MI_Clear, &TFilmstripSelection::deleteFrames);
+    enableRepeatableCommand(this, MI_Reverse,
+                            &TFilmstripSelection::reverseFrames);
+    enableRepeatableCommand(this, MI_Swing, &TFilmstripSelection::swingFrames);
+    enableRepeatableCommand(this, MI_Step2, &TFilmstripSelection::stepFrames,
+                            2);
+    enableRepeatableCommand(this, MI_Step3, &TFilmstripSelection::stepFrames,
+                            3);
+    enableRepeatableCommand(this, MI_Step4, &TFilmstripSelection::stepFrames,
+                            4);
+    enableRepeatableCommand(this, MI_Each2, &TFilmstripSelection::eachFrames,
+                            2);
+    enableRepeatableCommand(this, MI_Each3, &TFilmstripSelection::eachFrames,
+                            3);
+    enableRepeatableCommand(this, MI_Each4, &TFilmstripSelection::eachFrames,
+                            4);
+    enableRepeatableCommand(this, MI_Duplicate,
+                            &TFilmstripSelection::duplicateFrames);
 
     if (type != MESH_XSHLEVEL) {
-      enableCommand(this, MI_Insert, &TFilmstripSelection::insertEmptyFrames);
-      enableCommand(this, MI_MergeFrames, &TFilmstripSelection::mergeFrames);
+      enableRepeatableCommand(this, MI_Insert,
+                              &TFilmstripSelection::insertEmptyFrames);
+      enableRepeatableCommand(this, MI_MergeFrames,
+                              &TFilmstripSelection::mergeFrames);
 
       enableCommand(this, MI_AddFrames, &TFilmstripSelection::addFrames);
     }
   } else if (isNotEditableFullColorLevel)
-    enableCommand(this, MI_Copy, &TFilmstripSelection::copyFrames);
+    enableRepeatableCommand(this, MI_Copy, &TFilmstripSelection::copyFrames);
 
   enableCommand(this, MI_ExposeResource, &TFilmstripSelection::exposeFrames);
 

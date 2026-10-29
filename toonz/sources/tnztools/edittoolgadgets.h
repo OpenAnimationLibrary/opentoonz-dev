@@ -110,6 +110,7 @@ public:
   virtual ~DragTool() {}
 
   virtual void enableGlobalKeyframes(bool enabled) {}
+  virtual void recordRepeat() {}
 };
 
 //-----------------------------------------------------------------------------

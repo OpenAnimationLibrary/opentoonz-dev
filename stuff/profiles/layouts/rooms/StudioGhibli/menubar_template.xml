@@ -50,6 +50,7 @@
   <menu title="Edit">
     <command>MI_Undo</command>
     <command>MI_Redo</command>
+    <command>MI_Repeat</command>
     <separator/>
     <command>MI_Cut</command>
     <command>MI_Copy</command>

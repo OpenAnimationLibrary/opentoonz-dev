@@ -1286,7 +1286,8 @@ void ControlPointSelection::deleteControlPoints() {
 //-----------------------------------------------------------------------------
 
 void ControlPointSelection::enableCommands() {
-  enableCommand(this, "MI_Clear", &ControlPointSelection::deleteControlPoints);
+  enableRepeatableCommand(this, "MI_Clear",
+                          &ControlPointSelection::deleteControlPoints);
   enableCommand(this, MI_AlignLeft, &ControlPointSelection::alignControlPoints,
                 VectorAlignment::ALIGN_LEFT);
   enableCommand(this, MI_AlignRight, &ControlPointSelection::alignControlPoints,
@@ -1308,10 +1309,10 @@ void ControlPointSelection::enableCommands() {
   enableCommand(this, MI_DistributeVertical,
                 &ControlPointSelection::alignControlPoints,
                 VectorAlignment::DISTRIBUTE_V);
-  enableCommand(this, MI_SetLinearControlPoint,
-                &ControlPointSelection::setLinear);
-  enableCommand(this, MI_SetNonLinearControlPoint,
-                &ControlPointSelection::setUnlinear);
+  enableRepeatableCommand(this, MI_SetLinearControlPoint,
+                          &ControlPointSelection::setLinear);
+  enableRepeatableCommand(this, MI_SetNonLinearControlPoint,
+                          &ControlPointSelection::setUnlinear);
 }
 
 // Adapted from manongjohn's Tahoma2D PR #1275 using the current OT editor

@@ -1517,62 +1517,71 @@ void TCellSelection::enableCommands() {
   // enableCommand(this, MI_PasteNew,     &TCellSelection::dPasteCells);
   enableCommand(this, MI_Autorenumber, &TCellSelection::dRenumberCells);
 
-  enableCommand(this, MI_Reverse, &TCellSelection::reverseCells);
-  enableCommand(this, MI_Swing, &TCellSelection::swingCells);
-  enableCommand(this, MI_Random, &TCellSelection::randomCells);
-  enableCommand(this, MI_Increment, &TCellSelection::incrementCells);
-  enableCommand(this, MI_ResetStep, &TCellSelection::resetStepCells);
-  enableCommand(this, MI_IncreaseStep, &TCellSelection::increaseStepCells);
-  enableCommand(this, MI_DecreaseStep, &TCellSelection::decreaseStepCells);
-  enableCommand(this, MI_Step2, &TCellSelection::step2Cells);
-  enableCommand(this, MI_Step3, &TCellSelection::step3Cells);
-  enableCommand(this, MI_Step4, &TCellSelection::step4Cells);
-  enableCommand(this, MI_Each2, &TCellSelection::each2Cells);
-  enableCommand(this, MI_Each3, &TCellSelection::each3Cells);
-  enableCommand(this, MI_Each4, &TCellSelection::each4Cells);
+  enableRepeatableCommand(this, MI_Reverse, &TCellSelection::reverseCells);
+  enableRepeatableCommand(this, MI_Swing, &TCellSelection::swingCells);
+  enableRepeatableCommand(this, MI_Random, &TCellSelection::randomCells);
+  enableRepeatableCommand(this, MI_Increment, &TCellSelection::incrementCells);
+  enableRepeatableCommand(this, MI_ResetStep, &TCellSelection::resetStepCells);
+  enableRepeatableCommand(this, MI_IncreaseStep,
+                          &TCellSelection::increaseStepCells);
+  enableRepeatableCommand(this, MI_DecreaseStep,
+                          &TCellSelection::decreaseStepCells);
+  enableRepeatableCommand(this, MI_Step2, &TCellSelection::step2Cells);
+  enableRepeatableCommand(this, MI_Step3, &TCellSelection::step3Cells);
+  enableRepeatableCommand(this, MI_Step4, &TCellSelection::step4Cells);
+  enableRepeatableCommand(this, MI_Each2, &TCellSelection::each2Cells);
+  enableRepeatableCommand(this, MI_Each3, &TCellSelection::each3Cells);
+  enableRepeatableCommand(this, MI_Each4, &TCellSelection::each4Cells);
 
-  enableCommand(this, MI_Rollup, &TCellSelection::rollupCells);
-  enableCommand(this, MI_Rolldown, &TCellSelection::rolldownCells);
+  enableRepeatableCommand(this, MI_Rollup, &TCellSelection::rollupCells);
+  enableRepeatableCommand(this, MI_Rolldown, &TCellSelection::rolldownCells);
 
   enableCommand(this, MI_TimeStretch, &TCellSelection::openTimeStretchPopup);
-  enableCommand(this, MI_CloneLevel, &TCellSelection::cloneLevel);
-  enableCommand(this, MI_SetKeyframes, &TCellSelection::setKeyframes);
+  enableRepeatableCommand(this, MI_CloneLevel, &TCellSelection::cloneLevel);
+  enableRepeatableCommand(this, MI_SetKeyframes, &TCellSelection::setKeyframes);
 
-  enableCommand(this, MI_ShiftKeyframesDown,
-                &TCellSelection::shiftKeyframesDown);
-  enableCommand(this, MI_ShiftKeyframesUp, &TCellSelection::shiftKeyframesUp);
+  enableRepeatableCommand(this, MI_ShiftKeyframesDown,
+                          &TCellSelection::shiftKeyframesDown);
+  enableRepeatableCommand(this, MI_ShiftKeyframesUp,
+                          &TCellSelection::shiftKeyframesUp);
 
-  enableCommand(this, MI_Copy, &TCellSelection::copyCells);
-  enableCommand(this, MI_Paste,
-                &TCellSelection::doPaste);  // choose pasting behavior by
-                                            // preference option
+  enableRepeatableCommand(this, MI_Copy, &TCellSelection::copyCells);
+  enableRepeatableCommand(this, MI_Paste,
+                          &TCellSelection::doPaste);  // choose pasting behavior
+                                                      // by preference option
 
   if (dynamic_cast<const TKeyframeData *>(
           QApplication::clipboard()->mimeData()))
-    enableCommand(this, MI_PasteInto, &TCellSelection::pasteKeyframesInto);
+    enableRepeatableCommand(this, MI_PasteInto,
+                            &TCellSelection::pasteKeyframesInto);
 
-  enableCommand(this, MI_Cut, &TCellSelection::cutCells);
-  enableCommand(this, MI_Clear, &TCellSelection::deleteCells);
-  enableCommand(this, MI_Insert, &TCellSelection::insertCells);
+  enableRepeatableCommand(this, MI_Cut, &TCellSelection::cutCells);
+  enableRepeatableCommand(this, MI_Clear, &TCellSelection::deleteCells);
+  enableRepeatableCommand(this, MI_Insert, &TCellSelection::insertCells);
 
-  enableCommand(this, MI_PasteInto, &TCellSelection::overWritePasteCells);
+  enableRepeatableCommand(this, MI_PasteInto,
+                          &TCellSelection::overWritePasteCells);
 
-  enableCommand(this, MI_FillEmptyCell, &TCellSelection::fillEmptyCell);
-  enableCommand(this, MI_Reframe1, &TCellSelection::reframe1Cells);
-  enableCommand(this, MI_Reframe2, &TCellSelection::reframe2Cells);
-  enableCommand(this, MI_Reframe3, &TCellSelection::reframe3Cells);
-  enableCommand(this, MI_Reframe4, &TCellSelection::reframe4Cells);
+  enableRepeatableCommand(this, MI_FillEmptyCell,
+                          &TCellSelection::fillEmptyCell);
+  enableRepeatableCommand(this, MI_Reframe1, &TCellSelection::reframe1Cells);
+  enableRepeatableCommand(this, MI_Reframe2, &TCellSelection::reframe2Cells);
+  enableRepeatableCommand(this, MI_Reframe3, &TCellSelection::reframe3Cells);
+  enableRepeatableCommand(this, MI_Reframe4, &TCellSelection::reframe4Cells);
   enableCommand(this, MI_ConvertVectorToVector,
                 &TCellSelection::convertVectortoVector);
   enableCommand(this, MI_ReframeWithEmptyInbetweens,
                 &TCellSelection::reframeWithEmptyInbetweens);
 
-  enableCommand(this, MI_PasteNumbers, &TCellSelection::overwritePasteNumbers);
-  enableCommand(this, MI_PasteCellContent, &TCellSelection::pasteCells);
-  enableCommand(this, MI_CreateBlankDrawing,
-                &TCellSelection::createBlankDrawings);
-  enableCommand(this, MI_Duplicate, &TCellSelection::duplicateFrames);
-  enableCommand(this, MI_PasteDuplicate, &TCellSelection::pasteDuplicateCells);
+  enableRepeatableCommand(this, MI_PasteNumbers,
+                          &TCellSelection::overwritePasteNumbers);
+  enableRepeatableCommand(this, MI_PasteCellContent,
+                          &TCellSelection::pasteCells);
+  enableRepeatableCommand(this, MI_CreateBlankDrawing,
+                          &TCellSelection::createBlankDrawings);
+  enableRepeatableCommand(this, MI_Duplicate, &TCellSelection::duplicateFrames);
+  enableRepeatableCommand(this, MI_PasteDuplicate,
+                          &TCellSelection::pasteDuplicateCells);
 }
 
 //-----------------------------------------------------------------------------

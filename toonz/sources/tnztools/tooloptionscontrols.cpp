@@ -28,6 +28,7 @@
 #include "tools/tool.h"
 #include "rasterselectiontool.h"
 #include "vectorselectiontool.h"
+#include "edittool.h"
 // to enable the increase/decrease shortcuts while hiding the tool option
 #include "tools/toolhandle.h"
 // to enable shortcuts only when the viewer is focused
@@ -35,6 +36,7 @@
 
 // Qt includes
 #include <QPainter>
+#include <QScopedValueRollback>
 #include <QVBoxLayout>
 #include <QMouseEvent>
 #include <QAction>
@@ -784,6 +786,7 @@ void MeasuredValueField::commit() {
 
   setText(QString::fromStdWString(m_value->toWideString(m_precision)));
   m_modified = false;
+  QScopedValueRollback<bool> committing(m_committingText, true);
   emit measuredValueChanged(m_value);
 }
 
@@ -976,7 +979,9 @@ void PegbarChannelField::onChange(TMeasuredValue *fld, bool addToUndo) {
       fld->setValue(TMeasuredValue::MainUnit, 0.0001);
     }
   }
-  bool modifyConnectedActionId = false;
+  bool modifyConnectedActionId =
+      m_scaleType != eNone && (m_actionId == TStageObject::T_ScaleX ||
+                               m_actionId == TStageObject::T_ScaleY);
   if (addToUndo) TUndoManager::manager()->beginBlock();
   // m_firstMouseDrag is set to true only if addToUndo is false
   // and only for the first drag
@@ -1040,6 +1045,10 @@ void PegbarChannelField::onChange(TMeasuredValue *fld, bool addToUndo) {
   }
   if (!addToUndo && !m_firstMouseDrag) m_firstMouseDrag = true;
   m_objHandle->notifyObjectIdChanged(false);
+  if (addToUndo && dynamic_cast<EditTool *>(m_tool))
+    EditTool::recordTransformRepeat(m_before, after, m_isGlobalKeyframe,
+                                    isCommittingText(),
+                                    modifyConnectedActionId ? 2 : 1);
 }
 
 //-----------------------------------------------------------------------------
@@ -1112,6 +1121,9 @@ void PegbarCenterField::onChange(TMeasuredValue *fld, bool addToUndo) {
   }
   if (!addToUndo && !m_firstMouseDrag) m_firstMouseDrag = true;
   m_objHandle->notifyObjectIdChanged(false);
+  if (addToUndo && dynamic_cast<EditTool *>(m_tool))
+    EditTool::recordCenterRepeat(m_oldCenter, center, 1 << m_index,
+                                 isCommittingText());
 }
 
 //-----------------------------------------------------------------------------
@@ -1270,7 +1282,8 @@ bool SelectionScaleField::applyChange(bool addToUndo) {
   if (!m_tool || (m_tool->isSelectionEmpty() && !m_tool->isLevelType()))
     return false;
   using namespace DragSelectionTool;
-  DragTool *scaleTool = createNewScaleTool(m_tool, ScaleType::GLOBAL);
+  DragSelectionTool::DragTool *scaleTool =
+      createNewScaleTool(m_tool, ScaleType::GLOBAL);
   double p            = getValue();
   if (p == 0) p = 0.00001;
   FourPoints points = m_tool->getBBox();

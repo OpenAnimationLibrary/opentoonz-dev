@@ -32,6 +32,7 @@ public:
   AntialiasPopup();
 
 protected:
+  void applyParameters(int threshold, int softness);
   void showEvent(QShowEvent *e) override;
   void hideEvent(QHideEvent *e) override;
 

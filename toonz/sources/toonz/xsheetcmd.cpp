@@ -1594,6 +1594,9 @@ public:
     double ease0, ease1;
 
     pegbar->getKeyframeSpan(row, r0, ease0, r1, ease1);
+    if (r0 < 0 || r1 <= r0 || !pegbar->isKeyframe(r0) ||
+        !pegbar->isKeyframe(r1))
+      return;
 
     std::unique_ptr<TUndo> undo(
         new KeyFrameHandleCommandUndo(objectId, r0, r1));
@@ -1642,6 +1645,9 @@ public:
     double ease0, ease1;
 
     pegbar->getKeyframeSpan(row, r0, ease0, r1, ease1);
+    if (r0 < 0 || r1 <= r0 || !pegbar->isKeyframe(r0) ||
+        !pegbar->isKeyframe(r1))
+      return;
 
     std::unique_ptr<TUndo> undo(
         new KeyFrameHandleCommandUndo(objectId, r0, r1));
@@ -1686,6 +1692,9 @@ public:
     double ease0, ease1;
 
     pegbar->getKeyframeSpan(row, r0, ease0, r1, ease1);
+    if (r0 < 0 || r1 <= r0 || !pegbar->isKeyframe(r0) ||
+        !pegbar->isKeyframe(r1))
+      return;
 
     KeyFrameHandleCommandUndo *undo =
         new KeyFrameHandleCommandUndo(objectId, r0, r1);
@@ -1726,6 +1735,9 @@ public:
     double ease0, ease1;
 
     pegbar->getKeyframeSpan(row, r0, ease0, r1, ease1);
+    if (r0 < 0 || r1 <= r0 || !pegbar->isKeyframe(r0) ||
+        !pegbar->isKeyframe(r1))
+      return;
 
     KeyFrameHandleCommandUndo *undo =
         new KeyFrameHandleCommandUndo(objectId, r0, r1);
@@ -1771,6 +1783,9 @@ public:
     double ease0, ease1;
 
     pegbar->getKeyframeSpan(row, r0, ease0, r1, ease1);
+    if (r0 < 0 || r1 <= r0 || !pegbar->isKeyframe(r0) ||
+        !pegbar->isKeyframe(r1))
+      return;
 
     KeyFrameHandleCommandUndo *undo =
         new KeyFrameHandleCommandUndo(objectId, r0, r1);

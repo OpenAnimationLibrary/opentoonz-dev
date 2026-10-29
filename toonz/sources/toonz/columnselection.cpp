@@ -43,22 +43,24 @@ TColumnSelection::~TColumnSelection() {}
 //-----------------------------------------------------------------------------
 
 void TColumnSelection::enableCommands() {
-  enableCommand(this, MI_Cut, &TColumnSelection::cutColumns);
-  enableCommand(this, MI_Copy, &TColumnSelection::copyColumns);
-  enableCommand(this, MI_Paste, &TColumnSelection::pasteColumns);
-  enableCommand(this, MI_PasteAbove, &TColumnSelection::pasteColumnsAbove);
-  enableCommand(this, MI_Clear, &TColumnSelection::deleteColumns);
-  enableCommand(this, MI_InsertAbove, &TColumnSelection::insertColumnsAbove);
-  enableCommand(this, MI_Insert, &TColumnSelection::insertColumns);
+  enableRepeatableCommand(this, MI_Cut, &TColumnSelection::cutColumns);
+  enableRepeatableCommand(this, MI_Copy, &TColumnSelection::copyColumns);
+  enableRepeatableCommand(this, MI_Paste, &TColumnSelection::pasteColumns);
+  enableRepeatableCommand(this, MI_PasteAbove,
+                          &TColumnSelection::pasteColumnsAbove);
+  enableRepeatableCommand(this, MI_Clear, &TColumnSelection::deleteColumns);
+  enableRepeatableCommand(this, MI_InsertAbove,
+                          &TColumnSelection::insertColumnsAbove);
+  enableRepeatableCommand(this, MI_Insert, &TColumnSelection::insertColumns);
   enableCommand(this, MI_Collapse, &TColumnSelection::collapse);
   enableCommand(this, MI_ExplodeChild, &TColumnSelection::explodeChild);
   enableCommand(this, MI_Resequence, &TColumnSelection::resequence);
   enableCommand(this, MI_CloneChild, &TColumnSelection::cloneChild);
   enableCommand(this, MI_FoldColumns, &TColumnSelection::hideColumns);
-  enableCommand(this, MI_Reframe1, &TColumnSelection::reframe1Cells);
-  enableCommand(this, MI_Reframe2, &TColumnSelection::reframe2Cells);
-  enableCommand(this, MI_Reframe3, &TColumnSelection::reframe3Cells);
-  enableCommand(this, MI_Reframe4, &TColumnSelection::reframe4Cells);
+  enableRepeatableCommand(this, MI_Reframe1, &TColumnSelection::reframe1Cells);
+  enableRepeatableCommand(this, MI_Reframe2, &TColumnSelection::reframe2Cells);
+  enableRepeatableCommand(this, MI_Reframe3, &TColumnSelection::reframe3Cells);
+  enableRepeatableCommand(this, MI_Reframe4, &TColumnSelection::reframe4Cells);
   enableCommand(this, MI_ReframeWithEmptyInbetweens,
                 &TColumnSelection::reframeWithEmptyInbetweens);
 }

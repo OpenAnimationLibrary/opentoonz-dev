@@ -11,6 +11,7 @@
 
 // TnzLib includes
 #include "toonz/txshcell.h"
+#include "toonz/txshcolumn.h"
 #include "toonz/txsheethandle.h"
 #include "toonz/tframehandle.h"
 #include "toonz/tcolumnhandle.h"
@@ -296,7 +297,8 @@ void LinesFadePopup::hideEvent(QHideEvent *he) {
 //-----------------------------------------------------------------------------
 
 class TLineFadeUndo final : public TUndo {
-  int m_r, m_c;
+  TXshSimpleLevelP m_level;
+  TFrameId m_fid;
   TPixel32 m_color;
   int m_intensity;
 
@@ -304,10 +306,10 @@ class TLineFadeUndo final : public TUndo {
   int m_rasSize;
 
 public:
-  TLineFadeUndo(const TPixel32 &color, int intensity, int r, int c,
-                TRaster32P ras)
-      : m_r(r)
-      , m_c(c)
+  TLineFadeUndo(const TPixel32 &color, int intensity, TXshSimpleLevel *level,
+                const TFrameId &fid, TRaster32P ras)
+      : m_level(level)
+      , m_fid(fid)
       , m_rasId()
       , m_color(color)
       , m_intensity(intensity)
@@ -319,19 +321,17 @@ public:
   ~TLineFadeUndo() { TImageCache::instance()->remove(m_rasId); }
 
   void undo() const override {
-    TXsheet *xsheet        = TApp::instance()->getCurrentXsheet()->getXsheet();
-    TXshCell cell          = xsheet->getCell(m_r, m_c);
-    TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+    TRasterImageP rasImage = (TRasterImageP)m_level->getFrame(m_fid, true);
     if (!rasImage) return;
     rasImage->setRaster(
         ((TRasterImageP)TImageCache::instance()->get(m_rasId, true))
             ->getRaster()
             ->clone());
-    TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+    TXshSimpleLevel *simpleLevel = m_level.getPointer();
     assert(simpleLevel);
-    simpleLevel->touchFrame(cell.getFrameId());
-    simpleLevel->setDirtyFlag(false);
-    IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+    simpleLevel->touchFrame(m_fid);
+    simpleLevel->setDirtyFlag(true);
+    IconGenerator::instance()->invalidate(simpleLevel, m_fid);
 
     if (m_isLastInBlock) {
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
@@ -339,19 +339,17 @@ public:
   }
 
   void redo() const override {
-    TXsheet *xsheet        = TApp::instance()->getCurrentXsheet()->getXsheet();
-    TXshCell cell          = xsheet->getCell(m_r, m_c);
-    TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+    TRasterImageP rasImage = (TRasterImageP)m_level->getFrame(m_fid, true);
     if (!rasImage) return;
     TRaster32P ras = rasImage->getRaster();
     if (!ras) return;
 
     onChange(ras, ras, m_color, m_intensity);
-    TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+    TXshSimpleLevel *simpleLevel = m_level.getPointer();
     assert(simpleLevel);
-    simpleLevel->touchFrame(cell.getFrameId());
-    simpleLevel->setDirtyFlag(false);
-    IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+    simpleLevel->touchFrame(m_fid);
+    simpleLevel->setDirtyFlag(true);
+    IconGenerator::instance()->invalidate(simpleLevel, m_fid);
     if (m_isLastInBlock) {
       TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
     }
@@ -363,75 +361,100 @@ public:
 //-----------------------------------------------------------------------------
 
 void LinesFadePopup::apply() {
-  TCellSelection *cellSelection =
-      dynamic_cast<TCellSelection *>(TSelection::getCurrent());
-  TPixel32 color = m_linesColorField->getColor();
-  int intensity  = m_intensity->getValue();
+  applyParameters(m_linesColorField->getColor(), m_intensity->getValue());
+}
 
-  if (cellSelection) {
-    std::set<TRasterImage *> images;
-    int r0, c0, r1, c1;
-    cellSelection->getSelectedCells(r0, c0, r1, c1);
-    TXsheet *xsheet      = TApp::instance()->getCurrentXsheet()->getXsheet();
-    bool oneImageChanged = false;
-    int c, r;
-    TUndoManager::manager()->beginBlock();
-    for (c = c0; c <= c1; c++)
-      for (r = r0; r <= r1; r++) {
-        TXshCell cell          = xsheet->getCell(r, c);
-        TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
-        if (!rasImage) continue;
-        if (images.find(rasImage.getPointer()) != images.end()) continue;
-        TRaster32P ras = rasImage->getRaster();
-        if (!ras) continue;
-        images.insert(rasImage.getPointer());
-        TUndoManager::manager()->add(
-            new TLineFadeUndo(color, intensity, r, c, ras->clone()));
-        oneImageChanged = true;
-        onChange(ras, ras, color, intensity);
-        TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
-        assert(simpleLevel);
-        simpleLevel->touchFrame(cell.getFrameId());
-        simpleLevel->setDirtyFlag(true);
-        IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
-      }
-    TUndoManager::manager()->endBlock();
-    images.clear();
-    if (oneImageChanged) {
-      close();
-      return;
-    }
-  }
-  TFilmstripSelection *filmstripSelection =
-      dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
-  if (filmstripSelection) {
-    TXshSimpleLevel *simpleLevel =
-        TApp::instance()->getCurrentLevel()->getSimpleLevel();
-    if (simpleLevel) {
-      std::set<TFrameId> fids = filmstripSelection->getSelectedFids();
-      bool oneImageChanged    = false;
-      for (auto const &fid : fids) {
-        TRasterImageP rasImage =
-            (TRasterImageP)simpleLevel->getFrame(fid, true);
-        ;
-        if (!rasImage) continue;
-        TRaster32P ras = rasImage->getRaster();
-        if (!ras) continue;
-        oneImageChanged = true;
-        onChange(ras, ras, color, intensity);
-        simpleLevel->touchFrame(fid);
-        simpleLevel->setDirtyFlag(true);
-        IconGenerator::instance()->invalidate(simpleLevel, fid);
-      }
+void LinesFadePopup::applyParameters(TPixel32 color, int intensity) {
+  const auto applyToSelection = [&]() -> bool {
+    TUndoScopedBlock undoBlock;
+    TCellSelection *cellSelection =
+        dynamic_cast<TCellSelection *>(TSelection::getCurrent());
+
+    if (cellSelection) {
+      std::set<TRasterImage *> images;
+      int r0, c0, r1, c1;
+      cellSelection->getSelectedCells(r0, c0, r1, c1);
+      TXsheet *xsheet      = TApp::instance()->getCurrentXsheet()->getXsheet();
+      bool oneImageChanged = false;
+      int c, r;
+      TUndoManager::manager()->beginBlock();
+      for (c = c0; c <= c1; c++)
+        for (r = r0; r <= r1; r++) {
+          TXshCell cell = xsheet->getCell(r, c);
+          if (!cell.getSimpleLevel() || cell.getSimpleLevel()->isReadOnly() ||
+              (xsheet->getColumn(c) && xsheet->getColumn(c)->isLocked()))
+            continue;
+          TRasterImageP rasImage = (TRasterImageP)cell.getImage(true);
+          if (!rasImage) continue;
+          if (images.find(rasImage.getPointer()) != images.end()) continue;
+          TRaster32P ras = rasImage->getRaster();
+          if (!ras) continue;
+          images.insert(rasImage.getPointer());
+          TUndoManager::manager()->add(
+              new TLineFadeUndo(color, intensity, cell.getSimpleLevel(),
+                                cell.getFrameId(), ras->clone()));
+          oneImageChanged = true;
+          onChange(ras, ras, color, intensity);
+          TXshSimpleLevel *simpleLevel = cell.getSimpleLevel();
+          assert(simpleLevel);
+          simpleLevel->touchFrame(cell.getFrameId());
+          simpleLevel->setDirtyFlag(true);
+          IconGenerator::instance()->invalidate(simpleLevel, cell.getFrameId());
+        }
+      TUndoManager::manager()->endBlock();
+      images.clear();
       if (oneImageChanged) {
-        close();
-        return;
+        return true;
       }
     }
-  }
+    TFilmstripSelection *filmstripSelection =
+        dynamic_cast<TFilmstripSelection *>(TSelection::getCurrent());
+    if (filmstripSelection) {
+      TXshSimpleLevel *simpleLevel =
+          TApp::instance()->getCurrentLevel()->getSimpleLevel();
+      if (simpleLevel && !simpleLevel->isReadOnly()) {
+        std::set<TFrameId> fids = filmstripSelection->getSelectedFids();
+        bool oneImageChanged    = false;
+        for (auto const &fid : fids) {
+          TRasterImageP rasImage =
+              (TRasterImageP)simpleLevel->getFrame(fid, true);
+          ;
+          if (!rasImage) continue;
+          TRaster32P ras = rasImage->getRaster();
+          if (!ras) continue;
+          TUndoManager::manager()->add(new TLineFadeUndo(
+              color, intensity, simpleLevel, fid, ras->clone()));
+          oneImageChanged = true;
+          onChange(ras, ras, color, intensity);
+          simpleLevel->touchFrame(fid);
+          simpleLevel->setDirtyFlag(true);
+          IconGenerator::instance()->invalidate(simpleLevel, fid);
+        }
+        if (oneImageChanged) {
+          return true;
+        }
+      }
+    }
 
-  DVGui::error(QObject::tr("The current selection is invalid."));
-  return;
+    return false;
+  };
+
+  if (!applyToSelection()) {
+    DVGui::error(QObject::tr("The current selection is invalid."));
+    return;
+  }
+  TApp::instance()->getCurrentLevel()->notifyLevelChange();
+  TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
+  close();
+  CommandManager::instance()->recordRepeatAction(
+      this, windowTitle(),
+      [this, color, intensity]() { applyParameters(color, intensity); },
+      []() {
+        TSelection *selection = TSelection::getCurrent();
+        return selection && !selection->isEmpty() &&
+               (dynamic_cast<TCellSelection *>(selection) ||
+                dynamic_cast<TFilmstripSelection *>(selection));
+      });
 }
 
 //-----------------------------------------------------------------------------

@@ -129,6 +129,10 @@ void TStageObjectValues::Channel::setValue(double value) {
 
 void TStageObjectValues::setValue(double v) { m_channels[0].setValue(v); }
 
+void TStageObjectValues::setChannelValue(int index, double value) {
+  m_channels.at(index).setValue(value);
+}
+
 //-----------------------------------------------------------------------------
 
 void TStageObjectValues::setValues(double v0, double v1) {

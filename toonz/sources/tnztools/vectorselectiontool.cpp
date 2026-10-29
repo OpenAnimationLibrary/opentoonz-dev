@@ -1759,9 +1759,12 @@ void VectorSelectionTool::leftButtonUp(const TPointD &pos,
       return;
     }
 
+    const FourPoints repeatBBox     = getBBox();
+    const DeformValues repeatValues = m_deformValues;
     m_dragTool->leftButtonUp(pos, e);
     delete m_dragTool;
     m_dragTool = 0;
+    rememberSelectionTransform(repeatBBox, repeatValues);
     invalidate();
     return;
   }

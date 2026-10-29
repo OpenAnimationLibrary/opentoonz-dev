@@ -341,6 +341,9 @@ protected:
   bool m_selecting;
   bool m_justSelected;
   bool m_shiftPressed;
+  DragSelectionTool::FourPoints m_repeatStartBBox;
+  TPointD m_repeatStartCenter;
+  DragSelectionTool::DeformValues m_repeatStartValues;
 
   enum {
     Outside,
@@ -403,6 +406,12 @@ protected:
   void drawRectSelection(const TImage *image);
   void drawFreehandSelection();
   void drawCommandHandle(const TImage *image);
+  void rememberSelectionTransform(
+      const DragSelectionTool::FourPoints &after,
+      const DragSelectionTool::DeformValues &values);
+  bool canRepeatSelectionTransform();
+  void repeatSelectionTransform(const TAffine &affine, const TPointD &anchor,
+                                double angle, const TPointD &scale);
 
 public:
   DragSelectionTool::DeformValues m_deformValues;

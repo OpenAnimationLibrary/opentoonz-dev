@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #ifndef ADJUST_LEVELS_POPUP_H
 #define ADJUST_LEVELS_POPUP_H
 
@@ -80,6 +82,7 @@ public:
   AdjustLevelsPopup();
 
 protected:
+  void applyParameters(std::array<int, 20> parameters);
   void showEvent(QShowEvent *se) override;
   void hideEvent(QHideEvent *se) override;
 

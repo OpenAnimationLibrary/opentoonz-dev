@@ -68,6 +68,7 @@
 
 #define MI_Undo "MI_Undo"
 #define MI_Redo "MI_Redo"
+#define MI_Repeat "MI_Repeat"
 
 #define MI_DefineScanner "MI_DefineScanner"
 #define MI_ScanSettings "MI_ScanSettings"

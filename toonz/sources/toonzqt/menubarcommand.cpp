@@ -14,6 +14,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QShortcutEvent>
+#include <QScopedValueRollback>
 
 #include <sys/types.h>
 
@@ -62,7 +63,12 @@ void AuxActionsCreatorManager::createAuxActions(QObject *parent) {
 //=========================================================
 
 CommandManager::CommandManager()
-    : m_executeTriggeredByShortcut(false), m_pendingShortcutAction(nullptr) {}
+    : m_executeTriggeredByShortcut(false)
+    , m_pendingShortcutAction(nullptr)
+    , m_repeatCommand(nullptr)
+    , m_lastRepeatableCommand(nullptr)
+    , m_executingCommand(nullptr)
+    , m_repeating(false) {}
 
 //---------------------------------------------------------
 
@@ -135,6 +141,9 @@ void CommandManager::define(CommandId id, CommandType type,
   node->m_iconSVGName = iconSVGName;
 
   m_qactionTable[qaction] = node;
+  QObject::connect(qaction, &QAction::changed, qaction, [this, node]() {
+    if (node == m_lastRepeatableCommand) updateRepeatAction();
+  });
   qaction->setShortcutContext(Qt::ApplicationShortcut);
   // user defined shortcuts will be loaded afterwards in loadShortcuts()
   QString defaultShortcutQString =
@@ -171,6 +180,7 @@ void CommandManager::setHandler(CommandId id,
         node->m_enabled &&
         (!!node->m_handler || node->m_qaction->actionGroup() != 0));
   }
+  if (node == m_lastRepeatableCommand) updateRepeatAction();
 }
 
 //---------------------------------------------------------
@@ -183,10 +193,10 @@ void CommandManager::execute(QAction *qaction) {
   std::map<QAction *, Node *>::iterator it = m_qactionTable.find(qaction);
   assert(it != m_qactionTable.end());
   if (it != m_qactionTable.end() && it->second->m_handler) {
-    m_executeTriggeredByShortcut = (qaction == m_pendingShortcutAction);
-    m_pendingShortcutAction      = nullptr;
-    it->second->m_handler->execute();
-    m_executeTriggeredByShortcut = false;
+    QScopedValueRollback<bool> shortcut(m_executeTriggeredByShortcut,
+                                        qaction == m_pendingShortcutAction);
+    m_pendingShortcutAction = nullptr;
+    executeNode(it->second);
   }
 }
 
@@ -210,9 +220,142 @@ void CommandManager::execute(CommandId id) {
       // principalmente per i tool
       action->setChecked(true);
     }
-    m_executeTriggeredByShortcut = false;
-    node->m_handler->execute();
+    QScopedValueRollback<bool> shortcut(m_executeTriggeredByShortcut, false);
+    executeNode(node);
   }
+}
+
+//---------------------------------------------------------
+
+void CommandManager::executeNode(Node *node) {
+  // Nested helper commands belong to their outer editing command. Repeat itself
+  // is only a dispatcher, so its target becomes the active editing command.
+  bool outermost = !m_executingCommand || m_executingCommand == m_repeatCommand;
+  QScopedValueRollback<Node *> executing(m_executingCommand,
+                                         outermost ? node : m_executingCommand);
+  node->m_handler->execute();
+  if (outermost && canRepeat(node)) {
+    clearRepeatAction();
+    m_lastRepeatableCommand = node;
+  }
+  updateRepeatAction();
+}
+
+//---------------------------------------------------------
+
+void CommandManager::setRepeatable(CommandId id) {
+  Node *node = getNode(id, false);
+  assert(node && node->m_qaction);
+  if (!node || !node->m_qaction || node->m_repeatable) return;
+  assert(!node->m_qaction->isCheckable());
+  if (node->m_qaction->isCheckable() || node == m_repeatCommand) return;
+  node->m_repeatable = true;
+}
+
+//---------------------------------------------------------
+
+void CommandManager::setRepeatCommand(CommandId id) {
+  assert(!m_repeatCommand);
+  if (m_repeatCommand) return;
+  Node *node = getNode(id, false);
+  assert(node && node->m_qaction);
+  if (!node || !node->m_qaction) return;
+  m_repeatCommand    = node;
+  node->m_repeatable = false;
+  setCommandHandler(id, this, &CommandManager::repeatLastCommand);
+  // The application clears Repeat on scene changes. Navigation, unsupported
+  // edits, Undo/Redo and undo-memory resets must preserve the cached operation.
+  updateRepeatAction();
+}
+
+//---------------------------------------------------------
+
+void CommandManager::updateRepeatAction() {
+  if (!m_repeatCommand) return;
+  Node *target = m_lastRepeatableCommand;
+  bool enabled = canRepeat(target) && target->m_enabled && target->m_qaction &&
+                 target->m_qaction->isEnabled();
+  if (m_repeatFunction)
+    enabled = m_repeatContext && m_repeatEnabled && m_repeatEnabled();
+  m_repeatCommand->m_qaction->setEnabled(
+      enabled && m_repeatCommand->m_enabled && !m_repeating);
+  QString tooltip = m_repeatCommand->m_qaction->text();
+  tooltip.remove('&');
+  if (target) {
+    QString name = target->m_qaction->text();
+    name.remove('&');
+    tooltip = QObject::tr("Repeat: %1").arg(name);
+  } else if (m_repeatFunction)
+    tooltip = QObject::tr("Repeat: %1").arg(m_repeatName);
+  QString shortcut = m_repeatCommand->m_qaction->shortcut().toString();
+  if (!shortcut.isEmpty()) tooltip += " (" + shortcut + ")";
+  m_repeatCommand->m_qaction->setToolTip(tooltip);
+}
+
+//---------------------------------------------------------
+
+void CommandManager::repeatLastCommand() {
+  if (m_repeating) return;
+  if (m_repeatFunction) {
+    if (!m_repeatContext || !m_repeatEnabled || !m_repeatEnabled()) return;
+    // Apply may replace the recipe. Keep the executing closure alive locally.
+    auto execute = m_repeatFunction;
+    {
+      QScopedValueRollback<bool> repeating(m_repeating, true);
+      execute();
+    }
+    updateRepeatAction();
+    return;
+  }
+  Node *target = m_lastRepeatableCommand;
+  if (!canRepeat(target) || !target->m_enabled || !target->m_qaction ||
+      !target->m_qaction->isEnabled())
+    return;
+  {
+    QScopedValueRollback<bool> repeating(m_repeating, true);
+    // Re-enter normal dispatch to use the current handler and selection and
+    // produce a fresh undo item, rather than replaying a saved undo snapshot.
+    execute(target->m_id.c_str());
+  }
+  updateRepeatAction();
+}
+
+//---------------------------------------------------------
+
+bool CommandManager::canRepeat(Node *node) const {
+  return node && node->m_handler && node != m_repeatCommand &&
+         (node->m_repeatable || node->m_handler->canRepeat());
+}
+
+void CommandManager::clearRepeatAction() {
+  m_lastRepeatableCommand = nullptr;
+  QObject::disconnect(m_repeatContextConnection);
+  m_repeatContext.clear();
+  m_repeatFunction = {};
+  m_repeatEnabled  = {};
+  m_repeatName.clear();
+}
+
+void CommandManager::clearRepeat() {
+  clearRepeatAction();
+  updateRepeatAction();
+}
+
+void CommandManager::recordRepeatAction(QObject *context, const QString &name,
+                                        std::function<void()> execute,
+                                        std::function<bool()> enabled) {
+  if (!m_repeatCommand || !context || !execute || !enabled) return;
+  clearRepeatAction();
+  m_repeatContext           = context;
+  m_repeatName              = name;
+  m_repeatFunction          = std::move(execute);
+  m_repeatEnabled           = std::move(enabled);
+  m_repeatContextConnection = QObject::connect(
+      context, &QObject::destroyed, m_repeatCommand->m_qaction, [this]() {
+        clearRepeatAction();
+        updateRepeatAction();
+      });
+  updateRepeatAction();
 }
 
 //---------------------------------------------------------

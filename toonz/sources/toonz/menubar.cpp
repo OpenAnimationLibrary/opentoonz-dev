@@ -490,6 +490,16 @@ bool StackedMenuBar::readMenuRecursive(QXmlStreamReader &reader, QMenu *menu) {
     }
   }
 
+  // Existing user room menus predate Repeat. Add it next to Redo while
+  // preserving an explicitly customized placement, if one already exists.
+  CommandManager *cm             = CommandManager::instance();
+  QAction *redo                  = cm->getAction(MI_Redo);
+  QAction *repeat                = cm->getAction(MI_Repeat);
+  const QList<QAction *> actions = menu->actions();
+  int redoIndex                  = actions.indexOf(redo);
+  if (repeat && redoIndex >= 0 && !actions.contains(repeat))
+    menu->insertAction(actions.value(redoIndex + 1), repeat);
+
   return !reader.hasError();
 }
 
@@ -545,6 +555,7 @@ QMenuBar *StackedMenuBar::createCleanupMenuBar() {
   QMenu *editMenu = addMenu(tr("Edit"), cleanupMenuBar);
   addMenuItem(editMenu, MI_Undo);
   addMenuItem(editMenu, MI_Redo);
+  addMenuItem(editMenu, MI_Repeat);
   editMenu->addSeparator();
   addMenuItem(editMenu, MI_NextFrame);
   addMenuItem(editMenu, MI_PrevFrame);
@@ -702,6 +713,7 @@ QMenuBar *StackedMenuBar::createPltEditMenuBar() {
   QMenu *editMenu = addMenu(tr("Edit"), pltEditMenuBar);
   addMenuItem(editMenu, MI_Undo);
   addMenuItem(editMenu, MI_Redo);
+  addMenuItem(editMenu, MI_Repeat);
   editMenu->addSeparator();
   addMenuItem(editMenu, MI_NextFrame);
   addMenuItem(editMenu, MI_PrevFrame);
@@ -892,6 +904,7 @@ QMenuBar *StackedMenuBar::createInknPaintMenuBar() {
   QMenu *editMenu = addMenu(tr("Edit"), inknPaintMenuBar);
   addMenuItem(editMenu, MI_Undo);
   addMenuItem(editMenu, MI_Redo);
+  addMenuItem(editMenu, MI_Repeat);
   editMenu->addSeparator();
   addMenuItem(editMenu, MI_NextFrame);
   addMenuItem(editMenu, MI_PrevFrame);
@@ -1083,6 +1096,7 @@ QMenuBar *StackedMenuBar::createXsheetMenuBar() {
   QMenu *editMenu = addMenu(tr("Edit"), xsheetMenuBar);
   addMenuItem(editMenu, MI_Undo);
   addMenuItem(editMenu, MI_Redo);
+  addMenuItem(editMenu, MI_Repeat);
   editMenu->addSeparator();
   addMenuItem(editMenu, MI_Copy);
   addMenuItem(editMenu, MI_Cut);
@@ -1331,6 +1345,7 @@ QMenuBar *StackedMenuBar::createFullMenuBar() {
   QMenu *editMenu = addMenu(tr("Edit"), fullMenuBar);
   addMenuItem(editMenu, MI_Undo);
   addMenuItem(editMenu, MI_Redo);
+  addMenuItem(editMenu, MI_Repeat);
   editMenu->addSeparator();
   addMenuItem(editMenu, MI_Cut);
   addMenuItem(editMenu, MI_Copy);

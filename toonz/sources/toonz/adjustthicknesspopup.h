@@ -15,6 +15,7 @@
 // STD includes
 #include <vector>
 #include <set>
+#include <array>
 
 //=====================================================
 
@@ -139,6 +140,7 @@ private:
           &toTransform)[2]);   //!< Retrieves transform parameters at the end of
                                //!  the selected frames range.
   void updateSelectionData();  //!< Rebuilds m_selectionData.
+  void applyParameters(std::array<double, 2> from, std::array<double, 2> to);
   void updateCurrentFrameData();  //!< Rebuilds m_currentFrameData.
   void updateSelectionGui();  //!< Updates the popup's GUI according to current
                               //!  level selection.

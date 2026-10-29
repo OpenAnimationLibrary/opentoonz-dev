@@ -36,6 +36,7 @@ public:
   LinesFadePopup();
 
 protected:
+  void applyParameters(TPixel32 color, int intensity);
   void showEvent(QShowEvent *e) override;
   void hideEvent(QHideEvent *e) override;
 

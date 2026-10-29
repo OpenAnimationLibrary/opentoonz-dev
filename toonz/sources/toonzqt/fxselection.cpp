@@ -67,10 +67,10 @@ FxSelection::~FxSelection() {}
 //---------------------------------------------------------
 
 void FxSelection::enableCommands() {
-  enableCommand(this, MI_Clear, &FxSelection::deleteSelection);
-  enableCommand(this, MI_Cut, &FxSelection::cutSelection);
-  enableCommand(this, MI_Copy, &FxSelection::copySelection);
-  enableCommand(this, MI_Paste, &FxSelection::pasteSelection);
+  enableRepeatableCommand(this, MI_Clear, &FxSelection::deleteSelection);
+  enableRepeatableCommand(this, MI_Cut, &FxSelection::cutSelection);
+  enableRepeatableCommand(this, MI_Copy, &FxSelection::copySelection);
+  enableRepeatableCommand(this, MI_Paste, &FxSelection::pasteSelection);
   enableCommand(this, MI_Group, &FxSelection::groupSelection);
   enableCommand(this, MI_Ungroup, &FxSelection::ungroupSelection);
   enableCommand(this, MI_Collapse, &FxSelection::collapseSelection);

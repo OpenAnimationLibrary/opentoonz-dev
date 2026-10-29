@@ -85,6 +85,11 @@ public:
 
   // get parameter
   double getValue(int index) const;
+  int getChannelCount() const { return int(m_channels.size()); }
+  TStageObject::Channel getChannel(int index) const {
+    return m_channels.at(index).m_actionId;
+  }
+  void setChannelValue(int index, double value);
 
   void setGlobalKeyframe();
 

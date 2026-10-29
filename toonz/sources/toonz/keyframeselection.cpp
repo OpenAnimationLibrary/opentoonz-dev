@@ -282,14 +282,14 @@ public:
 //-----------------------------------------------------------------------------
 
 void TKeyframeSelection::enableCommands() {
-  enableCommand(this, MI_Copy, &TKeyframeSelection::copyKeyframes);
-  enableCommand(this, MI_Paste, &TKeyframeSelection::pasteKeyframes);
-  enableCommand(this, MI_Cut, &TKeyframeSelection::cutKeyframes);
-  enableCommand(this, MI_Clear, &TKeyframeSelection::deleteKeyframes);
-  enableCommand(this, MI_ShiftKeyframesDown,
-                &TKeyframeSelection::shiftKeyframesDown);
-  enableCommand(this, MI_ShiftKeyframesUp,
-                &TKeyframeSelection::shiftKeyframesUp);
+  enableRepeatableCommand(this, MI_Copy, &TKeyframeSelection::copyKeyframes);
+  enableRepeatableCommand(this, MI_Paste, &TKeyframeSelection::pasteKeyframes);
+  enableRepeatableCommand(this, MI_Cut, &TKeyframeSelection::cutKeyframes);
+  enableRepeatableCommand(this, MI_Clear, &TKeyframeSelection::deleteKeyframes);
+  enableRepeatableCommand(this, MI_ShiftKeyframesDown,
+                          &TKeyframeSelection::shiftKeyframesDown);
+  enableRepeatableCommand(this, MI_ShiftKeyframesUp,
+                          &TKeyframeSelection::shiftKeyframesUp);
 }
 
 //-----------------------------------------------------------------------------

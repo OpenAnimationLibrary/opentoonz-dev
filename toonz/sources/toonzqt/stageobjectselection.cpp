@@ -140,14 +140,16 @@ StageObjectSelection::~StageObjectSelection() {}
 //-------------------------------------------------------
 
 void StageObjectSelection::enableCommands() {
-  enableCommand(this, MI_Clear, &StageObjectSelection::deleteSelection);
+  enableRepeatableCommand(this, MI_Clear,
+                          &StageObjectSelection::deleteSelection);
   enableCommand(this, MI_Group, &StageObjectSelection::groupSelection);
   enableCommand(this, MI_Ungroup, &StageObjectSelection::ungroupSelection);
   enableCommand(this, MI_Collapse, &StageObjectSelection::collapseSelection);
   enableCommand(this, MI_ExplodeChild, &StageObjectSelection::explodeChild);
-  enableCommand(this, MI_Copy, &StageObjectSelection::copySelection);
-  enableCommand(this, MI_Paste, &StageObjectSelection::pasteSelection);
-  enableCommand(this, MI_Cut, &StageObjectSelection::cutSelection);
+  enableRepeatableCommand(this, MI_Copy, &StageObjectSelection::copySelection);
+  enableRepeatableCommand(this, MI_Paste,
+                          &StageObjectSelection::pasteSelection);
+  enableRepeatableCommand(this, MI_Cut, &StageObjectSelection::cutSelection);
 }
 
 //-------------------------------------------------------

@@ -53,6 +53,7 @@ void TSelectionHandle::setSelection(TSelection *selection) {
     }
   }
   emit selectionSwitched(oldSelection, selection);
+  commandManager->refreshRepeatAction();
 }
 
 //-----------------------------------------------------------------------------
@@ -87,6 +88,7 @@ void TSelectionHandle::enableCommand(std::string cmdId,
 
 void TSelectionHandle::notifySelectionChanged() {
   emit selectionChanged(m_selectionStack.back());
+  CommandManager::instance()->refreshRepeatAction();
 }
 
 //-----------------------------------------------------------------------------

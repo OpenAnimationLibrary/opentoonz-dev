@@ -145,7 +145,9 @@ public:
 
 //-----------------------------------------------------------------------------
 
-void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type) {
+void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type,
+                 QObject *repeatContext = nullptr) {
+  if (newRange <= 0) return;
   TCellSelection::Range range;
   TCellSelection *selection = dynamic_cast<TCellSelection *>(
       TApp::instance()->getCurrentSelection()->getSelection());
@@ -155,6 +157,7 @@ void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type) {
       return;
     }
     range = selection->getSelectedCells();
+    if (range.isEmpty()) return;
   }
   int r0 = range.m_r0;
   int r1 = range.m_r1;
@@ -171,8 +174,9 @@ void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type) {
     c1 = xsheet->getColumnCount() - 1;
     int c;
     for (c = c1; c >= c0; c--)
-      if (!xsheet->getColumn(c) && !xsheet->getColumn(c)->isEmpty()) break;
+      if (xsheet->getColumn(c) && !xsheet->getColumn(c)->isEmpty()) break;
   }
+  if (r1 < r0 || c1 < c0) return;
   assert(r1 >= r0 && c1 >= c0);
   if (r1 - r0 + 1 == newRange) return;
 
@@ -193,6 +197,28 @@ void timeStretch(int newRange, TimeStretchPopup::STRETCH_TYPE type) {
   TApp::instance()->getCurrentScene()->setDirtyFlag(true);
   TApp::instance()->getCurrentXsheet()->notifyXsheetChanged();
   TApp::instance()->getCurrentXsheet()->notifyXsheetSoundChanged();
+  if (repeatContext) {
+    const double ratio       = double(newRange) / (r1 - r0 + 1);
+    const auto currentLength = [type]() {
+      if (type == TimeStretchPopup::eWholeXsheet)
+        return TApp::instance()
+            ->getCurrentXsheet()
+            ->getXsheet()
+            ->getFrameCount();
+      auto selection = dynamic_cast<TCellSelection *>(TSelection::getCurrent());
+      return selection && !selection->isEmpty()
+                 ? selection->getSelectedCells().getRowCount()
+                 : 0;
+    };
+    CommandManager::instance()->recordRepeatAction(
+        repeatContext, QObject::tr("Time Stretch"),
+        [ratio, type, currentLength]() {
+          double length = std::round(currentLength() * ratio);
+          if (length > 0 && length < (std::numeric_limits<int>::max)())
+            timeStretch(int(length), type);
+        },
+        [currentLength]() { return currentLength() > 0; });
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -311,6 +337,6 @@ void TimeStretchPopup::setCurrentStretchType(int index) {
 //-------------------------------------------------------------------
 
 void TimeStretchPopup::stretch() {
-  timeStretch(m_newRangeFld->text().toInt(), m_currentStretchType);
+  timeStretch(m_newRangeFld->text().toInt(), m_currentStretchType, this);
   accept();
 }

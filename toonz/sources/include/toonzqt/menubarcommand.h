@@ -6,11 +6,13 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <functional>
 #include "tcommon.h"
 
 #include <QAction>
 #include <QKeySequence>
 #include <QMenu>
+#include <QPointer>
 
 #undef DVAPI
 #undef DVVAR
@@ -34,6 +36,7 @@ class DVAPI CommandHandlerInterface {
 public:
   virtual ~CommandHandlerInterface() {}
   virtual void execute() = 0;
+  virtual bool canRepeat() const { return false; }
 };
 
 //-----------------------------------------------------------------------------
@@ -115,6 +118,7 @@ class DVAPI CommandManager {  // singleton
     QAction *m_qaction;
     CommandHandlerInterface *m_handler;
     bool m_enabled;
+    bool m_repeatable;
     QString m_onText,
         m_offText;  // for toggle commands. e.g. show/hide something
     const char *m_iconSVGName;
@@ -125,6 +129,7 @@ class DVAPI CommandManager {  // singleton
         , m_qaction(0)
         , m_handler(0)
         , m_enabled(true)
+        , m_repeatable(false)
         , m_iconSVGName("") {}
 
     ~Node() {
@@ -137,12 +142,25 @@ class DVAPI CommandManager {  // singleton
   std::map<std::string, Node *> m_shortcutTable;
   bool m_executeTriggeredByShortcut;
   QAction *m_pendingShortcutAction;
+  Node *m_repeatCommand;
+  Node *m_lastRepeatableCommand;
+  Node *m_executingCommand;
+  bool m_repeating;
+  QPointer<QObject> m_repeatContext;
+  QMetaObject::Connection m_repeatContextConnection;
+  QString m_repeatName;
+  std::function<void()> m_repeatFunction;
+  std::function<bool()> m_repeatEnabled;
 
   CommandManager();
 
   Node *getNode(CommandId id, bool createIfNeeded = true);
   void setShortcut(CommandId id, QAction *action, std::string shortcutString);
   void createAuxActions();
+  void executeNode(Node *node);
+  void updateRepeatAction();
+  void clearRepeatAction();
+  bool canRepeat(Node *node) const;
 
 public:
   static CommandManager *instance();
@@ -178,6 +196,19 @@ public:
    * otherwise recall execute(menuAction).*/
   void execute(QAction *action, QAction *menuAction);
   void execute(CommandId id);
+  // Opt in direct editing commands that can run again on the current selection.
+  // Dialogs, toggles and interactive tool gestures cannot repeat.
+  void setRepeatable(CommandId id);
+  void setRepeatCommand(CommandId id);
+  void repeatLastCommand();
+  // Remember a completed gesture or an Apply operation. Capture parameter
+  // values, not widgets, selections or undo items; resolve the selection when
+  // run again.
+  void recordRepeatAction(QObject *context, const QString &name,
+                          std::function<void()> execute,
+                          std::function<bool()> enabled);
+  void refreshRepeatAction() { updateRepeatAction(); }
+  void clearRepeat();
   bool executeTriggeredByShortcut() const {
     return m_executeTriggeredByShortcut;
   }
@@ -211,11 +242,13 @@ template <class T>
 class CommandHandlerHelper final : public CommandHandlerInterface {
   T *m_target;
   void (T::*m_method)();
+  bool m_repeatable;
 
 public:
-  CommandHandlerHelper(T *target, void (T::*method)())
-      : m_target(target), m_method(method) {}
+  CommandHandlerHelper(T *target, void (T::*method)(), bool repeatable = false)
+      : m_target(target), m_method(method), m_repeatable(repeatable) {}
   void execute() override { (m_target->*m_method)(); }
+  bool canRepeat() const override { return m_repeatable; }
 };
 
 template <class T, typename R>
@@ -223,11 +256,17 @@ class CommandHandlerHelper2 final : public CommandHandlerInterface {
   T *m_target;
   void (T::*m_method)(R value);
   R m_value;
+  bool m_repeatable;
 
 public:
-  CommandHandlerHelper2(T *target, void (T::*method)(R), R value)
-      : m_target(target), m_method(method), m_value(value) {}
+  CommandHandlerHelper2(T *target, void (T::*method)(R), R value,
+                        bool repeatable = false)
+      : m_target(target)
+      , m_method(method)
+      , m_value(value)
+      , m_repeatable(repeatable) {}
   void execute() override { (m_target->*m_method)(m_value); }
+  bool canRepeat() const override { return m_repeatable; }
 };
 
 //-----------------------------------------------------------------------------

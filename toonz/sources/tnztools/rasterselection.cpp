@@ -1184,10 +1184,10 @@ bool RasterSelection::isEmpty() const {
 //-----------------------------------------------------------------------------
 
 void RasterSelection::enableCommands() {
-  enableCommand(this, MI_Clear, &RasterSelection::deleteSelection);
-  enableCommand(this, MI_Cut, &RasterSelection::cutSelection);
-  enableCommand(this, MI_Copy, &RasterSelection::copySelection);
-  enableCommand(this, MI_Paste, &RasterSelection::pasteSelection);
+  enableRepeatableCommand(this, MI_Clear, &RasterSelection::deleteSelection);
+  enableRepeatableCommand(this, MI_Cut, &RasterSelection::cutSelection);
+  enableRepeatableCommand(this, MI_Copy, &RasterSelection::copySelection);
+  enableRepeatableCommand(this, MI_Paste, &RasterSelection::pasteSelection);
   enableCommand(this, MI_SelectAll, &RasterSelection::selectAll);
 }
 

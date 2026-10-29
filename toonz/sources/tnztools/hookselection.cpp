@@ -209,10 +209,10 @@ bool HookSelection::select(const TSelection *s) {
 //---------------------------------------------------------------------------
 
 void HookSelection::enableCommands() {
-  enableCommand(this, MI_Clear, &HookSelection::deleteSelectedHooks);
-  enableCommand(this, MI_Copy, &HookSelection::copySelectedHooks);
-  enableCommand(this, MI_Cut, &HookSelection::cutSelectedHooks);
-  enableCommand(this, MI_Paste, &HookSelection::pasteSelectedHooks);
+  enableRepeatableCommand(this, MI_Clear, &HookSelection::deleteSelectedHooks);
+  enableRepeatableCommand(this, MI_Copy, &HookSelection::copySelectedHooks);
+  enableRepeatableCommand(this, MI_Cut, &HookSelection::cutSelectedHooks);
+  enableRepeatableCommand(this, MI_Paste, &HookSelection::pasteSelectedHooks);
 }
 
 //---------------------------------------------------------------------------

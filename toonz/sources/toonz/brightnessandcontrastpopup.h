@@ -35,6 +35,7 @@ public:
   BrightnessAndContrastPopup();
 
 protected:
+  void applyParameters(int brightness, int contrast);
   void showEvent(QShowEvent *e) override;
   void hideEvent(QHideEvent *e) override;
 

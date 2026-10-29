@@ -61,6 +61,19 @@ public:
   }
 
   void makeCurrent();
+  // Opt in this editor's handler, rather than the shared command ID. File
+  // browser handlers for Cut/Paste/Delete must never inherit this permission.
+  template <class T>
+  void enableRepeatableCommand(T *target, CommandId id, void (T::*method)()) {
+    enableCommand(id, new CommandHandlerHelper<T>(target, method, true));
+  }
+  template <class T, typename R>
+  void enableRepeatableCommand(T *target, CommandId id, void (T::*method)(R),
+                               R value) {
+    enableCommand(id,
+                  new CommandHandlerHelper2<T, R>(target, method, value, true));
+  }
+
   void makeNotCurrent();
   static TSelection *getCurrent();
   static void setCurrent(TSelection *selection);
