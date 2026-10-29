@@ -2,6 +2,7 @@
 #include "tundo.h"
 #include "toonzqt/selection.h"
 #include "../../tnztools/selectionrepeat.h"
+#include "../../tnztools/animaterepeat.h"
 
 #include <QApplication>
 #include <algorithm>
@@ -122,10 +123,11 @@ int main(int argc, char **argv) {
   check(um->getHistoryCount() == 3, "Each Repeat needs a separate undo step");
   um->undo();
   check(order == std::vector<int>({0, 1, 4, 2, 3}), "Undo lost a Repeat step");
-  check(!repeat->isEnabled(), "History-panel Undo must clear Repeat");
+  check(repeat->isEnabled(), "History-panel Undo must preserve Repeat");
   um->redo();
   check(order == std::vector<int>({0, 4, 1, 2, 3}), "Redo lost a Repeat step");
-  check(!repeat->isEnabled(), "Redo must not become a Repeat target");
+  check(repeat->isEnabled() && repeat->toolTip().contains("Move Back One"),
+        "Redo must preserve the original Repeat target");
 
   // A changed selection is used when Repeat runs; navigation preserves it.
   cm->execute("back");
@@ -151,12 +153,14 @@ int main(int argc, char **argv) {
   cm->setHandler("back", new Handler(moveBack));
 
   unsupported->trigger();
-  check(!repeat->isEnabled(), "Unsupported edits must clear the old target");
+  check(repeat->isEnabled() && repeat->toolTip().contains("Move Back One"),
+        "Unsupported edits must preserve the old target");
   back->trigger();
   auto before = order;
   um->add(
       new OrderUndo(order, before));  // e.g. a brush gesture, outside dispatch
-  check(!repeat->isEnabled(), "Tool edits must clear the old target");
+  check(repeat->isEnabled(),
+        "Unsupported tool edits must preserve the old target");
 
   // Nested helpers belong to the outer registered command.
   QAction *outer =
@@ -189,7 +193,9 @@ int main(int argc, char **argv) {
   check(order == boundary && um->getHistoryCount() == 1,
         "Repeat at the ordering boundary must not change history");
   um->reset();
-  check(!repeat->isEnabled(), "Scene/history reset must clear Repeat");
+  check(repeat->isEnabled(), "Undo-memory reset on Save must preserve Repeat");
+  cm->clearRepeat();  // application sceneSwitched handler
+  check(!repeat->isEnabled(), "Scene changes must clear Repeat");
   um->setUndoMemorySize(10);
 
   // Repeat permission belongs to the current editor, not a shared clipboard ID.
@@ -229,17 +235,21 @@ int main(int argc, char **argv) {
         [&]() { return editable; });
   };
   remember(&context, setting);
+  // An unrelated edit between recording and switching frames must not erase it.
+  int unrelated = 1;
+  um->add(new ValueUndo(unrelated, 0));
   setting = 42;  // subsequent UI changes do not alter the applied parameters
   repeat->trigger();
   current = &second;
   repeat->trigger();
   check(first == 7 && second == 7,
         "Repeat lost captured parameters/current target");
-  check(um->getHistoryCount() == 2,
-        "Parameter replay must add normal undo steps");
+  check(
+      um->getHistoryCount() == 3,
+      "Parameter replay must add normal undo steps alongside unrelated edits");
   um->undo();
-  check(second == 0 && !repeat->isEnabled(),
-        "Parameter Undo must clear Repeat");
+  check(second == 0 && repeat->isEnabled(),
+        "Parameter Undo must preserve Repeat");
   um->redo();
   check(second == 7, "Parameter redo failed");
   remember(&context, 2);
@@ -282,7 +292,9 @@ int main(int argc, char **argv) {
         "Command failed to replace recipe");
   remember(&context, 3);
   um->reset();
-  check(!repeat->isEnabled(), "History reset failed to clear a recipe");
+  check(repeat->isEnabled(), "Undo-memory reset failed to preserve a recipe");
+  cm->clearRepeat();
+  check(!repeat->isEnabled(), "Scene change failed to clear a recipe");
 
   // Use production affine capture/rebasing: four repeated quarter turns return
   // to the starting point, scaling compounds, and nudges retain world distance.
@@ -309,5 +321,32 @@ int main(int argc, char **argv) {
   check(!SelectionRepeat::capture({0, 0}, {0, 0}, {0, 2}, {0, 0}, {1, 0},
                                   {0, 2}, affine),
         "Singular selection frame must not be repeatable");
+  // Animate gestures repeat differences/factors; text entry repeats a value.
+  double value = 0;
+  auto move    = AnimateRepeat::Value::capture(2.0, 5.0, false, false);
+  check(move.apply(10.0, value) && value == 13.0,
+        "Animate move must use the current frame/object value");
+  check(move.apply(value, value) && value == 16.0,
+        "Animate move must accumulate its original offset");
+  auto turn = AnimateRepeat::Value::capture(15.0, 20.0, false, false);
+  check(turn.apply(30.0, value) && value == 35.0,
+        "Animate rotation must retain the angular difference");
+  auto grow = AnimateRepeat::Value::capture(0.5, 0.75, true, false);
+  check(grow.apply(2.0, value) && value == 3.0 && grow.apply(value, value) &&
+            value == 4.5,
+        "Animate scale must compound its factor on the current target");
+  auto flip = AnimateRepeat::Value::capture(1.0, -1.0, true, false);
+  check(flip.apply(2.0, value) && value == -2.0 && flip.apply(value, value) &&
+            value == 2.0,
+        "Signed scale repeat failed");
+  auto set = AnimateRepeat::Value::capture(0.5, 0.75, true, true);
+  check(set.apply(2.0, value) && value == 0.75 && set.apply(value, value) &&
+            value == 0.75,
+        "Typed scale values must remain absolute");
+  auto fromZero = AnimateRepeat::Value::capture(0.0, 0.5, true, false);
+  check(fromZero.apply(2.0, value) && value == 0.5,
+        "Scale from zero must avoid an undefined ratio");
+  auto overflow = AnimateRepeat::Value::capture(1.0, 1e300, true, false);
+  check(!overflow.apply(1e300, value), "Animate Repeat must reject overflow");
   std::cout << "Repeat command tests passed" << std::endl;
 }

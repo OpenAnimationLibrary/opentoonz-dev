@@ -2362,6 +2362,8 @@ void MainWindow::defineActions() {
   createMenuEditAction(MI_Redo, QT_TR_NOOP("&Redo"), "Ctrl+Y", "redo");
   createMenuEditAction(MI_Repeat, QT_TR_NOOP("&Repeat"), "");
   CommandManager::instance()->setRepeatCommand(MI_Repeat);
+  connect(TApp::instance()->getCurrentScene(), &TSceneHandle::sceneSwitched,
+          this, []() { CommandManager::instance()->clearRepeat(); });
   createMenuEditAction(MI_Cut, QT_TR_NOOP("&Cut"), "Ctrl+X", "cut");
   createMenuEditAction(MI_Copy, QT_TR_NOOP("&Copy"), "Ctrl+C", "content_copy");
   createMenuEditAction(MI_Paste, QT_TR_NOOP("&Paste Insert"), "Ctrl+V",

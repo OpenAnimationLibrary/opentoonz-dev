@@ -6,7 +6,6 @@
 #include "toonzqt/gutil.h"
 #include "toonz/toonzfolders.h"
 #include "tsystem.h"
-#include "tundo.h"
 #include <assert.h>
 #include <QObject>
 #include <QAction>
@@ -264,15 +263,8 @@ void CommandManager::setRepeatCommand(CommandId id) {
   m_repeatCommand    = node;
   node->m_repeatable = false;
   setCommandHandler(id, this, &CommandManager::repeatLastCommand);
-  // A gesture, an unsupported edit, Undo/Redo (including the History panel), or
-  // a scene reset invalidates the old target. Navigation alone preserves it.
-  QObject::connect(TUndoManager::manager(), &TUndoManager::historyChanged,
-                   node->m_qaction, [this]() {
-                     if (!m_repeating && !canRepeat(m_executingCommand)) {
-                       clearRepeatAction();
-                       updateRepeatAction();
-                     }
-                   });
+  // The application clears Repeat on scene changes. Navigation, unsupported
+  // edits, Undo/Redo and undo-memory resets must preserve the cached operation.
   updateRepeatAction();
 }
 
@@ -342,6 +334,11 @@ void CommandManager::clearRepeatAction() {
   m_repeatFunction = {};
   m_repeatEnabled  = {};
   m_repeatName.clear();
+}
+
+void CommandManager::clearRepeat() {
+  clearRepeatAction();
+  updateRepeatAction();
 }
 
 void CommandManager::recordRepeatAction(QObject *context, const QString &name,

@@ -208,6 +208,7 @@ public:
                           std::function<void()> execute,
                           std::function<bool()> enabled);
   void refreshRepeatAction() { updateRepeatAction(); }
+  void clearRepeat();
   bool executeTriggeredByShortcut() const {
     return m_executeTriggeredByShortcut;
   }

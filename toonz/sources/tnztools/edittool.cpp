@@ -1,6 +1,7 @@
 
 
 #include "edittool.h"
+#include "animaterepeat.h"
 #include "tools/tool.h"
 #include "tools/cursors.h"
 #include "tproperty.h"
@@ -9,6 +10,7 @@
 #include "tgl.h"
 #include "tenv.h"
 #include "toonzqt/gutil.h"
+#include "toonzqt/menubarcommand.h"
 
 #include "toonz/tstageobjecttree.h"
 #include "toonz/tstageobjectspline.h"
@@ -90,6 +92,7 @@ class DragCenterTool final : public DragTool {
   TPointD m_oldCenter;
   TPointD m_center;
   TAffine m_affine;
+  bool m_repeatReady = false;
 
 public:
   DragCenterTool(bool lockCenterX, bool lockCenterY)
@@ -101,6 +104,7 @@ public:
       , m_lockCenterY(lockCenterY) {}
 
   void leftButtonDown(const TPointD &pos, const TMouseEvent &) override {
+    m_repeatReady = false;
     if (m_lockCenterX && m_lockCenterY) return;
     TXsheet *xsh =
         TTool::getApplication()->getCurrentTool()->getTool()->getXsheet();
@@ -140,6 +144,10 @@ public:
     undo->setObjectHandle(app->getCurrentObject());
     undo->setXsheetHandle(app->getCurrentXsheet());
     TUndoManager::manager()->add(undo);
+    m_repeatReady = m_center != m_oldCenter;
+  }
+  void recordRepeat() override {
+    if (m_repeatReady) EditTool::recordCenterRepeat(m_oldCenter, m_center);
   }
 };
 
@@ -154,6 +162,7 @@ protected:
 
   bool m_isStarted;
   TPointD m_firstPos;
+  bool m_repeatReady = false;
 
 public:
   DragChannelTool(TStageObject::Channel a0, bool globalKeyframesEnabled)
@@ -212,6 +221,7 @@ public:
   }
 
   void start() {
+    m_repeatReady = false;
     m_isStarted = true;
     m_before.updateValues();
     m_after = m_before;
@@ -253,6 +263,12 @@ public:
     undo->setObjectHandle(app->getCurrentObject());
     TUndoManager::manager()->add(undo);
     app->getCurrentScene()->setDirtyFlag(true);
+    m_repeatReady = true;
+  }
+  void recordRepeat() override {
+    if (m_repeatReady)
+      EditTool::recordTransformRepeat(m_before, m_after,
+                                      m_globalKeyframesEnabled);
   }
 };
 
@@ -800,6 +816,201 @@ bool EditTool::transformEnabled() const {
 
 //-----------------------------------------------------------------------------
 
+bool EditTool::canRepeatTransform() const {
+  TTool::Application *app = TTool::getApplication();
+  if (app->getCurrentTool()->getTool() != this || !isEnabled() || m_dragTool ||
+      !app->getCurrentFrame()->isEditingScene() ||
+      app->getCurrentObject()->isSpline())
+    return false;
+  TXsheet *xsheet   = app->getCurrentXsheet()->getXsheet();
+  TStageObjectId id = app->getCurrentObject()->getObjectId();
+  if (!xsheet ||
+      !(id.isColumn() || id.isPegbar() || id.isCamera() || id.isTable()) ||
+      !xsheet->getStageObjectTree()->getStageObject(id, false))
+    return false;
+  if (id.isColumn()) {
+    TXshColumn *column = xsheet->getColumn(id.getIndex());
+    if (!column || column->isLocked() || column->getSoundColumn()) return false;
+  }
+  return transformEnabled();
+}
+
+bool EditTool::repeatChannelEnabled(int channel) const {
+  switch (channel) {
+  case TStageObject::T_X:
+    return !m_lockPositionX.getValue() && !getSpline();
+  case TStageObject::T_Y:
+    return !m_lockPositionY.getValue() && !getSpline();
+  case TStageObject::T_Angle:
+    return !m_lockRotation.getValue();
+  case TStageObject::T_Scale:
+    return !m_lockGlobalScale.getValue();
+  case TStageObject::T_ScaleX:
+    return !m_lockScaleH.getValue();
+  case TStageObject::T_ScaleY:
+    return !m_lockScaleV.getValue();
+  case TStageObject::T_ShearX:
+    return !m_lockShearH.getValue();
+  case TStageObject::T_ShearY:
+    return !m_lockShearV.getValue();
+  case TStageObject::T_Path:
+    return getSpline() != nullptr;
+  case TStageObject::T_Z:
+  case TStageObject::T_SO:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool EditTool::repeatCenterEnabled(int axis) const {
+  return axis == 0 ? !m_lockCenterX.getValue() : !m_lockCenterY.getValue();
+}
+
+namespace {
+
+EditTool *repeatEditTool() {
+  auto tool = dynamic_cast<EditTool *>(
+      TTool::getApplication()->getCurrentTool()->getTool());
+  return tool && tool->canRepeatTransform() ? tool : nullptr;
+}
+
+bool isScaleChannel(TStageObject::Channel channel) {
+  return channel == TStageObject::T_Scale ||
+         channel == TStageObject::T_ScaleX || channel == TStageObject::T_ScaleY;
+}
+
+struct RepeatChannel {
+  TStageObject::Channel channel;
+  AnimateRepeat::Value operation;
+};
+
+}  // namespace
+
+void EditTool::recordTransformRepeat(const TStageObjectValues &before,
+                                     const TStageObjectValues &after,
+                                     bool globalKeyframes, bool absolute,
+                                     int editedChannels) {
+  std::vector<RepeatChannel> changes;
+  for (int i = 0; i < before.getChannelCount(); ++i) {
+    const double oldValue = before.getValue(i), newValue = after.getValue(i);
+    if (!std::isfinite(oldValue) || !std::isfinite(newValue)) return;
+    if (oldValue == newValue && !(absolute && i < editedChannels)) continue;
+    const auto channel = before.getChannel(i);
+    changes.push_back(
+        {channel, AnimateRepeat::Value::capture(
+                      oldValue, newValue, isScaleChannel(channel), absolute)});
+  }
+  if (changes.empty()) return;
+  CommandManager::instance()->recordRepeatAction(
+      qApp, tr("Animate Tool Transform"),
+      [changes, globalKeyframes]() {
+        EditTool *tool = repeatEditTool();
+        if (!tool) return;
+        TTool::Application *app = TTool::getApplication();
+        TXsheet *xsheet         = app->getCurrentXsheet()->getXsheet();
+        const auto id           = app->getCurrentObject()->getObjectId();
+        TStageObject *object =
+            xsheet->getStageObjectTree()->getStageObject(id, false);
+        TStageObjectValues original;
+        original.setFrameHandle(app->getCurrentFrame());
+        original.setObjectHandle(app->getCurrentObject());
+        original.setXsheetHandle(app->getCurrentXsheet());
+        std::vector<double> results;
+        for (const auto &change : changes) {
+          if (!tool->repeatChannelEnabled(change.channel)) continue;
+          double result;
+          double current = object->getParam(change.channel,
+                                            app->getCurrentFrame()->getFrame());
+          if (!change.operation.apply(current, result)) return;
+          if (change.channel == TStageObject::T_Path)
+            result = std::clamp(result, 0.0, 100.0);
+          if (id.isCamera() && isScaleChannel(change.channel) &&
+              std::abs(result) < 0.0001)
+            result = result < 0.0 ? -0.0001 : 0.0001;
+          // An absolute entry must still key an unchanged value on a new frame.
+          if (result == current &&
+              change.operation.mode != AnimateRepeat::Mode::Absolute)
+            continue;
+          original.add(change.channel);
+          results.push_back(result);
+        }
+        if (results.empty()) return;
+        if (globalKeyframes)
+          for (int c = 0; c < TStageObject::T_ChannelCount; ++c)
+            original.add(static_cast<TStageObject::Channel>(c));
+        original.updateValues();
+        TStageObjectValues updated = original;
+        for (int i = 0; i < int(results.size()); ++i)
+          updated.setChannelValue(i, results[i]);
+        {
+          TUndoScopedBlock block;
+          updated.applyValues();
+          auto undo = new UndoStageObjectMove(original, updated);
+          undo->setObjectHandle(app->getCurrentObject());
+          TUndoManager::manager()->add(undo);
+        }
+        app->getCurrentScene()->setDirtyFlag(true);
+        app->getCurrentObject()->notifyObjectIdChanged(false);
+        tool->invalidate();
+      },
+      [changes]() {
+        EditTool *tool = repeatEditTool();
+        return tool &&
+               std::any_of(changes.begin(), changes.end(),
+                           [tool](const RepeatChannel &change) {
+                             return tool->repeatChannelEnabled(change.channel);
+                           });
+      });
+}
+
+void EditTool::recordCenterRepeat(const TPointD &before, const TPointD &after,
+                                  int axes, bool absolute) {
+  const bool x = (axes & 1) && (absolute || before.x != after.x);
+  const bool y = (axes & 2) && (absolute || before.y != after.y);
+  if (!x && !y) return;
+  const auto rx =
+      AnimateRepeat::Value::capture(before.x, after.x, false, absolute);
+  const auto ry =
+      AnimateRepeat::Value::capture(before.y, after.y, false, absolute);
+  CommandManager::instance()->recordRepeatAction(
+      qApp, tr("Animate Tool Center"),
+      [x, y, rx, ry]() {
+        EditTool *tool = repeatEditTool();
+        if (!tool) return;
+        TTool::Application *app = TTool::getApplication();
+        TXsheet *xsheet         = app->getCurrentXsheet()->getXsheet();
+        const auto id           = app->getCurrentObject()->getObjectId();
+        const int frame         = app->getCurrentFrame()->getFrame();
+        const TPointD oldCenter = xsheet->getCenter(id, frame);
+        TPointD center          = oldCenter;
+        if (x && tool->repeatCenterEnabled(0) && !rx.apply(center.x, center.x))
+          return;
+        if (y && tool->repeatCenterEnabled(1) && !ry.apply(center.y, center.y))
+          return;
+        if (center == oldCenter) return;
+        {
+          TUndoScopedBlock block;
+          xsheet->setCenter(id, frame, center);
+          auto undo =
+              new UndoStageObjectCenterMove(id, frame, oldCenter, center);
+          undo->setObjectHandle(app->getCurrentObject());
+          undo->setXsheetHandle(app->getCurrentXsheet());
+          TUndoManager::manager()->add(undo);
+        }
+        app->getCurrentScene()->setDirtyFlag(true);
+        app->getCurrentObject()->notifyObjectIdChanged(false);
+        tool->invalidate();
+      },
+      [x, y]() {
+        EditTool *tool = repeatEditTool();
+        return tool && ((x && tool->repeatCenterEnabled(0)) ||
+                        (y && tool->repeatCenterEnabled(1)));
+      });
+}
+
+//-----------------------------------------------------------------------------
+
 const TStroke *EditTool::getSpline() const {
   TTool::Application *app    = TTool::getApplication();
   TXsheet *xsh               = app->getCurrentXsheet()->getXsheet();
@@ -997,8 +1208,10 @@ void EditTool::leftButtonUp(const TPointD &pos, const TMouseEvent &e) {
   if (m_dragTool) {
     m_dragTool->leftButtonUp(pos, e);
     TUndoManager::manager()->endBlock();
-    delete m_dragTool;
+    DragTool *completed = m_dragTool;
     m_dragTool = 0;
+    completed->recordRepeat();
+    delete completed;
     TTool::getApplication()->getCurrentObject()->notifyObjectIdChanged(false);
   }
   m_keyFrameAdded = false;
@@ -1041,6 +1254,7 @@ bool EditTool::keyDown(QKeyEvent *event) {
   dragTool.leftButtonDrag(delta, mouseEvent);
   dragTool.leftButtonUp();
   TUndoManager::manager()->endBlock();
+  dragTool.recordRepeat();
   TTool::getApplication()->getCurrentObject()->notifyObjectIdChanged(false);
   invalidate();
   return true;
@@ -1518,6 +1732,22 @@ void EditTool::onActivate() {
     m_showCenterPosition.setValue(ShowCenterPosition ? 1 : 0);
 
     m_fxGadgetController = new FxGadgetController(this);
+    auto app                 = TTool::getApplication();
+    const auto refreshRepeat = []() {
+      CommandManager::instance()->refreshRepeatAction();
+    };
+    connect(app->getCurrentTool(), &ToolHandle::toolSwitched, this,
+            refreshRepeat);
+    connect(app->getCurrentTool(), &ToolHandle::toolChanged, this,
+            refreshRepeat);
+    connect(app->getCurrentObject(), &TObjectHandle::objectSwitched, this,
+            refreshRepeat);
+    connect(app->getCurrentObject(), &TObjectHandle::objectChanged, this,
+            refreshRepeat);
+    connect(app->getCurrentFrame(), &TFrameHandle::frameSwitched, this,
+            refreshRepeat);
+    connect(app->getCurrentXsheet(), &TXsheetHandle::xsheetChanged, this,
+            refreshRepeat);
 
     /*
 m_foo.setTool(this);
@@ -1545,8 +1775,10 @@ void EditTool::onDeactivate() {
   if (m_dragTool) {
     m_dragTool->leftButtonUp();
     TUndoManager::manager()->endBlock();
-    delete m_dragTool;
+    DragTool *completed = m_dragTool;
     m_dragTool = nullptr;
+    completed->recordRepeat();
+    delete completed;
   }
 }
 

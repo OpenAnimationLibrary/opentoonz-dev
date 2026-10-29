@@ -21,6 +21,12 @@ to Redo unless they already place Repeat elsewhere.
   raster selections. Repeat reapplies the transform relative to the current
   selection center. Arrow-key nudges retain the original distance, including
   Shift (10 units) and Ctrl (0.1 units).
+- Animate Tool transforms on columns, pegs, cameras, and the table: position,
+  depth, rotation, global/axis scale, shear, center, and compatible motion-path
+  position edits. Dragging/scrubbing/nudging repeats offsets or scale factors;
+  typed values repeat an absolute setting. Repeats target the current object and
+  scene frame, honor current axis/column locks, and retain the operation's Global
+  Key setting. New keyframes and the transform form one normal Undo step.
 - Cut, Copy, Paste, Delete and applicable Insert/Paste variants in drawing,
   Level Strip, cell/column, keyframe, Function Editor, palette, hook, and
   Stage/FX Schematic selections. Paste uses the current clipboard. File Browser
@@ -49,11 +55,13 @@ Their undo objects retain the actual level/frame identity, rather than resolving
 an old cell coordinate against whichever sheet is current later. Read-only levels
 and locked target columns are skipped.
 
-Changing the selection or navigating preserves the stored command. Repeat checks
-the current command handler and enabled state before running. Undo, Redo, another
-edit that changes undo history, a drawing gesture, or a scene/history reset clears
-the stored command or applied recipe. An ordering command at the front/back boundary does nothing,
-just as the original command does.
+The cache retains the **last repeatable operation** until another repeatable
+operation replaces it. Frame/selection changes, unsupported commands or drawing
+gestures, Undo/Redo, and undo-memory resets (including resets on Save) do not erase
+or replace it. An incompatible or locked target temporarily disables Repeat; the cached operation becomes available again
+when a compatible target is active. Scene changes and destruction of a
+recipe's lifetime owner clear it. An ordering command at the front/back boundary
+does nothing, just as the original command does.
 
 Brush/eraser paths, fills, arbitrary free deformations, other dialogs, file
 operations, and UI toggles are not replayed. Their coordinate-dependent or modal
@@ -65,6 +73,10 @@ the current editor's handler. Applied operations can call
 `CommandManager::recordRepeatAction()` after completing their undo block, with
 copied parameter values, a QObject lifetime owner, and a current-target predicate.
 Recipes never retain an undo item or an old selection pointer.
+
+Animate Tool support completes the agreed initial Repeat scope. Further single
+operations can be added to Repeat. Future macro recording/playback is separate
+work for ordered sequences and more detailed reproduction of an editing process.
 
 ## Validation
 
@@ -79,23 +91,29 @@ ctest --test-dir build/repeatcommand --output-on-failure
 
 It covers successive relative edits, individual Undo/Redo steps, selection and
 handler changes, unavailable targets, nested commands, recursive Repeat calls,
-unsupported/tool edits, history eviction, ordering boundaries, and history reset.
+unsupported/tool edits, history eviction, ordering boundaries, undo-memory reset, and scene changes.
 Additional tests cover real selection-handler switching (including an ineligible
 File Browser stand-in), captured parameters, changing targets, recipe ownership
 and replacement, and production affine capture/rebasing for nudges, compounded
 rotation/scaling, and singular selections.
+Animate tests verify accumulated offsets, compounded/signed scale, absolute typed
+settings, zero-scale fallback, and non-finite result rejection. Cache tests retain
+the last supported operation across unsupported history edits and Undo/Redo before
+replaying it on another target.
 
 Interactive verification in an OpenToonz build:
 
 1. Draw five overlapping vector strokes. Select the top stroke and use Move Back
    One followed by Repeat twice. Verify each step moves it one position backward.
-2. Undo each move individually, then redo each move. Repeat should be cleared.
+2. Undo each move individually, then redo each move. Repeat should retain the
+   ordering operation and remain available whenever its current target is valid.
 3. Run Move Back One again, select a different stroke, then Repeat. Confirm the
    new selection moves. Try a locked/non-vector selection and confirm Repeat
    cannot invoke an unavailable ordering command.
 4. Assign Repeat a shortcut and perform the same sequence from the keyboard.
-5. Make a brush stroke or another unsupported edit. Confirm the old command is
-   cleared. Also confirm it clears when loading or creating a scene.
+5. Make a brush stroke or another unsupported edit, then return to a compatible
+   selection and Repeat. Confirm the cached operation survives. Confirm it clears
+   when loading or creating a scene.
 6. Repeat cell rolling, exposure step changes, and drawing substitutions; check
    their individual Undo/Redo steps.
 7. Move/rotate/scale vector and raster selections, then Repeat on the same and a
@@ -108,3 +126,15 @@ Interactive verification in an OpenToonz build:
    it cannot inherit the clipboard/delete Repeat permission.
 10. Repeat Adjust Thickness and Time Stretch; verify the copied parameters and
     compounded stretch ratio, rather than the old selection or open dialog.
+11. With Animate, move a column and Repeat on the same frame, another frame, a
+    peg, and a camera. Check relative rotation, compounded global/axis scaling,
+    shear, and center moves. Test both Global Key settings and Undo/Redo, including
+    removal/restoration of any newly created keys. Locked axes/columns must keep
+    their values; zero camera scale must be prevented.
+    Also repeat an absolute setting on an unkeyed frame whose interpolated value
+    already matches it: the new key must still be created and undoable.
+12. Scrub an Animate field and Repeat its difference; type a value and Repeat that
+    exact value on another object/frame. Check paired scale constraints and a
+    motion-path position on another compatible path object. Draw an unsupported
+    stroke between edits and verify the Animate recipe is still available when
+    returning to Animate.

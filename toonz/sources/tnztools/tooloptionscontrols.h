@@ -336,6 +336,7 @@ class DVAPI MeasuredValueField : public DVGui::LineEdit {
   bool m_labelClicked = false;
   double m_originalValue;
   bool m_isTyping = false;
+  bool m_committingText = false;
 
 protected:
   bool m_isGlobalKeyframe;
@@ -362,7 +363,8 @@ public:
   double getValue() const;
   
   bool isLabelClicked() const { return m_labelClicked; }
- 
+  bool isCommittingText() const { return m_committingText; }
+
   void setPrecision(int precision);
   int getPrecision() { return m_precision; }
 

@@ -11,6 +11,7 @@
 #include <QCoreApplication>
 
 using EditToolGadgets::DragTool;
+class TStageObjectValues;
 
 //=============================================================================
 // EditTool
@@ -95,6 +96,15 @@ public:
   bool doesApply() const;  // ritorna vero se posso deformare l'oggetto corrente
   void saveOldValues();
   bool transformEnabled() const;
+  bool canRepeatTransform() const;
+  bool repeatChannelEnabled(int channel) const;
+  bool repeatCenterEnabled(int axis) const;
+  static void recordTransformRepeat(const TStageObjectValues& before,
+                                    const TStageObjectValues& after,
+                                    bool globalKeyframes, bool absolute = false,
+                                    int editedChannels = 0);
+  static void recordCenterRepeat(const TPointD& before, const TPointD& after,
+                                 int axes = 3, bool absolute = false);
 
   const TStroke* getSpline() const;
 
