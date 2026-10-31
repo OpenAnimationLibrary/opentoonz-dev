@@ -325,9 +325,20 @@ endif()
 
 
 if(PLATFORM EQUAL 64)
-    if(BUILD_ENV_UNIXLIKE)
+    if(BUILD_ENV_APPLE)
+        # Accept OpenCV 5 as well as 4, and avoid unused GUI modules linking Qt 6.
+        find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
+        if(OpenCV_VERSION VERSION_LESS 4.1)
+            message(FATAL_ERROR "OpenCV 4.1 or later is required")
+        endif()
+        if(OpenCV_VERSION VERSION_LESS 5)
+            find_package(OpenCV REQUIRED COMPONENTS calib3d)
+        else()
+            find_package(OpenCV REQUIRED COMPONENTS calib geometry)
+        endif()
+    elseif(BUILD_ENV_UNIXLIKE)
         find_package(OpenCV REQUIRED)
-    else() # Windows and MacOS case
+    else() # Windows case
         find_package(OpenCV 4.1 REQUIRED)
     endif()
     #include_directories(

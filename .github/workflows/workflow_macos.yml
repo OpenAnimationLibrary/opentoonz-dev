@@ -13,6 +13,7 @@ on:
       - '!doc/**'                               # Exclude documentation
       - '!**/.github/**'                        # Exclude everything in .github folder
       - '.github/workflows/workflow_macos.yml'  # Include MacOs workflow file
+      - '.github/scripts/build-macos-opencv.sh'
   pull_request:
     paths:
       - '**/*'
@@ -21,6 +22,7 @@ on:
       - '!doc/**'
       - '!**/.github/**'
       - '.github/workflows/workflow_macos.yml'
+      - '.github/scripts/build-macos-opencv.sh'
 
 jobs:
   macOS:
@@ -33,6 +35,10 @@ jobs:
     # Xref.: https://github.com/actions/runner-images/issues/13045
     # TODO: Change macOS GHA Runner Image to (Apple Silicon) based image on/prior to sunsetting of `macos-15-intel` (x86_64) runner image (August 2027)
     runs-on: macos-15-intel
+    env:
+      OPENCV_VERSION: '5.0.0'
+      OPENCV_SHA256: b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095
+      OPENCV_ROOT: ${{ github.workspace }}/.ci-deps/opencv-install
     steps:
       - uses: actions/checkout@v6
 
@@ -63,13 +69,38 @@ jobs:
             done
           }
 
-          checkPkgAndInstall pkg-config glew lz4 libjpeg libpng lzo boost libusb libmypaint ccache jpeg-turbo ninja opencv@4 openjph openexr
+          checkPkgAndInstall pkg-config glew lz4 libjpeg libpng lzo boost libusb libmypaint ccache jpeg-turbo ninja openjph openexr
 
-          brew list --formula | grep '^qt' | grep -v '@5' | xargs -n1 brew unlink || true
+      # Temporary Qt 5 SDK until the Qt 6 port is ready. This removes the
+      # Homebrew qt@5 install deadline, but does not make Qt 5 supported again.
+      - name: Install Qt SDK
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: '5.15.2'
+          host: mac
+          target: desktop
+          arch: clang_64
+          modules: qtscript
+          cache: true
 
-          brew install qt@5
-          brew unlink qt@5 || true
-          brew link qt@5 || true
+      # Avoid Homebrew's deprecated opencv@4 and its full GUI/VTK dependency tree.
+      - name: Identify OpenCV build environment
+        id: opencv-environment
+        run: |
+          xcrun clang --version > "$RUNNER_TEMP/opencv-environment.txt"
+          brew list --versions >> "$RUNNER_TEMP/opencv-environment.txt"
+          echo "key=$(shasum -a 256 "$RUNNER_TEMP/opencv-environment.txt" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache OpenCV
+        id: opencv-cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.OPENCV_ROOT }}
+          key: macos-15-${{ runner.arch }}-opencv-${{ env.OPENCV_VERSION }}-${{ steps.opencv-environment.outputs.key }}-${{ hashFiles('.github/scripts/build-macos-opencv.sh') }}
+
+      - name: Build OpenCV
+        if: steps.opencv-cache.outputs.cache-hit != 'true'
+        run: bash .github/scripts/build-macos-opencv.sh
 
       - name: Set up cache
         run: |
@@ -96,17 +127,17 @@ jobs:
           cd build
           cmake ../sources -G Ninja \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-            -DQT_PATH=$(brew --prefix qt@5)/lib \
-            -DQt5_DIR=$(brew --prefix qt@5)/lib/cmake/Qt5 \
-            -DCMAKE_PREFIX_PATH=$(brew --prefix qt@5)/lib/cmake/Qt5 \
-            -DOpenCV_DIR=$(brew --prefix opencv@4)/lib/cmake/opencv4 \
+            -DQT_PATH="$QT_ROOT_DIR/lib" \
+            -DQt5_DIR="$QT_ROOT_DIR/lib/cmake/Qt5" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DOpenCV_DIR="$OPENCV_ROOT/lib/cmake/opencv5" \
             -DWITH_TRANSLATION=OFF
           ninja -j $(sysctl -n hw.ncpu)
       - name: Introduce Libraries and Stuff
         run: |
           cd toonz/build/toonz
           cp -pr ../../../stuff OpenToonz.app/portablestuff
-          /usr/local/opt/qt@5/bin/macdeployqt OpenToonz.app -verbose=0 -always-overwrite \
+          "$QT_ROOT_DIR/bin/macdeployqt" OpenToonz.app -verbose=0 -always-overwrite \
             -executable=OpenToonz.app/Contents/MacOS/lzocompress \
             -executable=OpenToonz.app/Contents/MacOS/lzodecompress \
             -executable=OpenToonz.app/Contents/MacOS/tcleanup \
@@ -130,7 +161,7 @@ jobs:
           cd toonz/build/toonz
           echo "Creating DMG..."
           ATTEMPT=1
-          until /usr/local/opt/qt@5/bin/macdeployqt OpenToonz.app -dmg -verbose=0 && [ -f OpenToonz.dmg ]; do
+          until "$QT_ROOT_DIR/bin/macdeployqt" OpenToonz.app -dmg -verbose=0 && [ -f OpenToonz.dmg ]; do
             echo "Attempt $ATTEMPT failed to build DMG."
             if [ $ATTEMPT -eq 10 ]; then
               echo ">>> DMG file creation failed after 10 attempts. Aborting!"
