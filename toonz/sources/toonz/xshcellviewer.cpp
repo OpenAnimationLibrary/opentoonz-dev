@@ -2125,7 +2125,7 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
 
   bool timelineRoom =
       o->isVerticalTimeline() || m_viewer->getFrameZoomFactor() >= 100;
-  bool holdStart = !(sameLevel && prevCell.m_frameId == cell.m_frameId);
+  bool holdStart  = !(sameLevel && prevCell.m_frameId == cell.m_frameId);
   int strokeCount = -1;
   bool drawCount  = false;
   if (!isSimpleView && timelineRoom && holdStart &&
@@ -2233,12 +2233,11 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
     countColor.setAlphaF(1.0);
     p.setPen(countColor);
     p.setFont(font);
-    QRect countRect = o->isVerticalTimeline()
-                          ? nameRect
-                          : cellRect.adjusted(1, 0, -1, 0);
-    int countAlign  = o->isVerticalTimeline()
-                          ? Qt::AlignLeft | Qt::AlignBottom
-                          : Qt::AlignHCenter | Qt::AlignBottom;
+    QRect countRect =
+        o->isVerticalTimeline() ? nameRect : cellRect.adjusted(1, 0, -1, 0);
+    int countAlign = o->isVerticalTimeline()
+                         ? Qt::AlignLeft | Qt::AlignBottom
+                         : Qt::AlignHCenter | Qt::AlignBottom;
     p.drawText(countRect, countAlign, QString::number(strokeCount));
   }
 }

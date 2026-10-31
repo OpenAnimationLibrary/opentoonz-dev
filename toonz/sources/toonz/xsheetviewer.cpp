@@ -1129,9 +1129,9 @@ void XsheetViewer::showEvent(QShowEvent *) {
   ret = ret &&
         connect(app->getCurrentLevel(), SIGNAL(xshLevelSwitched(TXshLevel *)),
                 this, SLOT(changeWindowTitle()));
-  ret = ret &&
-        connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
-                &XsheetViewer::updateCells);
+  ret =
+      ret && connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged,
+                     this, &XsheetViewer::updateCells);
 
   ret = ret && connect(IconGenerator::instance(), SIGNAL(iconGenerated()), this,
                        SLOT(updateColumnArea()));
@@ -1908,8 +1908,7 @@ void XsheetViewer::load(QSettings &settings) {
   }
 
   m_showStrokeCount = settings.value("showStrokeCount", 1).toInt() != 0;
-  QAction *action =
-      CommandManager::instance()->getAction(MI_ShowStrokeCount);
+  QAction *action   = CommandManager::instance()->getAction(MI_ShowStrokeCount);
   if (action && action->isChecked() != m_showStrokeCount)
     action->setChecked(m_showStrokeCount);
 }
@@ -1919,10 +1918,9 @@ class ShowStrokeCountCommand final : public MenuItemHandler {
 public:
   ShowStrokeCountCommand() : MenuItemHandler(MI_ShowStrokeCount) {}
   void execute() override {
-    QAction *action =
-        CommandManager::instance()->getAction(MI_ShowStrokeCount);
+    QAction *action = CommandManager::instance()->getAction(MI_ShowStrokeCount);
     if (!action) return;
-    bool on = action->isChecked();
+    bool on                   = action->isChecked();
     const QWidgetList widgets = QApplication::allWidgets();
     for (QWidget *widget : widgets) {
       XsheetViewer *viewer = qobject_cast<XsheetViewer *>(widget);

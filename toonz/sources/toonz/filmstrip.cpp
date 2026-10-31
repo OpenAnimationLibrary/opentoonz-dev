@@ -1514,7 +1514,7 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
   QAction *hideNavigator =
       panelMenu->addAction(tr("Show/Hide Level Navigator"));
   QAction *responsiveThumbs = panelMenu->addAction(tr("Responsive Thumbnails"));
-  QAction *showStrokeCount = panelMenu->addAction(tr("Show Stroke Count"));
+  QAction *showStrokeCount  = panelMenu->addAction(tr("Show Stroke Count"));
   hideComboBox->setCheckable(true);
   hideComboBox->setChecked(m_showComboBox);
   hideNavigator->setCheckable(true);
@@ -2243,8 +2243,8 @@ void Filmstrip::load(QSettings &settings) {
   m_responsiveThumbnails = responsive == 1;
   m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
 
-  UINT strokeCount   = settings.value("showStrokeCount", 1).toUInt();
-  m_showStrokeCount  = strokeCount == 1;
+  UINT strokeCount  = settings.value("showStrokeCount", 1).toUInt();
+  m_showStrokeCount = strokeCount == 1;
   m_frames->setShowStrokeCount(m_showStrokeCount);
 }
 

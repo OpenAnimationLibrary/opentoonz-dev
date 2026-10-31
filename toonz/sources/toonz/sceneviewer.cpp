@@ -2011,7 +2011,7 @@ bool viewerStrokeCounts(int &current, int &previous, int &next,
   current = previous = next = -1;
   hasPrevious = hasNext = false;
 
-  TApp *app            = TApp::instance();
+  TApp *app              = TApp::instance();
   TXshSimpleLevel *level = 0;
   TFrameId fid;
   if (app->getCurrentFrame()->isEditingLevel()) {
@@ -2062,8 +2062,7 @@ double drawStrokeReadout(double x, double y, const std::string &title,
   double right = x + titleWidth;
   if (!number.empty()) {
     double numberWidth = tglGetTextWidth(number);
-    double numberX =
-        title.empty() ? x : x + (titleWidth - numberWidth) / 2.0;
+    double numberX = title.empty() ? x : x + (titleWidth - numberWidth) / 2.0;
     tglDrawText(TPointD(numberX, y), number);
     if (numberX + numberWidth > right) right = numberX + numberWidth;
   }
@@ -2111,13 +2110,12 @@ void SceneViewer::drawViewerStrokeCount() {
       bool known;
       TPixel color;
     };
-    Item items[3] = {
-        {tr("Previous").toStdString(), previous, hasPrevious,
-         pref->getViewerPreviousStrokeCountColor()},
-        {tr("Current").toStdString(), current, true,
-         pref->getViewerCurrentStrokeCountColor()},
-        {tr("Next").toStdString(), next, hasNext,
-         pref->getViewerNextStrokeCountColor()}};
+    Item items[3] = {{tr("Previous").toStdString(), previous, hasPrevious,
+                      pref->getViewerPreviousStrokeCountColor()},
+                     {tr("Current").toStdString(), current, true,
+                      pref->getViewerCurrentStrokeCountColor()},
+                     {tr("Next").toStdString(), next, hasNext,
+                      pref->getViewerNextStrokeCountColor()}};
     for (const Item &item : items) {
       setStrokeColor(item.color);
       std::string number;
