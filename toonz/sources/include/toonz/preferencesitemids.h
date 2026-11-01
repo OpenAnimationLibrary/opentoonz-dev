@@ -47,6 +47,7 @@ enum PreferencesItemId {
   restoreViewerViewFromLastSession,
   togglePanelWithShortcut,
   RestoreStyleEditorTab,
+  splashImagePath,
 
   //----------
   // Visualization

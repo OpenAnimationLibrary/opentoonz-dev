@@ -16,10 +16,35 @@ their existing behavior.
 | `otdev-build.json` | Verified source, infrastructure, and package identity |
 
 Replace **`portablestuff/splash.png`** with a valid PNG and restart OpenToonz.
-No SVG edit or rebuild is needed. The fixed image reference in `splash.svg` is
-`portablestuff/splash.png`, resolved relative to the SVG beside the executable.
-The launch working directory does not affect it. CI copies the PNG after the
+No SVG edit or rebuild is needed. The preference-aware loader uses the active
+stuff folder, so installed builds, portable builds, and `-TOONZROOT` overrides
+use their own `splash.png`. The SVG retains its fixed image reference for older
+builds. The launch working directory does not affect it. CI copies the PNG after the
 ordinary `stuff` files so those files cannot overwrite the selected artwork.
+
+Alternatively, select **Preferences → Interface → Splash Screen Image** to use
+any PNG without moving or renaming it. **Use Default** clears that preference.
+**Help → About** uses the same local splash and fallback policy. Reopen About to
+see preference changes or replaced artwork immediately; the startup splash
+updates on the next launch. The selected file is referenced, not copied.
+
+The local template remains `splash.svg` beside the executable. The loader uses
+its `<image id="artwork">` slot, retaining its size, aspect-ratio policy, text,
+and build information. `id="splash-artwork"` is also supported. Existing custom
+SVGs without a marked image still render as-is; add the ID to the intended image
+once to make their artwork replaceable. The built-in upstream layout also has a
+slot above its footer, leaving its original vector design visible without a PNG.
+
+| Template | PNG lookup order |
+| --- | --- |
+| Readable local `splash.svg` | Preference, then active stuff folder's `splash.png`, then the SVG's own content |
+| Compiled `:Resources/splash.svg` when local SVG is missing/invalid | Preference, stuff PNG, executable-adjacent `splash.png`, resource-adjacent `:Resources/splash.png`, then embedded SVG content |
+
+Missing, unreadable, corrupt, and non-PNG artwork is skipped. A missing PNG does
+not discard a valid local SVG. A malformed local SVG falls back to the compiled
+template. No persistent SVG edits are made when substituting artwork. The
+compiled SVG is inside the application rather than an editable disk folder;
+the executable-adjacent PNG is the convenient disk override for that fallback.
 
 For future builds, replace `.github/ot-dev/ot-dev-splash-artwork.png`; CI installs
 it as `portablestuff/splash.png`. Edit `splash-template-area10.svg` only when
@@ -31,7 +56,7 @@ CI populates the PR number/title, description, UTC date, and actual compiled
 checkout commit. Branch builds identify their ref. All seven original fields
 and the two wrapped heading fields remain available. XML escaping happens once.
 The compiled splash embeds the same PNG and metadata as a self-contained
-fallback when either external file is missing. Replacing the external PNG
+fallback when the external template is missing. Replacing the external PNG
 retains the SVG's build information. Older downloads need a fresh build to
 acquire this layout.
 
@@ -121,6 +146,9 @@ Run the tests with Qt 5.15.2 and CMake available:
 python -m pip install PyQt5==5.15.2
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s .github/ot-dev -p 'test_*.py' -v
 python -m unittest discover -s .github/ot-dev/recorder -p 'test_*.py' -v
+cmake -S toonz/sources/toonz/tests -B splash-tests -DCMAKE_PREFIX_PATH=/path/to/Qt
+cmake --build splash-tests --config Release
+ctest --test-dir splash-tests -C Release --output-on-failure
 actionlint .github/workflows/workflow_windows.yml .github/workflows/otdev_branding.yml
 ```
 
@@ -130,6 +158,13 @@ metadata stay unchanged. It also renders the embedded fallback without the
 external PNG. Resolver tests cover source identity, stale merges, pagination,
 and duplicate prevention. Package tests reject incomplete branding/recorder
 distributions. Recorder tests check external paths with the real CMake parser.
+
+The standalone C++ splash regression exercises the actual loader and compiled
+resource. It covers preference clearing, corrupt and missing PNGs, SVG fallback,
+relative references from another working directory, Unicode paths, PNG alpha,
+proportional fitting, unchanged footer text, and replacement at the same path.
+The Windows application workflow runs it with the branded resource before the
+full application build.
 
 Windows CI additionally compiles and tests recorder consent, capture, encoding,
 and native playback, builds OpenToonz, checks its compiled markers, and launches
