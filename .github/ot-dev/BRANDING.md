@@ -165,6 +165,9 @@ relative references from another working directory, Unicode paths, PNG alpha,
 proportional fitting, unchanged footer text, and replacement at the same path.
 The Windows application workflow runs it with the branded resource before the
 full application build.
+On Windows it uses the native Qt platform so SVG text resolves system fonts;
+other platforms use the offscreen backend. Failure diagnostics are written to
+CTest's captured stderr, including Qt initialization messages.
 
 Windows CI additionally compiles and tests recorder consent, capture, encoding,
 and native playback, builds OpenToonz, checks its compiled markers, and launches

@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
         std::fflush(stderr);
       });
   QGuiApplication app(argc, argv);
+  const QString previousDirectory = QDir::currentPath();
   QTemporaryDir temp;
   require(temp.isValid(), "No temporary directory");
   QDir root(temp.path());
@@ -80,7 +81,8 @@ int main(int argc, char **argv) {
   auto colorIs = [&](const QImage &image, const QColor &color,
                      const char *message) {
     require(image.pixelColor(50, 40) == color, message);
-    require(image.pixelColor(95, 90) == QColor(Qt::yellow),
+    // Sample the background outside the text: glyph widths vary by platform.
+    require(image.pixelColor(0, 99) == QColor(Qt::yellow),
             "SVG footer changed");
   };
 
@@ -157,5 +159,7 @@ int main(int argc, char **argv) {
   require(qAbs(logicalSize.width() - resourceSplash.width()) <= 1 &&
               qAbs(logicalSize.height() - resourceSplash.height()) <= 1,
           "About splash changed logical size on a high-DPI screen");
+  require(QDir::setCurrent(previousDirectory),
+          "Cannot restore working directory");
   std::puts("Splash image fallback and rendering checks passed.");
 }

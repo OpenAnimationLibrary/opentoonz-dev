@@ -8,5 +8,12 @@ target_link_libraries(splashimage_test PRIVATE Qt5::Core Qt5::Gui Qt5::Svg
                                                Qt5::Xml)
 enable_testing()
 add_test(NAME splashimage COMMAND splashimage_test)
-set_tests_properties(splashimage PROPERTIES ENVIRONMENT
-                                            "QT_QPA_PLATFORM=offscreen")
+if(WIN32)
+  # The offscreen plugin uses Qt's bundled font directory, which this Windows
+  # SDK does not ship. Use the application's native system-font backend.
+  set_tests_properties(splashimage PROPERTIES ENVIRONMENT
+                                              "QT_QPA_PLATFORM=windows")
+else()
+  set_tests_properties(splashimage PROPERTIES ENVIRONMENT
+                                              "QT_QPA_PLATFORM=offscreen")
+endif()
