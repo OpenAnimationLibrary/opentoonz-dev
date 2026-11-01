@@ -3,11 +3,17 @@
 #include <QGuiApplication>
 #include <QTemporaryDir>
 #include <cstdio>
+#include <cstdlib>
 
 namespace {
 
 void require(bool condition, const char *message) {
-  if (!condition) qFatal("%s", message);
+  if (condition) return;
+  // qFatal can report only to the debugger on Windows, hiding the assertion
+  // from CTest. Always print the failure before returning a normal error code.
+  std::fprintf(stderr, "FAIL: %s\n", message);
+  std::fflush(stderr);
+  std::exit(EXIT_FAILURE);
 }
 
 void write(const QString &path, const QByteArray &data) {
@@ -39,6 +45,11 @@ QByteArray svg(const QByteArray &href = QByteArray()) {
 }  // namespace
 
 int main(int argc, char **argv) {
+  qInstallMessageHandler(
+      [](QtMsgType, const QMessageLogContext &, const QString &message) {
+        std::fprintf(stderr, "Qt: %s\n", qPrintable(message));
+        std::fflush(stderr);
+      });
   QGuiApplication app(argc, argv);
   QTemporaryDir temp;
   require(temp.isValid(), "No temporary directory");
