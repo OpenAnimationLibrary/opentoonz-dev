@@ -317,17 +317,22 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
           [](bool on) { ViewerScrubWrap = on; });
 
   const QAction *action = CommandManager::instance()->getAction(V_Scrub);
-  const QString shortcut =
-      action ? action->shortcut().toString(QKeySequence::NativeText)
-             : QString();
-  auto *help = new QLabel(
-      shortcut.isEmpty()
-          ? tr("Assign Viewer Scrub in Configure Shortcuts, then hold it and "
-               "drag in the viewer.")
-          : tr("Hold %1 and drag in the viewer. Drag the strip directly.")
-                .arg(shortcut),
-      this);
+  auto *help            = new QLabel(this);
+  help->setObjectName("ViewerScrubShortcutHint");
   help->setWordWrap(true);
+  auto updateShortcut = [action, help]() {
+    const QString shortcut =
+        action ? action->shortcut().toString(QKeySequence::NativeText)
+               : QString();
+    help->setText(
+        shortcut.isEmpty()
+            ? tr("Assign Viewer Scrub in Configure Shortcuts, then hold it and "
+                 "drag in the viewer.")
+            : tr("Hold %1 and drag in the viewer. Drag the strip directly.")
+                  .arg(shortcut));
+  };
+  if (action) connect(action, &QAction::changed, help, updateShortcut);
+  updateShortcut();
   layout->addWidget(help);
   auto *reset = new QPushButton(tr("Reset"), this);
   reset->setAutoDefault(false);
@@ -344,3 +349,4 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
     if (viewer->isVisible()) viewer->setFocus(Qt::OtherFocusReason);
   });
 }
+
