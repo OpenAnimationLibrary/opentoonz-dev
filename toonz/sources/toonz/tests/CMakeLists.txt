@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(ViewerScrubTests LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
+add_executable(viewerscrubdrag_test viewerscrubdrag_test.cpp)
+add_test(NAME viewerscrubdrag COMMAND viewerscrubdrag_test)
