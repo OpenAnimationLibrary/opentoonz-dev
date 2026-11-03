@@ -103,6 +103,7 @@ set(SOURCES
     adjustlevelsfx.cpp
     artcontourfx.cpp
     backlitfx.cpp
+    bevelfx.cpp
     blendtzfx.cpp
     blurfx.cpp
     bodyhighlightfx.cpp

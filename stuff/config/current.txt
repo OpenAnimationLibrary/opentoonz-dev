@@ -37,6 +37,18 @@
   <item>"STD_backlitFx.color"	"Color"			</item>
   <item>"STD_backlitFx.fade"		"Fade"			</item>
 
+  <item>"STD_bevelFx"		"Bevel"	</item>
+  <item>"STD_bevelFx.highlight_color"	"Highlight"	</item>
+  <item>"STD_bevelFx.shadow_color"	"Shadow"	</item>
+  <item>"STD_bevelFx.blur_x"	"Blur X"	</item>
+  <item>"STD_bevelFx.blur_y"	"Blur Y"	</item>
+  <item>"STD_bevelFx.quality"	"Quality"	</item>
+  <item>"STD_bevelFx.strength"	"Strength"	</item>
+  <item>"STD_bevelFx.angle"	"Angle"	</item>
+  <item>"STD_bevelFx.distance"	"Distance"	</item>
+  <item>"STD_bevelFx.type"	"Type"	</item>
+  <item>"STD_bevelFx.knockout"	"Knockout"	</item>
+
  
   <item>"STD_blurFx"		"Blur"			</item>
   <item>"STD_blurFx.value"		"Value"			</item>
