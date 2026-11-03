@@ -12,6 +12,9 @@
 
 // Qt includes
 #include <QMutex>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRecursiveMutex>
+#endif
 
 #undef DVAPI
 #undef DVVAR
@@ -200,7 +203,11 @@ private:
   std::vector<TFrameId> m_refLevelFids;
 
   bool m_dirtyFlag;  //!< Whether the palette changed and needs to be refreshed.
-  QMutex m_mutex;    //!< Synchronization mutex for multithreading purposes.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QRecursiveMutex m_mutex;
+#else
+  QMutex m_mutex;
+#endif  //!< Synchronization mutex for multithreading purposes.
 
   bool m_isLocked;          //!< Whether the palette is locked.
   bool m_askOverwriteFlag;  //!< This variable is quite unique. This flag is to
@@ -415,7 +422,11 @@ between RGBA color components.
     return m_paletteName;
   }  //!< Returns the name of the palette.
 
-  QMutex *mutex() { return &m_mutex; }  //!< Returns the palette's mutex
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QRecursiveMutex *mutex() { return &m_mutex; }
+#else
+  QMutex *mutex() { return &m_mutex; }
+#endif  //!< Returns the palette's mutex
 
   bool isLocked() const {
     return m_isLocked;

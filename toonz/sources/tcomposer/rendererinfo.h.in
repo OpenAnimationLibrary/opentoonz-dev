@@ -1,0 +1,18 @@
+#pragma once
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QtGlobal>
+
+inline QByteArray tcomposerRendererInfo() {
+  const QJsonObject info{
+      {"renderer", "tcomposer"},
+      {"protocol", 1},
+      {"experimental", true},
+      {"qt_version", qVersion()},
+      {"build_date", "@TCOMPOSER_BUILD_DATE@"},
+      {"source_revision", "@TCOMPOSER_SOURCE_REVISION@"},
+      {"capabilities", QJsonArray{"local-batch"}}};
+  return QJsonDocument(info).toJson(QJsonDocument::Compact);
+}

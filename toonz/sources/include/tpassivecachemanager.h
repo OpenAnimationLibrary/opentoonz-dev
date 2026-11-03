@@ -4,6 +4,9 @@
 #define TPASSIVECACHEMANAGER_INCLUDED
 
 #include "tfxcachemanager.h"
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRecursiveMutex>
+#endif
 
 //=========================================================================
 
@@ -56,7 +59,11 @@ void clear();*/
   class ResourcesContainer;
 
 private:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QRecursiveMutex m_mutex;
+#else
   QMutex m_mutex;
+#endif
 
   std::vector<FxData> m_fxDataVector;
   std::set<std::string> m_invalidatedLevels;

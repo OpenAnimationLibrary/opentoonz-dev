@@ -107,6 +107,15 @@ option(WITH_SYSTEM_LZO "Use the system LZO library instead of 'thirdparty'" ${_i
 option(WITH_SYSTEM_SUPERLU "Use the system SuperLU library instead of 'thirdparty'" ${_init_SYSTEM_SUPERLU})
 option(WITH_CANON "Build with Canon DSLR support - Requires Canon SDK" OFF)
 option(WITH_TRANSLATION "Generate translation projects as well" ON)
+option(OPENTOONZ_QT6_TCOMPOSER "Build only the experimental Qt6 batch renderer" OFF)
+if(OPENTOONZ_QT6_TCOMPOSER)
+    if(NOT WIN32)
+        message(FATAL_ERROR "The experimental Qt6 tcomposer currently targets Windows.")
+    endif()
+    set(WITH_TRANSLATION OFF CACHE BOOL "" FORCE)
+    add_compile_definitions(OPENTOONZ_QT6_TCOMPOSER)
+endif()
+
 option(WITH_WINTAB "(Windows only) Build with customized Qt with WinTab support. https://github.com/shun-iwasawa/qt5/releases/tag/v5.15.2_wintab" OFF)
 
 # avoid using again
@@ -245,7 +254,9 @@ elseif(BUILD_ENV_UNIXLIKE)
 
     set(CMAKE_CXX_STANDARD 17)
 
-    find_package(Qt5Widgets)
+    if(NOT OPENTOONZ_QT6_TCOMPOSER)
+        find_package(Qt5Widgets)
+    endif()
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     if (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
@@ -281,6 +292,9 @@ include_directories(
   )
 
 # Find the QtWidgets library
+if(OPENTOONZ_QT6_TCOMPOSER)
+    include(tcomposer/qt6.cmake)
+else()
 find_package(Qt5 REQUIRED
     Core
     Gui
@@ -297,6 +311,7 @@ find_package(Qt5 REQUIRED
     SerialPort
     UiTools
   )
+endif()
 
 if(NOT Qt5Core_FOUND)
     message(FATAL_ERROR "Qt5Core not found check paths")
@@ -746,13 +761,19 @@ add_subdirectory(sound)
 add_subdirectory(colorfx)
 add_subdirectory(image)
 add_subdirectory(toonzqt)
-add_subdirectory(tnztools)
+if(NOT OPENTOONZ_QT6_TCOMPOSER)
+    add_subdirectory(tnztools)
+endif()
 
 add_subdirectory(${SDKROOT}/lzo/driver lzodriver)
 
+add_subdirectory(tcomposer)
+if(OPENTOONZ_QT6_TCOMPOSER)
+    return()
+endif()
+
 add_subdirectory(toonz)
 add_subdirectory(tcleanupper)
-add_subdirectory(tcomposer)
 add_subdirectory(tconverter)
 add_subdirectory(toonzfarm)
 

@@ -72,6 +72,9 @@
 
 // Qt includes
 #include <QApplication>
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+#include "rendererinfo.h"
+#endif
 #include <QWaitCondition>
 #include <QMessageBox>
 
@@ -597,6 +600,14 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
 DV_IMPORT_API void initStdFx();
 DV_IMPORT_API void initColorFx();
 int main(int argc, char *argv[]) {
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+  if (argc == 2 && (QString::fromLocal8Bit(argv[1]) == "--renderer-info" ||
+                    QString::fromLocal8Bit(argv[1]) == "-version")) {
+    const QByteArray info = tcomposerRendererInfo();
+    std::cout << info.constData() << std::endl;
+    return 0;
+  }
+#endif
   TCli::UsageLine usageLine;
   //  setCurrentModule("tcomposer");
   TCli::FilePathArgument srcName("srcName", "Source file");
@@ -739,6 +750,11 @@ int main(int argc, char *argv[]) {
   TFilePath lRootDir    = fp + "toonzfarm";
   TFilePath logFilePath = lRootDir + "tcomposer.log";
   m_userLog             = new TUserLogAppend(logFilePath);
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+  m_userLog->info("Renderer: " +
+                  QCoreApplication::applicationFilePath().toStdString());
+  m_userLog->info(tcomposerRendererInfo().toStdString());
+#endif
   string msg;
 
   // Initialize measure units

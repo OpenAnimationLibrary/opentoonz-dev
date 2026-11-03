@@ -17,6 +17,9 @@
 // Qt includes
 #include <QMutex>
 #include <QMutexLocker>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QRecursiveMutex>
+#endif
 
 #include "ext/plasticdeformerstorage.h"
 
@@ -410,12 +413,20 @@ PlasticDeformerDataGroup::~PlasticDeformerDataGroup() {}
 
 class PlasticDeformerStorage::Imp {
 public:
-  QMutex m_mutex;            //!< Access mutex - needed for thread-safety
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QRecursiveMutex m_mutex;
+#else
+  QMutex m_mutex;
+#endif                       //!< Access mutex - needed for thread-safety
   DeformersSet m_deformers;  //!< Set of deformers, ordered by mesh image,
                              //! deformation, and affine.
 
 public:
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  Imp() {}
+#else
   Imp() : m_mutex(QMutex::Recursive) {}
+#endif
 };
 
 //***********************************************************************************************
