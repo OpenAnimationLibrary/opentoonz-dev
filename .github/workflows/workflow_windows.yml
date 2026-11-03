@@ -214,6 +214,17 @@ jobs:
           Get-ChildItem recorder-tests/recorder-*.txt | ForEach-Object { Get-Content $_.FullName }
           if ($recorderTestExit) { throw 'Recorder tests failed' }
 
+      - name: Test splash artwork preferences and fallbacks
+        shell: pwsh
+        run: |
+          cmake -S toonz/sources/toonz/tests -B splash-tests -G "$env:MSVCVERSION" -A x64 "-DCMAKE_PREFIX_PATH=$env:QT_PATH"
+          if ($LASTEXITCODE) { throw 'Splash test configure failed' }
+          cmake --build splash-tests --config Release --parallel 2
+          if ($LASTEXITCODE) { throw 'Splash test build failed' }
+          $env:PATH = "$env:QT_PATH\bin;$env:PATH"
+          ctest --test-dir splash-tests -C Release --output-on-failure
+          if ($LASTEXITCODE) { throw 'Splash tests failed' }
+
       # CMake configuration step
       - name: CMake configuration
         run: |

@@ -103,6 +103,10 @@ def brand_window(source, label):
 def brand_startup(source, external_png=False):
     if source.count(SPLASH_ANCHOR) != 1:
         raise ValueError("Unable to locate the external OpenToonz splash path")
+    # The preference-aware loader validates PNGs itself and retains local SVG
+    # text even when its artwork is missing. Keep support for older PR sources.
+    if "SplashImage::load(" in source:
+        return source
     # Resolve both replaceable assets from the executable, not the working directory.
     source = source.replace(SPLASH_ANCHOR,
                             f'QDir(exeDir).filePath("{SPLASH_FILENAME}")')

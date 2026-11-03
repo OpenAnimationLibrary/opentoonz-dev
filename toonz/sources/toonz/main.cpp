@@ -11,6 +11,7 @@
 #include "filebrowsermodel.h"
 #include "expressionreferencemanager.h"
 #include "thirdparty.h"
+#include "splashimage.h"
 
 // TnzTools includes
 #include "tools/tool.h"
@@ -148,8 +149,7 @@ DV_IMPORT_API void initColorFx();
     la stuffDir, controlla se la directory di outputs esiste (e provvede a
     crearla in caso contrario) verifica inoltre che stuffDir esista.
 */
-static void initToonzEnv(QHash<QString, QString> &argPathValues) {
-  StudioPalette::enable(true);
+static void initToonzPaths(QHash<QString, QString> &argPathValues) {
   TEnv::setRootVarName(rootVarName);
   TEnv::setSystemVarPrefix(systemVarPrefix);
 
@@ -185,6 +185,12 @@ static void initToonzEnv(QHash<QString, QString> &argPathValues) {
   else if (!TFileStatus(stuffDir).isDirectory())
     fatalError("Folder \"" + toQString(stuffDir) +
                "\" not found or not readable");
+}
+
+//-----------------------------------------------------------------------------
+
+static void initToonzEnv() {
+  StudioPalette::enable(true);
 
   // Setup third party
   ThirdParty::initialize();
@@ -444,22 +450,21 @@ int main(int argc, char *argv[]) {
 
   TEnv::setApplicationFileName(argv[0]);
 
+  // Resolve portable/installed paths and command-line overrides before reading
+  // the splash preference. Do not construct Preferences before image I/O init.
+  initToonzPaths(argumentPathValues);
+  TFilePath prefPath = ToonzFolder::getMyModuleDir() + "preferences.ini";
+  if (!TFileStatus(prefPath).doesExist())
+    prefPath = ToonzFolder::getTemplateModuleDir() + "preferences.ini";
+  QSettings splashSettings(prefPath.getQString(), QSettings::IniFormat);
+  QString customSplash = splashSettings.value("splashImagePath").toString();
+
   // splash screen (override with local file if present)
   QString exeDir          = QCoreApplication::applicationDirPath();
   QString localSplashPath = QDir(exeDir).filePath("splash.svg");
 
-  QPixmap splashPixmap;
-
-  if (QFileInfo(localSplashPath).exists() &&
-      QFileInfo(localSplashPath).isFile()) {
-    splashPixmap = QIcon(localSplashPath).pixmap(QSize(610, 344));
-    if (splashPixmap.isNull()) {
-      // fallback if loading fails
-      splashPixmap = QIcon(":Resources/splash.svg").pixmap(QSize(610, 344));
-    }
-  } else {
-    splashPixmap = QIcon(":Resources/splash.svg").pixmap(QSize(610, 344));
-  }
+  QPixmap splashPixmap = SplashImage::load(
+      customSplash, TEnv::getStuffDir().getQString(), localSplashPath);
 #ifdef _WIN32
   QFont font("Segoe UI", -1);
 #else
@@ -504,7 +509,7 @@ int main(int argc, char *argv[]) {
       &toonzRunOutOfContMemHandler);
 
   // Toonz environment
-  initToonzEnv(argumentPathValues);
+  initToonzEnv();
 
   // Read the saved preference only after the Toonz environment is initialized.
   // Preserve existing platform defaults when enabled; disabling also prevents

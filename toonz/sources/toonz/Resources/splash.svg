@@ -799,4 +799,8 @@
 		c0-0.1,0.1-0.1,0.1-0.1c0,0,0.1,0,0.2,0s0.2,0,0.3,0c0.1,0,0.2,0,0.3,0c0.1,0,0.1,0,0.2,0.1c0,0,0.1,0.1,0.1,0.1c0,0,0,0.1,0,0.2
 		L587.2,333.8z"/>
 </g>
+<!-- Optional replaceable artwork; the original vector design remains below
+     when no PNG is available. Keep the footer outside this image area. -->
+<image id="artwork" x="0" y="0" width="610" height="318"
+       preserveAspectRatio="xMidYMid meet"/>
 </svg>

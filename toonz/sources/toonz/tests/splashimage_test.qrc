@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/Resources">
+    <file alias="splash.svg">../Resources/splash.svg</file>
+  </qresource>
+</RCC>

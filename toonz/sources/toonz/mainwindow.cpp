@@ -2,6 +2,7 @@
 
 #include "mainwindow.h"
 #include "customhelplink.h"
+#include "splashimage.h"
 
 // Tnz6 includes
 #include "menubar.h"
@@ -38,6 +39,7 @@
 
 // TnzLib includes
 #include "toonz/toonzfolders.h"
+#include "toonz/preferences.h"
 #include "toonz/stage2.h"
 #include "toonz/stylemanager.h"
 #include "toonz/tscenehandle.h"
@@ -1105,9 +1107,16 @@ void MainWindow::onUpgradeTabPro() {}
 //-----------------------------------------------------------------------------
 
 void MainWindow::onAbout() {
-  QLabel *label  = new QLabel();
-  QPixmap pixmap = QIcon(":Resources/splash.svg").pixmap(QSize(610, 344));
-  pixmap.setDevicePixelRatio(getDevicePixelRatio(this));
+  QLabel *label = new QLabel();
+  qreal ratio   = getDevicePixelRatio(this);
+  // Reload on every opening so a changed preference or replaced PNG can be
+  // reviewed immediately, using the same template and fallbacks as startup.
+  QPixmap pixmap = SplashImage::load(
+      Preferences::instance()->getStringValue(splashImagePath),
+      TEnv::getStuffDir().getQString(),
+      QDir(QCoreApplication::applicationDirPath()).filePath("splash.svg"),
+      ":Resources/splash.svg", QSize(610, 480) * ratio);
+  pixmap.setDevicePixelRatio(ratio);
   label->setPixmap(pixmap);
 
   DVGui::Dialog *dialog = new DVGui::Dialog(this, true);
