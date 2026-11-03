@@ -8,6 +8,7 @@
 #include "tiio_ffmpeg.h"
 
 #include <QCoreApplication>
+#include <QMutex>
 
 //===========================================================
 //
@@ -31,6 +32,9 @@ public:
   }
 
 private:
+  // Protect the shared encoder's intermediate-image metadata and disk writes.
+  // Individual MP4 frame writers all forward to this one level writer.
+  QMutex m_frameWriteMutex;
   Ffmpeg *ffmpegWriter;
   int m_lx, m_ly;
   int m_scale;
