@@ -1106,8 +1106,12 @@ QWidget* PreferencesPopup::createUI(PreferencesItemId id,
               &PreferencesPopup::onChange);
       widget = combo;
     } else {  // create FileField
-      DVGui::FileField* field =
-          new DVGui::FileField(this, item.value.toString());
+      DVGui::FileField* field = new DVGui::FileField(
+          this, item.value.toString(), false, false, id != splashImagePath);
+      if (id == splashImagePath) {
+        field->setFileMode(QFileDialog::ExistingFile);
+        field->setFilters(QStringList() << "png");
+      }
       connect(field, &FileField::pathChanged, this,
               &PreferencesPopup::onChange);
       widget = field;
@@ -1322,6 +1326,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {restoreViewerViewFromLastSession,
        tr("Restore Viewer Zoom and Pan from Last Session")},
       {RestoreStyleEditorTab, tr("Remember Style Editor Tab")},
+      {splashImagePath, tr("Splash Screen Image*:")},
 
       // Visualization
       {show0ThickLines, tr("Show Lines with Thickness 0")},
@@ -1953,6 +1958,26 @@ QWidget* PreferencesPopup::createInterfacePage() {
   insertUI(showRoomBindButtons, lay);
   insertUI(togglePanelWithShortcut, lay);
   insertUI(RestoreStyleEditorTab, lay);
+  // Keep the path and reset action on one row without widening the page.
+  row = lay->rowCount();
+  lay->addWidget(new QLabel(getUIString(splashImagePath), this), row, 0,
+                 Qt::AlignRight | Qt::AlignVCenter);
+  QHBoxLayout* splashLayout = new QHBoxLayout();
+  FileField* splashField = qobject_cast<FileField*>(createUI(splashImagePath));
+  splashField->setToolTip(
+      tr("Choose a PNG for the splash artwork and Help > About. "
+         "Leave blank to use splash.png in the stuff folder. "
+         "The SVG layout and build information are retained. "
+         "Reopen About to preview changes immediately; "
+         "the startup splash changes on the next launch."));
+  QPushButton* resetSplash = new QPushButton(tr("Use Default"), this);
+  splashLayout->addWidget(splashField, 1);
+  splashLayout->addWidget(resetSplash);
+  lay->addLayout(splashLayout, row, 1, 1, 2);
+  connect(resetSplash, &QPushButton::clicked, this, [this, splashField]() {
+    splashField->setPath(QString());
+    m_pref->setValue(splashImagePath, QString());
+  });
   insertUI(customHelpLink, lay);
   getUI<FileField*>(customHelpLink)
       ->setToolTip(

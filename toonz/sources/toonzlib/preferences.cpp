@@ -408,6 +408,7 @@ void Preferences::definePreferenceItems() {
   define(additionalStyleSheet, "additionalStyleSheet", QMetaType::QString,
          defaultAditionalSheet);
   define(iconTheme, "iconTheme", QMetaType::Bool, false);
+  define(splashImagePath, "splashImagePath", QMetaType::QString, "");
   define(pixelsOnly, "pixelsOnly", QMetaType::Bool, false);
   define(oldUnits, "oldUnits", QMetaType::QString, "mm");
   define(oldCameraUnits, "oldCameraUnits", QMetaType::QString, "inch");

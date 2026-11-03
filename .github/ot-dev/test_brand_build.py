@@ -118,6 +118,13 @@ class BrandingTest(unittest.TestCase):
             with self.subTest(source=changed_source), self.assertRaises(ValueError):
                 brand_startup(changed_source, external_png=True)
 
+    def test_preference_loader_keeps_its_own_fallback_policy(self):
+        source = (SPLASH_ANCHOR + ';\n'
+                  'QPixmap splashPixmap = SplashImage::load(\n'
+                  '    customSplash, stuffDir, localSplashPath);\n')
+        self.assertEqual(brand_startup(source, external_png=True), source)
+        self.assertEqual(brand_startup(source, external_png=False), source)
+
     def test_cli_packages_replaceable_png_with_fixed_svg_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
