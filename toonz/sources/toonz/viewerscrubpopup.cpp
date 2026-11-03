@@ -5,6 +5,9 @@
 #include "xsheetdragtool.h"
 #include "tenv.h"
 #include "toonz/tframehandle.h"
+#include "toonz/tcolumnhandle.h"
+#include "toonz/txsheet.h"
+#include "toonz/txshcell.h"
 #include "toonz/tscenehandle.h"
 #include "toonz/txshlevelhandle.h"
 #include "toonz/txsheethandle.h"
@@ -13,6 +16,7 @@
 #include "toonzqt/viewcommandids.h"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QEvent>
 #include <QFormLayout>
@@ -34,6 +38,7 @@ TEnv::DoubleVar ViewerScrubStripPixels("ViewerScrubStripPixels", 2.0);
 TEnv::IntVar ViewerScrubReturn("ViewerScrubReturn", 0);
 TEnv::IntVar ViewerScrubUseRange("ViewerScrubUseRange", 0);
 TEnv::IntVar ViewerScrubWrap("ViewerScrubWrap", 0);
+TEnv::IntVar ViewerScrubDrawings("ViewerScrubDrawings", 0);
 
 class ScrubStrip final : public QWidget {
   QPointer<ViewerScrubController> m_controller;
@@ -150,6 +155,14 @@ ViewerScrubController::ViewerScrubController(SceneViewer *viewer)
           &ViewerScrubController::invalidate);
   connect(app->getCurrentXsheet(), &TXsheetHandle::xsheetSwitched, this,
           &ViewerScrubController::invalidate);
+  connect(app->getCurrentXsheet(), &TXsheetHandle::xsheetChanged, this,
+          [this]() {
+            if (m_drawingMode) invalidate();
+          });
+  connect(app->getCurrentColumn(), &TColumnHandle::columnIndexSwitched, this,
+          [this]() {
+            if (m_drawingMode) invalidate();
+          });
   connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelSwitched, this,
           [this, app]() {
             // Scene scrubbing can naturally pass through different levels.
@@ -182,6 +195,16 @@ bool ViewerScrubController::begin(double x, bool strip) {
       m_last  = std::max(m_first, std::min(m_last, last));
     }
   }
+  m_drawingMode = ViewerScrubDrawings != 0 && fh->isEditingScene();
+  m_drawingStops.clear();
+  if (m_drawingMode) {
+    const int column = app->getCurrentColumn()->getColumnIndex();
+    if (column < 0) return false;
+    TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
+    m_drawingStops  = viewerScrubDrawingStops(
+         m_first, m_last,
+         [xsheet, column](int row) { return xsheet->getCell(row, column); });
+  }
   m_strip = strip;
   m_drag.begin(x);
   m_active = true;
@@ -193,9 +216,12 @@ void ViewerScrubController::move(double x) {
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   const double pixels =
       m_strip ? double(ViewerScrubStripPixels) : double(ViewerScrubPixels);
+  const double step = std::max(0.5, std::min(40.0, pixels));
   const int target =
-      m_drag.move(x, std::max(0.5, std::min(40.0, pixels)), fh->getFrameIndex(),
-                  m_first, m_last, ViewerScrubWrap != 0);
+      m_drawingMode ? m_drag.moveDrawing(x, step, fh->getFrameIndex(), m_last,
+                                         ViewerScrubWrap != 0, m_drawingStops)
+                    : m_drag.move(x, step, fh->getFrameIndex(), m_first, m_last,
+                                  ViewerScrubWrap != 0);
   if (target != fh->getFrameIndex()) emit frameRequested(target + 1);
 }
 
@@ -260,7 +286,18 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
   layout->addWidget(frame);
   layout->addWidget(new ScrubStrip(viewer, this));
 
-  auto *form    = new QFormLayout;
+  auto *form   = new QFormLayout;
+  auto *stepBy = new QComboBox(this);
+  stepBy->setObjectName("ViewerScrubStepBy");
+  stepBy->addItem(tr("Frames"));
+  stepBy->addItem(tr("Drawing changes"));
+  stepBy->setCurrentIndex(ViewerScrubDrawings != 0 ? 1 : 0);
+  stepBy->setToolTip(
+      tr("Drawing changes use Next/Previous Drawing navigation "
+         "through held exposures in the current column, "
+         "including blank gaps. Level editing steps through "
+         "its available drawings in either mode."));
+  form->addRow(tr("Step by"), stepBy);
   auto makeStep = [this, form](const QString &label, TEnv::DoubleVar &setting) {
     auto *row  = new QWidget(this);
     auto *hbox = new QHBoxLayout(row);
@@ -268,7 +305,8 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
     auto *slider = new QSlider(Qt::Horizontal, row);
     slider->setRange(1, 80);
     slider->setInvertedAppearance(true);
-    slider->setToolTip(tr("Smaller pixel steps scrub faster."));
+    slider->setToolTip(
+        tr("Pixels per frame or drawing change. Smaller steps scrub faster."));
     auto *spin = new QDoubleSpinBox(row);
     spin->setRange(0.5, 40.0);
     spin->setSingleStep(0.5);
@@ -292,9 +330,13 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
   auto *stripStep =
       makeStep(tr("Strip step in pixels"), ViewerScrubStripPixels);
   layout->addLayout(form);
-  auto *hint =
-      new QLabel(tr("Smaller steps move through frames faster."), this);
+  auto *hint = new QLabel(tr("Smaller steps scrub faster."), this);
   layout->addWidget(hint);
+  connect(stepBy, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          [viewer](int mode) {
+            viewer->scrubController()->end();
+            ViewerScrubDrawings = mode == 1;
+          });
 
   auto *returnStart =
       new QCheckBox(tr("Return to starting frame on release"), this);
@@ -338,6 +380,7 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
   reset->setAutoDefault(false);
   layout->addWidget(reset, 0, Qt::AlignRight);
   connect(reset, &QPushButton::clicked, this, [=]() {
+    stepBy->setCurrentIndex(0);
     viewerStep->setValue(20.0);
     stripStep->setValue(2.0);
     returnStart->setChecked(false);
@@ -349,4 +392,3 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
     if (viewer->isVisible()) viewer->setFocus(Qt::OtherFocusReason);
   });
 }
-

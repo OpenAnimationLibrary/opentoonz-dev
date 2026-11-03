@@ -9,6 +9,7 @@
     }                                                                          \
   } while (false)
 #include <iostream>
+#include <utility>
 int main() {
   ViewerScrubDrag d;
   // Event frequency must not change distance-based results.
@@ -41,5 +42,43 @@ int main() {
   CHECK(d.move(40, 20, 0, 0, 100, false) == 2);
   d.begin(0);
   CHECK(d.move(40, 2, 0, 0, 100, false) == 20);
-  std::cout << "Viewer scrub movement tests passed\n";
+  // Same drawing on a different level must count as a different exposure.
+  // A reused drawing and blank gap must each remain separate navigation stops.
+  std::vector<std::pair<int, int>> cells(24, {0, 0});
+  std::fill(cells.begin(), cells.begin() + 8, std::make_pair(1, 1));
+  std::fill(cells.begin() + 8, cells.begin() + 12, std::make_pair(1, 2));
+  std::fill(cells.begin() + 12, cells.begin() + 16, std::make_pair(1, 1));
+  std::fill(cells.begin() + 18, cells.begin() + 20, std::make_pair(1, 1));
+  std::fill(cells.begin() + 20, cells.end(), std::make_pair(2, 1));
+  const auto cellAt = [&cells](int row) { return cells.at(row); };
+  const auto stops  = viewerScrubDrawingStops(0, 23, cellAt);
+  CHECK(stops == std::vector<int>({0, 8, 12, 16, 18, 20}));
+  d.begin(0);
+  CHECK(d.moveDrawing(2, 2, 0, 23, false, stops) == 8);  // frame 1 -> 9
+  CHECK(d.moveDrawing(0, 2, 8, 23, false, stops) == 0);  // frame 9 -> 1
+  d.begin(0);
+  CHECK(d.moveDrawing(0, 2, 3, 23, false, stops) == 3);
+  CHECK(d.moveDrawing(1, 2, 3, 23, false, stops) == 3);
+  CHECK(d.moveDrawing(2, 2, 3, 23, false, stops) == 8);
+  // Large moves advance by exposure count, independent of hold lengths.
+  d.begin(0);
+  CHECK(d.moveDrawing(8, 2, 0, 23, false, stops) == 18);
+  d.begin(0);
+  CHECK(d.moveDrawing(-2, 2, 10, 23, false, stops) == 0);
+  // Inclusive looping and clipping retain the beginning of a partial hold.
+  d.begin(0);
+  CHECK(d.moveDrawing(-2, 2, 0, 23, true, stops) == 20);
+  CHECK(d.moveDrawing(0, 2, 20, 23, true, stops) == 0);
+  const auto clipped = viewerScrubDrawingStops(4, 10, cellAt);
+  CHECK(clipped == std::vector<int>({4, 8}));
+  d.begin(0);
+  CHECK(d.moveDrawing(2, 2, 3, 10, false, clipped) == 4);
+  d.begin(0);
+  CHECK(d.moveDrawing(-2, 2, 11, 10, false, clipped) == 8);
+  const auto held = viewerScrubDrawingStops(0, 7, cellAt);
+  CHECK(held == std::vector<int>({0}));
+  d.begin(0);
+  CHECK(d.moveDrawing(100, 2, 0, 7, true, held) == 0);
+  CHECK(viewerScrubDrawingStops(8, 7, cellAt).empty());
+  std::cout << "Viewer scrub frame and drawing movement tests passed\n";
 }

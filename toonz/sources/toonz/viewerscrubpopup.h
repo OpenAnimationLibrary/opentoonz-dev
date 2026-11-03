@@ -14,11 +14,13 @@ class ViewerScrubController final : public QObject {
 
   SceneViewer *m_viewer;
   ViewerScrubDrag m_drag;
-  bool m_active = false;
-  bool m_strip  = false;
-  int m_origin  = 0;
-  int m_first   = 0;
-  int m_last    = 0;
+  std::vector<int> m_drawingStops;
+  bool m_drawingMode = false;
+  bool m_active      = false;
+  bool m_strip       = false;
+  int m_origin       = 0;
+  int m_first        = 0;
+  int m_last         = 0;
 
   void finish(bool restore);
 
