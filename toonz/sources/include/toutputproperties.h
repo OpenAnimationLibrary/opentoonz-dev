@@ -91,6 +91,7 @@ private:
   int m_threadIndex;
 
   bool m_subcameraPreview;
+  bool m_previewTimerBypass;
 
   BoardSettings *m_boardSettings;
 
@@ -103,6 +104,7 @@ private:
   bool m_syncColorSettings;
   // for restoring bpp when setting the color space back to nonlinear
   int m_nonlinearBpp;
+  bool m_optimizePreviewForDrawing;
 
 public:
   /*!
@@ -231,6 +233,11 @@ machine's CPU).
   bool isSubcameraPreview() const { return m_subcameraPreview; }
   void setSubcameraPreview(bool enabled) { m_subcameraPreview = enabled; }
 
+  bool isPreviewTimerBypassEnabled() const { return m_previewTimerBypass; }
+  void setPreviewTimerBypassEnabled(bool enabled) {
+    m_previewTimerBypass = enabled;
+  }
+
   BoardSettings *getBoardSettings() const { return m_boardSettings; }
 
   TFrameId &formatTemplateFId() { return m_formatTemplateFId; }
@@ -239,6 +246,13 @@ machine's CPU).
   void syncColorSettings(bool sync) { m_syncColorSettings = sync; }
   int getNonlinearBpp() { return m_nonlinearBpp; }
   void setNonlinearBpp(int bpp) { m_nonlinearBpp = bpp; }
+
+  bool isPreviewOptimizedForDrawing() const {
+    return m_optimizePreviewForDrawing;
+  }
+  void setPreviewOptimizedForDrawing(bool enabled) {
+    m_optimizePreviewForDrawing = enabled;
+  }
 };
 
 //--------------------------------------------
