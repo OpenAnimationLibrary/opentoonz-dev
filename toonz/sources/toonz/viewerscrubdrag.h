@@ -4,6 +4,50 @@
 #include <cmath>
 #include <vector>
 
+enum class ViewerScrubDirection {
+  Undecided,
+  Horizontal,
+  Vertical,
+  DownRight,
+  UpRight
+};
+
+inline ViewerScrubDirection viewerScrubDirection(double dx, double dy,
+                                                 double minimumDistance) {
+  using Direction         = ViewerScrubDirection;
+  const double horizontal = std::abs(dx);
+  const double vertical   = std::abs(dy);
+  const double major      = std::max(horizontal, vertical);
+  if (std::hypot(dx, dy) < minimumDistance) return Direction::Undecided;
+  // The midpoint between a cardinal and diagonal direction is 22.5 degrees.
+  constexpr double diagonalSlope = 0.414213562373095;  // tan(22.5 degrees)
+  if (std::min(horizontal, vertical) > major * diagonalSlope)
+    return (dx > 0) == (dy > 0) ? Direction::DownRight : Direction::UpRight;
+  return vertical > horizontal ? Direction::Vertical : Direction::Horizontal;
+}
+
+inline bool viewerScrubUsesDrawings(ViewerScrubDirection direction,
+                                    bool preferDrawings) {
+  const bool diagonal = direction == ViewerScrubDirection::DownRight ||
+                        direction == ViewerScrubDirection::UpRight;
+  return preferDrawings != diagonal;
+}
+
+inline double viewerScrubPosition(ViewerScrubDirection direction, double x,
+                                  double y) {
+  constexpr double diagonalScale = 0.707106781186548;  // 1 / sqrt(2)
+  switch (direction) {
+  case ViewerScrubDirection::DownRight:
+    return (x + y) * diagonalScale;
+  case ViewerScrubDirection::UpRight:
+    return (x - y) * diagonalScale;
+  case ViewerScrubDirection::Vertical:
+    return y;
+  default:
+    return x;
+  }
+}
+
 // Cache consecutive exposure boundaries, not unique drawing IDs. The caller's
 // cell comparison includes level identity and preserves intentional blank runs.
 template <typename CellAt>

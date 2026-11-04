@@ -533,7 +533,7 @@ void SceneViewer::onMove(const TMouseEvent &event) {
   m_lastMousePos  = curPos;
 
   if (event.buttons() == Qt::LeftButton && m_mouseScrubbing > 0) {
-    scrubController()->move(event.mousePos().x());
+    scrubController()->move(event.mousePos());
     setToolCursor(this, ToolCursor::ScrubCursor);
     return;
   }
@@ -748,7 +748,7 @@ void SceneViewer::onPress(const TMouseEvent &event) {
     m_mouseButton   = event.button();
     m_buttonClicked = true;
     if (m_mouseButton == Qt::LeftButton && m_freezedStatus == NO_FREEZED &&
-        scrubController()->begin(event.mousePos().x(), false))
+        scrubController()->begin(event.mousePos(), false))
       m_mouseScrubbing = 2;
     if (m_tabletEvent && m_tabletState == Touched) {
       m_tabletState = StartStroke;
@@ -908,7 +908,7 @@ void SceneViewer::onRelease(const TMouseEvent &event) {
   if (m_mouseScrubbing > 0) {
     if (m_mouseScrubbing == 2) {
       if (m_freezedStatus == NO_FREEZED)
-        scrubController()->move(event.mousePos().x());
+        scrubController()->move(event.mousePos());
       scrubController()->end();
     }
     m_mouseScrubbing = 1;

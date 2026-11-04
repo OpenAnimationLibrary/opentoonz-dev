@@ -79,7 +79,7 @@ protected:
   void mousePressEvent(QMouseEvent *e) override {
     if (m_tablet || e->button() != Qt::LeftButton) return;
     setFocus(Qt::MouseFocusReason);
-    m_dragging = m_controller->begin(e->localPos().x(), true);
+    m_dragging = m_controller->begin(e->localPos(), true);
     e->accept();
     update();
   }
@@ -90,13 +90,13 @@ protected:
       finish();
       return;
     }
-    m_controller->move(e->localPos().x());
+    m_controller->move(e->localPos());
     e->accept();
   }
 
   void mouseReleaseEvent(QMouseEvent *e) override {
     if (m_tablet || e->button() != Qt::LeftButton) return;
-    if (m_dragging) m_controller->move(e->localPos().x());
+    if (m_dragging) m_controller->move(e->localPos());
     finish();
     e->accept();
   }
@@ -104,12 +104,12 @@ protected:
   void tabletEvent(QTabletEvent *e) override {
     if (e->type() == QEvent::TabletPress) {
       setFocus(Qt::MouseFocusReason);
-      m_dragging = m_controller->begin(e->posF().x(), true);
+      m_dragging = m_controller->begin(e->posF(), true);
       m_tablet   = true;
     } else if (e->type() == QEvent::TabletMove && m_dragging) {
-      m_controller->move(e->posF().x());
+      m_controller->move(e->posF());
     } else if (e->type() == QEvent::TabletRelease) {
-      if (m_dragging) m_controller->move(e->posF().x());
+      if (m_dragging) m_controller->move(e->posF());
       finish();
       m_tablet = false;
     }
@@ -138,8 +138,9 @@ public:
     setObjectName("ViewerScrubStrip");
     setAccessibleName(ViewerScrubPopup::tr("Scrub strip"));
     setToolTip(ViewerScrubPopup::tr(
-        "Drag left or right to scrub. Escape returns to the starting frame."));
-    setCursor(Qt::SizeHorCursor);
+        "Drag horizontally or vertically to scrub. Drag diagonally to use "
+        "the opposite step type. Escape returns to the starting frame."));
+    setCursor(Qt::SizeAllCursor);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(240, 38);
     connect(TApp::instance()->getCurrentFrame(), &TFrameHandle::frameSwitched,
@@ -177,7 +178,7 @@ ViewerScrubController::ViewerScrubController(SceneViewer *viewer)
   });
 }
 
-bool ViewerScrubController::begin(double x, bool strip) {
+bool ViewerScrubController::begin(const QPointF &pos, bool strip) {
   TApp *app        = TApp::instance();
   TFrameHandle *fh = app->getCurrentFrame();
   TTool *tool      = app->getCurrentTool()->getTool();
@@ -195,33 +196,52 @@ bool ViewerScrubController::begin(double x, bool strip) {
       m_last  = std::max(m_first, std::min(m_last, last));
     }
   }
-  m_drawingMode = ViewerScrubDrawings != 0 && fh->isEditingScene();
+  m_preferDrawings = ViewerScrubDrawings != 0;
+  m_drawingMode    = false;
   m_drawingStops.clear();
-  if (m_drawingMode) {
-    const int column = app->getCurrentColumn()->getColumnIndex();
-    if (column < 0) return false;
-    TXsheet *xsheet = app->getCurrentXsheet()->getXsheet();
-    m_drawingStops  = viewerScrubDrawingStops(
-         m_first, m_last,
-         [xsheet, column](int row) { return xsheet->getCell(row, column); });
-  }
-  m_strip = strip;
-  m_drag.begin(x);
-  m_active = true;
+  m_strip         = strip;
+  m_startPosition = pos;
+  m_direction     = ViewerScrubDirection::Undecided;
+  m_active        = true;
   return true;
 }
 
-void ViewerScrubController::move(double x) {
+bool ViewerScrubController::cacheDrawingStops() {
+  TApp *app        = TApp::instance();
+  const int column = app->getCurrentColumn()->getColumnIndex();
+  TXsheet *xsheet  = app->getCurrentXsheet()->getXsheet();
+  if (column < 0 || !xsheet) return false;
+  m_drawingStops = viewerScrubDrawingStops(
+      m_first, m_last,
+      [xsheet, column](int row) { return xsheet->getCell(row, column); });
+  return true;
+}
+
+void ViewerScrubController::move(const QPointF &pos) {
   if (!m_active) return;
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   const double pixels =
       m_strip ? double(ViewerScrubStripPixels) : double(ViewerScrubPixels);
-  const double step = std::max(0.5, std::min(40.0, pixels));
+  const double step   = std::max(0.5, std::min(40.0, pixels));
+  const QPointF delta = pos - m_startPosition;
+  if (m_direction == ViewerScrubDirection::Undecided) {
+    // Allow one step to select the direction at the strip's high sensitivity.
+    m_direction =
+        viewerScrubDirection(delta.x(), delta.y(), std::min(step, 4.0));
+    if (m_direction == ViewerScrubDirection::Undecided) return;
+    m_drawingMode = fh->isEditingScene() &&
+                    viewerScrubUsesDrawings(m_direction, m_preferDrawings) &&
+                    cacheDrawingStops();
+    m_drag.begin(0.0);
+  }
+  const double position =
+      viewerScrubPosition(m_direction, delta.x(), delta.y());
   const int target =
-      m_drawingMode ? m_drag.moveDrawing(x, step, fh->getFrameIndex(), m_last,
-                                         ViewerScrubWrap != 0, m_drawingStops)
-                    : m_drag.move(x, step, fh->getFrameIndex(), m_first, m_last,
-                                  ViewerScrubWrap != 0);
+      m_drawingMode
+          ? m_drag.moveDrawing(position, step, fh->getFrameIndex(), m_last,
+                               ViewerScrubWrap != 0, m_drawingStops)
+          : m_drag.move(position, step, fh->getFrameIndex(), m_first, m_last,
+                        ViewerScrubWrap != 0);
   if (target != fh->getFrameIndex()) emit frameRequested(target + 1);
 }
 
@@ -293,11 +313,15 @@ ViewerScrubPopup::ViewerScrubPopup(SceneViewer *viewer)
   stepBy->addItem(tr("Drawing changes"));
   stepBy->setCurrentIndex(ViewerScrubDrawings != 0 ? 1 : 0);
   stepBy->setToolTip(
-      tr("Drawing changes use Next/Previous Drawing navigation "
-         "through held exposures in the current column, "
-         "including blank gaps. Level editing steps through "
-         "its available drawings in either mode."));
+      tr("Horizontal and vertical drags use this setting. Diagonal drags use "
+         "the other step type. The starting direction stays locked until "
+         "release. Drawing changes skip holds in the current column. Level "
+         "editing steps through available drawings."));
   form->addRow(tr("Step by"), stepBy);
+  auto *directionHint =
+      new QLabel(tr("Drag diagonally to use the other step type."), this);
+  directionHint->setWordWrap(true);
+  form->addRow(directionHint);
   auto makeStep = [this, form](const QString &label, TEnv::DoubleVar &setting) {
     auto *row  = new QWidget(this);
     auto *hbox = new QHBoxLayout(row);

@@ -11,6 +11,24 @@
 #include <iostream>
 #include <utility>
 int main() {
+  using Direction = ViewerScrubDirection;
+  CHECK(viewerScrubDirection(2, -2, 4) == Direction::Undecided);
+  CHECK(viewerScrubDirection(100, -41, 4) == Direction::Horizontal);
+  CHECK(viewerScrubDirection(100, -42, 4) == Direction::UpRight);
+  CHECK(viewerScrubDirection(-41, 100, 4) == Direction::Vertical);
+  CHECK(viewerScrubDirection(-42, 100, 4) == Direction::UpRight);
+  CHECK(viewerScrubDirection(5, 5, 4) == Direction::DownRight);
+  CHECK(viewerScrubDirection(-5, -5, 4) == Direction::DownRight);
+  CHECK(viewerScrubDirection(0, 2, 2) == Direction::Vertical);
+  CHECK(!viewerScrubUsesDrawings(Direction::Horizontal, false));
+  CHECK(viewerScrubUsesDrawings(Direction::Vertical, true));
+  CHECK(viewerScrubUsesDrawings(Direction::DownRight, false));
+  CHECK(!viewerScrubUsesDrawings(Direction::UpRight, true));
+  CHECK(viewerScrubPosition(Direction::Horizontal, 5, -3) == 5);
+  CHECK(viewerScrubPosition(Direction::Vertical, 5, -3) == -3);
+  CHECK(viewerScrubPosition(Direction::DownRight, 2, 2) > 2);
+  CHECK(viewerScrubPosition(Direction::UpRight, -2, 2) < -2);
+  CHECK(viewerScrubPosition(Direction::UpRight, 2, 2) == 0);
   ViewerScrubDrag d;
   // Event frequency must not change distance-based results.
   d.begin(0);
@@ -53,6 +71,14 @@ int main() {
   const auto cellAt = [&cells](int row) { return cells.at(row); };
   const auto stops  = viewerScrubDrawingStops(0, 23, cellAt);
   CHECK(stops == std::vector<int>({0, 8, 12, 16, 18, 20}));
+  // At default strip sensitivity, a diagonal frame-mode drag skips the hold
+  // while the same drag in drawing mode steps one frame.
+  const auto diagonal = viewerScrubDirection(2, 2, 2);
+  const auto position = viewerScrubPosition(diagonal, 2, 2);
+  d.begin(0);
+  CHECK(d.moveDrawing(position, 2, 0, 23, false, stops) == 8);
+  d.begin(0);
+  CHECK(d.move(position, 2, 0, 0, 23, false) == 1);
   d.begin(0);
   CHECK(d.moveDrawing(2, 2, 0, 23, false, stops) == 8);  // frame 1 -> 9
   CHECK(d.moveDrawing(0, 2, 8, 23, false, stops) == 0);  // frame 9 -> 1

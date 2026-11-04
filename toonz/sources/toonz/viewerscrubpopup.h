@@ -4,6 +4,7 @@
 
 #include <QDialog>
 #include <QObject>
+#include <QPointF>
 
 class SceneViewer;
 
@@ -15,19 +16,23 @@ class ViewerScrubController final : public QObject {
   SceneViewer *m_viewer;
   ViewerScrubDrag m_drag;
   std::vector<int> m_drawingStops;
-  bool m_drawingMode = false;
-  bool m_active      = false;
-  bool m_strip       = false;
-  int m_origin       = 0;
-  int m_first        = 0;
-  int m_last         = 0;
+  QPointF m_startPosition;
+  ViewerScrubDirection m_direction = ViewerScrubDirection::Undecided;
+  bool m_preferDrawings            = false;
+  bool m_drawingMode               = false;
+  bool m_active                    = false;
+  bool m_strip                     = false;
+  int m_origin                     = 0;
+  int m_first                      = 0;
+  int m_last                       = 0;
 
+  bool cacheDrawingStops();
   void finish(bool restore);
 
 public:
   explicit ViewerScrubController(SceneViewer *viewer);
-  bool begin(double x, bool strip);
-  void move(double x);
+  bool begin(const QPointF &pos, bool strip);
+  void move(const QPointF &pos);
   void end();
   void cancel();
   void invalidate();
