@@ -40,6 +40,8 @@ class QOpenGLFramebufferObject;
 class LutCalibrator;
 class StopMotion;
 class QElapsedTimer;
+class ViewerScrubController;
+class ViewerScrubPopup;
 
 namespace ImageUtils {
 class FullScreenWidget;
@@ -95,10 +97,13 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_zooming                         = false;
   bool m_panning                         = false;
 
-  TPointD m_oldPos;
   bool m_dragging;
   int m_mouseScrubbing = 0;
   QAction *m_keyAction = nullptr;
+  int m_scrubKey                           = 0;
+  quint32 m_scrubScanCode                  = 0;
+  ViewerScrubController *m_scrubController = nullptr;
+  ViewerScrubPopup *m_scrubPopup           = nullptr;
 
   QPointF m_firstPanPoint;
   QPointF m_undoPoint;
@@ -389,7 +394,7 @@ protected:
   // center: window coordinate, pixels, topleft origin
   void zoomQt(const QPoint &center, double scaleFactor);
 
-  void mouseScrub(const TMouseEvent &e);
+  void stopViewerScrub(bool cancel = false);
 
   // overridden from TToolViewer
   void pan(const TPointD &delta) override { panQt(QPointF(delta.x, delta.y)); }
@@ -432,7 +437,11 @@ protected:
 
   void registerContext();
 
+public:
+  ViewerScrubController *scrubController();
+
 public slots:
+  void showScrubSettings();
 
   void resetSceneViewer();
   void resetZoom();
