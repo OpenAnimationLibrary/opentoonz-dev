@@ -67,6 +67,7 @@
 #include <QTimer>
 
 #include "viewerpane.h"
+#include "viewerscrubpopup.h"
 
 using namespace DVGui;
 
@@ -118,6 +119,10 @@ BaseViewerPanel::BaseViewerPanel(QWidget *parent, Qt::WindowFlags flags)
   m_keyFrameButton = new ViewerKeyframeNavigator(0, app->getCurrentFrame());
   m_keyFrameButton->setObjectHandle(app->getCurrentObject());
   m_keyFrameButton->setXsheetHandle(app->getCurrentXsheet());
+  auto *scrubAction = m_keyFrameButton->addAction(
+      createQIcon("gear"), tr("Viewer Scrub Settings..."));
+  connect(scrubAction, &QAction::triggered, m_sceneViewer,
+          &SceneViewer::showScrubSettings);
 
   std::vector<int> buttonMask = {
       FlipConsole::eFilledRaster, FlipConsole::eDefineLoadBox,
@@ -147,6 +152,8 @@ BaseViewerPanel::BaseViewerPanel(QWidget *parent, Qt::WindowFlags flags)
                                   ->getOutputProperties()
                                   ->getFrameRate());
   m_flipConsole->setFrameHandle(TApp::instance()->getCurrentFrame());
+  connect(m_sceneViewer->scrubController(), SIGNAL(frameRequested(int)),
+          m_flipConsole, SLOT(OnSetCurrentFrame(int)));
 
   bool ret = true;
   // When zoom changed, only if the viewer is active, change window titl
@@ -208,6 +215,8 @@ void BaseViewerPanel::contextMenuEvent(QContextMenuEvent *event) {
 //-----------------------------------------------------------------------------
 
 void BaseViewerPanel::addShowHideContextMenu(QMenu *menu) {
+  menu->addAction(tr("Viewer Scrub Settings..."), m_sceneViewer,
+                  &SceneViewer::showScrubSettings);
   QMenu *showHideMenu = menu->addMenu(tr("GUI Show / Hide"));
 
   // actions
