@@ -62,28 +62,6 @@ QByteArray paletteBytes(const TPaletteP &palette) {
   return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
-TPaletteP paletteFromBytes(const QByteArray &bytes) {
-  if (bytes.isEmpty()) return TPaletteP();
-  QTemporaryDir dir;
-  if (!dir.isValid()) return TPaletteP();
-  QString name = dir.filePath("selection.tpl");
-  QFile file(name);
-  if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size())
-    return TPaletteP();
-  file.close();
-  TPersist *persist = nullptr;
-  try {
-    TIStream is(TFilePath(name.toStdWString()));
-    is >> persist;
-  } catch (...) {
-    delete persist;
-    return TPaletteP();
-  }
-  TPalette *palette = dynamic_cast<TPalette *>(persist);
-  if (!palette) delete persist;
-  return TPaletteP(palette);
-}
-
 QImage clipboardImage(const TRasterP &raster, const TPaletteP &palette) {
   if (!raster) return QImage();
   TRaster32P rgba = raster;
@@ -126,70 +104,6 @@ QByteArray encodeDrawing(const TRasterP &raster, const TPaletteP &palette,
   return stream.status() == QDataStream::Ok ? bytes : QByteArray();
 }
 
-std::unique_ptr<RasterImageData> decodeDrawing(const QMimeData *mime) {
-  if (!mime || !mime->hasFormat(DrawingClipboardFormat)) return nullptr;
-  QByteArray bytes = mime->data(DrawingClipboardFormat);
-  if (bytes.isEmpty() || bytes.size() > 256 * 1024 * 1024) return nullptr;
-  QDataStream stream(&bytes, QIODevice::ReadOnly);
-  stream.setVersion(QDataStream::Qt_5_15);
-  quint32 version;
-  bool cm;
-  double dpiX, dpiY, x0, y0, x1, y1, a11, a12, a13, a21, a22, a23;
-  QByteArray paletteData;
-  stream >> version >> cm >> dpiX >> dpiY >> x0 >> y0 >> x1 >> y1 >> a11 >>
-      a12 >> a13 >> a21 >> a22 >> a23 >> paletteData;
-  if (stream.status() != QDataStream::Ok || version != 1) return nullptr;
-  TPaletteP palette =
-      cm ? paletteFromBytes(paletteData) : TPaletteP(new TPalette);
-  if (!palette) return nullptr;
-  TRasterP raster;
-  if (cm) {
-    int width, height;
-    QByteArray compressed;
-    stream >> width >> height >> compressed;
-    if (stream.status() != QDataStream::Ok || width <= 0 || height <= 0 ||
-        width > 16384 || height > 16384 ||
-        qint64(width) * height * 4 > 256 * 1024 * 1024)
-      return nullptr;
-    if (compressed.size() < 4) return nullptr;
-    const auto *header =
-        reinterpret_cast<const unsigned char *>(compressed.constData());
-    const quint32 expandedSize = (quint32(header[0]) << 24) |
-                                 (quint32(header[1]) << 16) |
-                                 (quint32(header[2]) << 8) | header[3];
-    if (expandedSize != qint64(width) * height * 4) return nullptr;
-    QByteArray pixels = qUncompress(compressed);
-    if (pixels.size() != qint64(width) * height * 4) return nullptr;
-    QDataStream pixelStream(&pixels, QIODevice::ReadOnly);
-    TRasterCM32P cmRaster(width, height);
-    for (int y = 0; y < height; ++y)
-      for (int x = 0; x < width; ++x) {
-        quint32 value;
-        pixelStream >> value;
-        cmRaster->pixels(y)[x] = TPixelCM32(value);
-      }
-    raster = cmRaster;
-  } else {
-    QImage image;
-    stream >> image;
-    if (image.isNull() || image.width() > 16384 || image.height() > 16384 ||
-        qint64(image.width()) * image.height() * 4 > 256 * 1024 * 1024)
-      return nullptr;
-    raster = rasterFromQImage(image.convertToFormat(QImage::Format_ARGB32));
-  }
-  if (stream.status() != QDataStream::Ok || !raster) return nullptr;
-  TRectD bounds(x0, y0, x1, y1);
-  if (bounds.isEmpty()) return nullptr;
-  std::vector<TStroke> strokes(1, getStrokeByRect(bounds));
-  std::vector<TRectD> rects;
-  TAffine affine(a11, a12, a13, a21, a22, a23);
-  std::unique_ptr<RasterImageData> result(
-      cm ? static_cast<RasterImageData *>(new ToonzImageData)
-         : static_cast<RasterImageData *>(new FullColorImageData));
-  result->setData(raster, palette, dpiX, dpiY, raster->getSize(), rects,
-                  strokes, strokes, affine);
-  return result;
-}
 //-----------------------------------------------------------------------------
 
 TRasterP getRaster(const TImageP image) {
@@ -537,6 +451,7 @@ int UndoDeleteSelection::m_id = 0;
 
 class UndoPasteSelection final : public ToolUtils::TToolUndo {
   RasterSelection *m_currentSelection, m_newSelection;
+  TPaletteP m_newPalette;
 
 public:
   UndoPasteSelection(RasterSelection *currentSelection, TXshSimpleLevel *sl,
@@ -546,7 +461,8 @@ public:
                   currentSelection->wasLevelCreated(), oldPalette,
                   currentSelection->wasLevelRenumbered())
       , m_currentSelection(currentSelection)
-      , m_newSelection(*currentSelection) {}
+      , m_newSelection(*currentSelection)
+      , m_newPalette(sl && sl->getPalette() ? sl->getPalette()->clone() : 0) {}
 
   ~UndoPasteSelection() {}
 
@@ -562,6 +478,13 @@ public:
 
   void redo() const override {
     insertLevelAndFrameIfNeeded();
+    if (m_newPalette && m_level->getPalette()) {
+      m_level->getPalette()->assign(m_newPalette.getPointer());
+      TTool::getApplication()
+          ->getPaletteController()
+          ->getCurrentLevelPalette()
+          ->notifyPaletteChanged();
+    }
     if (m_createdFrame)
       TTool::getApplication()->getCurrentXsheet()->notifyXsheetChanged();
     notifyImageChanged();
@@ -1184,10 +1107,13 @@ bool RasterSelection::isEmpty() const {
 //-----------------------------------------------------------------------------
 
 void RasterSelection::enableCommands() {
+  m_alternativeCommandNames[MI_PasteAbove] = QObject::tr("Paste As...");
   enableCommand(this, MI_Clear, &RasterSelection::deleteSelection);
   enableCommand(this, MI_Cut, &RasterSelection::cutSelection);
   enableCommand(this, MI_Copy, &RasterSelection::copySelection);
   enableCommand(this, MI_Paste, &RasterSelection::pasteSelection);
+  enableCommand(this, MI_PasteAs, &RasterSelection::pasteAs);
+  enableCommand(this, MI_PasteAbove, &RasterSelection::pasteAs);
   enableCommand(this, MI_SelectAll, &RasterSelection::selectAll);
 }
 
@@ -1341,11 +1267,10 @@ void RasterSelection::cutSelection() {
 //-----------------------------------------------------------------------------
 
 bool RasterSelection::pasteSelection(const RasterImageData *riData) {
+  if (!riData || !m_currentImage) return false;
   std::vector<TRectD> rect;
-  double currentDpiX, currentDpiY;
-  double dpiX, dpiY;
-  const ToonzImageData *toonzImageData =
-      dynamic_cast<const ToonzImageData *>(riData);
+  double currentDpiX = 0.0, currentDpiY = 0.0;
+  double dpiX = 0.0, dpiY = 0.0;
   const FullColorImageData *fullColorData =
       dynamic_cast<const FullColorImageData *>(riData);
   if (TToonzImageP ti = (TToonzImageP)m_currentImage) {
@@ -1374,12 +1299,75 @@ bool RasterSelection::pasteSelection(const RasterImageData *riData) {
     }
     m_floatingSelection = ras;
   }
-  if (m_floatingSelection)
-    m_originalfloatingSelection = m_floatingSelection->clone();
+  if (!m_floatingSelection) return false;
+  if (m_strokes.empty()) {
+    for (const TRectD &bounds : rect)
+      if (!bounds.isEmpty()) m_strokes.push_back(getStrokeByRect(bounds));
+  }
+  if (m_strokes.empty()) return false;
+  if (m_originalStrokes.empty()) m_originalStrokes = m_strokes;
+  m_originalfloatingSelection = m_floatingSelection->clone();
   TScale sc;
   if (dpiX != 0 && dpiY != 0 && currentDpiX != 0 && currentDpiY != 0)
     sc = TScale(currentDpiX / dpiX, currentDpiY / dpiY);
-  m_affine = m_affine * sc;
+  m_affine = sc * m_affine;
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+
+void RasterSelection::pasteAs() {
+  if (!TTool::getApplication()->pasteDrawingSelection(true))
+    DVGui::warning(
+        QObject::tr("Copy a drawing selection or image to use Paste As."));
+}
+
+//-----------------------------------------------------------------------------
+
+bool RasterSelection::pasteData(const RasterImageData *data) {
+  TTool::Application *app = TTool::getApplication();
+  TTool *tool             = app->getCurrentTool()->getTool();
+  if (!data || !tool || tool->getSelection() != this || !isEditable())
+    return false;
+
+  const TXshCell cell = TTool::getImageCell();
+  TXshSimpleLevel *sl = cell.getSimpleLevel();
+  if (!sl || cell.isEmpty()) return false;
+  TImageP image = cell.getImage(true, 1);
+  if (!image || !getRaster(image)) return false;
+
+  // Finish any earlier floating paste before installing data for this cell.
+  // Avoid touchImage(): this path must not auto-create a held drawing.
+  if (isFloating()) pasteFloatingSelection();
+  makeCurrent();
+  selectNone();
+  setCurrentImage(image, cell);
+  m_fid = cell.getFrameId();
+  if (image->getPalette()) m_oldPalette = image->getPalette()->clone();
+
+  bool pasted = false;
+  try {
+    pasted = pasteSelection(data);
+  } catch (...) {
+    // getData can merge styles before failing; restore the destination palette.
+  }
+  if (!pasted) {
+    if (m_oldPalette && image->getPalette())
+      image->getPalette()->assign(m_oldPalette.getPointer());
+    m_floatingSelection = TRasterP();
+    selectNone();
+    app->getPaletteController()
+        ->getCurrentLevelPalette()
+        ->notifyPaletteChanged();
+    return false;
+  }
+
+  m_isPastedSelection = true;
+  m_selectionBbox     = getStrokesBound(m_strokes);
+  app->getPaletteController()->getCurrentLevelPalette()->notifyPaletteChanged();
+  notify();
+  TUndoManager::manager()->add(new UndoPasteSelection(this, sl, m_oldPalette));
+  tool->invalidate();
   return true;
 }
 
@@ -1387,6 +1375,9 @@ bool RasterSelection::pasteSelection(const RasterImageData *riData) {
 
 void RasterSelection::pasteSelection() {
   TTool::Application *app = TTool::getApplication();
+  if (app->pasteDrawingSelection(
+          QApplication::keyboardModifiers().testFlag(Qt::ShiftModifier)))
+    return;
   TTool *tool             = app->getCurrentTool()->getTool();
   TImageP image           = tool->touchImage();
 
@@ -1417,7 +1408,8 @@ void RasterSelection::pasteSelection() {
   }
   std::unique_ptr<RasterImageData> transferredData;
   if (!riData && !stData) {
-    transferredData = decodeDrawing(clipboard->mimeData());
+    transferredData.reset(
+        RasterImageData::fromClipboard(clipboard->mimeData()));
     riData          = transferredData.get();
   }
   QImage clipImage = clipboard->image();
@@ -1446,7 +1438,7 @@ void RasterSelection::pasteSelection() {
     m_oldPalette = m_currentImage->getPalette()->clone();
   if (stData) {
     if (TToonzImageP ti = m_currentImage)
-      riData = stData->toToonzImageData(ti);
+      transferredData.reset(stData->toToonzImageData(ti));
     else {
       TRasterImageP ri = m_currentImage;
       assert(ri);
@@ -1459,7 +1451,14 @@ void RasterSelection::pasteSelection() {
         dpiy = dpi.y;
         ri->setDpi(dpix, dpiy);
       }
-      riData = stData->toFullColorImageData(ri);
+      transferredData.reset(stData->toFullColorImageData(ri));
+    }
+    riData = transferredData.get();
+    if (!riData) {
+      selectNone();
+      DVGui::warning(QObject::tr(
+          "The selection could not be converted. No drawing was pasted."));
+      return;
     }
   }
 
@@ -1505,8 +1504,13 @@ void RasterSelection::pasteSelection() {
     transferredData = std::move(qimageData);
   }
 
-  if (!riData) return;
-  if (!pasteSelection(riData)) return;
+  if (!riData || !pasteSelection(riData)) {
+    if (m_oldPalette && m_currentImage->getPalette())
+      m_currentImage->getPalette()->assign(m_oldPalette.getPointer());
+    m_floatingSelection = TRasterP();
+    selectNone();
+    return;
+  }
 
   app->getPaletteController()->getCurrentLevelPalette()->notifyPaletteChanged();
   notify();

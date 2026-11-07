@@ -46,6 +46,10 @@ public:
   virtual TFxHandle *getCurrentFx() const                   = 0;
   virtual PaletteController *getPaletteController() const   = 0;
 
+  // Returns true when a scene drawing paste was handled, including
+  // cancellation.
+  virtual bool pasteDrawingSelection(bool chooseType) { return false; }
+
   // Current Palette (PaletteController) methods
   virtual TColorStyle *getCurrentLevelStyle() const = 0;
   virtual int getCurrentLevelStyleIndex() const     = 0;

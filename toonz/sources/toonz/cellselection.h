@@ -49,6 +49,8 @@ public:
 
   void copyCells();
   void pasteCells();
+  void pasteAs();
+  void shiftPaste();
   void doPaste();  // choose pasting behavior by preference option
   void pasteDuplicateCells();
   void deleteCells();

@@ -54,6 +54,11 @@ SceneViewerContextMenu::SceneViewerContextMenu(SceneViewer *parent)
   // tool
   TTool *tool = app->getCurrentTool()->getTool();
   if (tool && tool->isEnabled()) tool->addContextMenuItems(this);
+  if (tool && tool->isEnabled() && tool->getName() == "T_Selection" &&
+      !parent->isPreviewEnabled() && !app->getCurrentObject()->isSpline()) {
+    addAction(commandManager->getAction(MI_PasteAs));
+    addSeparator();
+  }
 
   // fullscreen
   if (ImageUtils::FullScreenWidget *fsWidget =

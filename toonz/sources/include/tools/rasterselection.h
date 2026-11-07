@@ -149,6 +149,10 @@ Can be different from getSelectionBound() after a free deform transformation. */
   void cutSelection();
   //! Create the floating image using clipboard Data.
   void pasteSelection();
+  //! Paste supplied data into the current existing drawing without reading the
+  //! clipboard or creating a frame. The current tool must own this selection.
+  bool pasteData(const RasterImageData *data);
+  void pasteAs();
 
   bool isTransformed();
 
