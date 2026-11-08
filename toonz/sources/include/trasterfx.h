@@ -124,6 +124,8 @@ public:
                       //! during a render process.
   //!  Used by the predictive cache manager to subdivide an fx calculation into
   //!  tiles. \sa TRasterFx::compute().
+  // Scene/output values may be negative for enlargement. Convert them with
+  // TRenderScale at render boundaries; FX evaluation still uses shrink = 1.
   int m_shrinkX,  //!< Required horizontal shrink. \warning Obsolete, do not
                   //! use. \todo Must be removed.
       m_shrinkY;  //!< Required vertical shrink. \warning Obsolete, do not use.
