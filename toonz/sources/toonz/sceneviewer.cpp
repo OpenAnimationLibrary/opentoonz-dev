@@ -2006,32 +2006,9 @@ int frameStrokeCount(TXshSimpleLevel *level, const TFrameId &fid) {
   return (int)image->getStrokeCount();
 }
 
-bool viewerStrokeCounts(int &current, int &previous, int &next,
-                        bool &hasPrevious, bool &hasNext) {
-  current = previous = next = -1;
-  hasPrevious = hasNext = false;
-
-  TApp *app              = TApp::instance();
-  TXshSimpleLevel *level = 0;
-  TFrameId fid;
-  if (app->getCurrentFrame()->isEditingLevel()) {
-    TXshLevel *xshLevel = app->getCurrentLevel()->getLevel();
-    if (!xshLevel) return false;
-    level = xshLevel->getSimpleLevel();
-    fid   = app->getCurrentFrame()->getFid();
-  } else {
-    int col = app->getCurrentColumn()->getColumnIndex();
-    if (col < 0) return false;
-    TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
-    if (!xsh) return false;
-    TXshCell cell = xsh->getCell(app->getCurrentFrame()->getFrame(), col);
-    level         = cell.getSimpleLevel();
-    fid           = cell.getFrameId();
-  }
-  if (!level || level->getType() != PLI_XSHLEVEL) return false;
-  current = frameStrokeCount(level, fid);
-  if (current < 0) return false;
-
+void levelNeighborStrokeCounts(TXshSimpleLevel *level, const TFrameId &fid,
+                               int &previous, int &next, bool &hasPrevious,
+                               bool &hasNext) {
   std::vector<TFrameId> fids;
   level->getFids(fids);
   int index = -1;
@@ -2049,6 +2026,64 @@ bool viewerStrokeCounts(int &current, int &previous, int &next,
     hasNext = true;
     next    = frameStrokeCount(level, fids[index + 1]);
   }
+}
+
+void columnNeighborStrokeCounts(TXsheet *xsh, int row, int col,
+                                const TXshCell &cell, int &previous, int &next,
+                                bool &hasPrevious, bool &hasNext) {
+  for (int r = row - 1; r >= 0; --r) {
+    const TXshCell &other = xsh->getCell(r, col);
+    if (other.isEmpty() || other == cell) continue;
+    hasPrevious = true;
+    previous    = frameStrokeCount(other.getSimpleLevel(), other.getFrameId());
+    break;
+  }
+  int last = xsh->getMaxFrame(col);
+  for (int r = row + 1; r <= last; ++r) {
+    const TXshCell &other = xsh->getCell(r, col);
+    if (other.isEmpty() || other == cell) continue;
+    hasNext = true;
+    next    = frameStrokeCount(other.getSimpleLevel(), other.getFrameId());
+    break;
+  }
+}
+
+bool viewerStrokeCounts(int &current, int &previous, int &next,
+                        bool &hasPrevious, bool &hasNext) {
+  current = previous = next = -1;
+  hasPrevious = hasNext = false;
+
+  TApp *app              = TApp::instance();
+  TXshSimpleLevel *level = 0;
+  TFrameId fid;
+  TXsheet *xsh = 0;
+  TXshCell cell;
+  int row = -1, col = -1;
+  bool editingLevel = app->getCurrentFrame()->isEditingLevel();
+  if (editingLevel) {
+    TXshLevel *xshLevel = app->getCurrentLevel()->getLevel();
+    if (!xshLevel) return false;
+    level = xshLevel->getSimpleLevel();
+    fid   = app->getCurrentFrame()->getFid();
+  } else {
+    col = app->getCurrentColumn()->getColumnIndex();
+    if (col < 0) return false;
+    xsh = app->getCurrentXsheet()->getXsheet();
+    if (!xsh) return false;
+    row   = app->getCurrentFrame()->getFrame();
+    cell  = xsh->getCell(row, col);
+    level = cell.getSimpleLevel();
+    fid   = cell.getFrameId();
+  }
+  if (!level || level->getType() != PLI_XSHLEVEL) return false;
+  current = frameStrokeCount(level, fid);
+  if (current < 0) return false;
+
+  if (editingLevel)
+    levelNeighborStrokeCounts(level, fid, previous, next, hasPrevious, hasNext);
+  else
+    columnNeighborStrokeCounts(xsh, row, col, cell, previous, next, hasPrevious,
+                               hasNext);
   return true;
 }
 
