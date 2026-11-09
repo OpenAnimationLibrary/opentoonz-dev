@@ -456,7 +456,12 @@ void FullScreenWorkspace::end() {
     if (!frozen.touched) continue;
     // A workspace puts back the session that existed before it opened.
     const bool show = workspace ? frozen.visible : !panel->isHidden();
-    panel->setParent(frozen.parentWidget);
+    QWidget *parent = frozen.parentWidget;
+    auto *room      = qobject_cast<TMainWindow *>(parent);
+    if (room && !panel->parentLayout())
+      room->addDockWidget(panel);
+    else
+      panel->setParent(parent);
     panel->setWindowFlags(frozen.flags);
     panel->setGeometry(frozen.geometry);
     if (show)
