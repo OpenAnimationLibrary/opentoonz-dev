@@ -179,6 +179,8 @@
 #define MI_SetKeyframes "MI_SetKeyframes"
 
 #define MI_ViewCamera "MI_ViewCamera"
+#define MI_ViewerStrokeCount "MI_ViewerStrokeCount"
+#define MI_ViewerNeighborStrokeCount "MI_ViewerNeighborStrokeCount"
 #define MI_ViewBBox "MI_ViewBBox"
 #define MI_ViewTable "MI_ViewTable"
 #define MI_FieldGuide "MI_FieldGuide"
@@ -325,6 +327,7 @@
 #define MI_UnlockAllColumns "MI_UnlockAllColumns"
 #define MI_ToggleColumnLocks "MI_ToggleColumnLocks"
 #define MI_ToggleXSheetToolbar "MI_ToggleXSheetToolbar"
+#define MI_ShowStrokeCount "MI_ShowStrokeCount"
 #define MI_ToggleXsheetBreadcrumbs "MI_ToggleXsheetBreadcrumbs"
 #define MI_FoldColumns "MI_FoldColumns"
 #define MI_ToggleXsheetCameraColumn "MI_ToggleXsheetCameraColumn"

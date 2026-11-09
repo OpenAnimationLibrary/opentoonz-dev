@@ -32,6 +32,7 @@
 #include "toonzqt/imageutils.h"
 #include "toonzqt/lutcalibrator.h"
 #include "toonzqt/viewcommandids.h"
+#include "toonzqt/menubarcommand.h"
 
 // TnzLib includes
 #include "toonz/tscenehandle.h"
@@ -43,6 +44,8 @@
 #include "toonz/toonzscene.h"
 #include "toonz/levelset.h"
 #include "toonz/txshsimplelevel.h"
+#include "tvectorimage.h"
+#include "tpixel.h"
 #include "toonz/tcamera.h"
 #include "toonz/stage2.h"
 #include "toonz/stage.h"
@@ -291,6 +294,26 @@ ToggleCommandHandler viewCameraToggle("MI_ViewCamera", false);
 ToggleCommandHandler viewBBoxToggle("MI_ViewBBox", false);
 ToggleCommandHandler viewGuideToggle("MI_ViewGuide", false);
 ToggleCommandHandler viewRulerToggle("MI_ViewRuler", false);
+
+class ViewerStrokeCountToggle final : public MenuItemHandler {
+  CommandId m_commandId;
+  PreferencesItemId m_prefId;
+
+public:
+  ViewerStrokeCountToggle(CommandId commandId, PreferencesItemId prefId)
+      : MenuItemHandler(commandId), m_commandId(commandId), m_prefId(prefId) {}
+  void execute() override {
+    QAction *action = CommandManager::instance()->getAction(m_commandId);
+    if (!action) return;
+    Preferences::instance()->setValue(m_prefId, action->isChecked());
+    TApp::instance()->getCurrentScene()->notifySceneChanged(false);
+  }
+};
+
+ViewerStrokeCountToggle viewerStrokeCountToggle(MI_ViewerStrokeCount,
+                                                viewerStrokeCountEnabled);
+ViewerStrokeCountToggle viewerNeighborStrokeCountToggle(
+    MI_ViewerNeighborStrokeCount, viewerNeighborStrokeCountEnabled);
 
 //-----------------------------------------------------------------------------
 
@@ -1972,6 +1995,175 @@ void SceneViewer::drawOverlay() {
 
 //-----------------------------------------------------------------------------
 
+namespace {
+
+const double kStrokeTextHeight = 119.0 * 0.07;
+
+int frameStrokeCount(TXshSimpleLevel *level, const TFrameId &fid) {
+  if (!level || fid.getNumber() < 0) return -1;
+  TVectorImageP image(level->getFrame(fid, false));
+  if (!image) return -1;
+  return (int)image->getStrokeCount();
+}
+
+void levelNeighborStrokeCounts(TXshSimpleLevel *level, const TFrameId &fid,
+                               int &previous, int &next, bool &hasPrevious,
+                               bool &hasNext) {
+  std::vector<TFrameId> fids;
+  level->getFids(fids);
+  int index = -1;
+  for (int i = 0; i < (int)fids.size(); i++) {
+    if (fids[i] == fid) {
+      index = i;
+      break;
+    }
+  }
+  if (index > 0) {
+    hasPrevious = true;
+    previous    = frameStrokeCount(level, fids[index - 1]);
+  }
+  if (index >= 0 && index + 1 < (int)fids.size()) {
+    hasNext = true;
+    next    = frameStrokeCount(level, fids[index + 1]);
+  }
+}
+
+void columnNeighborStrokeCounts(TXsheet *xsh, int row, int col,
+                                const TXshCell &cell, int &previous, int &next,
+                                bool &hasPrevious, bool &hasNext) {
+  for (int r = row - 1; r >= 0; --r) {
+    const TXshCell &other = xsh->getCell(r, col);
+    if (other.isEmpty() || other == cell) continue;
+    hasPrevious = true;
+    previous    = frameStrokeCount(other.getSimpleLevel(), other.getFrameId());
+    break;
+  }
+  int last = xsh->getMaxFrame(col);
+  for (int r = row + 1; r <= last; ++r) {
+    const TXshCell &other = xsh->getCell(r, col);
+    if (other.isEmpty() || other == cell) continue;
+    hasNext = true;
+    next    = frameStrokeCount(other.getSimpleLevel(), other.getFrameId());
+    break;
+  }
+}
+
+bool viewerStrokeCounts(int &current, int &previous, int &next,
+                        bool &hasPrevious, bool &hasNext) {
+  current = previous = next = -1;
+  hasPrevious = hasNext = false;
+
+  TApp *app              = TApp::instance();
+  TXshSimpleLevel *level = 0;
+  TFrameId fid;
+  TXsheet *xsh = 0;
+  TXshCell cell;
+  int row = -1, col = -1;
+  bool editingLevel = app->getCurrentFrame()->isEditingLevel();
+  if (editingLevel) {
+    TXshLevel *xshLevel = app->getCurrentLevel()->getLevel();
+    if (!xshLevel) return false;
+    level = xshLevel->getSimpleLevel();
+    fid   = app->getCurrentFrame()->getFid();
+  } else {
+    col = app->getCurrentColumn()->getColumnIndex();
+    if (col < 0) return false;
+    xsh = app->getCurrentXsheet()->getXsheet();
+    if (!xsh) return false;
+    row   = app->getCurrentFrame()->getFrame();
+    cell  = xsh->getCell(row, col);
+    level = cell.getSimpleLevel();
+    fid   = cell.getFrameId();
+  }
+  if (!level || level->getType() != PLI_XSHLEVEL) return false;
+  current = frameStrokeCount(level, fid);
+  if (current < 0) return false;
+
+  if (editingLevel)
+    levelNeighborStrokeCounts(level, fid, previous, next, hasPrevious, hasNext);
+  else
+    columnNeighborStrokeCounts(xsh, row, col, cell, previous, next, hasPrevious,
+                               hasNext);
+  return true;
+}
+
+double drawStrokeReadout(double x, double y, const std::string &title,
+                         const std::string &number) {
+  double titleWidth = 0;
+  if (!title.empty()) {
+    titleWidth = tglGetTextWidth(title);
+    tglDrawText(TPointD(x, y + kStrokeTextHeight + 6), title);
+  }
+  double right = x + titleWidth;
+  if (!number.empty()) {
+    double numberWidth = tglGetTextWidth(number);
+    double numberX = title.empty() ? x : x + (titleWidth - numberWidth) / 2.0;
+    tglDrawText(TPointD(numberX, y), number);
+    if (numberX + numberWidth > right) right = numberX + numberWidth;
+  }
+  return right - x;
+}
+
+void setStrokeColor(const TPixel &color) {
+  double ch = TPixel32::maxChannelValue;
+  glColor4d(color.r / ch, color.g / ch, color.b / ch, color.m / ch);
+}
+
+}  // namespace
+
+void SceneViewer::drawViewerStrokeCount() {
+  if (m_isPicking) return;
+  Preferences *pref  = Preferences::instance();
+  bool showCurrent   = pref->isViewerStrokeCountEnabled();
+  bool showNeighbors = pref->isViewerNeighborStrokeCountEnabled();
+  if (!showCurrent && !showNeighbors) return;
+
+  int current = -1, previous = -1, next = -1;
+  bool hasPrevious = false, hasNext = false;
+  if (!viewerStrokeCounts(current, previous, next, hasPrevious, hasNext))
+    return;
+  if (!showNeighbors && current <= 0) return;
+
+  int devPixRatio = getDevPixRatio();
+  int x0, x1, y0, y1;
+  rect().getCoords(&x0, &y0, &x1, &y1);
+  x0 = (-(x1 / (2 * devPixRatio))) + 15;
+  y0 = ((y1 / (2 * devPixRatio))) - 70;
+
+  glPushMatrix();
+  glScaled(2 * devPixRatio, 2 * devPixRatio, 2 * devPixRatio);
+
+  double x = x0 / 2.0;
+  double y = y0 / 2.0;
+  if (!showNeighbors) {
+    setStrokeColor(pref->getViewerCurrentStrokeCountColor());
+    drawStrokeReadout(x, y, "", QString::number(current).toStdString());
+  } else {
+    struct Item {
+      std::string title;
+      int count;
+      bool known;
+      TPixel color;
+    };
+    Item items[3] = {{tr("Previous").toStdString(), previous, hasPrevious,
+                      pref->getViewerPreviousStrokeCountColor()},
+                     {tr("Current").toStdString(), current, true,
+                      pref->getViewerCurrentStrokeCountColor()},
+                     {tr("Next").toStdString(), next, hasNext,
+                      pref->getViewerNextStrokeCountColor()}};
+    for (const Item &item : items) {
+      setStrokeColor(item.color);
+      std::string number;
+      if (item.known && item.count > 0)
+        number = QString::number(item.count).toStdString();
+      double used = drawStrokeReadout(x, y, item.title, number);
+      x += (used > 20.0 ? used : 20.0) + 14;
+    }
+  }
+
+  glPopMatrix();
+}
+
 void SceneViewer::drawViewerIndicators() {
   if (!Preferences::instance()->isViewerIndicatorEnabled()) return;
 
@@ -2128,6 +2320,7 @@ void SceneViewer::paintGL() {
       m_lutCalibrator->onEndDraw(m_fbo);
 
     drawViewerIndicators();
+    drawViewerStrokeCount();
 
     return;
   }
@@ -2151,6 +2344,7 @@ void SceneViewer::paintGL() {
   drawDisableScissor();
 
   drawViewerIndicators();
+  drawViewerStrokeCount();
 
   // Freeze is active and in 'update' state: grab the viewer.
   if (m_freezedStatus == UPDATE_FREEZED) {

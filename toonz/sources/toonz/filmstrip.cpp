@@ -38,6 +38,7 @@
 
 // TnzCore includes
 #include "tpalette.h"
+#include "tvectorimage.h"
 
 // Qt includes
 #include <QPainter>
@@ -114,6 +115,14 @@ public:
 
 const int kResponsiveIconQuantStep    = 16;
 const int kResponsiveRenderDebounceMs = 120;
+
+int vectorStrokeCount(TXshSimpleLevel *sl, const TFrameId &fid) {
+  if (!sl || sl->getType() != PLI_XSHLEVEL) return -1;
+  if (fid.getNumber() < 0) return -1;
+  TVectorImageP vi(sl->getFrame(fid, false));
+  if (!vi) return -1;
+  return (int)vi->getStrokeCount();
+}
 }  // namespace
 
 //=============================================================================
@@ -907,6 +916,16 @@ void FilmstripFrames::paintEvent(QPaintEvent *evt) {
       }
       p.drawText(tmp_frameRect.adjusted(0, 0, -3, 2), text,
                  QTextOption(Qt::AlignRight | Qt::AlignBottom));
+
+      if (m_showStrokeCount && sl->getType() == PLI_XSHLEVEL) {
+        int count = vectorStrokeCount(sl, fid);
+        if (count >= 0) {
+          QRect countRect(tmp_iconImgRect.left(), tmp_frameRect.top(),
+                          tmp_iconImgRect.width(), tmp_frameRect.height());
+          p.drawText(countRect.adjusted(0, 0, 0, 2), QString::number(count),
+                     QTextOption(Qt::AlignHCenter | Qt::AlignBottom));
+        }
+      }
       p.setPen(Qt::NoPen);
 
       // Read-only frames (lock)
@@ -1495,12 +1514,15 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
   QAction *hideNavigator =
       panelMenu->addAction(tr("Show/Hide Level Navigator"));
   QAction *responsiveThumbs = panelMenu->addAction(tr("Responsive Thumbnails"));
+  QAction *showStrokeCount  = panelMenu->addAction(tr("Show Stroke Count"));
   hideComboBox->setCheckable(true);
   hideComboBox->setChecked(m_showComboBox);
   hideNavigator->setCheckable(true);
   hideNavigator->setChecked(m_showNavigator);
   responsiveThumbs->setCheckable(true);
   responsiveThumbs->setChecked(m_responsiveThumbnails);
+  showStrokeCount->setCheckable(true);
+  showStrokeCount->setChecked(m_showStrokeCount);
   connect(toggleOrientation, SIGNAL(triggered(bool)), this,
           SLOT(orientationToggled(bool)));
   connect(hideComboBox, SIGNAL(triggered(bool)), this,
@@ -1509,6 +1531,8 @@ void FilmstripFrames::contextMenuEvent(QContextMenuEvent *event) {
           SLOT(navigatorToggled(bool)));
   connect(responsiveThumbs, SIGNAL(triggered(bool)), this,
           SLOT(responsiveThumbnailsToggled(bool)));
+  connect(showStrokeCount, SIGNAL(triggered(bool)), this,
+          SLOT(showStrokeCountToggled(bool)));
 
   menu->exec(event->globalPos());
 }
@@ -1570,6 +1594,12 @@ void FilmstripFrames::responsiveThumbnailsToggled(bool responsive) {
 
 //-----------------------------------------------------------------------------
 
+void FilmstripFrames::showStrokeCountToggled(bool show) {
+  emit(showStrokeCountToggledSignal(show));
+}
+
+//-----------------------------------------------------------------------------
+
 void FilmstripFrames::orientationToggled(bool ignore) {
   m_isVertical = !m_isVertical;
   emit(orientationToggledSignal(m_isVertical));
@@ -1595,6 +1625,13 @@ void FilmstripFrames::setOrientation(bool isVertical) {
 
 void FilmstripFrames::setNavigator(bool showNavigator) {
   m_showNavigator = showNavigator;
+}
+
+//-----------------------------------------------------------------------------
+
+void FilmstripFrames::setShowStrokeCount(bool show) {
+  m_showStrokeCount = show;
+  update();
 }
 
 //-----------------------------------------------------------------------------
@@ -1769,6 +1806,8 @@ Filmstrip::Filmstrip(QWidget *parent, Qt::WindowFlags flags) : QWidget(parent) {
           SLOT(navigatorToggled()));
   connect(m_frames, SIGNAL(responsiveThumbnailsToggledSignal(bool)), this,
           SLOT(responsiveThumbnailsToggled(bool)));
+  connect(m_frames, SIGNAL(showStrokeCountToggledSignal(bool)), this,
+          SLOT(showStrokeCountToggled(bool)));
   connect(m_frames, SIGNAL(levelSelectedSignal(int)), this,
           SLOT(onChooseLevelComboChanged(int)));
 
@@ -2138,6 +2177,13 @@ void Filmstrip::responsiveThumbnailsToggled(bool responsive) {
 
 //-----------------------------------------------------------------------------
 
+void Filmstrip::showStrokeCountToggled(bool show) {
+  m_showStrokeCount = show;
+  m_frames->setShowStrokeCount(show);
+}
+
+//-----------------------------------------------------------------------------
+
 void Filmstrip::setOrientation(bool isVertical) {
   m_isVertical = isVertical;
   if (isVertical) {
@@ -2170,6 +2216,9 @@ void Filmstrip::save(QSettings &settings) const {
 
   UINT responsive = m_responsiveThumbnails ? 1 : 0;
   settings.setValue("responsiveThumbnails", responsive);
+
+  UINT strokeCount = m_showStrokeCount ? 1 : 0;
+  settings.setValue("showStrokeCount", strokeCount);
 }
 
 void Filmstrip::load(QSettings &settings) {
@@ -2193,6 +2242,10 @@ void Filmstrip::load(QSettings &settings) {
   UINT responsive        = settings.value("responsiveThumbnails", 1).toUInt();
   m_responsiveThumbnails = responsive == 1;
   m_frames->setResponsiveThumbnails(m_responsiveThumbnails);
+
+  UINT strokeCount  = settings.value("showStrokeCount", 1).toUInt();
+  m_showStrokeCount = strokeCount == 1;
+  m_frames->setShowStrokeCount(m_showStrokeCount);
 }
 
 //=============================================================================

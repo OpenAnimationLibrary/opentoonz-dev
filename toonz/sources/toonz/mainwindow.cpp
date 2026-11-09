@@ -2729,6 +2729,13 @@ void MainWindow::defineActions() {
                ViewColorcardToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_ViewGuide, QT_TR_NOOP("&Guide"), "",
                ViewGuideToggleAction ? 1 : 0, MenuViewCommandType);
+  createToggle(MI_ViewerStrokeCount, QT_TR_NOOP("Current Drawing"), "",
+               Preferences::instance()->isViewerStrokeCountEnabled(),
+               MenuViewCommandType);
+  createToggle(MI_ViewerNeighborStrokeCount, QT_TR_NOOP("Previous and Next"),
+               "",
+               Preferences::instance()->isViewerNeighborStrokeCountEnabled(),
+               MenuViewCommandType);
   createToggle(MI_ViewRuler, QT_TR_NOOP("&Ruler"), "",
                ViewRulerToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_TCheck, QT_TR_NOOP("&Transparency Check  "), "",
@@ -2937,6 +2944,8 @@ void MainWindow::defineActions() {
                              "view_file");
   createRightClickMenuAction(MI_ToggleXSheetToolbar,
                              QT_TR_NOOP("Toggle XSheet Toolbar"), "");
+  createToggle(MI_ShowStrokeCount, QT_TR_NOOP("Show Stroke Count"), "", true,
+               RightClickMenuCommandType, "stroke_count");
   createRightClickMenuAction(MI_ToggleXsheetBreadcrumbs,
                              QT_TR_NOOP("Toggle Sub-Xsheet Navigation Bar"), "",
                              "toggle_sub_nav");

@@ -23,6 +23,7 @@
 #include "columnselection.h"
 #include "xsheetdragtool.h"
 #include "toonzqt/gutil.h"
+#include "toonzqt/menubarcommand.h"
 
 #include "toonz/txsheet.h"
 #include "toonz/txshcell.h"
@@ -41,6 +42,7 @@
 
 #include "tenv.h"
 
+#include <QApplication>
 #include <QPainter>
 #include <QScrollBar>
 #include <QMouseEvent>
@@ -1127,6 +1129,9 @@ void XsheetViewer::showEvent(QShowEvent *) {
   ret = ret &&
         connect(app->getCurrentLevel(), SIGNAL(xshLevelSwitched(TXshLevel *)),
                 this, SLOT(changeWindowTitle()));
+  ret =
+      ret && connect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged,
+                     this, &XsheetViewer::updateCells);
 
   ret = ret && connect(IconGenerator::instance(), SIGNAL(iconGenerated()), this,
                        SLOT(updateColumnArea()));
@@ -1178,6 +1183,8 @@ void XsheetViewer::hideEvent(QHideEvent *) {
 
   disconnect(app->getCurrentLevel(), SIGNAL(xshLevelSwitched(TXshLevel *)),
              this, SLOT(changeWindowTitle()));
+  disconnect(app->getCurrentLevel(), &TXshLevelHandle::xshLevelChanged, this,
+             &XsheetViewer::updateCells);
 
   disconnect(IconGenerator::instance(), SIGNAL(iconGenerated()), this,
              SLOT(updateColumnArea()));
@@ -1883,6 +1890,7 @@ void XsheetViewer::setFrameDisplayStyle(FrameDisplayStyle style) {
 void XsheetViewer::save(QSettings &settings) const {
   settings.setValue("orientation", orientation()->name());
   settings.setValue("frameZoomFactor", m_frameZoomFactor);
+  settings.setValue("showStrokeCount", m_showStrokeCount ? 1 : 0);
 }
 
 void XsheetViewer::load(QSettings &settings) {
@@ -1898,7 +1906,31 @@ void XsheetViewer::load(QSettings &settings) {
     m_orientation = Orientations::byName(name.toString());
     emit orientationChanged(orientation());
   }
+
+  m_showStrokeCount = settings.value("showStrokeCount", 1).toInt() != 0;
+  QAction *action   = CommandManager::instance()->getAction(MI_ShowStrokeCount);
+  if (action && action->isChecked() != m_showStrokeCount)
+    action->setChecked(m_showStrokeCount);
 }
+
+namespace {
+class ShowStrokeCountCommand final : public MenuItemHandler {
+public:
+  ShowStrokeCountCommand() : MenuItemHandler(MI_ShowStrokeCount) {}
+  void execute() override {
+    QAction *action = CommandManager::instance()->getAction(MI_ShowStrokeCount);
+    if (!action) return;
+    bool on                   = action->isChecked();
+    const QWidgetList widgets = QApplication::allWidgets();
+    for (QWidget *widget : widgets) {
+      XsheetViewer *viewer = qobject_cast<XsheetViewer *>(widget);
+      if (!viewer) continue;
+      viewer->setShowStrokeCount(on);
+      viewer->updateCells();
+    }
+  }
+} showStrokeCountCommand;
+}  // namespace
 
 //-----------------------------------------------------------------------------
 /*

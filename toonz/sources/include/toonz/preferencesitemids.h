@@ -251,6 +251,12 @@ enum PreferencesItemId {
   // Tape Tool confirmation (stored only; no Preferences popup control)
   tapeToolFillRiskPolicy,
 
+  viewerStrokeCountEnabled,
+  viewerNeighborStrokeCountEnabled,
+  viewerPreviousStrokeCountColor,
+  viewerCurrentStrokeCountColor,
+  viewerNextStrokeCountColor,
+
   PreferencesItemCount
 };
 

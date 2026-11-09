@@ -62,6 +62,7 @@
 
 // TnzCore includes
 #include "tconvert.h"
+#include "tvectorimage.h"
 
 // Qt includes
 #include <QPainter>
@@ -74,6 +75,14 @@
 #include <QRegularExpression>
 
 namespace {
+
+int vectorStrokeCount(TXshSimpleLevel *sl, const TFrameId &fid) {
+  if (!sl || sl->getType() != PLI_XSHLEVEL) return -1;
+  if (fid.getNumber() < 0) return -1;
+  TVectorImageP vi(sl->getFrame(fid, false));
+  if (!vi) return -1;
+  return (int)vi->getStrokeCount();
+}
 
 const bool checkContainsSingleLevel(TXshColumn *column,
                                     const std::string &columnName) {
@@ -2114,6 +2123,17 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
   // do not draw frame number under RenameCellField
   if (m_renameCell->isVisible() && m_renameCell->isLocatedAt(row, col)) return;
 
+  bool timelineRoom =
+      o->isVerticalTimeline() || m_viewer->getFrameZoomFactor() >= 100;
+  bool holdStart  = !(sameLevel && prevCell.m_frameId == cell.m_frameId);
+  int strokeCount = -1;
+  bool drawCount  = false;
+  if (!isSimpleView && timelineRoom && holdStart &&
+      m_viewer->isShowStrokeCountEnabled()) {
+    strokeCount = vectorStrokeCount(cell.getSimpleLevel(), cell.m_frameId);
+    drawCount   = strokeCount >= 0;
+  }
+
   // if the same level & same fId with the previous cell,
   // draw continue line
   QString fnum;
@@ -2173,9 +2193,12 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
       fnum = frameNumber;
     }
 
-    int alignFlag =
-        ((showLevelName) ? Qt::AlignRight | Qt::AlignBottom : Qt::AlignCenter);
-    p.drawText(nameRect, alignFlag, fnum);
+    if (!drawCount || o->isVerticalTimeline()) {
+      int alignFlag = (showLevelName || drawCount)
+                          ? Qt::AlignRight | Qt::AlignBottom
+                          : Qt::AlignCenter;
+      p.drawText(nameRect, alignFlag, fnum);
+    }
   }
 
   // cell mark
@@ -2193,7 +2216,7 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
       distance > 0 && ((row - offset) % distance) == 0 && row != 0;
 
   // draw level name
-  if (showLevelName &&
+  if (showLevelName && !drawCount &&
       (!sameLevel ||
        (isAfterMarkers && !isSimpleView &&
         Preferences::instance()->isLevelNameOnEachMarkerEnabled()))) {
@@ -2203,6 +2226,19 @@ void CellArea::drawLevelCell(QPainter &p, int row, int col, bool isReference,
     QString elidaName = elideText(
         text, fm, nameRect.width() - fm.horizontalAdvance(fnum), QString("~"));
     p.drawText(nameRect, Qt::AlignLeft | Qt::AlignBottom, elidaName);
+  }
+
+  if (drawCount && strokeCount > 0) {
+    QColor countColor = penColor;
+    countColor.setAlphaF(1.0);
+    p.setPen(countColor);
+    p.setFont(font);
+    QRect countRect =
+        o->isVerticalTimeline() ? nameRect : cellRect.adjusted(1, 0, -1, 0);
+    int countAlign = o->isVerticalTimeline()
+                         ? Qt::AlignLeft | Qt::AlignBottom
+                         : Qt::AlignHCenter | Qt::AlignBottom;
+    p.drawText(countRect, countAlign, QString::number(strokeCount));
   }
 }
 
@@ -4098,6 +4134,14 @@ void CellArea::createCellMenu(QMenu &menu, bool isCellSelected, TXshCell cell,
     }
 
     menu.addMenu(marksMenu);
+  }
+
+  QAction *showStrokeCount = cmdManager->getAction(MI_ShowStrokeCount);
+  if (showStrokeCount) {
+    menu.addSeparator();
+    QMenu *drawingMenu = new QMenu(tr("Drawing"), this);
+    drawingMenu->addAction(showStrokeCount);
+    menu.addMenu(drawingMenu);
   }
 }
 
