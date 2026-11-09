@@ -1214,12 +1214,16 @@ bool FullScreenWidget::toggleFullScreen(
             this->show();
 #else
             this->setWindowFlags(this->windowFlags() | Qt::Window);
-            this->window()->windowHandle()->setScreen(ptrScreenThisWindowIsOn);
 
-            // http://doc.qt.io/qt-5/windows-issues.html#fullscreen-opengl-based-windows
+            // A viewer of a room that was never shown has no native window yet.
             this->winId();
-            QWindowsWindowFunctions::setHasBorderInFullScreen(
-                this->windowHandle(), true);
+            if (QWindow *ptrOwnQWindow = this->windowHandle()) {
+              ptrOwnQWindow->setScreen(ptrScreenThisWindowIsOn);
+
+              // http://doc.qt.io/qt-5/windows-issues.html#fullscreen-opengl-based-windows
+              QWindowsWindowFunctions::setHasBorderInFullScreen(ptrOwnQWindow,
+                                                                true);
+            }
 
             this->showFullScreen();
 #endif

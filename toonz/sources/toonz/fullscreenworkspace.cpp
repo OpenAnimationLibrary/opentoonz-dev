@@ -2,6 +2,7 @@
 
 #include "mainwindow.h"
 #include "pane.h"
+#include "sceneviewer.h"
 #include "tapp.h"
 
 #include "toonz/toonzfolders.h"
@@ -94,12 +95,24 @@ MainWindow *mainWindow() {
 }
 
 ImageUtils::FullScreenWidget *sceneViewerFullScreen() {
-  const QWidgetList widgets = QApplication::allWidgets();
+  ImageUtils::FullScreenWidget *visible = nullptr;
+  ImageUtils::FullScreenWidget *any     = nullptr;
+  const QWidgetList widgets             = QApplication::allWidgets();
   for (QWidget *widget : widgets) {
     auto *fs = qobject_cast<ImageUtils::FullScreenWidget *>(widget);
-    if (fs && fs->widget() && fs->widget()->inherits("SceneViewer")) return fs;
+    if (!fs || !fs->widget() || !fs->widget()->inherits("SceneViewer"))
+      continue;
+    if (fs->windowState() & Qt::WindowFullScreen) return fs;
+    if (!visible && fs->isVisible()) visible = fs;
+    if (!any) any = fs;
   }
-  return nullptr;
+
+  if (SceneViewer *active = TApp::instance()->getActiveViewer()) {
+    auto *fs = qobject_cast<ImageUtils::FullScreenWidget *>(
+        active->parentWidget());
+    if (fs) return fs;
+  }
+  return visible ? visible : any;
 }
 
 QString commandIdFor(const QString &name) {
