@@ -38,6 +38,7 @@
 #define MI_ExportAllLevels "MI_ExportAllLevels"
 #define MI_SavePaletteAs "MI_SavePaletteAs"
 #define MI_OverwritePalette "MI_OverwritePalette"
+#define MI_SaveAsDefaultRasterPalette "MI_SaveAsDefaultRasterPalette"
 #define MI_LoadColorModel "MI_LoadColorModel"
 #define MI_ImportMagpieFile "MI_ImportMagpieFile"
 #define MI_NewNoteLevel "MI_NewNoteLevel"
@@ -132,6 +133,7 @@
 #define MI_SaveSubxsheetAs "MI_SaveSubxsheetAs"
 #define MI_Resequence "MI_Resequence"
 #define MI_CloneChild "MI_CloneChild"
+#define MI_FullCloneChild "MI_FullCloneChild"
 #define MI_ApplyMatchLines "MI_ApplyMatchLines"
 #define MI_MergeCmapped "MI_MergeCmapped"
 #define MI_MergeColumns "MI_MergeColumns"
@@ -154,6 +156,7 @@
 #define MI_PasteNew "MI_PasteNew"
 #define MI_Autorenumber "MI_Autorenumber"
 #define MI_CreateBlankDrawing "MI_CreateBlankDrawing"
+#define MI_InsertBlankDrawing "MI_InsertBlankDrawing"
 #define MI_FillEmptyCell "MI_FillEmptyCell"
 
 #define MI_MergeFrames "MI_MergeFrames"
@@ -184,6 +187,7 @@
 #define MI_FieldGuide "MI_FieldGuide"
 #define MI_RasterizePli "MI_RasterizePli"
 #define MI_SafeArea "MI_SafeArea"
+#define MI_CenterCutGuide "MI_CenterCutGuide"
 #define MI_ViewColorcard "MI_ViewColorcard"
 #define MI_ViewGuide "MI_ViewGuide"
 #define MI_ViewRuler "MI_ViewRuler"
@@ -214,6 +218,8 @@
 #define MI_LastFrame "MI_LastFrame"
 #define MI_NextFrame "MI_NextFrame"
 #define MI_PrevFrame "MI_PrevFrame"
+#define MI_NextFramePastEnd "MI_NextFramePastEnd"
+#define MI_PrevFramePastEnd "MI_PrevFramePastEnd"
 #define MI_NextDrawing "MI_NextDrawing"
 #define MI_PrevDrawing "MI_PrevDrawing"
 #define MI_NextStep "MI_NextStep"
@@ -524,4 +530,6 @@
 #define MI_ClearTags "MI_ClearTags"
 
 #define MI_OpenLocator "MI_OpenLocator"
+#define MI_OpenAlignmentPanel "MI_OpenAlignmentPanel"
+
 #endif

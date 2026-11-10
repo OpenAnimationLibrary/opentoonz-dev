@@ -10,6 +10,7 @@ enum PreferencesItemId {
   taskchunksize,
   sceneNumberingEnabled,
   watchFileSystemEnabled,
+  fileBrowserFolderDoubleClick,
   projectRoot,
   customProjectRoot,
   pathAliasPriority,
@@ -29,6 +30,7 @@ enum PreferencesItemId {
   functionEditorToggle,
   moveCurrentFrameByClickCellArea,
   actualPixelViewOnSceneEditingMode,
+  syncSceneAndLevelView,
   showRasterImagesDarkenBlendedInViewer,
   iconSize,
   viewShrink,
@@ -45,6 +47,8 @@ enum PreferencesItemId {
   displayIn30bit,
   viewerIndicatorEnabled,
   restoreViewerViewFromLastSession,
+  togglePanelWithShortcut,
+  RestoreStyleEditorTab,
 
   //----------
   // Visualization
@@ -128,6 +132,7 @@ enum PreferencesItemId {
   useStrokeEndCursor,
   clickTwiceToCreateArcs,
   tempToolSwitchTimer,
+  compressInputEvents,
   animateToolHandleSize,
   animateToolColor,
   defaultStartupTool,
@@ -196,6 +201,7 @@ enum PreferencesItemId {
   //----------
   // Colors
   viewerBGColor,
+  tableColor,
   previewBGColor,
   levelEditorBoxColor,
   chessboardColor1,

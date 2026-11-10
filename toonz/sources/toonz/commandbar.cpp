@@ -26,6 +26,8 @@
 #include <QMenuBar>
 #include <QContextMenuEvent>
 #include <QActionGroup>
+#include <QLayout>
+#include <QShowEvent>
 #include <string>
 
 //=============================================================================
@@ -198,6 +200,15 @@ void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
 
 //-----------------------------------------------------------------------------
 
+void CommandBar::showEvent(QShowEvent *event) {
+  QToolBar::showEvent(event);
+  // The toolbar is constructed before setWidget() attaches it to its panel.
+  // Apply the grip constraints once that parent and its geometry are available.
+  if (!m_isXsheetToolbar) onOrientationChanged(orientation());
+}
+
+//-----------------------------------------------------------------------------
+
 void CommandBar::save(QSettings &settings) const {
   if (m_isXsheetToolbar) return;
   settings.setValue(QStringLiteral("orientation"),
@@ -304,6 +315,16 @@ void CommandBar::onOrientationChanged(Qt::Orientation orientation) {
   if (titleBar) titleBar->updateGeometry();
   updateGeometry();
   panel->updateGeometry();
+  // Orientation changes alter both the toolbar and the panel's title-bar
+  // constraints. Resolve both layouts before the next paint.
+  if (layout()) {
+    layout()->invalidate();
+    layout()->activate();
+  }
+  if (panel->layout()) {
+    panel->layout()->invalidate();
+    panel->layout()->activate();
+  }
 }
 
 //-----------------------------------------------------------------------------

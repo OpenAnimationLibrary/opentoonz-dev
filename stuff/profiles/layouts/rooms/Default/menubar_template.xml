@@ -164,6 +164,7 @@
         <command>MI_Collapse</command>
         <command>MI_Resequence</command>
         <command>MI_CloneChild</command>
+        <command>MI_FullCloneChild</command>
         <command>MI_ExplodeChild</command>
         <command>MI_ToggleEditInPlace</command>
         <separator/>
@@ -333,6 +334,7 @@
         <command>MI_OpenStopMotionPanel</command>
         <command>MI_StartupPopup</command>
         <command>MI_OpenGuidedDrawingControls</command>
+        <command>MI_OpenAlignmentPanel</command>
         <command>MI_OpenCustomPanels</command>
         <separator/>
         <command>MI_MaximizePanel</command>
