@@ -691,6 +691,7 @@ void Preferences::definePreferenceItems() {
   // Colors
   define(viewerBGColor, "viewerBGColor", QMetaType::QColor,
          QColor(128, 128, 128));
+  define(tableColor, "tableColor", QMetaType::QColor, QColor(153, 166, 179));
   define(previewBGColor, "previewBGColor", QMetaType::QColor,
          QColor(64, 64, 64));
   define(levelEditorBoxColor, "levelEditorBoxColor", QMetaType::QColor,
