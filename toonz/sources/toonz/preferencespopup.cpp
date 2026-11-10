@@ -1306,6 +1306,7 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
           "Area")},
       {actualPixelViewOnSceneEditingMode,
        tr("Enable Actual Pixel View on Scene Editing Mode")},
+      {syncSceneAndLevelView, tr("Sync Scene and Level View (Zoom / Pan)")},
       {showRasterImagesDarkenBlendedInViewer,
        tr("Show Raster Images Darken Blended")},
       {iconSize, tr("Level Strip Thumbnail Size*:")},
@@ -1783,6 +1784,16 @@ PreferencesPopup::PreferencesPopup()
             if (!saveboxCheck || saveboxCheck->isChecked() == enabled) return;
             QSignalBlocker blocker(saveboxCheck);
             saveboxCheck->setChecked(enabled);
+          });
+  connect(TApp::instance()->getCurrentScene(), &TSceneHandle::preferenceChanged,
+          this, [this](const QString& prefName) {
+            if (prefName != "SyncSceneAndLevelView") return;
+            CheckBox* syncViewCheck = getUI<CheckBox*>(syncSceneAndLevelView);
+            if (!syncViewCheck) return;
+            bool enabled = m_pref->isSyncSceneAndLevelViewEnabled();
+            if (syncViewCheck->isChecked() == enabled) return;
+            QSignalBlocker blocker(syncViewCheck);
+            syncViewCheck->setChecked(enabled);
           });
 }
 
@@ -2515,6 +2526,7 @@ QWidget* PreferencesPopup::createPreviewPage() {
     insertUI(viewerZoomCenter, viewerLay, getComboItemList(viewerZoomCenter));
     insertUI(ignoreAlphaonColumn1Enabled, viewerLay);
     insertUI(actualPixelViewOnSceneEditingMode, viewerLay);
+    insertUI(syncSceneAndLevelView, viewerLay);
     insertUI(showRasterImagesDarkenBlendedInViewer, viewerLay);
     insertUI(viewerIndicatorEnabled, viewerLay);
     insertUI(restoreViewerViewFromLastSession, viewerLay);
@@ -2551,8 +2563,17 @@ QWidget* PreferencesPopup::createPreviewPage() {
 
   m_onEditedFuncMap.insert(blanksCount, &PreferencesPopup::onBlankCountChanged);
   m_onEditedFuncMap.insert(blankColor, &PreferencesPopup::onBlankColorChanged);
+  m_onEditedFuncMap.insert(syncSceneAndLevelView,
+                           &PreferencesPopup::onSyncSceneAndLevelViewChanged);
 
   return widget;
+}
+
+//-----------------------------------------------------------------------------
+
+void PreferencesPopup::onSyncSceneAndLevelViewChanged() {
+  TApp::instance()->getCurrentScene()->notifyPreferenceChanged(
+      "SyncSceneAndLevelView");
 }
 
 //-----------------------------------------------------------------------------
