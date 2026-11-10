@@ -276,6 +276,7 @@ set(SOURCES
     addfilmstripframespopup.cpp
     camerasettingspopup.cpp
     convertpopup.cpp
+    convertlinestoareascommand.cpp
     crashhandler.cpp
     duplicatepopup.cpp
     dvdirtreeview.cpp
@@ -498,6 +499,7 @@ include_directories(
     ../../sources/toonzfarm/include
     ../../sources/toonzqt
     ../../sources/stopmotion
+    ../../sources/tnztools   # Required for SelectionScaleField, SelectionRotationField, etc.
 )
 
 if (WITH_CANON)

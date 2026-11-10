@@ -1,6 +1,7 @@
 
 
 #include "mainwindow.h"
+#include "convertlinestoareascommand.h"
 #include "customhelplink.h"
 #include "splashimage.h"
 
@@ -79,6 +80,7 @@ TEnv::IntVar ViewBBoxToggleAction("ViewBBoxToggleAction1", 1);
 TEnv::IntVar EditInPlaceToggleAction("EditInPlaceToggleAction", 0);
 TEnv::IntVar RasterizePliToggleAction("RasterizePliToggleAction", 0);
 TEnv::IntVar SafeAreaToggleAction("SafeAreaToggleAction", 0);
+TEnv::IntVar CenterCutGuideToggleAction("CenterCutGuideToggleAction", 0);
 TEnv::IntVar ViewColorcardToggleAction("ViewColorcardToggleAction", 1);
 TEnv::IntVar ViewGuideToggleAction("ViewGuideToggleAction", 1);
 TEnv::IntVar ViewRulerToggleAction("ViewRulerToggleAction", 1);
@@ -1754,6 +1756,8 @@ void MainWindow::onMenuCheckboxChanged() {
     RasterizePliToggleAction = isChecked;
   } else if (cm->getAction(MI_SafeArea) == action)
     SafeAreaToggleAction = isChecked;
+  else if (cm->getAction(MI_CenterCutGuide) == action)
+    CenterCutGuideToggleAction = isChecked;
   else if (cm->getAction(MI_ViewColorcard) == action)
     ViewColorcardToggleAction = isChecked;
   else if (cm->getAction(MI_ViewGuide) == action)
@@ -2544,6 +2548,8 @@ void MainWindow::defineActions() {
                          "resequence");
   createMenuXsheetAction(MI_CloneChild, QT_TR_NOOP("Clone Sub-Xsheet"), "",
                          "sub_clone");
+  createMenuXsheetAction(MI_FullCloneChild, QT_TR_NOOP("Full Clone Sub-Xsheet"),
+                         "", "sub_full_clone");
   createMenuXsheetAction(MI_ApplyMatchLines,
                          QT_TR_NOOP("&Apply Match Lines..."), "",
                          "apply_match_lines");
@@ -2624,6 +2630,9 @@ void MainWindow::defineActions() {
   createMenuCellsAction(MI_CreateBlankDrawing,
                         QT_TR_NOOP("&Create Blank Drawing"), "Alt+D",
                         "add_cell");
+  createMenuCellsAction(MI_InsertBlankDrawing,
+                        QT_TR_NOOP("&Insert Blank Drawing"), "",
+                        "insert_blank_cell");
   createMenuCellsAction(MI_Duplicate, QT_TR_NOOP("&Duplicate Drawing  "), "D",
                         "duplicate_drawing");
   createMenuCellsAction(MI_Autorenumber, QT_TR_NOOP("&Autorenumber"), "",
@@ -2669,6 +2678,10 @@ void MainWindow::defineActions() {
                        "frameprev");
   createMenuPlayAction(MI_NextFrame, QT_TR_NOOP("Next Frame"), "Shift+.",
                        "framenext");
+  createMenuPlayAction(MI_PrevFramePastEnd,
+                       QT_TR_NOOP("Previous Frame Past End"), "", "frameprev");
+  createMenuPlayAction(MI_NextFramePastEnd, QT_TR_NOOP("Next Frame Past End"),
+                       "", "framenext");
   createMenuPlayAction(MI_NextDrawing, QT_TR_NOOP("Next Drawing"), ".",
                        "next_drawing");
   createMenuPlayAction(MI_PrevDrawing, QT_TR_NOOP("Previous Drawing"), ",",
@@ -2717,6 +2730,11 @@ void MainWindow::defineActions() {
   createRightClickMenuAction(MI_EraseUnusedStyles,
                              QT_TR_NOOP("&Delete Unused Styles"), "",
                              "delete_unused_styles");
+  initConvertLineAreaCommands(
+      createRightClickMenuAction(MI_ConvertLinesToAreas,
+                                 QT_TR_NOOP("Convert Lines to Areas"), ""),
+      createRightClickMenuAction(MI_ConvertAreasToLines,
+                                 QT_TR_NOOP("Convert Areas to Lines"), ""));
 
   // Menu - View
 
@@ -2742,6 +2760,8 @@ void MainWindow::defineActions() {
                ViewBBoxToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_SafeArea, QT_TR_NOOP("&Safe Area"), "",
                SafeAreaToggleAction ? 1 : 0, MenuViewCommandType);
+  createToggle(MI_CenterCutGuide, QT_TR_NOOP("4:3 Center-Cut Guide"), "",
+               CenterCutGuideToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_ViewColorcard, QT_TR_NOOP("&Camera BG Color"), "",
                ViewColorcardToggleAction ? 1 : 0, MenuViewCommandType);
   createToggle(MI_ViewGuide, QT_TR_NOOP("&Guide"), "",
@@ -2925,6 +2945,9 @@ void MainWindow::defineActions() {
                              QT_TR_NOOP("&Save Palette As..."), "", "saveas");
   createRightClickMenuAction(MI_OverwritePalette, QT_TR_NOOP("&Save Palette"),
                              "", "save");
+  createRightClickMenuAction(MI_SaveAsDefaultRasterPalette,
+                             QT_TR_NOOP("Save As Default Raster Palette..."),
+                             "");
   createRightClickMenuAction(MI_RegeneratePreview,
                              QT_TR_NOOP("&Regenerate Preview"), "");
   createRightClickMenuAction(MI_RegenerateFramePr,

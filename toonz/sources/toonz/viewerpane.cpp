@@ -149,6 +149,10 @@ BaseViewerPanel::BaseViewerPanel(QWidget *parent, Qt::WindowFlags flags)
   m_flipConsole->setFrameHandle(TApp::instance()->getCurrentFrame());
 
   bool ret = true;
+  ret = ret && connect(m_flipConsole, &FlipConsole::sliderReleased, this, []() {
+          if (!TApp::instance()->getCurrentFrame()->isPlaying())
+            TApp::instance()->getCurrentXsheet()->getXsheet()->stopScrub();
+        });
   // When zoom changed, only if the viewer is active, change window titl
   ret = ret && connect(m_sceneViewer, SIGNAL(onZoomChanged()),
                        SLOT(changeWindowTitle()));
@@ -235,6 +239,8 @@ void BaseViewerPanel::addShowHideContextMenu(QMenu *menu) {
   showHideMenu->addAction(CommandManager::instance()->getAction(MI_ViewTable));
   showHideMenu->addAction(CommandManager::instance()->getAction(MI_FieldGuide));
   showHideMenu->addAction(CommandManager::instance()->getAction(MI_SafeArea));
+  showHideMenu->addAction(
+      CommandManager::instance()->getAction(MI_CenterCutGuide));
   showHideMenu->addAction(CommandManager::instance()->getAction(MI_ViewBBox));
   showHideMenu->addAction(
       CommandManager::instance()->getAction(MI_ViewColorcard));
@@ -886,6 +892,8 @@ void BaseViewerPanel::applyPendingViewState() {
 
   for (int m = 0; m < 2; ++m)
     m_sceneViewer->setViewZoomPan(m, m_pendingViewState.viewAffs[m]);
+
+  m_sceneViewer->syncSceneAndLevelViewIfEnabled();
 
   if (m_pendingViewState.hasCamera3D) {
     m_sceneViewer->setCamera3DViewState(
