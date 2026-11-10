@@ -8,6 +8,7 @@
 #include "tsystem.h"
 #include "commandbarpopup.h"
 #include "pane.h"
+#include "touchworkspacesettingspopup.h"
 
 // TnzQt includes
 #include "toonzqt/menubarcommand.h"
@@ -27,6 +28,7 @@
 #include <QActionGroup>
 #include <QLayout>
 #include <QShowEvent>
+#include <string>
 
 //=============================================================================
 // Toolbar
@@ -149,6 +151,21 @@ void CommandBar::buildDefaultToolbar(CommandBar *toolbar) {
 //-----------------------------------------------------------------------------
 
 void CommandBar::contextMenuEvent(QContextMenuEvent *event) {
+  QAction *hit = actionAt(event->pos());
+  if (hit && CommandManager::instance()->getIdFromAction(hit) ==
+                 std::string(MI_TouchGestureControl)) {
+    QMenu menu(this);
+    QAction *openMgr = menu.addAction(tr("Touch Preset Manager..."));
+    connect(openMgr, &QAction::triggered, []() {
+      CommandManager::instance()->execute(MI_TouchPresetManager);
+    });
+    QAction *openSettings = menu.addAction(tr("Touch Workspace Settings..."));
+    connect(openSettings, &QAction::triggered,
+            []() { TouchWorkspaceSettingsPopup::showPanel(); });
+    menu.exec(event->globalPos());
+    return;
+  }
+
   QMenu menu(this);
   QAction *customizeCommandBar = menu.addAction(tr("Customize Command Bar"));
   connect(customizeCommandBar, SIGNAL(triggered()),

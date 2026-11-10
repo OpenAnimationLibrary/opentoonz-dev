@@ -141,7 +141,10 @@ CommandListTree::CommandListTree(const QString& dropTargetString,
             toolModifiersFolder);
   addFolder(ShortcutTree::tr("Visualization"), VisualizationButtonCommandType,
             advancedFolder);
-  addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
+  QTreeWidgetItem* miscFolder =
+      addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
+  addFolder(ShortcutTree::tr("Touch Presets"), TouchPresetCommandType,
+            miscFolder);
   addFolder(ShortcutTree::tr("RGBA Channels"), RGBACommandType, advancedFolder);
 
   sortItems(0, Qt::AscendingOrder);
@@ -223,7 +226,10 @@ void CommandListTree::refreshTree() {
             toolModifiersFolder);
   addFolder(ShortcutTree::tr("Visualization"), VisualizationButtonCommandType,
             advancedFolder);
-  addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
+  QTreeWidgetItem* miscFolderRefresh =
+      addFolder(ShortcutTree::tr("Misc"), MiscCommandType, advancedFolder);
+  addFolder(ShortcutTree::tr("Touch Presets"), TouchPresetCommandType,
+            miscFolderRefresh);
   addFolder(ShortcutTree::tr("RGBA Channels"), RGBACommandType, advancedFolder);
 
   sortItems(0, Qt::AscendingOrder);

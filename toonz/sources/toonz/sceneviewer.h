@@ -36,6 +36,9 @@ class SceneViewer;
 class LocatorPopup;
 class QGestureEvent;
 class QTouchEvent;
+class TouchGestureRecognizer;
+class TouchPresetPickerPanel;
+class TouchViewerHud;
 class QOpenGLFramebufferObject;
 class LutCalibrator;
 class StopMotion;
@@ -94,14 +97,37 @@ class SceneViewer final : public TToolViewer, public Previewer::Listener {
   bool m_rotating                        = false;
   bool m_zooming                         = false;
   bool m_panning                         = false;
+  bool m_touchSuppressToolInput               = false;
+  bool m_touchSuppressedPointerDown           = false;
+  bool m_touchToolInputLockedUntilEnd         = false;
+  bool m_touchAwaitFreshContact               = false;
+  bool m_touchContextMenuArmed                = false;
+  int m_touchPeakLiveCount                    = 0;
+  TouchGestureRecognizer *m_touchRecognizer   = nullptr;
+  TouchPresetPickerPanel *m_touchPresetPicker = nullptr;
+  TouchViewerHud *m_touchViewerHud            = nullptr;
+
+  void initTouchViewerHud();
+  void updateTouchViewerHudFrame();
+  void onTouchViewerHudAfterCommand(const QString &commandId);
+  QPointF m_touchPresetPickerAnchor;
+  bool m_touchPresetPickerAnchorValid = false;
+
+  bool touchToolInputBlocked() const;
+  void resetTouchGestureSuppression();
 
   TPointD m_oldPos;
   bool m_dragging;
   int m_mouseScrubbing = 0;
   QAction *m_keyAction = nullptr;
+  bool m_touchScrubActive   = false;
+  bool m_touchScrubPosValid = false;
+  QPointF m_touchScrubLastPos;
+
+  void endTouchScrub();
+  void updateTouchScrub(const QTouchEvent *e, int liveFingerCount);
 
   QPointF m_firstPanPoint;
-  QPointF m_undoPoint;
   double m_scaleFactor;    // used for zoom gesture
   double m_rotationDelta;  // used for rotate gesture
   int m_referenceMode;
@@ -308,6 +334,12 @@ public:
 
   void setIsLocator() { m_isLocator = true; }
   void setIsStyleShortcutSwitchable() { m_isStyleShortcutSwitchable = true; }
+  void toggleTouchPresetPicker(const QPointF *preferredAnchor = nullptr);
+  bool isTouchPresetPickerOpen() const;
+  void syncTouchPresetPickerFromSettings(bool rebuildLayout = false);
+  void syncTouchViewerHudFromSettings();
+  bool isImmersiveForTouchViewerHud() const;
+  void syncActiveTouchPresetOnPicker();
   int getVGuideCount() override;
   int getHGuideCount() override;
   double getVGuide(int index) override;
@@ -357,9 +389,15 @@ protected:
   void changeEvent(QEvent *event) override;
   void showEvent(QShowEvent *) override;
   void hideEvent(QHideEvent *) override;
+  void resizeEvent(QResizeEvent *event) override;
 
   void gestureEvent(QGestureEvent *e);
   void touchEvent(QTouchEvent *e, int type);
+  void onTouchPresetSlot(int slot, bool repeat);
+  void touchGestureBlocksToolInput();
+  void cancelTouchToolStroke();
+  void releaseTouchToolSuppressionIfIdle();
+  bool touchGestureControlEnabled() const;
   void tabletEvent(QTabletEvent *) override;
   void leaveEvent(QEvent *) override;
   void enterEvent(QEvent *) override;

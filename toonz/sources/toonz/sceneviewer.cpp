@@ -9,6 +9,11 @@
 #include "viewerdraw.h"
 #include "toonz/cameraguide.h"
 #include "menubarcommandids.h"
+#include "touchgesturerecognizer.h"
+#include "touchpresetmanager.h"
+#include "touchpresetpicker.h"
+#include "touchviewerhud.h"
+#include "docklayout.h"
 #include "ruler.h"
 #include "locatorpopup.h"
 #if defined(x64)
@@ -67,6 +72,8 @@
 #include "subcameramanager.h"
 #include "toutputproperties.h"
 
+#include <QCursor>
+
 // TnzCore includes
 #include "tpalette.h"
 #include "tropcm.h"
@@ -90,6 +97,7 @@
 #include <QGLContext>
 #include <QOpenGLFramebufferObject>
 #include <QMainWindow>
+#include <QResizeEvent>
 #include <QStyle>
 
 #include "sceneviewer.h"
@@ -860,6 +868,13 @@ SceneViewer::SceneViewer(ImageUtils::FullScreenWidget *parent)
   grabGesture(Qt::SwipeGesture);
   grabGesture(Qt::PanGesture);
   grabGesture(Qt::PinchGesture);
+
+  m_touchRecognizer = new TouchGestureRecognizer(this);
+  connect(m_touchRecognizer, &TouchGestureRecognizer::slotTriggered, this,
+          &SceneViewer::onTouchPresetSlot);
+
+  m_touchPresetPicker = new TouchPresetPickerPanel(this);
+  initTouchViewerHud();
 
   setUpdateBehavior(QOpenGLWidget::PartialUpdate);
 
@@ -1974,6 +1989,137 @@ void SceneViewer::drawOverlay() {
       tglDrawSegment(TPointD(-4, 0), TPointD(5, 0));
       tglDrawSegment(TPointD(0, -4), TPointD(0, 5));
     }
+  }
+}
+
+//-----------------------------------------------------------------------------
+
+void SceneViewer::toggleTouchPresetPicker(const QPointF *preferredAnchor) {
+  if (!m_touchPresetPicker) return;
+  if (m_touchPresetPicker->isOpen()) {
+    m_touchPresetPicker->closePicker();
+    return;
+  }
+  QPointF anchor;
+  if (preferredAnchor && rect().contains(preferredAnchor->toPoint()))
+    anchor = *preferredAnchor;
+  else if (m_touchPresetPickerAnchorValid &&
+           rect().contains(m_touchPresetPickerAnchor.toPoint()))
+    anchor = m_touchPresetPickerAnchor;
+  else {
+    const QPoint local = mapFromGlobal(QCursor::pos());
+    if (rect().contains(local))
+      anchor = local;
+    else if (m_touchPresetPickerAnchorValid)
+      anchor = m_touchPresetPickerAnchor;
+    else
+      anchor = rect().center();
+  }
+  m_touchPresetPicker->openAt(anchor);
+}
+
+bool SceneViewer::isTouchPresetPickerOpen() const {
+  return m_touchPresetPicker && m_touchPresetPicker->isOpen();
+}
+
+void SceneViewer::syncTouchPresetPickerFromSettings(bool rebuildLayout) {
+  if (!m_touchPresetPicker || !m_touchPresetPicker->isOpen()) return;
+  if (rebuildLayout)
+    m_touchPresetPicker->refreshFromSettings(true);
+  else
+    m_touchPresetPicker->refreshAppearanceLive();
+}
+
+void SceneViewer::syncActiveTouchPresetOnPicker() {
+  if (!m_touchPresetPicker || !m_touchPresetPicker->isOpen()) return;
+  m_touchPresetPicker->syncToActivePreset();
+}
+
+bool SceneViewer::isImmersiveForTouchViewerHud() const {
+  if (ImageUtils::FullScreenWidget *fs =
+          dynamic_cast<ImageUtils::FullScreenWidget *>(parentWidget())) {
+    if (fs->isWindow() || fs->isFullScreen() ||
+        (fs->windowState() & Qt::WindowFullScreen) != 0)
+      return true;
+  }
+  for (const QWidget *p = this; p; p = p->parentWidget()) {
+    if (p->isFullScreen() || (p->windowState() & Qt::WindowFullScreen) != 0)
+      return true;
+    const DockWidget *dock = dynamic_cast<const DockWidget *>(p);
+    if (dock && dock->isMaximized()) return true;
+  }
+  QWidget *top = window();
+  return top && (top->isFullScreen() ||
+                 (top->windowState() & Qt::WindowFullScreen) != 0);
+}
+
+void SceneViewer::syncTouchViewerHudFromSettings() {
+  if (!m_touchViewerHud) return;
+  if (!touchViewerHudHostActive(this))
+    m_touchViewerHud->clearForInactiveContext();
+}
+
+void SceneViewer::initTouchViewerHud() {
+  m_touchViewerHud = new TouchViewerHud(this);
+}
+
+void SceneViewer::resizeEvent(QResizeEvent *event) {
+  QOpenGLWidget::resizeEvent(event);
+  if (m_touchViewerHud && m_touchViewerHud->isVisible())
+    m_touchViewerHud->positionAtTop();
+}
+
+void SceneViewer::updateTouchViewerHudFrame() {
+  if (!m_touchViewerHud || !touchViewerHudHostActive(this)) return;
+  TFrameHandle *fh = TApp::instance()->getCurrentFrame();
+  if (!fh || fh->isPlaying()) return;
+  const int index = fh->getFrameIndex();
+  if (index < 0) return;
+  const int last = fh->getMaxFrameIndex();
+  const int next = (last >= 0 && index < last) ? index + 2 : 0;
+  m_touchViewerHud->pulseFrameContext(index, index + 1, next);
+}
+
+void SceneViewer::onTouchViewerHudAfterCommand(const QString &commandId) {
+  if (!m_touchViewerHud || !touchViewerHudHostActive(this)) return;
+  if (commandId == QLatin1String(MI_PrevFrame) ||
+      commandId == QLatin1String(MI_NextFrame) ||
+      commandId == QLatin1String(MI_PrevDrawing) ||
+      commandId == QLatin1String(MI_NextDrawing) ||
+      commandId == QLatin1String(MI_FirstFrame) ||
+      commandId == QLatin1String(MI_LastFrame) ||
+      commandId == QLatin1String(MI_PrevKeyframe) ||
+      commandId == QLatin1String(MI_NextKeyframe) ||
+      commandId == QLatin1String(MI_PrevStep) ||
+      commandId == QLatin1String(MI_NextStep)) {
+    updateTouchViewerHudFrame();
+    return;
+  }
+  static const char *kSizeIds[] = {
+      "A_IncreaseMaxBrushThickness", "A_DecreaseMaxBrushThickness",
+      "A_IncreaseMinBrushThickness", "A_DecreaseMinBrushThickness"};
+  for (const char *id : kSizeIds) {
+    if (commandId != QLatin1String(id)) continue;
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+          if (!m_touchViewerHud || !touchViewerHudHostActive(this)) return;
+          const QString size = touchViewerHudFormatBrushSize();
+          if (!size.isEmpty()) m_touchViewerHud->pulseBrushSize(size);
+        },
+        Qt::QueuedConnection);
+    return;
+  }
+  if (commandId == QLatin1String("A_IncreaseBrushHardness") ||
+      commandId == QLatin1String("A_DecreaseBrushHardness")) {
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+          if (!m_touchViewerHud || !touchViewerHudHostActive(this)) return;
+          const QString hard = touchViewerHudFormatBrushHardness();
+          if (!hard.isEmpty()) m_touchViewerHud->pulseBrushHardness(hard);
+        },
+        Qt::QueuedConnection);
   }
 }
 

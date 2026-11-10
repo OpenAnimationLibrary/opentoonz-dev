@@ -212,7 +212,9 @@ void CommandManager::execute(CommandId id) {
     }
     m_executeTriggeredByShortcut = false;
     node->m_handler->execute();
+    return;
   }
+  if (node && node->m_qaction) node->m_qaction->trigger();
 }
 
 //---------------------------------------------------------

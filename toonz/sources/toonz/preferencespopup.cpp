@@ -12,6 +12,7 @@
 #include "cleanupsettingsmodel.h"
 #include "formatsettingspopups.h"
 #include "columncommand.h"
+#include "touchworkspacesettingspopup.h"
 
 // TnzQt includes
 #include "toonzqt/tabbar.h"
@@ -1518,7 +1519,11 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
        tr("Use Qt's Native Windows Ink Support*\n(CAUTION: This options is "
           "for "
           "maintenance purpose. \n Do not activate this option or the tablet "
-          "won't work properly.)")}};
+          "won't work properly.)")},
+      {touchDeferTapForDoubleTap,
+       tr("Defer simple tap when a double tap is assigned on the same finger "
+          "count")},
+      {touchSuppressViewerContextMenu, tr("Hide context menu on touch hold")}};
 
   return uiStringTable.value(id, QString());
 }
@@ -2748,7 +2753,14 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
   QGridLayout* lay = new QGridLayout();
   setupLayout(lay);
 
+  QPushButton* touchWorkspaceSettings =
+      new QPushButton(tr("Touch Workspace Settings..."));
+  QPushButton* configureTouchPresets =
+      new QPushButton(tr("Touch Preset Manager..."));
+
   lay->addWidget(enableTouchGestures, 0, 0, 1, 2);
+  lay->addWidget(configureTouchPresets, 1, 0, 1, 2);
+  lay->addWidget(touchWorkspaceSettings, 2, 0, 1, 2);
   if (winInkAvailable) insertUI(winInkEnabled, lay);
 #ifdef WITH_WINTAB
   insertUI(useQtNativeWinInk, lay);
@@ -2762,6 +2774,10 @@ QWidget* PreferencesPopup::createTouchTabletPage() {
           &QAction::setChecked);
   connect(touchAction, &QAction::triggered, enableTouchGestures,
           &CheckBox::setChecked);
+  connect(touchWorkspaceSettings, &QPushButton::clicked, this,
+          []() { TouchWorkspaceSettingsPopup::showPanel(); });
+  connect(configureTouchPresets, &QPushButton::clicked, this,
+          []() { CommandManager::instance()->execute(MI_TouchPresetManager); });
 
   return widget;
 }

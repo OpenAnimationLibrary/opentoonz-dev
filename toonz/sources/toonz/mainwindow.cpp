@@ -17,6 +17,7 @@
 #include "startuppopup.h"
 #include "tooloptionsshortcutinvoker.h"
 #include "custompanelmanager.h"
+#include "touchpresetcommandmanager.h"
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
@@ -693,6 +694,7 @@ void MainWindow::readSettings(const QString &argumentLayoutFileName) {
   // Custom Panels in rooms will try to link to these commands during load.
   // If commands don't exist yet, buttons become "empty shells".
   CustomPanelManager::instance()->loadCustomPanelEntries();
+  TouchPresetCommandManager::instance()->registerTouchPresetCommands();
 
   for (int i = 0; i < (int)roomPaths.size(); i++) {
     TFilePath roomPath = roomPaths[i];
@@ -2110,6 +2112,7 @@ QAction *MainWindow::createVisualizationButtonAction(const char *id,
 QAction *MainWindow::createMiscAction(const char *id, const char *name,
                                       const char *defaultShortcut) {
   QAction *action = new DVAction(tr(name), this);
+  addAction(action);
   CommandManager::instance()->define(id, MiscCommandType, defaultShortcut,
                                      action);
   return action;
@@ -2262,6 +2265,8 @@ void MainWindow::defineActions() {
                        "gear");
   createMenuFileAction(MI_ShortcutPopup, QT_TR_NOOP("&Configure Shortcuts..."),
                        "", "shortcuts");
+  createMenuFileAction(MI_TouchPresetManager,
+                       QT_TR_NOOP("&Touch Preset Manager..."), "", "touch");
   createMenuFileAction(MI_PrintXsheet, QT_TR_NOOP("&Print Xsheet"), "",
                        "printer");
 
@@ -3628,6 +3633,10 @@ void MainWindow::defineActions() {
                    "", TouchGestureControl ? 1 : 0, MiscCommandType, "touch");
   menuAct->setEnabled(true);
   ;
+  createAction(MI_TouchPresetPicker, QT_TR_NOOP("Toggle Touch Preset Picker"),
+               "", MiscCommandType, "touch");
+  createMiscAction(MI_TouchWorkspaceSettings,
+                   QT_TR_NOOP("Touch Workspace Settings"), "");
   createMiscAction(MI_CameraStage, QT_TR_NOOP("&Camera Settings..."), "");
   menuAct =
       createMiscAction(MI_RefreshTree, QT_TR_NOOP("Refresh Folder Tree"), "");
