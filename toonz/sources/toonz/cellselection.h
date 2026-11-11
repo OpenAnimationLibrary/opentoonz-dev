@@ -131,7 +131,6 @@ public:
 
   static void createBlankDrawing(int row, int col, bool multiple);
   void createBlankDrawings();
-  void createBlankHoldDrawings();
   static void createBlankDrawingsOnHolds(const std::vector<int> &cols, int r0,
                                          int r1);
   void insertBlankDrawing();

@@ -1571,8 +1571,6 @@ void TCellSelection::enableCommands() {
   enableCommand(this, MI_PasteCellContent, &TCellSelection::pasteCells);
   enableCommand(this, MI_CreateBlankDrawing,
                 &TCellSelection::createBlankDrawings);
-  enableCommand(this, MI_CreateBlankHoldDrawings,
-                &TCellSelection::createBlankHoldDrawings);
   enableCommand(this, MI_Duplicate, &TCellSelection::duplicateFrames);
   enableCommand(this, MI_PasteDuplicate, &TCellSelection::pasteDuplicateCells);
 }
@@ -1632,7 +1630,6 @@ bool TCellSelection::isEnabledCommand(
                                         MI_PasteCellContent,
                                         MI_ConvertVectorToVector,
                                         MI_CreateBlankDrawing,
-                                        MI_CreateBlankHoldDrawings,
                                         MI_FillEmptyCell};
   return commands.contains(commandId);
 }
@@ -2927,15 +2924,6 @@ void TCellSelection::createBlankDrawings() {
 
 //-----------------------------------------------------------------------------
 
-void TCellSelection::createBlankHoldDrawings() {
-  if (isEmpty()) return;
-  std::vector<int> cols;
-  for (int c = m_range.m_c0; c <= m_range.m_c1; c++) cols.push_back(c);
-  createBlankDrawingsOnHolds(cols, m_range.m_r0, m_range.m_r1);
-}
-
-//-----------------------------------------------------------------------------
-
 // Gives each repeated cell of a hold its own blank drawing. The first cell of
 // a hold keeps its drawing.
 void TCellSelection::createBlankDrawingsOnHolds(const std::vector<int> &cols,
@@ -2962,18 +2950,10 @@ void TCellSelection::createBlankDrawingsOnHolds(const std::vector<int> &cols,
   int col = app->getCurrentColumn()->getColumnIndex();
   int row = app->getCurrentFrame()->getFrameIndex();
 
-  // Each drawing must affect its own row only.
-  Preferences *pref         = Preferences::instance();
-  bool isAutoStretchEnabled = pref->isAutoStretchEnabled();
-  if (isAutoStretchEnabled) pref->setValue(EnableAutoStretch, false, false);
-
-  // Bottom-up: each row still follows its original cell when it is replaced.
   TUndoManager::manager()->beginBlock();
   for (auto it = holds.rbegin(); it != holds.rend(); ++it)
     createBlankDrawing(it->first, it->second, true);
   TUndoManager::manager()->endBlock();
-
-  if (isAutoStretchEnabled) pref->setValue(EnableAutoStretch, true, false);
 
   app->getCurrentColumn()->setColumnIndex(col);
   app->getCurrentFrame()->setCurrentFrame(row + 1);
