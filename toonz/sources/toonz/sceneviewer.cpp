@@ -93,6 +93,7 @@
 #include <QStyle>
 
 #include "sceneviewer.h"
+#include "viewerscrubpopup.h"
 
 TEnv::IntVar RotateOnCameraCenter("RotateOnCameraCenter", 0);
 TEnv::DoubleVar RotateAngle("RotateAngle", 90);
@@ -1213,6 +1214,8 @@ void SceneViewer::showEvent(QShowEvent *) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::hideEvent(QHideEvent *) {
+  if (m_scrubPopup) m_scrubPopup->hide();
+  stopViewerScrub();
   // If the viewer is hidden and preview is activated, remove the listener from
   // preview
   if (m_previewMode != NO_PREVIEW)

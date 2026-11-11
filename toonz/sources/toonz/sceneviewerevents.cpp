@@ -8,6 +8,7 @@
 #include "sceneviewer.h"
 #include "sceneviewerevents.h"
 #include "viewerpane.h"
+#include "viewerscrubpopup.h"
 #include "tapp.h"
 #include "iocommand.h"
 #include "menubarcommandids.h"
@@ -532,15 +533,7 @@ void SceneViewer::onMove(const TMouseEvent &event) {
   m_lastMousePos  = curPos;
 
   if (event.buttons() == Qt::LeftButton && m_mouseScrubbing > 0) {
-    if (m_mouseScrubbing == 1) {
-      m_mouseScrubbing = 2;
-      m_dragging       = true;
-      m_oldPos         = event.m_pos;
-      setToolCursor(this, ToolCursor::ScrubCursor);
-      return;
-    }
-    // panning
-    mouseScrub(event);
+    scrubController()->move(event.mousePos());
     setToolCursor(this, ToolCursor::ScrubCursor);
     return;
   }
@@ -754,6 +747,9 @@ void SceneViewer::onPress(const TMouseEvent &event) {
     m_pos           = event.mousePos() * getDevPixRatio();
     m_mouseButton   = event.button();
     m_buttonClicked = true;
+    if (m_mouseButton == Qt::LeftButton && m_freezedStatus == NO_FREEZED &&
+        scrubController()->begin(event.mousePos(), false))
+      m_mouseScrubbing = 2;
     if (m_tabletEvent && m_tabletState == Touched) {
       m_tabletState = StartStroke;
     } else if (m_mouseButton == Qt::LeftButton) {
@@ -909,6 +905,24 @@ void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::onRelease(const TMouseEvent &event) {
+  if (m_mouseScrubbing > 0) {
+    if (m_mouseScrubbing == 2) {
+      if (m_freezedStatus == NO_FREEZED)
+        scrubController()->move(event.mousePos());
+      scrubController()->end();
+    }
+    m_mouseScrubbing = 1;
+    m_buttonClicked  = false;
+    m_dragging       = false;
+    m_mouseButton    = Qt::NoButton;
+    if (m_tabletState == Released) m_tabletEvent = false;
+    m_tabletState = None;
+    m_mouseState  = None;
+    m_tabletMove  = false;
+    m_pressure    = 0;
+    TApp::instance()->getCurrentTool()->setToolBusy(false);
+    return;
+  }
   // evita i release ripetuti
   if (!m_buttonClicked) return;
   m_buttonClicked = false;
@@ -1220,6 +1234,16 @@ void SceneViewer::touchEvent(QTouchEvent *e, int type) {
 //-----------------------------------------------------------------------------
 
 bool SceneViewer::event(QEvent *e) {
+  if (m_mouseScrubbing > 0 &&
+      (e->type() == QEvent::FocusOut || e->type() == QEvent::WindowDeactivate ||
+       e->type() == QEvent::Hide))
+    stopViewerScrub();
+  if (m_mouseScrubbing > 0 && e->type() == QEvent::KeyPress &&
+      static_cast<QKeyEvent *>(e)->key() == Qt::Key_Escape) {
+    stopViewerScrub(true);
+    e->accept();
+    return true;
+  }
   /*
   switch (e->type()) {
   //	case QEvent::Enter:
@@ -1311,8 +1335,15 @@ bool SceneViewer::event(QEvent *e) {
     std::string actionId = CommandManager::instance()->getIdFromAction(action);
 
     if (actionId == V_Scrub) {
+      TTool *tool = TApp::instance()->getCurrentTool()->getTool();
+      if (tool && tool->isDragging()) {
+        e->accept();
+        return true;
+      }
       if (m_mouseScrubbing == 0) {
         m_mouseScrubbing = 1;
+        m_scrubKey       = keyEvent->key();
+        m_scrubScanCode  = keyEvent->nativeScanCode();
         m_keyAction      = action;
         m_keyAction->setEnabled(false);
         setToolCursor(this, ToolCursor::ScrubCursor);
@@ -1359,15 +1390,14 @@ bool SceneViewer::event(QEvent *e) {
         TApp::instance()->getCurrentTool()->restoreTool();
     }
 
-    if (m_keyAction) {
+    if (m_keyAction && (keyEvent->key() == m_scrubKey ||
+                        (m_scrubScanCode != 0 &&
+                         keyEvent->nativeScanCode() == m_scrubScanCode))) {
       if (keyEvent->isAutoRepeat()) {
         e->accept();
         return true;
       } else {
-        m_mouseScrubbing = 0;
-        m_keyAction->setEnabled(true);
-        m_keyAction = nullptr;
-        invalidateToolStatus();
+        stopViewerScrub();
         e->accept();
         return true;
       }
@@ -1887,15 +1917,31 @@ void SceneViewer::onToolSwitched() {
 
 //-----------------------------------------------------------------------------
 
-void SceneViewer::mouseScrub(const TMouseEvent &e) {
-  TPointD delta = e.m_pos - m_oldPos;
-
-  if (std::abs(delta.x) < 20) return;
-
-  if (delta.x < 0)
-    CommandManager::instance()->execute(MI_PrevFrame);
-  else if (delta.x > 0)
-    CommandManager::instance()->execute(MI_NextFrame);
-
-  m_oldPos = e.m_pos;
+void SceneViewer::stopViewerScrub(bool cancel) {
+  if (m_mouseScrubbing == 0) return;
+  if (m_scrubController) {
+    if (cancel)
+      m_scrubController->cancel();
+    else
+      m_scrubController->end();
+  }
+  m_mouseScrubbing = 0;
+  m_scrubKey       = 0;
+  m_scrubScanCode  = 0;
+  m_dragging       = false;
+  m_buttonClicked  = false;
+  m_mouseButton    = Qt::NoButton;
+  m_tabletEvent    = false;
+  m_tabletState    = None;
+  m_mouseState     = None;
+  m_tabletMove     = false;
+  m_pressure       = 0;
+  TApp::instance()->getCurrentTool()->setToolBusy(false);
+  // A release after ending the gesture must not become a drawing-tool stroke.
+  m_toolSwitched = true;
+  if (m_keyAction) {
+    m_keyAction->setEnabled(true);
+    m_keyAction = nullptr;
+  }
+  invalidateToolStatus();
 }
