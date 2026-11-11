@@ -23,8 +23,7 @@
 namespace {
 
 TFilePath storePath() {
-  return ToonzFolder::getMyModuleDir() +
-         TFilePath("fullscreen_workspaces.ini");
+  return ToonzFolder::getMyModuleDir() + TFilePath("fullscreen_workspaces.ini");
 }
 
 QSettings openStore() {
@@ -63,8 +62,8 @@ protected:
     if (!menu) return false;
     QAction *action = menu->actionAt(mouse->pos());
     if (!action || action->isSeparator() || !action->isEnabled()) return true;
-    const QString name   = action->text();
-    const QPoint global  = mouse->globalPos();
+    const QString name  = action->text();
+    const QPoint global = mouse->globalPos();
     QTimer::singleShot(0, menu, [name, global]() {
       QMenu ctx;
       QAction *rename = ctx.addAction(QObject::tr("Rename..."));
@@ -108,8 +107,8 @@ ImageUtils::FullScreenWidget *sceneViewerFullScreen() {
   }
 
   if (SceneViewer *active = TApp::instance()->getActiveViewer()) {
-    auto *fs = qobject_cast<ImageUtils::FullScreenWidget *>(
-        active->parentWidget());
+    auto *fs =
+        qobject_cast<ImageUtils::FullScreenWidget *>(active->parentWidget());
     if (fs) return fs;
   }
   return visible ? visible : any;
@@ -232,7 +231,8 @@ void FullScreenWorkspace::writeItems(const QString &name,
   settings.setValue(QStringLiteral("panels"), types);
   settings.endGroup();
 
-  QStringList names = settings.value(QStringLiteral("catalog/names")).toStringList();
+  QStringList names =
+      settings.value(QStringLiteral("catalog/names")).toStringList();
   if (!names.contains(name)) names.append(name);
   settings.setValue(QStringLiteral("catalog/names"), names);
   settings.sync();
@@ -243,7 +243,8 @@ void FullScreenWorkspace::writeItems(const QString &name,
 void FullScreenWorkspace::removeStored(const QString &name) {
   QSettings settings = openStore();
   settings.remove(name);
-  QStringList names = settings.value(QStringLiteral("catalog/names")).toStringList();
+  QStringList names =
+      settings.value(QStringLiteral("catalog/names")).toStringList();
   names.removeAll(name);
   settings.setValue(QStringLiteral("catalog/names"), names);
   settings.sync();
@@ -251,17 +252,18 @@ void FullScreenWorkspace::removeStored(const QString &name) {
 
 //-----------------------------------------------------------------------------
 
-QVector<FullScreenWorkspace::Item>
-FullScreenWorkspace::captureVisiblePanels() const {
+QVector<FullScreenWorkspace::Item> FullScreenWorkspace::captureVisiblePanels()
+    const {
   QVector<Item> items;
-  const QRect screen = targetScreen();
+  const QRect screen     = targetScreen();
   QList<TPanel *> panels = collectPanels(mainWindow());
   for (const QPointer<TPanel> &held : m_placed) {
     if (held && !panels.contains(held.data())) panels.append(held.data());
   }
   for (TPanel *panel : panels) {
     if (!panel || !panel->isVisible()) continue;
-    if (!panel->isFloating() && panel->parentWidget() != sceneViewerFullScreen())
+    if (!panel->isFloating() &&
+        panel->parentWidget() != sceneViewerFullScreen())
       continue;
     const QString type = panelTypeOf(panel);
     if (type.isEmpty() || isViewerPanelType(panel->getPanelType())) continue;
@@ -285,7 +287,7 @@ FullScreenWorkspace::captureVisiblePanels() const {
 void FullScreenWorkspace::placeItems(const QVector<Item> &items) {
   MainWindow *mw = mainWindow();
   if (!mw) return;
-  const QRect screen = targetScreen();
+  const QRect screen     = targetScreen();
   QList<TPanel *> panels = collectPanels(mw);
   for (const QPointer<TPanel> &held : m_placed) {
     if (held && !panels.contains(held.data())) panels.append(held.data());
@@ -304,7 +306,7 @@ void FullScreenWorkspace::placeItems(const QVector<Item> &items) {
     bool created = false;
     if (!panel) {
       TMainWindow *room = TApp::instance()->getCurrentRoom();
-      panel = TPanelFactory::createPanel(room, item.panelType);
+      panel             = TPanelFactory::createPanel(room, item.panelType);
       if (!panel) continue;
       created = true;
       panel->setSkipFloatingGeometrySave(true);
@@ -402,9 +404,9 @@ void FullScreenWorkspace::begin(QString name) {
   for (TPanel *panel : collectPanels(mw)) {
     if (!panel) continue;
     FrozenPanel frozen;
-    frozen.panel    = panel;
-    frozen.floating = panel->isFloating();
-    frozen.visible  = !panel->isHidden();
+    frozen.panel        = panel;
+    frozen.floating     = panel->isFloating();
+    frozen.visible      = !panel->isHidden();
     frozen.flags        = panel->windowFlags();
     frozen.geometry     = panel->frameGeometry();
     frozen.parentWidget = panel->parentWidget();
@@ -566,8 +568,7 @@ void FullScreenWorkspace::raiseCompanionPanels() { raisePlaced(); }
 void FullScreenWorkspace::open(const QString &name) {
   ImageUtils::FullScreenWidget *fs = sceneViewerFullScreen();
   if (!fs) {
-    DVGui::warning(
-        QObject::tr("Open a Viewer before a fullscreen workspace."));
+    DVGui::warning(QObject::tr("Open a Viewer before a fullscreen workspace."));
     return;
   }
   if ((fs->windowState() & Qt::WindowFullScreen) && m_active &&
@@ -695,7 +696,7 @@ void FullScreenWorkspace::registerCommands() {
     const QString commandId = commandIdFor(name);
     const QString label     = QStringLiteral("[Fullscreen] ") + name;
     QAction *action         = CommandManager::instance()->getAction(
-        commandId.toStdString().c_str(), false);
+                commandId.toStdString().c_str(), false);
     if (!action) {
       action = new DVAction(label, mw);
       mw->addAction(action);
@@ -723,8 +724,7 @@ void FullScreenWorkspace::registerCommands() {
     if (!action) continue;
     const QString canonical = QKeySequence(saved).toString();
     if (!canonical.isEmpty())
-      CommandManager::instance()->setShortcut(action,
-                                             canonical.toStdString());
+      CommandManager::instance()->setShortcut(action, canonical.toStdString());
   }
   settings.endGroup();
   ShortcutPopup::refreshIfOpen();
@@ -754,8 +754,8 @@ void FullScreenWorkspace::addSaveActions(QMenu *menu) {
 void FullScreenWorkspace::attachMenu(QMenu *workspaceMenu) {
   if (!workspaceMenu) return;
   for (QAction *action : workspaceMenu->actions()) {
-    if (action->menu() &&
-        action->menu()->objectName() == QStringLiteral("fullscreenWorkspaceMenu"))
+    if (action->menu() && action->menu()->objectName() ==
+                              QStringLiteral("fullscreenWorkspaceMenu"))
       return;
   }
   QMenu *menu = workspaceMenu->addMenu(QObject::tr("Fullscreen"));
@@ -779,8 +779,7 @@ void FullScreenWorkspace::fillMenu(QMenu *menu) {
     QAction *action = menu->addAction(name);
     action->setCheckable(true);
     action->setChecked(m_active && m_activeName == name);
-    QObject::connect(action, &QAction::triggered, menu, [name]() {
-      instance().open(name);
-    });
+    QObject::connect(action, &QAction::triggered, menu,
+                     [name]() { instance().open(name); });
   }
 }

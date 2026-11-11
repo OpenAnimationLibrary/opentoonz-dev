@@ -472,7 +472,7 @@ void CustomPanelManager::registerCustomPanelCommands() {
         const QString canonical = QKeySequence(savedShortcut).toString();
         if (!canonical.isEmpty())
           CommandManager::instance()->setShortcut(action,
-                                                 canonical.toStdString());
+                                                  canonical.toStdString());
       }
     }
   }

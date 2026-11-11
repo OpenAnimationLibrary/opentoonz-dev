@@ -934,7 +934,7 @@ void ToolPresetCommandManager::registerToolPresetCommands() {
         const QString canonical = QKeySequence(savedShortcut).toString();
         if (!canonical.isEmpty())
           CommandManager::instance()->setShortcut(action,
-                                                 canonical.toStdString());
+                                                  canonical.toStdString());
       }
     }
   }

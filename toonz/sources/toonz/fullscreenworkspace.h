@@ -31,8 +31,8 @@ class FullScreenWorkspace final {
     QRectF norm;
   };
 
-  bool m_active = false;
-  bool m_holding = false;
+  bool m_active            = false;
+  bool m_holding           = false;
   bool m_hasSessionVisible = false;
   QString m_activeName;
   QString m_pendingName;
