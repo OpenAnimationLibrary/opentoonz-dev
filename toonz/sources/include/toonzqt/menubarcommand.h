@@ -58,6 +58,7 @@ enum CommandType {
   MenuWindowsCommandType,
   CustomPanelCommandType,
   RoomCommandType,  // Room switching shortcuts
+  FullScreenWorkspaceCommandType,
   MenuHelpCommandType,
   PlaybackCommandType,
   RGBACommandType,

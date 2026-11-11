@@ -219,6 +219,7 @@ set(HEADERS
 
 set(SOURCES
     floatingpanelcommand.cpp
+    fullscreenworkspace.cpp
     canvassizepopup.cpp
     commandbar.cpp
     commandbarpopup.cpp

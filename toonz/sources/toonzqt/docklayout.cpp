@@ -10,6 +10,8 @@
 #include <QMouseEvent>
 #include <QVariant>
 
+#include "toonzqt/imageutils.h"
+
 #include <assert.h>
 #include <math.h>
 #include <algorithm>
@@ -1250,6 +1252,8 @@ DockWidget *DockLayout::dockWidgetTitleBarAt(const QPoint &globalPos) const {
 //! appropriate placeholder for docking.
 void DockLayout::calculateDockPlaceholders(DockWidget *item) {
   assert(item);
+
+  if (ImageUtils::isViewerFullScreenActive()) return;
 
   // If the DockLayout's owner widget is hidden, avoid
   if (!parentWidget()->isVisible()) return;

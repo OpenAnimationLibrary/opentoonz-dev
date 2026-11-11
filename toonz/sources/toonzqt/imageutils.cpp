@@ -1053,6 +1053,16 @@ bool ShortcutZoomer::exec(QKeyEvent *event) {
 //    FullScreenWidget  implementation
 //*********************************************************************************************
 
+bool isViewerFullScreenActive() {
+  const QWidgetList widgets = QApplication::allWidgets();
+  for (QWidget *w : widgets) {
+    FullScreenWidget *fs = qobject_cast<FullScreenWidget *>(w);
+    if (!fs || !(fs->windowState() & Qt::WindowFullScreen)) continue;
+    if (fs->widget() && fs->widget()->inherits("SceneViewer")) return true;
+  }
+  return false;
+}
+
 FullScreenWidget::FullScreenWidget(QWidget *parent) : QWidget(parent) {
   QHBoxLayout *layout = new QHBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -1119,6 +1129,7 @@ bool FullScreenWidget::toggleFullScreen(
 
     // Refresh see-through window opacity
     SeeThroughWindowMode::instance()->refreshOpacity();
+    Q_EMIT viewerFullScreenChanged(false);
   } else {
     // There's no point to switching into full screen if the
     // application is in the process of quitting.
@@ -1203,12 +1214,16 @@ bool FullScreenWidget::toggleFullScreen(
             this->show();
 #else
             this->setWindowFlags(this->windowFlags() | Qt::Window);
-            this->window()->windowHandle()->setScreen(ptrScreenThisWindowIsOn);
 
-            // http://doc.qt.io/qt-5/windows-issues.html#fullscreen-opengl-based-windows
+            // A viewer of a room that was never shown has no native window yet.
             this->winId();
-            QWindowsWindowFunctions::setHasBorderInFullScreen(
-                this->windowHandle(), true);
+            if (QWindow *ptrOwnQWindow = this->windowHandle()) {
+              ptrOwnQWindow->setScreen(ptrScreenThisWindowIsOn);
+
+              // http://doc.qt.io/qt-5/windows-issues.html#fullscreen-opengl-based-windows
+              QWindowsWindowFunctions::setHasBorderInFullScreen(ptrOwnQWindow,
+                                                                true);
+            }
 
             this->showFullScreen();
 #endif
@@ -1222,6 +1237,9 @@ bool FullScreenWidget::toggleFullScreen(
 
       // Refresh see-through window opacity
       SeeThroughWindowMode::instance()->refreshOpacity();
+      if (fFullScreenStateToggled &&
+          (this->windowState() & Qt::WindowFullScreen))
+        Q_EMIT viewerFullScreenChanged(true);
     }
   }
 

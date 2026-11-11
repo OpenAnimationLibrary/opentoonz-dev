@@ -11,6 +11,7 @@
 #include <QStringList>
 #include <QtGlobal>
 #include <QColor>
+#include <QShowEvent>
 #include <vector>
 #include <utility>
 
@@ -314,6 +315,10 @@ public:
   // This enables the "Bind to Room" feature for any panel
   void addRoomBindButton();
 
+  void setSkipFloatingGeometrySave(bool skip) {
+    m_skipFloatingGeometrySave = skip;
+  }
+
   // Virtuals that may be overridden
   virtual void reset() {}
   virtual int getViewType() { return -1; }
@@ -326,6 +331,7 @@ public:
 
 protected:
   void paintEvent(QPaintEvent *) override;
+  void showEvent(QShowEvent *event) override;
   void enterEvent(QEvent *) override;
   void leaveEvent(QEvent *) override;
 
@@ -366,6 +372,7 @@ private:
   QString m_boundRoomName;
   TPanelTitleBarButton *m_roomBindButton;
   bool m_ignorePanelShortcutToggle;
+  bool m_skipFloatingGeometrySave;
 };
 
 //-----------------------------------------------------------------------------

@@ -20,6 +20,7 @@
 #include "audiorecordingpopup.h"
 #include "pltgizmopopup.h"
 #include "shortcutpopup.h"
+#include "fullscreenworkspace.h"
 
 // TnzTools includes
 #include "tools/toolcommandids.h"
@@ -779,6 +780,7 @@ void MainWindow::readSettings(const QString &argumentLayoutFileName) {
   // Register room shortcuts after all rooms are loaded
   // This allows users to assign keyboard shortcuts to switch between rooms
   registerRoomCommands();
+  FullScreenWorkspace::instance().registerCommands();
 
   RecentFiles::instance()->loadRecentFiles();
   // Note: loadCustomPanelEntries() now called BEFORE loading rooms
@@ -1533,7 +1535,10 @@ void MainWindow::registerRoomCommands() {
       QAction *action = CommandManager::instance()->getAction(
           commandId.toStdString().c_str(), false);
       if (action) {
-        action->setShortcut(QKeySequence(savedShortcut));
+        const QString canonical = QKeySequence(savedShortcut).toString();
+        if (!canonical.isEmpty())
+          CommandManager::instance()->setShortcut(action,
+                                                  canonical.toStdString());
       }
     }
   }

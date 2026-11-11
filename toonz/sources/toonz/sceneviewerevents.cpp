@@ -7,6 +7,7 @@
 // Tnz6 includes
 #include "sceneviewer.h"
 #include "sceneviewerevents.h"
+#include "fullscreenworkspace.h"
 #include "viewerpane.h"
 #include "tapp.h"
 #include "iocommand.h"
@@ -723,6 +724,11 @@ void SceneViewer::onMove(const TMouseEvent &event) {
 //-----------------------------------------------------------------------------
 
 void SceneViewer::mousePressEvent(QMouseEvent *event) {
+  if (ImageUtils::FullScreenWidget *fsWidget =
+          dynamic_cast<ImageUtils::FullScreenWidget *>(parentWidget())) {
+    if (fsWidget->windowState() & Qt::WindowFullScreen)
+      FullScreenWorkspace::instance().raiseCompanionPanels();
+  }
   // source can be useful for detecting touch vs mouse,
   // but has reports of being unreliable on mac
   // so m_gestureActive is the marker for rejecting touch events

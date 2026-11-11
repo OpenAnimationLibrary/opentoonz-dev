@@ -67,6 +67,7 @@
 #include <QTimer>
 
 #include "viewerpane.h"
+#include "fullscreenworkspace.h"
 
 using namespace DVGui;
 
@@ -113,6 +114,10 @@ BaseViewerPanel::BaseViewerPanel(QWidget *parent, Qt::WindowFlags flags)
   // Viewer
   m_fsWidget = new ImageUtils::FullScreenWidget(this);
   m_fsWidget->setWidget(m_sceneViewer = new SceneViewer(m_fsWidget));
+  connect(m_fsWidget, &ImageUtils::FullScreenWidget::viewerFullScreenChanged,
+          [](bool active) {
+            FullScreenWorkspace::instance().onViewerFullScreenChanged(active);
+          });
   m_sceneViewer->setIsStyleShortcutSwitchable();
 
   m_keyFrameButton = new ViewerKeyframeNavigator(0, app->getCurrentFrame());

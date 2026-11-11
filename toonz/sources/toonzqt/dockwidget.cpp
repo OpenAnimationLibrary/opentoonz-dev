@@ -2,6 +2,7 @@
 
 // TnzQt includes
 #include "toonzqt/menubarcommand.h"
+#include "toonzqt/imageutils.h"
 #include "docklayout.h"
 #include "tdockwindows.h"
 
@@ -394,19 +395,21 @@ void DockWidget::mouseReleaseEvent(QMouseEvent *me) {
   if (m_dragging) {
     m_dragging = false;
 
-    if (m_floating && m_selectedPlace) {
-      if (m_selectedPlace->getAttribute() == DockPlaceholder::tabJoinTarget) {
-        Region *region     = m_selectedPlace->getParentRegion();
-        DockWidget *target = region ? region->activeTab() : 0;
-        if (target) m_parentLayout->mergePanelsAsTabs(this, target);
-      } else {
-        m_parentLayout->dockItem(this, m_selectedPlace);
+    if (m_floating && !ImageUtils::isViewerFullScreenActive()) {
+      if (m_selectedPlace) {
+        if (m_selectedPlace->getAttribute() == DockPlaceholder::tabJoinTarget) {
+          Region *region     = m_selectedPlace->getParentRegion();
+          DockWidget *target = region ? region->activeTab() : 0;
+          if (target) m_parentLayout->mergePanelsAsTabs(this, target);
+        } else {
+          m_parentLayout->dockItem(this, m_selectedPlace);
+        }
+      } else if (m_parentLayout) {
+        DockWidget *titleTarget =
+            m_parentLayout->dockWidgetTitleBarAt(me->globalPos());
+        if (titleTarget && titleTarget != this)
+          m_parentLayout->mergePanelsAsTabs(this, titleTarget);
       }
-    } else if (m_floating && m_parentLayout) {
-      DockWidget *titleTarget =
-          m_parentLayout->dockWidgetTitleBarAt(me->globalPos());
-      if (titleTarget && titleTarget != this)
-        m_parentLayout->mergePanelsAsTabs(this, titleTarget);
     }
 
     // Clear dock placeholders
