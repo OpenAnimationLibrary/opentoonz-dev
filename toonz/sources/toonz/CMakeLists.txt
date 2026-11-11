@@ -122,6 +122,7 @@ set(MOC_HEADERS
     versioncontroltimeline.h
     versioncontrolwidget.h
     viewerpane.h
+    viewerscrubpopup.h
     xshcellviewer.h
     xshcolumnviewer.h
     xsheetviewer.h
@@ -191,6 +192,7 @@ set(HEADERS
     moviegenerator.h
     scanlist.h
     sceneviewerevents.h
+    viewerscrubdrag.h
     selectionutils.h
     subcameramanager.h
     subscenecommand.h
@@ -267,6 +269,7 @@ set(SOURCES
     sceneviewerevents.cpp
     viewerdraw.cpp
     viewerpane.cpp
+    viewerscrubpopup.cpp
     castselection.cpp
     cellselection.cpp
     columnselection.cpp
