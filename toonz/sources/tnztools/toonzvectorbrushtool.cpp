@@ -744,7 +744,6 @@ ToonzVectorBrushTool::ToonzVectorBrushTool(std::string name, int targetType)
   bind(targetType);
 
   m_thickness.setNonLinearSlider();
-  m_smooth.setNonLinearSlider();
 
   m_prop[0].bind(m_thickness);
   m_prop[0].bind(m_accuracy);
