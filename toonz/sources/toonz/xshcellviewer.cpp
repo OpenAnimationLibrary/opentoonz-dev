@@ -3367,11 +3367,10 @@ void CellArea::mousePressEvent(QMouseEvent *event) {
 
     if (m_levelExtenderRect.contains(pos.x, pos.y)) {
       m_viewer->getKeyframeSelection()->selectNone();
-      if (event->modifiers() & Qt::ControlModifier)
-        setDragTool(
-            XsheetGUI::DragTool::makeLevelExtenderTool(m_viewer, false));
-      else
-        setDragTool(XsheetGUI::DragTool::makeLevelExtenderTool(m_viewer, true));
+      bool insert     = !event->modifiers().testFlag(Qt::ControlModifier);
+      bool blankHolds = event->modifiers().testFlag(Qt::AltModifier);
+      setDragTool(XsheetGUI::DragTool::makeLevelExtenderTool(
+          m_viewer, insert, false, blankHolds));
     } else if (event->modifiers() & Qt::ControlModifier &&
                m_upperLevelExtenderRect.contains(pos.x, pos.y)) {
       m_viewer->getKeyframeSelection()->selectNone();

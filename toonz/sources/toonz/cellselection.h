@@ -6,6 +6,7 @@
 #include "toonzqt/selection.h"
 #include "tgeometry.h"
 #include <set>
+#include <vector>
 #include <QList>
 
 class TimeStretchPopup;
@@ -128,8 +129,10 @@ public:
 
   static bool isEnabledCommand(std::string commandId);
 
-  void createBlankDrawing(int row, int col, bool multiple);
+  static void createBlankDrawing(int row, int col, bool multiple);
   void createBlankDrawings();
+  static void createBlankDrawingsOnHolds(const std::vector<int> &cols, int r0,
+                                         int r1);
   void insertBlankDrawing();
   void fillEmptyCell();
   int getResizePivotRow() const { return m_resizePivotRow; }

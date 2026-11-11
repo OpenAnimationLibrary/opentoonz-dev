@@ -48,8 +48,9 @@ public:
   static DragTool *makeSelectionTool(XsheetViewer *viewer);
   static DragTool *makeLevelMoverTool(XsheetViewer *viewer);
   static DragTool *makeLevelExtenderTool(XsheetViewer *viewer,
-                                         bool insert = true,
-                                         bool invert = false);
+                                         bool insert     = true,
+                                         bool invert     = false,
+                                         bool blankHolds = false);
   static DragTool *makeSoundLevelModifierTool(XsheetViewer *viewer);
   static DragTool *makeKeyframeMoverTool(XsheetViewer *viewer);
   static DragTool *makeCellKeyframeMoverTool(XsheetViewer *viewer);

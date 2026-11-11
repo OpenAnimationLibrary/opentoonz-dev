@@ -2924,6 +2924,43 @@ void TCellSelection::createBlankDrawings() {
 
 //-----------------------------------------------------------------------------
 
+// Gives each repeated cell of a hold its own blank drawing. The first cell of
+// a hold keeps its drawing.
+void TCellSelection::createBlankDrawingsOnHolds(const std::vector<int> &cols,
+                                                int r0, int r1) {
+  TApp *app    = TApp::instance();
+  TXsheet *xsh = app->getCurrentXsheet()->getXsheet();
+  if (!app->getCurrentTool()->getTool()) return;
+
+  // Holds are collected first: new drawings change what cells compare to.
+  std::vector<std::pair<int, int>> holds;  // (row, col)
+  for (int c : cols) {
+    if (c < 0) continue;
+    TXshColumn *column = xsh->getColumn(c);
+    if (!column || column->isLocked() || !column->getCellColumn()) continue;
+    for (int r = std::max(r0, 1); r <= r1; r++) {
+      TXshCell cell       = xsh->getCell(r, c);
+      TXshSimpleLevel *sl = cell.getSimpleLevel();
+      if (!sl || sl->isReadOnly() || sl->isSubsequence()) continue;
+      if (cell == xsh->getCell(r - 1, c)) holds.push_back({r, c});
+    }
+  }
+  if (holds.empty()) return;
+
+  int col = app->getCurrentColumn()->getColumnIndex();
+  int row = app->getCurrentFrame()->getFrameIndex();
+
+  TUndoManager::manager()->beginBlock();
+  for (auto it = holds.rbegin(); it != holds.rend(); ++it)
+    createBlankDrawing(it->first, it->second, true);
+  TUndoManager::manager()->endBlock();
+
+  app->getCurrentColumn()->setColumnIndex(col);
+  app->getCurrentFrame()->setCurrentFrame(row + 1);
+}
+
+//-----------------------------------------------------------------------------
+
 void TCellSelection::insertBlankDrawing() {
   TFrameHandle *fh = TApp::instance()->getCurrentFrame();
   if (!fh->isEditingScene()) {

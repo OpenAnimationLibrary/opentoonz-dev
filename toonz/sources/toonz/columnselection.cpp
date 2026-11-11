@@ -3,6 +3,7 @@
 #include "columnselection.h"
 
 // Tnz6 includes
+#include "cellselection.h"
 #include "subscenecommand.h"
 #include "menubarcommandids.h"
 #include "columncommand.h"
@@ -62,6 +63,8 @@ void TColumnSelection::enableCommands() {
   enableCommand(this, MI_Reframe4, &TColumnSelection::reframe4Cells);
   enableCommand(this, MI_ReframeWithEmptyInbetweens,
                 &TColumnSelection::reframeWithEmptyInbetweens);
+  enableCommand(this, MI_CreateBlankHoldDrawings,
+                &TColumnSelection::createBlankHoldDrawings);
 }
 //-----------------------------------------------------------------------------
 
@@ -327,6 +330,16 @@ void TColumnSelection::hideColumns() {
   // colonne)
   //  TApp::instance()->->notify(TColumnHeadChange());
   app->getCurrentScene()->setDirtyFlag(true);
+}
+
+//-----------------------------------------------------------------------------
+
+void TColumnSelection::createBlankHoldDrawings() {
+  if (isEmpty()) return;
+  int rowCount =
+      TApp::instance()->getCurrentXsheet()->getXsheet()->getFrameCount();
+  std::vector<int> cols(m_indices.begin(), m_indices.end());
+  TCellSelection::createBlankDrawingsOnHolds(cols, 0, rowCount - 1);
 }
 
 // obtain level set contained in the column specified by indices
