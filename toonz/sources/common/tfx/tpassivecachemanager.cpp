@@ -432,7 +432,9 @@ TPassiveCacheManager::TPassiveCacheManager()
 #endif
     , m_enabled(true)
     , m_descriptorCallback(0)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     , m_mutex(QMutex::Recursive)
+#endif
     , m_resources(new ResourcesContainer) {
   reset();
 }

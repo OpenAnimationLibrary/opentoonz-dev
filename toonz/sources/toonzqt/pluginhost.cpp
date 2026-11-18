@@ -16,9 +16,14 @@
 #include <type_traits>
 #include <functional>
 
-// #include "tfxparam.h"
+#include "tcommon.h"
+#include "tdoubleparam.h"
+#include "tspectrumparam.h"
+#include "ttonecurveparam.h"
+#ifndef OPENTOONZ_QT6_TCOMPOSER
 #include <toonzqt/addfxcontextmenu.h>  // as receiver
 #include <toonzqt/fxsettings.h>
+#endif
 #include <toonzqt/pluginloader.h>
 
 #include "tenv.h"
@@ -32,8 +37,10 @@
 #include "plugin_port_interface.h"
 #include "plugin_fxnode_interface.h"
 #include "plugin_param_interface.h"
+#ifndef OPENTOONZ_QT6_TCOMPOSER
 #include "plugin_param_view_interface.h"
 #include "plugin_ui_page_interface.h"
+#endif
 #include "plugin_utilities.h"
 #include <QFileInfo>
 #include <QDir>
@@ -53,7 +60,11 @@ int set_parameter_pages_with_error(toonz_node_handle_t, int num,
                                    toonz_param_page_t *params, int *, void **);
 }
 
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+std::map<std::string, PluginInformation *> plugin_dict_;
+#else
 extern std::map<std::string, PluginInformation *> plugin_dict_;
+#endif
 
 /*
   Since PluginLoadController uses the main thread queue, and waiting for other
@@ -166,6 +177,7 @@ RasterFxPluginHost::RasterFxPluginHost(PluginInformation *pinfo)
   pi_->add_ref();
 }
 
+#ifndef OPENTOONZ_QT6_TCOMPOSER
 static int create_param_view(toonz_node_handle_t node,
                              toonz_param_view_handle_t *view) {
   ParamView *p = NULL;
@@ -189,6 +201,8 @@ static int create_param_view(toonz_node_handle_t node,
   }
   return TOONZ_OK;
 }
+
+#endif
 
 static int setup_input_port(toonz_node_handle_t node, const char *name,
                             int type) {
@@ -302,6 +316,7 @@ static int set_rect(toonz_rect_t *rect, double x0, double y0, double x1,
   return 0;
 }
 
+#ifndef OPENTOONZ_QT6_TCOMPOSER
 static int add_preference(toonz_node_handle_t node, const char *name,
                           toonz_ui_page_handle_t *ui) {
   UIPage *p = NULL;
@@ -325,6 +340,8 @@ static int add_preference(toonz_node_handle_t node, const char *name,
   }
   return TOONZ_OK;
 }
+
+#endif
 
 static int add_param(toonz_node_handle_t node, const char *name, int type,
                      toonz_param_handle_t *param) {
@@ -585,9 +602,13 @@ void RasterFxPluginHost::callEndRenderFrameHandler(const TRenderSettings *rs,
 std::string RasterFxPluginHost::getUrl() const { return pi_->desc_->url_; }
 
 UIPage *RasterFxPluginHost::createUIPage(const char *name) {
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+  return nullptr;
+#else
   pi_->ui_pages_.push_back(NULL);
   pi_->ui_pages_.back() = new UIPage(name);
   return pi_->ui_pages_.back();
+#endif
 }
 
 // deprecated. for migration.
@@ -626,14 +647,19 @@ Param *RasterFxPluginHost::getParam(const char *name) const {
 }
 
 ParamView *RasterFxPluginHost::createParamView() {
+#ifdef OPENTOONZ_QT6_TCOMPOSER
+  return nullptr;
+#else
   pi_->param_views_.push_back(NULL);
   pi_->param_views_.back() = new ParamView();
   return pi_->param_views_.back();
+#endif
 }
 
 /* The GUI built by build() is not tied to the plugin instance.
    It is usually called once and reused. */
 void RasterFxPluginHost::build(ParamsPageSet *pages) {
+#ifndef OPENTOONZ_QT6_TCOMPOSER
   printf(">>>> RasterFxPluginHost::build: ui_pages:%d\n",
          (int)pi_->ui_pages_.size());
   for (std::size_t i = 0, size = pi_->ui_pages_.size(); i < size; ++i) {
@@ -663,6 +689,7 @@ void RasterFxPluginHost::build(ParamsPageSet *pages) {
 #endif
   pages->addParamsPage(aboutpage, "Version");
   aboutpage->setPageSpace();
+#endif
 }
 
 template <typename T, uint32_t compat_maj, uint32_t compat_min>
@@ -867,6 +894,7 @@ void RasterFxPluginHost::createParamsByDesc() {
          pi_->param_page_num_);
   for (int k = 0; k < pi_->param_page_num_; k++) {
     toonz_param_page_t *pg = &pi_->param_pages_[k];
+#ifndef OPENTOONZ_QT6_TCOMPOSER
     void *page             = NULL;
     int r                  = add_preference(this, pg->base.label, &page);
     printf(
@@ -874,9 +902,13 @@ void RasterFxPluginHost::createParamsByDesc() {
         "page:%p\n",
         r, page);
 
+#endif
+
     for (int l = 0; l < pg->num; l++) {
       toonz_param_group_t *grp = &pg->array[l];
+#ifndef OPENTOONZ_QT6_TCOMPOSER
       begin_group(page, grp->base.label);
+#endif
 
       for (int i = 0; i < grp->num; i++) {
         toonz_param_desc_t *desc = &grp->array[i];
@@ -884,6 +916,7 @@ void RasterFxPluginHost::createParamsByDesc() {
         printf("RasterFxPluginHost::createParam: p:%p key:%s tag:%d\n", p,
                desc->key, desc->traits_tag);
         if (p) {
+#ifndef OPENTOONZ_QT6_TCOMPOSER
           void *v = NULL;
           int r   = create_param_view(this, &v);
           printf(
@@ -899,6 +932,8 @@ void RasterFxPluginHost::createParamsByDesc() {
              types */
 
           r = bind_param(page, p, v);
+
+#endif
 
           set_param_default<tpbind_dbl_t>(p, desc);
           set_param_default<tpbind_int_t>(p, desc);
@@ -916,10 +951,14 @@ void RasterFxPluginHost::createParamsByDesc() {
           set_param_range<tpbind_rng_t>(p, desc);
           set_param_range<tpbind_pnt_t>(p, desc);
 
+#ifndef OPENTOONZ_QT6_TCOMPOSER
           printf("RasterFxPluginHost::createParam: bind_param: r:0x%x\n", r);
+#endif
         }
       }
+#ifndef OPENTOONZ_QT6_TCOMPOSER
       end_group(page, grp->base.label);
+#endif
     }
   }
 }
@@ -1498,11 +1537,14 @@ PluginLoadController::PluginLoadController(const std::string &basedir,
      receivers based on presence of listener. If listener exists, connect to
      AddFxContextMenu::fixup() for context menu building; otherwise connect to
      PluginLoadController::finished() to add to plugin_dict_. */
+#ifndef OPENTOONZ_QT6_TCOMPOSER
   if (listener) {
     AddFxContextMenu *a = qobject_cast<AddFxContextMenu *>(listener);
     connect(ld, &Loader::fixup, a, &AddFxContextMenu::fixup);
     connect(this, &PluginLoadController::start, ld, &Loader::walkDictionary);
-  } else {
+  } else
+#endif
+  {
     connect(this, &PluginLoadController::start, ld, &Loader::walkDirectory);
     connect(ld, &Loader::load_finished, this, &PluginLoadController::result);
     if (!connect(ld, &Loader::fixup, this, &PluginLoadController::finished))

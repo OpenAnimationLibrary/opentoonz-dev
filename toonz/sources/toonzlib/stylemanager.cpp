@@ -19,6 +19,7 @@
 // TnzLib includes
 #include "toonz/imagestyles.h"
 #include "toonz/toonzfolders.h"
+#include "toonzqt/qtcompat.h"
 
 // Qt includes
 #include <QDir>
@@ -63,7 +64,7 @@ QImage rasterToQImage(const TRasterP &ras, bool premultiplied = true,
                  ras->getWrap() * sizeof(TPixel32),
                  premultiplied ? QImage::Format_ARGB32_Premultiplied
                                : QImage::Format_ARGB32);
-    if (mirrored) return image.mirrored();
+    if (mirrored) return QtCompat::mirroredImage(image);
     return image;
   } else if (TRasterGR8P ras8 = ras) {
     QImage image(ras->getRawData(), ras->getLx(), ras->getLy(), ras->getWrap(),
@@ -74,7 +75,7 @@ QImage rasterToQImage(const TRasterP &ras, bool premultiplied = true,
       for (i = 0; i < 256; i++) colorTable.append(QColor(i, i, i).rgb());
     }
     image.setColorTable(colorTable);
-    if (mirrored) return image.mirrored();
+    if (mirrored) return QtCompat::mirroredImage(image);
     return image;
   }
   return QImage();

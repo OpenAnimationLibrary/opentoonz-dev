@@ -14,7 +14,10 @@
 #include "toonz/preferences.h"
 
 #include <QAudioFormat>
+#include <QtGlobal>
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 #include <QAudioDeviceInfo>
+#endif
 
 //=============================================================================
 

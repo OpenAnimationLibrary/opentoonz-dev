@@ -1,3 +1,8 @@
+if(OPENTOONZ_QT6_TCOMPOSER)
+    include(../tcomposer/qt6-plugin-runtime.cmake)
+    return()
+endif()
+
 set(MOC_HEADERS
     palettesscanpopup.h
     pluginhost.h

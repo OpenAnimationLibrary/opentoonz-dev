@@ -21,7 +21,12 @@
 
 // Qt includes
 #include <QMultiMap>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QMutableMultiMapIterator>
+#else
 #include <QMutableMapIterator>
+#endif
 #include <QMutex>
 #include <QWaitCondition>
 #include <QMetaType>
@@ -738,7 +743,11 @@ void Executor::shutdown() {
     }
 
     // Finally, deal with the global queue tasks
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QMutableMultiMapIterator<int, RunnableP> jt(globalImp->m_tasks);
+#else
     QMutableMapIterator<int, RunnableP> jt(globalImp->m_tasks);
+#endif
     while (jt.hasNext()) {
       jt.next();
       RunnableP task = jt.value();
@@ -873,7 +882,11 @@ void Executor::cancelAll() {
   // Finally, clear the global tasks list from all tasks inserted by this
   // executor
   // NOTE: An easier way here?
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  QMutableMultiMapIterator<int, RunnableP> jt(globalImp->m_tasks);
+#else
   QMutableMapIterator<int, RunnableP> jt(globalImp->m_tasks);
+#endif
   while (jt.hasNext()) {
     jt.next();
     if (jt.value()->m_id == m_id) {
@@ -1032,8 +1045,14 @@ void ExecutorImp::refreshAssignments() {
 
   int i, tasksCount = m_tasks.size();
   QMultiMap<int, RunnableP>::iterator it;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  for (i = 0, e = 0, it = m_tasks.end();
+       i < tasksCount && e < executorsCount && it != m_tasks.begin(); ++i) {
+    --it;
+#else
   for (i = 0, e = 0, it = m_tasks.end() - 1;
        i < tasksCount && e < executorsCount; ++i, --it) {
+#endif
     // std::cout<< "global tasks-refreshAss" << std::endl;
     // Take the task
     RunnableP task = it.value();
@@ -1102,8 +1121,15 @@ inline void Worker::takeTask() {
 
   int i, tasksCount = globalImp->m_tasks.size();
   QMultiMap<int, RunnableP>::iterator it;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+  for (i = 0, e = 0, it = globalImp->m_tasks.end();
+       i < tasksCount && e < executorsCount && it != globalImp->m_tasks.begin();
+       ++i) {
+    --it;
+#else
   for (i = 0, e = 0, it = globalImp->m_tasks.end() - 1;
        i < tasksCount && e < executorsCount; ++i, --it) {
+#endif
     // std::cout<< "global tasks-takeTask" << std::endl;
     // Take the first task
     RunnableP task = it.value();

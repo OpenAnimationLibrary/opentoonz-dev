@@ -1,6 +1,7 @@
 
 #include <ttonecurveparam.h>
-#include <toonzqt/fxsettings.h>
+#include "tdoubleparam.h"
+#include "tspectrumparam.h"
 
 #include "plugin_param_interface.h"
 #include "plugin_utilities.h"
