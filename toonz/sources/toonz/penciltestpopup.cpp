@@ -2258,8 +2258,7 @@ void PencilTestPopup::onCameraListComboActivated(int comboIndex) {
       comboIndex > cameras.size())
     return;
   // Reselecting the current camera must not stop its capture timer.
-  if (comboIndex > 0 &&
-      cameras.at(comboIndex - 1).deviceName() == m_deviceName)
+  if (comboIndex > 0 && cameras.at(comboIndex - 1).deviceName() == m_deviceName)
     return;
 
   m_cvWebcam.release();
