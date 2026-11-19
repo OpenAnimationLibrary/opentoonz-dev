@@ -7,6 +7,7 @@
 #include "tvectorimage.h"
 #include "tundo.h"
 #include "tconst.h"
+#include "historytypes.h"
 
 // TnzLib includes
 #include "toonz/tstageobjectid.h"
@@ -30,13 +31,16 @@
 #include "toonz/hook.h"
 #include "toonz/preferences.h"
 #include "toonz/txshsimplelevel.h"
+#include "toonz/stage.h"
 #include "toonz/txsheethandle.h"
+#include "toonz/tscenehandle.h"
 
 // TnzQt includes
 #include "toonzqt/gutil.h"
 #include "toonzqt/icongenerator.h"
 #include "toonzqt/stageschematicscene.h"
 #include "toonzqt/menubarcommand.h"
+#include "toonzqt/constraintsimulationpopup.h"
 
 // Qt includes
 #include <QPixmap>
@@ -44,12 +48,292 @@
 #include <QFocusEvent>
 #include <QTimer>
 #include <QMenu>
+#include <QActionGroup>
+#include <QInputDialog>
+#include <QMessageBox>
 #include <QTextCursor>
 #include <QSet>
+#include <cmath>
 
 #include "toonzqt/stageschematicnode.h"
 
 namespace {
+class ConstraintEditUndo final : public TUndo {
+  TStageObjectP m_object;
+  std::vector<TStageObject::Constraint> m_before, m_after;
+  TXsheetHandle *m_xsheet;
+  TSceneHandle *m_scene;
+
+  void notify() const {
+    m_scene->setDirtyFlag(true);
+    m_xsheet->notifyXsheetChanged();
+  }
+
+public:
+  ConstraintEditUndo(StageSchematicScene *scene, TStageObject *object,
+                     std::vector<TStageObject::Constraint> before)
+      : m_object(object)
+      , m_before(std::move(before))
+      , m_after(object->getConstraints())
+      , m_xsheet(scene->getXsheetHandle())
+      , m_scene(scene->getSceneHandle()) {}
+  void undo() const override {
+    m_object->setConstraints(m_before);
+    notify();
+  }
+  void redo() const override {
+    m_object->setConstraints(m_after);
+    notify();
+  }
+  int getSize() const override {
+    return sizeof(*this) + (m_before.size() + m_after.size()) *
+                               sizeof(TStageObject::Constraint);
+  }
+  QString getHistoryString() override {
+    return QObject::tr("Change Constraints");
+  }
+  int getHistoryType() override { return HistoryType::Schematic; }
+};
+
+void recordConstraintEdit(StageSchematicScene *scene, TStageObject *object,
+                          std::vector<TStageObject::Constraint> before) {
+  auto *undo = new ConstraintEditUndo(scene, object, std::move(before));
+  undo->redo();
+  TUndoManager::manager()->add(undo);
+}
+
+void addConstraintMenu(QMenu &menu, StageSchematicScene *scene,
+                       TStageObject *object) {
+  QMenu *constraints = menu.addMenu(QObject::tr("Constraints"));
+  auto *motion       = new QActionGroup(constraints);
+  for (auto type :
+       {TStageObject::Constraint::Fixed, TStageObject::Constraint::Mobile}) {
+    auto *action = constraints->addAction(
+        type == TStageObject::Constraint::Fixed ? QObject::tr("Fixed")
+                                                : QObject::tr("Mobile"));
+    action->setCheckable(true);
+    action->setChecked(object->getSimulationMotion() == type);
+    motion->addAction(action);
+    QObject::connect(action, &QAction::triggered, constraints,
+                     [scene, object, type] {
+                       auto before = object->getConstraints();
+                       TStageObject::Constraint assignment;
+                       assignment.type = type;
+                       if (object->addConstraint(assignment))
+                         recordConstraintEdit(scene, object, std::move(before));
+                     });
+  }
+  constraints->addSeparator();
+  auto chooseObject = [scene](TStageObject *exclude,
+                              const QString &prompt) -> TStageObject * {
+    TStageObjectTree *tree = scene->getXsheet()->getStageObjectTree();
+    QStringList names;
+    std::vector<TStageObjectId> ids;
+    for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+      TStageObject *candidate = tree->getStageObject(i);
+      if (candidate == exclude || candidate->getId().isTable()) continue;
+      ids.push_back(candidate->getId());
+      names << QString::fromStdString(candidate->getId().toString());
+    }
+    if (names.isEmpty()) return nullptr;
+    bool ok = false;
+    QString choice =
+        QInputDialog::getItem(nullptr, QObject::tr("Constraint Object"), prompt,
+                              names, 0, false, &ok);
+    if (!ok) return nullptr;
+    int index = names.indexOf(choice);
+    if (index < 0) return nullptr;
+    return tree->getStageObject(ids[index], false);
+  };
+
+  auto addAim = [scene, object, chooseObject]() {
+    TStageObject *target = chooseObject(object, QObject::tr("Aim target:"));
+    if (!target) return;
+    TStageObject::Constraint link;
+    link.type     = TStageObject::Constraint::AimAt;
+    link.target   = target->getId();
+    bool ok       = false;
+    QString scope = QInputDialog::getItem(
+        nullptr, QObject::tr("Aim At Scope"), QObject::tr("Apply to:"),
+        QStringList{QObject::tr("This Object"),
+                    QObject::tr("Child Objects (automatic)")},
+        0, false, &ok);
+    if (!ok) return;
+    link.scope  = scope == QObject::tr("Child Objects (automatic)")
+                      ? TStageObject::Constraint::Children
+                      : TStageObject::Constraint::Self;
+    auto before = object->getConstraints();
+    if (!object->addConstraint(link)) {
+      QMessageBox::warning(
+          nullptr, QObject::tr("Constraint"),
+          QObject::tr("This target would create a dependency cycle."));
+      return;
+    }
+    recordConstraintEdit(scene, object, std::move(before));
+  };
+
+  QObject::connect(constraints->addAction(QObject::tr("Aim At...")),
+                   &QAction::triggered, constraints, addAim);
+  QObject::connect(constraints->addAction(QObject::tr("Simulate and Bake...")),
+                   &QAction::triggered, constraints,
+                   [scene] { runConstraintSimulation(scene); });
+  TStageObjectTree *tree    = scene->getXsheet()->getStageObjectTree();
+  bool hasBufferAssignments = false;
+  for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+    TStageObject *candidate = tree->getStageObject(i);
+    for (const auto &link : candidate->getConstraints())
+      if (link.type == TStageObject::Constraint::Buffer &&
+          link.target == object->getId())
+        hasBufferAssignments = true;
+  }
+  if (!object->getConstraints().empty() || hasBufferAssignments) {
+    constraints->addSeparator();
+    QObject::connect(
+        constraints->addAction(QObject::tr("Show Constraints")),
+        &QAction::triggered, constraints, [object, tree]() {
+          QStringList lines;
+          for (const auto &link : object->getConstraints()) {
+            if (link.isMotionAssignment()) {
+              lines << (link.type == TStageObject::Constraint::Mobile
+                            ? QObject::tr("Mobile: affected by gravity")
+                            : QObject::tr("Fixed: excluded from gravity"));
+              continue;
+            }
+            QString target = QString::fromStdString(link.target.toString());
+            QString scope  = link.scope == TStageObject::Constraint::Children
+                                 ? QObject::tr("children")
+                                 : QObject::tr("this object");
+            if (link.type == TStageObject::Constraint::Buffer) {
+              QString mode = link.strength < 0.0 ? QObject::tr("repel")
+                                                 : QObject::tr("attract");
+              lines << QObject::tr(
+                           "Buffer: %1 %2 from %3; radius %4 in; maximum "
+                           "offset %5 in")
+                           .arg(mode, scope, target)
+                           .arg(link.radius / Stage::inch, 0, 'f', 2)
+                           .arg(std::abs(link.strength) / Stage::inch, 0, 'f',
+                                2);
+            } else {
+              lines << QObject::tr("Aim At: %1 toward %2").arg(scope, target);
+            }
+          }
+          for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+            TStageObject *candidate = tree->getStageObject(i);
+            if (candidate == object) continue;
+            for (const auto &link : candidate->getConstraints()) {
+              if (link.type != TStageObject::Constraint::Buffer ||
+                  link.target != object->getId())
+                continue;
+              QString mode = link.strength < 0.0 ? QObject::tr("repels")
+                                                 : QObject::tr("attracts");
+              lines << QObject::tr(
+                           "Buffer field %1 %2; radius %3 in; maximum offset "
+                           "%4 in")
+                           .arg(mode, QString::fromStdString(
+                                          candidate->getId().toString()))
+                           .arg(link.radius / Stage::inch, 0, 'f', 2)
+                           .arg(std::abs(link.strength) / Stage::inch, 0, 'f',
+                                2);
+            }
+          }
+          QMessageBox::information(nullptr, QObject::tr("Constraints"),
+                                   lines.join("\n"));
+        });
+    if (hasBufferAssignments) {
+      QObject::connect(
+          constraints->addAction(QObject::tr("Remove Buffer Assignment...")),
+          &QAction::triggered, constraints, [scene, object, tree]() {
+            struct Entry {
+              TStageObject *owner;
+              int index;
+            };
+            std::vector<Entry> entries;
+            QStringList choices;
+            for (int i = 0; i < tree->getStageObjectCount(); ++i) {
+              TStageObject *candidate = tree->getStageObject(i);
+              const auto &links       = candidate->getConstraints();
+              for (int j = 0; j < (int)links.size(); ++j) {
+                const auto &link = links[j];
+                if (link.type != TStageObject::Constraint::Buffer ||
+                    link.target != object->getId())
+                  continue;
+                entries.push_back({candidate, j});
+                QString affected =
+                    QString::fromStdString(candidate->getId().toString());
+                if (link.scope == TStageObject::Constraint::Children)
+                  affected += QObject::tr(" children");
+                choices << QObject::tr("%1. %2 %3 (radius %4 in)")
+                               .arg((int)entries.size())
+                               .arg(link.strength < 0.0
+                                        ? QObject::tr("Repel")
+                                        : QObject::tr("Attract"))
+                               .arg(affected)
+                               .arg(link.radius / Stage::inch, 0, 'f', 2);
+              }
+            }
+            bool ok        = false;
+            QString choice = QInputDialog::getItem(
+                nullptr, QObject::tr("Remove Buffer Assignment"),
+                QObject::tr("Select assignment to remove:"), choices, 0, false,
+                &ok);
+            if (!ok) return;
+            int index = choices.indexOf(choice);
+            if (index < 0) return;
+            auto *owner = entries[index].owner;
+            auto before = owner->getConstraints();
+            if (!owner->removeConstraint(entries[index].index)) return;
+            recordConstraintEdit(scene, owner, std::move(before));
+          });
+    }
+    if (!object->getConstraints().empty()) {
+      QObject::connect(
+          constraints->addAction(QObject::tr("Remove Constraint...")),
+          &QAction::triggered, constraints, [scene, object]() {
+            QStringList choices;
+            const auto &links = object->getConstraints();
+            for (int i = 0; i < (int)links.size(); ++i) {
+              const auto &link = links[i];
+              if (link.isMotionAssignment()) {
+                choices << QObject::tr("%1. %2").arg(i + 1).arg(
+                    link.type == TStageObject::Constraint::Mobile
+                        ? QObject::tr("Mobile")
+                        : QObject::tr("Fixed"));
+                continue;
+              }
+              choices << QObject::tr("%1. %2 to %3 (%4)")
+                             .arg(i + 1)
+                             .arg(link.type == TStageObject::Constraint::Buffer
+                                      ? QObject::tr("Buffer")
+                                      : QObject::tr("Aim At"))
+                             .arg(
+                                 QString::fromStdString(link.target.toString()))
+                             .arg(link.scope ==
+                                          TStageObject::Constraint::Children
+                                      ? QObject::tr("children")
+                                      : QObject::tr("this object"));
+            }
+            bool ok        = false;
+            QString choice = QInputDialog::getItem(
+                nullptr, QObject::tr("Remove Constraint"),
+                QObject::tr("Select constraint to remove:"), choices, 0, false,
+                &ok);
+            if (!ok) return;
+            int index   = choices.indexOf(choice);
+            auto before = object->getConstraints();
+            if (index < 0 || !object->removeConstraint(index)) return;
+            recordConstraintEdit(scene, object, std::move(before));
+          });
+      QObject::connect(
+          constraints->addAction(QObject::tr("Clear All Constraints")),
+          &QAction::triggered, constraints, [scene, object]() {
+            auto before = object->getConstraints();
+            object->clearConstraints();
+            recordConstraintEdit(scene, object, std::move(before));
+          });
+    }
+  }
+}
+
 void drawCamera(QPainter *painter, const QColor &color, const QPen &pen,
                 double width, double height) {
   QPointF points[3];
@@ -244,6 +528,7 @@ void ColumnPainter::contextMenuEvent(QGraphicsSceneContextMenuEvent *cme) {
   menu.addSeparator();
 
   menu.addAction(group);
+  addConstraintMenu(menu, stageScene, m_parent->getStageObject());
   menu.exec(cme->screenPos());
 }
 
@@ -438,6 +723,7 @@ void PegbarPainter::contextMenuEvent(QGraphicsSceneContextMenuEvent *cme) {
   menu.addAction(paste);
   menu.addSeparator();
   menu.addAction(group);
+  addConstraintMenu(menu, stageScene, m_parent->getStageObject());
   menu.exec(cme->screenPos());
 }
 

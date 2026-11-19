@@ -34,6 +34,7 @@ set(MOC_HEADERS
 
 set(HEADERS
     ${MOC_HEADERS}
+    ../include/toonz/constraintsimulation.h
     autoadjust.h
     autopos.h
     cleanupcommon.h
@@ -173,6 +174,7 @@ set(HEADERS
 )
 
 set(SOURCES
+    constraintsimulation.cpp
     autoadjust.cpp
     autoclose.cpp
     autopos.cpp
@@ -358,9 +360,7 @@ if(BUILD_ENV_APPLE)
     add_dependencies(toonzlib tnzcore tnzbase tnzext)
 endif()
 
-add_definitions(
-    -DTOONZLIB_EXPORTS
-)
+target_compile_definitions(toonzlib PRIVATE TOONZLIB_EXPORTS)
 
 message("subdir: toonzlib")
 message("Bin: " ${CMAKE_CURRENT_BINARY_DIR})
@@ -406,3 +406,9 @@ elseif(BUILD_ENV_UNIXLIKE)
 endif()
 
 target_link_libraries(toonzlib OpenEXR::OpenEXR)
+
+if(BUILD_CONSTRAINT_TESTS)
+    add_executable(constraintsimulation_test tests/constraintsimulation_test.cpp)
+    target_link_libraries(constraintsimulation_test PRIVATE toonzlib)
+    add_test(NAME constraint_gravity COMMAND constraintsimulation_test)
+endif()
