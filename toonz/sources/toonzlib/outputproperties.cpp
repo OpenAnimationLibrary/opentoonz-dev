@@ -41,9 +41,11 @@ TOutputProperties::TOutputProperties()
     , m_maxTileSizeIndex(0)
     , m_threadIndex(2)
     , m_subcameraPreview(false)
+    , m_previewTimerBypass(false)
     , m_boardSettings(new BoardSettings())
     , m_formatTemplateFId()
-    , m_syncColorSettings(true) {
+    , m_syncColorSettings(true)
+    , m_optimizePreviewForDrawing(false) {
   m_renderSettings = new TRenderSettings();
   m_nonlinearBpp   = m_renderSettings->m_bpp;
 }
@@ -64,10 +66,12 @@ TOutputProperties::TOutputProperties(const TOutputProperties &src)
     , m_maxTileSizeIndex(src.m_maxTileSizeIndex)
     , m_threadIndex(src.m_threadIndex)
     , m_subcameraPreview(src.m_subcameraPreview)
+    , m_previewTimerBypass(src.m_previewTimerBypass)
     , m_boardSettings(new BoardSettings(*src.m_boardSettings))
     , m_formatTemplateFId(src.m_formatTemplateFId)
     , m_syncColorSettings(src.m_syncColorSettings)
-    , m_nonlinearBpp(src.m_nonlinearBpp) {
+    , m_nonlinearBpp(src.m_nonlinearBpp)
+    , m_optimizePreviewForDrawing(src.m_optimizePreviewForDrawing) {
   std::map<std::string, TPropertyGroup *>::iterator ft,
       fEnd = m_formatProperties.end();
   for (ft = m_formatProperties.begin(); ft != fEnd; ++ft) {
@@ -99,6 +103,7 @@ TOutputProperties &TOutputProperties::operator=(const TOutputProperties &src) {
   m_maxTileSizeIndex    = src.m_maxTileSizeIndex;
   m_threadIndex         = src.m_threadIndex;
   m_subcameraPreview    = src.m_subcameraPreview;
+  m_previewTimerBypass  = src.m_previewTimerBypass;
 
   delete m_renderSettings;
   m_renderSettings = new TRenderSettings(*src.m_renderSettings);
@@ -115,6 +120,7 @@ TOutputProperties &TOutputProperties::operator=(const TOutputProperties &src) {
   m_boardSettings = new BoardSettings(*src.m_boardSettings);
 
   m_formatTemplateFId = src.m_formatTemplateFId;
+  m_optimizePreviewForDrawing = src.m_optimizePreviewForDrawing;
 
   return *this;
 }

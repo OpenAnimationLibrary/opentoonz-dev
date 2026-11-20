@@ -8,6 +8,7 @@
 #include "tapp.h"
 #include "camerasettingspopup.h"
 #include "pane.h"
+#include "previewer.h"
 #include "boardsettingspopup.h"
 
 // TnzQt includes
@@ -52,6 +53,7 @@
 #include <QPropertyAnimation>
 #include <QSpacerItem>
 #include <QEvent>
+#include <QSignalBlocker>
 //-----------------------------------------------------------------------------
 namespace {
 
@@ -177,12 +179,14 @@ OutputSettingsPopup::OutputSettingsPopup(bool isPreview)
     : Dialog(TApp::instance()->getMainWindow(), false, isPreview,
              isPreview ? "PreviewSettings" : "OutputSettings")
     , m_subcameraChk(nullptr)
+    , m_previewTimerBypassChk(nullptr)
     , m_applyShrinkChk(nullptr)
     , m_outputCameraOm(nullptr)
     , m_isPreviewSettings(isPreview)
     , m_allowMT(Preferences::instance()->getFfmpegMultiThread())
     , m_presetCombo(nullptr)
-    , m_syncColorSettingsButton(nullptr) {
+    , m_syncColorSettingsButton(nullptr)
+    , m_optimizePreviewForDrawingChk(nullptr) {
   setWindowTitle(isPreview ? tr("Preview Settings") : tr("Output Settings"));
   if (!isPreview) setObjectName("OutputSettingsPopup");
   // create panel
@@ -328,6 +332,15 @@ QFrame *OutputSettingsPopup::createPanel(bool isPreview) {
   m_cameraBox = createCameraSettingsBox(isPreview);
   m_colorBox  = createColorSettingsBox(isPreview);
   m_fileBox   = createFileSettingsBox(isPreview);
+  if (isPreview) {
+    m_optimizePreviewForDrawingChk =
+        new DVGui::CheckBox(tr("Optimize Preview for Drawing"), this);
+    m_optimizePreviewForDrawingChk->setToolTip(
+        tr("Give drawing input and the current frame priority over other "
+           "main Viewer Preview frames. Pause Preview work during strokes "
+           "and resume other frames after 500 ms idle. Effects and image "
+           "quality are preserved. Playback uses normal scheduling."));
+  }
   if (!isPreview) {
     m_moreLabel = new AnimatedLabel(tr("More Settings"), this);
     m_moreBox   = createMoreSettingsBox();
@@ -355,6 +368,7 @@ QFrame *OutputSettingsPopup::createPanel(bool isPreview) {
 
     lay->addWidget(m_fileLabel, 0);
     lay->addWidget(m_fileBox, 0);
+    if (isPreview) lay->addWidget(m_optimizePreviewForDrawingChk);
 
     if (!isPreview) {
       lay->addSpacing(10);
@@ -364,6 +378,13 @@ QFrame *OutputSettingsPopup::createPanel(bool isPreview) {
     lay->addStretch(1);
   }
   panel->setLayout(lay);
+
+  if (isPreview) {
+    bool ret =
+        connect(m_optimizePreviewForDrawingChk, SIGNAL(stateChanged(int)),
+                SLOT(onOptimizePreviewForDrawingChecked(int)));
+    assert(ret);
+  }
 
   if (isPreview && m_syncColorSettingsButton) {
     bool ret = connect(m_syncColorSettingsButton, SIGNAL(stateChanged(int)),
@@ -397,6 +418,12 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     m_outputCameraOm->setFocusPolicy(Qt::StrongFocus);
     m_outputCameraOm->installEventFilter(this);
   } else {
+    m_previewTimerBypassChk =
+        new DVGui::CheckBox(tr("Bypass Preview Update Timer (300 ms)"), this);
+    m_previewTimerBypassChk->setToolTip(
+        tr("Update the main Viewer Preview on the next event-loop turn instead "
+           "of waiting 300 ms after drawing, FX, Xsheet or object changes. "
+           "May increase rendering activity during continuous edits."));
     // Subcamera checkbox
     m_subcameraChk = new DVGui::CheckBox(tr("Use Sub-Camera"));
     m_applyShrinkChk =
@@ -464,6 +491,7 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     frameShrinkLay->setColumnStretch(8, 1);
 
     lay->addLayout(frameShrinkLay);
+    if (isPreview) lay->addWidget(m_previewTimerBypassChk);
   }
   cameraSettingsBox->setLayout(lay);
 
@@ -485,6 +513,8 @@ QFrame *OutputSettingsPopup::createCameraSettingsBox(bool isPreview) {
     ret = ret && connect(m_cameraSettings, SIGNAL(changed()), this,
                          SLOT(onCameraSettingsChanged()));
   } else {
+    ret = ret && connect(m_previewTimerBypassChk, SIGNAL(stateChanged(int)),
+                         SLOT(onPreviewTimerBypassChecked(int)));
     ret = ret && connect(m_applyShrinkChk, SIGNAL(stateChanged(int)),
                          SLOT(onApplyShrinkChecked(int)));
   }
@@ -905,8 +935,32 @@ void OutputSettingsPopup::onApplyShrinkChecked(int state) {
 
 //-----------------------------------------------------------------------------
 
+void OutputSettingsPopup::onPreviewTimerBypassChecked(int state) {
+  TOutputProperties *prop = getProperties();
+  if (!prop) return;
+  bool enabled = state == Qt::Checked;
+  if (prop->isPreviewTimerBypassEnabled() == enabled) return;
+  prop->setPreviewTimerBypassEnabled(enabled);
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+}
+
+//-----------------------------------------------------------------------------
+
 void OutputSettingsPopup::onSubcameraChecked(int state) {
   getProperties()->setSubcameraPreview(state == Qt::Checked);
+}
+
+//-----------------------------------------------------------------------------
+
+void OutputSettingsPopup::onOptimizePreviewForDrawingChecked(int state) {
+  TOutputProperties *prop = getProperties();
+  if (!prop) return;
+  bool enabled = state == Qt::Checked;
+  if (prop->isPreviewOptimizedForDrawing() == enabled) return;
+  prop->setPreviewOptimizedForDrawing(enabled);
+  TApp::instance()->getCurrentScene()->setDirtyFlag(true);
+  Previewer::instance(false)->update();
+  Previewer::instance(true)->update();
 }
 
 //-----------------------------------------------------------------------------
@@ -922,6 +976,11 @@ void OutputSettingsPopup::onRenderClicked() {
 void OutputSettingsPopup::updateField() {
   ToonzScene *scene       = getCurrentScene();
   TOutputProperties *prop = getProperties();
+  if (m_previewTimerBypassChk) {
+    const QSignalBlocker blocker(m_previewTimerBypassChk);
+    m_previewTimerBypassChk->setChecked(prop &&
+                                        prop->isPreviewTimerBypassEnabled());
+  }
   if (!prop) {
     if (!m_isPreviewSettings) {
       m_saveInFileFld->setPath(QString());
@@ -946,6 +1005,8 @@ void OutputSettingsPopup::updateField() {
     m_rasterGranularityOm->setCurrentIndex(0);
 
     if (m_subcameraChk) m_subcameraChk->setCheckState(Qt::Unchecked);
+    if (m_optimizePreviewForDrawingChk)
+      m_optimizePreviewForDrawingChk->setChecked(false);
     m_linearColorSpaceChk->setCheckState(Qt::Unchecked);
     m_colorSpaceGammaFld->setText(QString());
     if (m_syncColorSettingsButton)
@@ -1009,6 +1070,12 @@ void OutputSettingsPopup::updateField() {
   if (m_subcameraChk)
     m_subcameraChk->setCheckState(prop->isSubcameraPreview() ? Qt::Checked
                                                              : Qt::Unchecked);
+
+  if (m_optimizePreviewForDrawingChk) {
+    const QSignalBlocker blocker(m_optimizePreviewForDrawingChk);
+    m_optimizePreviewForDrawingChk->setChecked(
+        prop && prop->isPreviewOptimizedForDrawing());
+  }
 
   // start,end,step
   int r0 = 0, r1 = -1, step;
