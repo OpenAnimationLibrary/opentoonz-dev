@@ -18,15 +18,15 @@ extern "C" {
 typedef enum TWAINSTATE {
   TWAIN_PRESESSION = 1, /* source manager not loaded  */
   TWAIN_SM_LOADED,      /* source manager loaded      */
-  TWAIN_SM_OPEN,        /* source manager open	      */
+  TWAIN_SM_OPEN,        /* source manager open\t      */
   TWAIN_SOURCE_OPEN,    /* source open but not enabled*/
   TWAIN_SOURCE_ENABLED, /* source enabled to acquire  */
   TWAIN_TRANSFER_READY, /* image ready to transfer    */
-  TWAIN_TRANSFERRING    /* image in transit	      */
+  TWAIN_TRANSFERRING    /* image in transit\t      */
 } TWAINSTATE;
 
 #ifdef _WIN32
-#ifdef x64
+#if defined(_WIN64) || defined(WIN64) || defined(x64)
 #define DSM_FILENAME "TWAINDSM.DLL"
 #else
 #define DSM_FILENAME "TWAIN_32.DLL"

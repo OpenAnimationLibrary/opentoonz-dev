@@ -3,6 +3,13 @@
 #ifndef __TTWAIN_CONV_H__
 #define __TTWAIN_CONV_H__
 
+#ifdef _WIN32
+#include <windows.h>
+#ifndef WIN32
+#define WIN32
+#endif
+#endif
+
 #include "twain.h"
 
 #ifdef __cplusplus
