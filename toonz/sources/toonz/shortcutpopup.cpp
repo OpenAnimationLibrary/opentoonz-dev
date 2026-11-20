@@ -97,7 +97,7 @@ public:
     // removing doubled &s
     text = text.replace("&&", "&");
     setText(0, text);
-    QString shortcut = m_action->shortcut().toString();
+    QString shortcut = m_action->shortcut().toString(QKeySequence::NativeText);
     setText(1, shortcut);
   }
   QAction *getAction() const { return m_action; }
@@ -201,14 +201,14 @@ void ShortcutViewer::onEditingFinished() {
         if (keys.size() == (i + 1)) {
           // Conflict with the full sequence
           msg = tr("'%1' is already assigned to '%2'\nAssign to '%3'?")
-                    .arg(partialSeq.toString())
+                    .arg(partialSeq.toString(QKeySequence::NativeText))
                     .arg(conflictingAction->iconText())
                     .arg(m_action->iconText());
         } else {
           // Conflict with a partial sequence
           msg = tr("Initial sequence '%1' is assigned to '%2' which takes "
                    "priority.\nAssign shortcut sequence anyway?")
-                    .arg(partialSeq.toString())
+                    .arg(partialSeq.toString(QKeySequence::NativeText))
                     .arg(conflictingAction->iconText());
         }
 
