@@ -186,6 +186,8 @@ public:
      \sa TImage::Type.
   */
   int getCurrentImageType();
+
+  bool pasteDrawingSelection(bool chooseType) override;
   /*!
           Initializes the main window application. It is called in the main
      function

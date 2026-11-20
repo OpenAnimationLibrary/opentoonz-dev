@@ -94,6 +94,7 @@ public:
   void copy();
   void cut();
   void paste();
+  void pasteAs();
   void saveAsCustomVectorBrush();
   void saveVectorSelectionAs();
 

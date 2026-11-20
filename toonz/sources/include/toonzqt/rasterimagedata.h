@@ -43,6 +43,10 @@ public:
   RasterImageData();
   ~RasterImageData() override;
 
+  // The caller owns the decoded native selection. Returns null for an absent
+  // or invalid payload; an ordinary clipboard image is not a native selection.
+  static DVAPI RasterImageData *fromClipboard(const QMimeData *mime);
+
   virtual void setData(const TRasterP &copiedRaster, const TPaletteP &palette,
                        double dpiX, double dpiY, const TDimension &dim,
                        const std::vector<TRectD> &rects,
@@ -131,6 +135,9 @@ public:
                TPalette *targetPalette) const override;
 
   StrokesData *toStrokesData(ToonzScene *scene) const override;
+  // Creates an independent indexed selection, quantizing to at most 256
+  // colors while retaining per-pixel alpha in the ink coverage.
+  ToonzImageData *toToonzImageData() const;
   TPointD getDpi() const override { return TPointD(m_dpiX, m_dpiY); }
 
   FullColorImageData *clone() const override {

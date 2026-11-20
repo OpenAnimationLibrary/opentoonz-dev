@@ -15,7 +15,10 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <memory>
 
 using namespace std;
 
@@ -61,6 +64,39 @@ QByteArray vectorPliData(const QByteArray &payload) {
       expectedHash)
     return QByteArray();
   return pliData;
+}
+
+bool rasterizationBounds(const TVectorImageP &image, double dpiX, double dpiY,
+                         TRectD &bounds, TDimension &size) {
+  if (!image || !image->getPalette() || image->getStrokeCount() == 0 ||
+      !std::isfinite(dpiX) || !std::isfinite(dpiY) || dpiX <= 0.0 ||
+      dpiY <= 0.0)
+    return false;
+  int styleCount = image->getPalette()->getStyleCount();
+  if (styleCount <= 0) return false;
+  for (int i = 0; i < image->getStrokeCount(); ++i) {
+    TStroke *stroke = image->getStroke(i);
+    if (!stroke || stroke->getStyle() < 0 || stroke->getStyle() >= styleCount)
+      return false;
+  }
+  bounds = TScale(dpiX / Stage::inch, dpiY / Stage::inch) * image->getBBox();
+  const double limit = std::numeric_limits<int>::max() / 4.0;
+  if (bounds.isEmpty() || !std::isfinite(bounds.x0) ||
+      !std::isfinite(bounds.y0) || !std::isfinite(bounds.x1) ||
+      !std::isfinite(bounds.y1) || std::abs(bounds.x0) > limit ||
+      std::abs(bounds.y0) > limit || std::abs(bounds.x1) > limit ||
+      std::abs(bounds.y1) > limit)
+    return false;
+  bounds.x0    = std::floor(bounds.x0);
+  bounds.y0    = std::floor(bounds.y0);
+  bounds.x1    = std::ceil(bounds.x1);
+  bounds.y1    = std::ceil(bounds.y1);
+  double width = bounds.getLx(), height = bounds.getLy();
+  if (width <= 0.0 || height <= 0.0 || width > 16384 || height > 16384 ||
+      width * height * 4 > 256 * 1024 * 1024)
+    return false;
+  size = TDimension(int(width), int(height));
+  return true;
 }
 }  // namespace
 
@@ -257,54 +293,52 @@ void StrokesData::getImage(TVectorImageP image, std::set<int> &indices,
 
 ToonzImageData *StrokesData::toToonzImageData(
     const TToonzImageP &imageToPaste) const {
-  double dpix, dpiy;
-  imageToPaste->getDpi(dpix, dpiy);
-  assert(dpix != 0 && dpiy != 0);
-  TScale sc(dpix / Stage::inch, dpiy / Stage::inch);
+  if (!imageToPaste) return nullptr;
+  try {
+    double dpix, dpiy;
+    imageToPaste->getDpi(dpix, dpiy);
+    TRectD bbox;
+    TDimension size;
+    if (!rasterizationBounds(m_image, dpix, dpiy, bbox, size)) return nullptr;
+    TScale sc(dpix / Stage::inch, dpiy / Stage::inch);
+    TToonzImageP app = ToonzImageUtils::vectorToToonzImage(
+        m_image, sc, m_image->getPalette(), bbox.getP00(), size, 0, true);
+    if (!app || !app->getRaster() || !app->getPalette()) return nullptr;
 
-  TRectD bbox = sc * m_image->getBBox();
-  bbox.x0     = tfloor(bbox.x0);
-  bbox.y0     = tfloor(bbox.y0);
-  bbox.x1     = tceil(bbox.x1);
-  bbox.y1     = tceil(bbox.y1);
-  TDimension size(bbox.getLx(), bbox.getLy());
-  TToonzImageP app = ToonzImageUtils::vectorToToonzImage(
-      m_image, sc, m_image->getPalette(), bbox.getP00(), size, 0, true);
-
-  vector<TRectD> rects;
-  vector<TStroke> strokes;
-  TStroke stroke = getStrokeByRect(bbox);
-  strokes.push_back(stroke);
-  ToonzImageData *data = new ToonzImageData();
-  data->setData(app->getRaster(), m_image->getPalette(), dpix, dpiy,
-                TDimension(), rects, strokes, strokes, TAffine());
-  return data;
+    const vector<TRectD> rects;
+    const vector<TStroke> strokes{getStrokeByRect(bbox)};
+    std::unique_ptr<ToonzImageData> data(new ToonzImageData());
+    data->setData(app->getRaster(), app->getPalette(), dpix, dpiy, TDimension(),
+                  rects, strokes, strokes, TAffine());
+    return data.release();
+  } catch (...) {
+    return nullptr;
+  }
 }
 
 //-----------------------------------------------------------------------------
 
 FullColorImageData *StrokesData::toFullColorImageData(
     const TRasterImageP &imageToPaste) const {
-  double dpix, dpiy;
-  imageToPaste->getDpi(dpix, dpiy);
-  assert(dpix != 0 && dpiy != 0);
-  TScale sc(dpix / Stage::inch, dpiy / Stage::inch);
+  if (!imageToPaste) return nullptr;
+  try {
+    double dpix, dpiy;
+    imageToPaste->getDpi(dpix, dpiy);
+    TRectD bbox;
+    TDimension size;
+    if (!rasterizationBounds(m_image, dpix, dpiy, bbox, size)) return nullptr;
+    TScale sc(dpix / Stage::inch, dpiy / Stage::inch);
+    TRasterImageP app = TRasterImageUtils::vectorToFullColorImage(
+        m_image, sc, m_image->getPalette(), bbox.getP00(), size, 0, true);
+    if (!app || !app->getRaster() || !app->getPalette()) return nullptr;
 
-  TRectD bbox = sc * m_image->getBBox();
-  bbox.x0     = tfloor(bbox.x0);
-  bbox.y0     = tfloor(bbox.y0);
-  bbox.x1     = tceil(bbox.x1);
-  bbox.y1     = tceil(bbox.y1);
-  TDimension size(bbox.getLx(), bbox.getLy());
-  TRasterImageP app = TRasterImageUtils::vectorToFullColorImage(
-      m_image, sc, m_image->getPalette(), bbox.getP00(), size, 0, true);
-
-  vector<TRectD> rects;
-  vector<TStroke> strokes;
-  TStroke stroke = getStrokeByRect(bbox);
-  strokes.push_back(stroke);
-  FullColorImageData *data = new FullColorImageData();
-  data->setData(app->getRaster(), m_image->getPalette(), dpix, dpiy,
-                TDimension(), rects, strokes, strokes, TAffine());
-  return data;
+    const vector<TRectD> rects;
+    const vector<TStroke> strokes{getStrokeByRect(bbox)};
+    std::unique_ptr<FullColorImageData> data(new FullColorImageData());
+    data->setData(app->getRaster(), app->getPalette(), dpix, dpiy, TDimension(),
+                  rects, strokes, strokes, TAffine());
+    return data.release();
+  } catch (...) {
+    return nullptr;
+  }
 }

@@ -123,6 +123,21 @@ bool menuContainsAction(QMenu *menu, QAction *target) {
   return false;
 }
 
+void ensurePasteAsAction(QMenu *editMenu) {
+  CommandManager *commands = CommandManager::instance();
+  QAction *pasteAs         = commands->getAction(MI_PasteAs);
+  if (!pasteAs || menuContainsAction(editMenu, pasteAs) ||
+      menuContainsAction(editMenu, commands->getAction(MI_PasteAbove)))
+    return;
+
+  const QList<QAction *> actions = editMenu->actions();
+  int pasteIndex = actions.indexOf(commands->getAction(MI_Paste));
+  if (pasteIndex >= 0 && pasteIndex + 1 < actions.size())
+    editMenu->insertAction(actions.at(pasteIndex + 1), pasteAs);
+  else
+    editMenu->addAction(pasteAs);
+}
+
 void ensureAlignmentPanelAction(QMenu *windowsMenu) {
   QAction *alignment =
       CommandManager::instance()->getAction(MI_OpenAlignmentPanel);
@@ -377,6 +392,7 @@ QMenuBar *StackedMenuBar::loadMenuBar(const TFilePath &fp) {
             // Older Windows profiles keep private menu XML files. Add the new
             // built-in command without replacing the user's customized menu.
             if (title == QStringLiteral("Help")) ensureHelpActions(menu);
+            if (title == QStringLiteral("Edit")) ensurePasteAsAction(menu);
             if (title == QStringLiteral("Windows"))
               ensureAlignmentPanelAction(menu);
             menuBar->addMenu(menu);
