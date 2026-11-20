@@ -1,3 +1,4 @@
+#include "trenderscale.h"
 #include "ocaio.h"
 
 #include "toonz/tcamera.h"
@@ -183,11 +184,14 @@ public:
   QMap<int, QString> frameAssets;
   QMap<QString, OCAIo::OCAAsset> assets;
 
-  SceneRenderPort(const TFilePath &imageDir, const TDimension &resolution)
+  SceneRenderPort(const TFilePath &imageDir, const TDimension &resolution,
+                  int shrinkX, int shrinkY)
       : m_imageDir(imageDir) {
     double rx = resolution.lx * 0.5;
     double ry = resolution.ly * 0.5;
-    setRenderArea(TRectD(-rx, -ry, rx, ry));
+    setRenderArea(TRectD(-rx, -ry,
+                         -rx + TRenderScale::length(resolution.lx, shrinkX),
+                         -ry + TRenderScale::length(resolution.ly, shrinkY)));
   }
 
   void onRenderRasterCompleted(const RenderData &renderData) override {
@@ -247,9 +251,9 @@ bool renderScene(ToonzScene *scene, TXsheet *xsheet, const TFilePath &imageDir,
   TOutputProperties *properties = scene->getProperties()->getOutputProperties();
   TRenderSettings settings      = properties->getRenderSettings();
   TDimension cameraRes          = scene->getCurrentCamera()->getRes();
-  int shrink                    = qMax(1, settings.m_shrinkX);
+  int shrink                    = settings.m_shrinkX;
 
-  SceneRenderPort port(imageDir, cameraRes);
+  SceneRenderPort port(imageDir, cameraRes, shrink, settings.m_shrinkY);
   TRenderer renderer(1);
   renderer.enablePrecomputing(false);
   renderer.addPort(&port);
@@ -296,8 +300,8 @@ bool renderScene(ToonzScene *scene, TXsheet *xsheet, const TFilePath &imageDir,
   data.assets     = port.assets;
   data.frameRate  = properties->getFrameRate();
   data.frameCount = xsheet->getFrameCount();
-  data.width      = cameraRes.lx / shrink;
-  data.height     = cameraRes.ly / qMax(1, settings.m_shrinkY);
+  data.width      = TRenderScale::pixels(cameraRes.lx, shrink);
+  data.height     = TRenderScale::pixels(cameraRes.ly, settings.m_shrinkY);
   return true;
 }
 
