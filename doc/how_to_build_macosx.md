@@ -33,13 +33,26 @@ Check site for any changes in installation instructions, but they will probably 
 
 In a Terminal window, execute the following statements:
 ```sh
-brew install glew lz4 libjpeg libpng lzo pkg-config libusb cmake git-lfs libmypaint qt@5 boost jpeg-turbo opencv
+brew install glew lz4 libjpeg libpng lzo pkg-config libusb cmake git-lfs libmypaint boost jpeg-turbo opencv
 git lfs install
 ```
 
-NOTE: This will install the latest version of QT v5.x which may not be compatible with older OS versions.
+### Install a Qt 5 SDK
 
-If you cannot use the most recent version, download the online installer from https://www.qt.io/download and install the appropriate `macOS` version (min 5.15).  If installing via this method, be sure to install the `Qt Script (Deprecated)` libraries.
+Install a macOS Qt 5 SDK (5.15 or later), including `Qt Script (Deprecated)`,
+using the Qt installer from https://www.qt.io/download or your own Qt build.
+Set its installation prefix, for example:
+```sh
+export QT_ROOT_DIR="$HOME/Qt/5.15.2/clang_64"
+```
+
+The Intel macOS CI temporarily uses the public Qt 5.15.2 SDK with `qtscript`
+via `install-qt-action`, and a cached source build of OpenCV 5.0.0. It no longer
+installs Homebrew `qt@5` (disabled on 2027-05-19) or `opencv@4` (disabled on
+2027-07-09). This is an installation bridge; Qt 5 still needs to be replaced by
+Qt 6. The older Qt SDK requires runtime regression testing before release.
+The CI's OpenCV build keeps AVFoundation camera capture and excludes Qt/VTK GUI
+modules and FFmpeg/GStreamer backends; OpenToonz's own FFmpeg support is separate.
 
 ### Remove incompatible symbolic directory
 Check to see if this symbolic glew directory exists. If so, remove it:
@@ -87,15 +100,15 @@ export PKG_CONFIG_PATH="/opt/homebrew/opt/jpeg-turbo/lib/pkgconfig:$PKG_CONFIG_P
 
 To build from command line, do the following:
 ```sh
-cmake ../sources -DQT_PATH='/opt/homebrew/opt/qt@5/lib'  #replace QT path with your installed QT version#
+cmake ../sources -DQT_PATH="$QT_ROOT_DIR/lib"
 make
 ```
-- If you downloaded the QT installer and installed to `/Users/yourlogin/Qt` instead of by using homebrew, your lib path may look something like this: `~/Qt/5.12.2/clang_64/lib` or `~/Qt/5.12.2/clang_32/lib`
+- `QT_PATH` points to the SDK's `lib` directory. CMake accepts OpenCV 4.1+ and OpenCV 5; if it cannot find your installation, also pass `-DOpenCV_DIR=/path/to/lib/cmake/opencv5` (or `opencv4` for OpenCV 4).
 
 To build using Xcode, do the following:
 ```sh
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-cmake -G Xcode ../sources -B. -DQT_PATH='/opt/homebrew/opt/qt@5/lib' -DWITH_TRANSLATION=OFF   #replace QT path with your installed QT version#
+cmake -G Xcode ../sources -B. -DQT_PATH="$QT_ROOT_DIR/lib" -DWITH_TRANSLATION=OFF
 ```
 - Note that the option `-DWITH_TRANSLATION=OFF` is needed to avoid error when using XCode 12+ which does not allow to add the same source to multiple targets.
 - Open Xcode app and open project /Users/yourlogin/Documents/opentoonz/toonz/build/OpenToonz.xcodeproj
