@@ -1,4 +1,6 @@
 set(HEADERS
+    jxlcodec.h
+    tiio_jxl.h
     sgi/tiio_sgi.h
     pli/pli_io.h
     pli/tiio_pli.h
@@ -31,6 +33,8 @@ set(HEADERS
 
 set(SOURCES
     tiio.cpp
+    jxlcodec.cpp
+    tiio_jxl.cpp
     sgi/filesgi.cpp
     pli/pli_io.cpp
     pli/tags.cpp

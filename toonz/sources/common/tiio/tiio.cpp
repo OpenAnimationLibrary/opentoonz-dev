@@ -25,6 +25,9 @@
 
 namespace {
 
+Tiio::ReaderFactoryHook *s_readerHook = nullptr;
+Tiio::WriterFactoryHook *s_writerHook = nullptr;
+
 class TiioTable {  // singleton
 public:
   typedef std::map<std::string, Tiio::ReaderMaker *> ReaderTable;
@@ -119,6 +122,7 @@ void TiioTable::initialize() {}
 
 Tiio::Reader *Tiio::makeReader(std::string ext) {
   Tiio::ReaderMaker *reader = TiioTable::instance()->findReader(ext);
+  if (s_readerHook) return s_readerHook(ext, reader);
   if (!reader)
     return 0;
   else
@@ -127,10 +131,17 @@ Tiio::Reader *Tiio::makeReader(std::string ext) {
 
 Tiio::Writer *Tiio::makeWriter(std::string ext) {
   Tiio::WriterMaker *writer = TiioTable::instance()->findWriter(ext);
+  if (s_writerHook) return s_writerHook(ext, writer);
   if (!writer)
     return 0;
   else
     return writer();
+}
+
+void Tiio::setRasterFactoryHooks(ReaderFactoryHook *readerHook,
+                                 WriterFactoryHook *writerHook) {
+  s_readerHook = readerHook;
+  s_writerHook = writerHook;
 }
 
 Tiio::VectorReader *Tiio::makeVectorReader(std::string ext) {

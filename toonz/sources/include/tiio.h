@@ -117,6 +117,10 @@ public:
   // only true in EXR format
   virtual bool writeInLinearColorSpace() const { return false; }
 
+  // External codecs can fail after receiving every scanline. Keep the old
+  // destination until the complete output has been written successfully.
+  virtual bool requiresAtomicSave() const { return false; }
+
   void setProperties(TPropertyGroup *properties);
 
 private:
@@ -152,6 +156,15 @@ public:
 
 typedef Reader *ReaderMaker();
 typedef Writer *WriterMaker();
+
+// Hooks receive the registered leaf factory (possibly null), so a codec can
+// fall back without recursively entering makeReader()/makeWriter(). Install
+// these during image IO initialization, before starting worker threads.
+typedef Reader *ReaderFactoryHook(const std::string &ext, ReaderMaker *native);
+typedef Writer *WriterFactoryHook(const std::string &ext, WriterMaker *native);
+
+DVAPI void setRasterFactoryHooks(ReaderFactoryHook *readerHook,
+                                 WriterFactoryHook *writerHook);
 
 typedef VectorReader *VectorReaderMaker();
 typedef VectorWriter *VectorWriterMaker();
