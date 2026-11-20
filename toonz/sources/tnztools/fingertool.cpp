@@ -44,6 +44,10 @@
 #include "toonzqt/styleselection.h"
 #include "historytypes.h"
 
+#include <algorithm>
+#include <cmath>
+#include <unordered_set>
+
 using namespace ToolUtils;
 
 TEnv::IntVar FingerInvert("InknpaintFingerInvert", 0);
@@ -51,6 +55,9 @@ TEnv::DoubleVar FingerSize("InknpaintFingerSize", 10);
 TEnv::IntVar FingerMode("InknpaintFingerMode", 0);  
 TEnv::IntVar FingerPick("InknpaintFingerPick", 1);
 TEnv::IntVar FingerSelective("InknpaintFingerSelective", 1);
+TEnv::IntVar FingerThicknessStrength("FingerThicknessStrength", 40);
+TEnv::IntVar FingerThicknessContract("FingerThicknessContract", 0);
+TEnv::IntVar FingerStyleInfluence("FingerStyleInfluence", 0);
 
 //-----------------------------------------------------------------------------
 
@@ -59,6 +66,167 @@ const int BackgroundStyle = 0;
 //-----------------------------------------------------------------------------
 
 namespace {
+
+// Work on a snapshot so that a dab changes only the boundary that existed at
+// its start.  The paint channel is deliberately left alone.
+int nearestInkStyle(const TRasterCM32P &ras, const TPoint &center, int radius) {
+  if (!ras) return 0;
+  const TRect bounds = ras->getBounds();
+  int style = 0, bestDistance = radius * radius + 1;
+  for (int y = std::max(bounds.y0, center.y - radius);
+       y <= std::min(bounds.y1, center.y + radius); ++y) {
+    for (int x = std::max(bounds.x0, center.x - radius);
+         x <= std::min(bounds.x1, center.x + radius); ++x) {
+      const TPixelCM32 pixel = ras->pixels(y)[x];
+      if (pixel.getInk() <= 0 || pixel.getTone() == 255) continue;
+      const int dx = x - center.x, dy = y - center.y;
+      const int distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        style        = pixel.getInk();
+      }
+    }
+  }
+  return style;
+}
+
+bool useSelectedStyle(int x, int y, int influence) {
+  // Ordered dithering is stable across dabs and undo/redo. TLV pixels have
+  // one ink index, so two palette styles cannot be mixed in a single pixel.
+  static const int threshold[4][4] = {
+      {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+  return influence > threshold[y & 3][x & 3] * 100 / 16;
+}
+
+long long pixelKey(int x, int y) {
+  return (static_cast<long long>(y) << 32) | static_cast<unsigned int>(x);
+}
+
+TRect thicknessDab(const TRasterCM32P &ras, const TPoint &center, int size,
+                   int strength, int sourceInk, int selectedInk,
+                   int styleInfluence, bool contract,
+                   std::unordered_set<long long> &recoloredPixels) {
+  if (!ras || sourceInk <= 0) return TRect();
+  const int radius = std::max(1, size / 2);
+  const int reach  = std::max(1, (strength + 24) / 25);
+  TRect rect(center.x - radius - reach, center.y - radius - reach,
+             center.x + radius + reach, center.y + radius + reach);
+  rect = rect * ras->getBounds();
+  if (rect.isEmpty()) return rect;
+  TRasterCM32P before = ras->extract(rect)->clone();
+  bool changed        = false;
+  for (int y = std::max(rect.y0, center.y - radius);
+       y <= std::min(rect.y1, center.y + radius); ++y) {
+    for (int x = std::max(rect.x0, center.x - radius);
+         x <= std::min(rect.x1, center.x + radius); ++x) {
+      const int dx = x - center.x, dy = y - center.y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      TPixelCM32 old      = before->pixels(y - rect.y0)[x - rect.x0];
+      const bool selected =
+          (old.getInk() == sourceInk ||
+           (styleInfluence > 0 && old.getInk() == selectedInk &&
+            recoloredPixels.count(pixelKey(x, y)))) &&
+          old.getTone() < 255;
+      if (contract && !selected) continue;
+      int bestTone = contract ? 0 : 255;
+      bool found   = false;
+      for (int oy = -reach; oy <= reach; ++oy) {
+        for (int ox = -reach; ox <= reach; ++ox) {
+          if (ox * ox + oy * oy > reach * reach) continue;
+          const int nx = x + ox, ny = y + oy;
+          if (nx < rect.x0 || nx > rect.x1 || ny < rect.y0 || ny > rect.y1)
+            continue;
+          TPixelCM32 neighbor = before->pixels(ny - rect.y0)[nx - rect.x0];
+          const bool ink =
+              (neighbor.getInk() == sourceInk ||
+               (styleInfluence > 0 && neighbor.getInk() == selectedInk &&
+                recoloredPixels.count(pixelKey(nx, ny)))) &&
+              neighbor.getTone() < 255;
+          if (contract ? !ink : ink) {
+            found    = true;
+            bestTone = contract ? std::max(bestTone, (int)neighbor.getTone())
+                                : std::min(bestTone, (int)neighbor.getTone());
+          }
+        }
+      }
+      if (!found || (!contract && selected && bestTone >= old.getTone()))
+        continue;
+      // Each pass approaches the target tone; subsequent passes build up.
+      const int tone =
+          contract
+              ? std::min(255, (int)old.getTone() +
+                                  std::max(1, strength * (255 - old.getTone()) /
+                                                  100))
+              : std::max(
+                    0, (int)old.getTone() -
+                           std::max(
+                               1, strength * (old.getTone() - bestTone) / 100));
+      TPixelCM32 &dst = ras->pixels(y)[x];
+      const int resultInk = styleInfluence > 0 && selectedInk > 0 &&
+                                    useSelectedStyle(x, y, styleInfluence)
+                                ? selectedInk
+                                : sourceInk;
+      if (contract) {
+        if (tone != old.getTone()) {
+          dst.setInk(resultInk);
+          dst.setTone(tone);
+          if (resultInk != sourceInk) recoloredPixels.insert(pixelKey(x, y));
+          changed = true;
+        }
+      } else if (old.getTone() == 255 || selected) {
+        const int newTone =
+            selected ? tone
+                     : 255 - std::max(1, strength * (255 - bestTone) / 100);
+        if (old.getInk() != resultInk || old.getTone() != newTone) {
+          dst.setInk(resultInk);
+          dst.setTone(newTone);
+          if (resultInk != sourceInk) recoloredPixels.insert(pixelKey(x, y));
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed ? rect : TRect();
+}
+
+class FingerThicknessUndo final : public TRasterUndo {
+  std::vector<TPoint> m_dabs;
+  int m_size, m_strength, m_sourceInk, m_selectedInk, m_styleInfluence;
+  bool m_contract;
+
+public:
+  FingerThicknessUndo(TTileSetCM32 *tiles, const std::vector<TPoint> &dabs,
+                      int size, int strength, int sourceInk, int selectedInk,
+                      int styleInfluence, bool contract, TXshSimpleLevel *level,
+                      const TFrameId &frameId)
+      : TRasterUndo(tiles, level, frameId, false, false, 0)
+      , m_dabs(dabs)
+      , m_size(size)
+      , m_strength(strength)
+      , m_sourceInk(sourceInk)
+      , m_selectedInk(selectedInk)
+      , m_styleInfluence(styleInfluence)
+      , m_contract(contract) {}
+
+  void redo() const override {
+    TToonzImageP image = m_level->getFrame(m_frameId, true);
+    if (!image) return;
+    std::unordered_set<long long> recoloredPixels;
+    for (const TPoint &dab : m_dabs)
+      thicknessDab(image->getRaster(), dab, m_size, m_strength, m_sourceInk,
+                   m_selectedInk, m_styleInfluence, m_contract,
+                   recoloredPixels);
+    ToolUtils::updateSaveBox(m_level, m_frameId);
+    TTool::getApplication()->getCurrentXsheet()->notifyXsheetChanged();
+    notifyImageChanged();
+  }
+  int getSize() const override {
+    return sizeof(*this) + m_dabs.size() * sizeof(TPoint) +
+           TRasterUndo::getSize();
+  }
+  QString getToolName() override { return QString("Finger Tool (Thickness)"); }
+  int getHistoryType() override { return HistoryType::FingerTool; }
+};
 
 class FingerUndo final : public TRasterUndo {
   std::vector<TThickPoint> m_points;
@@ -265,6 +433,18 @@ class FingerTool final : public TTool {
   TBoolProperty m_pick;
   TBoolProperty m_invert;
   TBoolProperty m_emptyOnly;
+  TIntProperty m_strength;
+  TBoolProperty m_contract;
+  TIntProperty m_styleInfluence;
+  std::vector<TPoint> m_thicknessDabs;
+  std::unordered_set<long long> m_thicknessRecoloredPixels;
+  TPoint m_lastThicknessDab;
+  int m_thicknessStyle     = 0;
+  int m_thicknessSelectedStyle  = 0;
+  int m_thicknessStyleInfluence = 0;
+  int m_thicknessSize      = 0;
+  int m_thicknessStrength  = 0;
+  bool m_thicknessContract = false;
 
   TPropertyGroup m_prop;
   int m_cursor;
@@ -277,6 +457,7 @@ class FingerTool final : public TTool {
 
   /*-- 最初のクリックでStyleを切り替える --*/
   void pick(const TPointD &pos);
+  void addThicknessDabs(const TPointD &pos);
 
 public:
   FingerTool();
@@ -328,6 +509,9 @@ FingerTool::FingerTool()
     , m_pick("Pick", true)
     , m_invert("Invert", false)
     , m_emptyOnly("Empty Only", true)
+    , m_strength("Strength:", 1, 100, 40)
+    , m_contract("Contract", false)
+    , m_styleInfluence("Style Influence:", 0, 100, 0)
     , m_firstTime(true)
     , m_workingFrameId(TFrameId()) {
   bind(TTool::ToonzImage);
@@ -336,14 +520,20 @@ FingerTool::FingerTool()
   //ColorType
   m_mode.addValue(L"Line");
   m_mode.addValue(L"Area");
+  m_mode.addValue(L"Thickness");
   m_prop.bind(m_toolSize);
   m_prop.bind(m_mode);
   m_prop.bind(m_pick);
   m_prop.bind(m_invert);
   m_prop.bind(m_emptyOnly);
-  
+  m_prop.bind(m_strength);
+  m_prop.bind(m_contract);
+  m_prop.bind(m_styleInfluence);
+
   m_emptyOnly.setId("EmptyOnly");
   m_invert.setId("Invert");
+  m_contract.setId("Contract");
+  m_styleInfluence.setId("StyleInfluence");
 }
 
 //-----------------------------------------------------------------------------
@@ -354,6 +544,9 @@ void FingerTool::updateTranslation() {
   m_pick.setQStringName(tr("Pick"));
   m_invert.setQStringName(tr("Invert", NULL));
   m_emptyOnly.setQStringName(tr("Empty Only", NULL));
+  m_strength.setQStringName(tr("Strength:"));
+  m_contract.setQStringName(tr("Contract"));
+  m_styleInfluence.setQStringName(tr("Style Influence:"));
 }
 
 //-----------------------------------------------------------------------------
@@ -422,6 +615,12 @@ bool FingerTool::onPropertyChanged(std::string propertyName) {
 
   else if (propertyName == m_emptyOnly.getName()) {
     FingerSelective = (int)(m_emptyOnly.getValue());
+  } else if (propertyName == m_strength.getName()) {
+    FingerThicknessStrength = m_strength.getValue();
+  } else if (propertyName == m_contract.getName()) {
+    FingerThicknessContract = m_contract.getValue() ? 1 : 0;
+  } else if (propertyName == m_styleInfluence.getName()) {
+    FingerStyleInfluence = m_styleInfluence.getValue();
   }
 
   return true;
@@ -430,8 +629,9 @@ bool FingerTool::onPropertyChanged(std::string propertyName) {
 //-----------------------------------------------------------------------------
 
 void FingerTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
-  if(m_pick.getValue())
-      pick(pos);
+  // Thickness uses the ink under the brush as its source and keeps the
+  // selected palette style available for the Style Influence control.
+  if (m_mode.getIndex() != 2 && m_pick.getValue()) pick(pos);
 
   m_selecting = true;
   TImageP image(getImage(true));
@@ -439,6 +639,28 @@ void FingerTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
   if (TToonzImageP ti = image) {
     TRasterCM32P ras = ti->getRaster();
     if (ras) {
+      if (m_mode.getIndex() == 2) {
+        m_thicknessSelectedStyle =
+            TTool::getApplication()->getCurrentLevelStyleIndex();
+        const TPoint rasterPos(tround(pos.x + ras->getCenter().x),
+                               tround(pos.y + ras->getCenter().y));
+        m_thicknessStyle = nearestInkStyle(
+            ras, rasterPos, std::max(1, m_toolSize.getValue() / 2));
+        m_thicknessStyleInfluence = m_styleInfluence.getValue();
+        m_thicknessSize  = m_toolSize.getValue();
+        m_thicknessStrength = m_strength.getValue();
+        m_thicknessContract = m_contract.getValue();
+        m_thicknessDabs.clear();
+        m_thicknessRecoloredPixels.clear();
+        if (m_thicknessStyle <= 0) {
+          m_selecting = false;
+          return;
+        }
+        m_tileSaver = new TTileSaverCM32(ras, new TTileSetCM32(ras->getSize()));
+        m_workingFrameId = getFrameId();
+        addThicknessDabs(pos);
+        return;
+      }
       int thickness = m_toolSize.getValue();
       int styleId   = TTool::getApplication()->getCurrentLevelStyleIndex();
       TTileSetCM32 *tileSet = new TTileSetCM32(ras->getSize());
@@ -465,6 +687,11 @@ void FingerTool::leftButtonDown(const TPointD &pos, const TMouseEvent &e) {
 void FingerTool::leftButtonDrag(const TPointD &pos, const TMouseEvent &e) {
   if (!m_selecting) return;
 
+  if (m_mode.getIndex() == 2 && m_tileSaver) {
+    addThicknessDabs(pos);
+    return;
+  }
+
   m_brushPos = TPointD(tround(pos.x - 0.5), tround(pos.y - 0.5));
 
   if (TToonzImageP ri = TImageP(getImage(true))) {
@@ -490,7 +717,7 @@ void FingerTool::leftButtonUp(const TPointD &pos, const TMouseEvent &) {
   m_brushPos = TPointD(tround(pos.x - 0.5), tround(pos.y - 0.5));
 
   finishBrush();
-  if(m_pick.getValue())
+  if (m_mode.getIndex() != 2 && m_pick.getValue())
     getApplication()->setCurrentLevelStyleIndex(m_oldStyle);
 }
 
@@ -510,6 +737,9 @@ void FingerTool::onEnter() {
     m_mode.setIndex(FingerMode);
     m_pick.setValue(FingerPick ? 1 : 0);
     m_emptyOnly.setValue(FingerSelective ? 1 : 0);
+    m_strength.setValue(FingerThicknessStrength);
+    m_contract.setValue(FingerThicknessContract != 0);
+    m_styleInfluence.setValue(FingerStyleInfluence);
     m_firstTime = false;
   }
   double x = m_toolSize.getValue();
@@ -551,6 +781,28 @@ void FingerTool::onDeactivate() {
  * ドラッグ中にツールが切り替わった場合に備え、onDeactivateにもMouseReleaseと同じ処理を行う
  */
 void FingerTool::finishBrush() {
+  if (m_tileSaver && !m_rasterTrack) {
+    TTool::Application *app = TTool::getApplication();
+    TXshSimpleLevel *level  = app->getCurrentLevel()->getSimpleLevel();
+    TFrameId frameId =
+        m_workingFrameId.isEmptyFrame() ? getCurrentFid() : m_workingFrameId;
+    if (level && !m_thicknessDabs.empty()) {
+      TUndoManager::manager()->add(new FingerThicknessUndo(
+          m_tileSaver->getTileSet(), m_thicknessDabs, m_thicknessSize,
+          m_thicknessStrength, m_thicknessStyle, m_thicknessSelectedStyle,
+          m_thicknessStyleInfluence, m_thicknessContract, level, frameId));
+      ToolUtils::updateSaveBox(level, frameId);
+      notifyImageChanged(frameId);
+    }
+    delete m_tileSaver;
+    m_tileSaver = nullptr;
+    m_thicknessDabs.clear();
+    m_thicknessRecoloredPixels.clear();
+    m_workingFrameId = TFrameId();
+    m_selecting      = false;
+    invalidate();
+    return;
+  }
   if (TToonzImageP ti = (TToonzImageP)getImage(true)) {
     if (m_rasterTrack) {
       int thickness = m_toolSize.getValue();
@@ -581,6 +833,7 @@ void FingerTool::finishBrush() {
       delete m_rasterTrack;
       m_rasterTrack = 0;
       delete m_tileSaver;
+      m_tileSaver = nullptr;
 
       /*-- 作業中fIdをリセット --*/
       m_workingFrameId = TFrameId();
@@ -589,10 +842,46 @@ void FingerTool::finishBrush() {
   m_selecting = false;
 }
 
+void FingerTool::addThicknessDabs(const TPointD &pos) {
+  TToonzImageP image = (TToonzImageP)getImage(true);
+  if (!image || !m_tileSaver) return;
+  TRasterCM32P ras = image->getRaster();
+  if (!ras) return;
+  TPoint target(tround(pos.x + ras->getCenter().x),
+                tround(pos.y + ras->getCenter().y));
+  const int spacing = std::max(1, m_thicknessSize / 4);
+  TPoint start      = m_thicknessDabs.empty() ? target : m_lastThicknessDab;
+  const double dx = target.x - start.x, dy = target.y - start.y;
+  const double distance = std::sqrt(dx * dx + dy * dy);
+  const int steps = m_thicknessDabs.empty() ? 1 : (int)(distance / spacing);
+  for (int i = 1; i <= steps; ++i) {
+    TPoint dab       = m_thicknessDabs.empty()
+                           ? target
+                           : TPoint(tround(start.x + dx * i / steps),
+                                    tround(start.y + dy * i / steps));
+    const int reach  = std::max(1, (m_thicknessStrength + 24) / 25);
+    const int radius = std::max(1, m_thicknessSize / 2) + reach;
+    m_tileSaver->save(
+        TRect(dab.x - radius, dab.y - radius, dab.x + radius, dab.y + radius));
+    TRect changed = thicknessDab(ras, dab, m_thicknessSize, m_thicknessStrength,
+                                 m_thicknessStyle, m_thicknessSelectedStyle,
+                                 m_thicknessStyleInfluence, m_thicknessContract,
+                                 m_thicknessRecoloredPixels);
+    if (!changed.isEmpty()) image->setSavebox(image->getSavebox() + changed);
+    m_thicknessDabs.push_back(dab);
+    m_lastThicknessDab = dab;
+  }
+  if (steps) {
+    m_brushPos = TPointD(tround(pos.x - 0.5), tround(pos.y - 0.5));
+    notifyImageChanged();
+    invalidate();
+  }
+}
+
 void FingerTool::pick(const TPointD &pos) {
   m_oldStyle = getApplication()->getCurrentLevelStyleIndex();
   int modeValue;
-  if (m_mode.getIndex() == INK)
+  if (m_mode.getIndex() == INK || m_mode.getIndex() == 2)
     modeValue = 1;//LINES
   else
     modeValue = 0;//AREAS
