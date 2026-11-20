@@ -105,6 +105,8 @@ TModifierTangents::modifyTrack(
     intr->tangents.push_back(calcTangent(track, i));
 
   // update subTrack
+  // Its recalculated tangent also changes the preceding segment.
+  if (start > 1) --start;
   subTrack.truncate(start);
   for(int i = start; i < track.size(); ++i)
     subTrack.push_back(subTrack.pointFromOriginal(i), false);
@@ -119,4 +121,5 @@ TModifierTangents::modifyTrack(
   
   track.resetChanges();
 }
+
 

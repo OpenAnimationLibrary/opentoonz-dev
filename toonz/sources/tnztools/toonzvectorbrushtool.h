@@ -256,6 +256,7 @@ protected:
   // for snapping and framerange
   int m_col, m_firstFrame, m_veryFirstFrame, m_veryFirstCol, m_targetType;
   double m_pixelSize, m_minDistance2;
+  double m_strokeFitError = 0.0;
 
   bool m_snapped;
   bool m_snappedSelf;
@@ -276,3 +277,4 @@ protected:
 };
 
 #endif  // TOONZVECTORBRUSHTOOL_H
+

@@ -964,7 +964,6 @@ bool handlePenUpdateMsg(const POINTER_PEN_INFO &penInfo) {
 #endif
       return false;
     }
-    bool handled = false;
     // The returned array is in reverse chronological order
     const auto rbegin = penInfoArray.rbegin();
     const auto rend   = penInfoArray.rend();
@@ -1230,3 +1229,4 @@ bool handlePointerMsg(const MSG &msg) {
 }  // namespace
 
 #endif  // _WIN32
+

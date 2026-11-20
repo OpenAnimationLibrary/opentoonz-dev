@@ -30,6 +30,7 @@
 #include "tools/toolhandle.h"
 #include "tools/cursormanager.h"
 #include "tools/toolcommandids.h"
+#include "tools/strokesmoothnessdiagnostics.h"
 #include "toonzqt/viewcommandids.h"
 
 // TnzLib includes
@@ -74,12 +75,21 @@ extern QString updateToolEnableStatus(TTool *tool);
 namespace {
 //-----------------------------------------------------------------------------
 
+void setTabletSampleTime(TMouseEvent &event, TStrokeSampleClock &clock) {
+  event.m_sampleTime = clock.update(event.m_sourceTimestamp, event.m_time);
+  event.m_sampleTimeEstimated = clock.isEstimated();
+}
+
+//-----------------------------------------------------------------------------
+
 void initToonzEvent(TMouseEvent &toonzEvent, QMouseEvent *event,
                     int widgetHeight, double pressure, int devPixRatio) {
   toonzEvent.m_pos      = TPointD(event->pos().x() * devPixRatio,
                                   widgetHeight - 1 - event->pos().y() * devPixRatio);
   toonzEvent.m_mousePos = event->pos();
   toonzEvent.m_pressure = 1.0;
+  toonzEvent.m_time            = TToolTimer::ticks();
+  toonzEvent.m_sourceTimestamp = event->timestamp();
 
   toonzEvent.setModifiers(event->modifiers() & Qt::ShiftModifier,
                           event->modifiers() & Qt::AltModifier,
@@ -100,6 +110,8 @@ void initToonzEvent(TMouseEvent &toonzEvent, QTabletEvent *event,
       (float)widgetHeight - 1.0f - event->posF().y() * (float)devPixRatio);
   toonzEvent.m_mousePos = event->posF();
   toonzEvent.m_pressure = pressure;
+  toonzEvent.m_time            = TToolTimer::ticks();
+  toonzEvent.m_sourceTimestamp = event->timestamp();
 
   toonzEvent.setModifiers(event->modifiers() & Qt::ShiftModifier,
                           event->modifiers() & Qt::AltModifier,
@@ -256,6 +268,11 @@ void SceneViewer::onButtonPressed(FlipConsole::EGadget button) {
 void SceneViewer::tabletEvent(QTabletEvent *e) {
   if (m_freezedStatus != NO_FREEZED) return;
 
+  if (e->type() == QEvent::TabletPress && e->button() == Qt::LeftButton &&
+      (m_tabletState == None || m_tabletState == Released))
+    StrokeSmoothnessDiagnostics::beginStroke();
+  StrokeSmoothnessDiagnostics::recordRawTabletEvent(*e, m_isBusyOnTabletMove);
+
   m_tabletEvent = true;
   m_pressure    = e->pressure();
   m_tabletMove  = false;
@@ -284,9 +301,18 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
     // In OSX tablet action may cause only tabletEvent, not followed by
     // mousePressEvent.
     // So call onPress here in order to enable processing.
-    if (e->button() == Qt::LeftButton) m_tabletState = Touched;
+    if (e->button() == Qt::LeftButton) {
+      if (m_tabletState == None || m_tabletState == Released) {
+        m_tabletSampleClock.reset();
+        m_hasLastTabletSample = false;
+      }
+      m_tabletState = Touched;
+    }
     TMouseEvent mouseEvent;
     initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+    setTabletSampleTime(mouseEvent, m_tabletSampleClock);
+    StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                             "press");
     onPress(mouseEvent);
 
     // create context menu on right click here
@@ -306,9 +332,14 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
       // tabletPress events. Treat it as if it happened so a following
       // mousePressEvent gets ignored
       if (m_tabletState == Released || m_tabletState == None) {
+        m_tabletSampleClock.reset();
+        m_hasLastTabletSample = false;
         TMouseEvent mouseEvent;
         initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+        setTabletSampleTime(mouseEvent, m_tabletSampleClock);
         m_tabletState = Touched;
+        StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                                 "press");
         onPress(mouseEvent);
       } else if (m_tabletState == Touched) {
         m_tabletState = StartStroke;
@@ -334,6 +365,9 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
 
     TMouseEvent mouseEvent;
     initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+    setTabletSampleTime(mouseEvent, m_tabletSampleClock);
+    StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                             "release");
     onRelease(mouseEvent);
 
     if (TApp::instance()->getCurrentTool()->isToolBusy())
@@ -343,6 +377,9 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
       m_tabletState = Released;
       TMouseEvent mouseEvent;
       initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
+      setTabletSampleTime(mouseEvent, m_tabletSampleClock);
+      StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                               "release");
       onRelease(mouseEvent);
     } else
       m_tabletEvent = false;
@@ -364,32 +401,35 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
     }
 #endif
 
-    QPointF curPos = e->posF() * getDevPixRatio();
-#if defined(_WIN32)
-    // Use the application attribute Qt::AA_CompressTabletEvents instead of the
-    // delay timer
-    // 21/4/2021 High frequent tablet event caused slowness when deforming with
-    // Raster Selection Tool. So I re-introduced the delay timer to make
-    // necessary interval for it. Deformation will be processed at interval of
-    // 20msec. (See RasterSelectionTool::leftButtonDrag())
-    if (curPos != m_lastMousePos) {
-      TMouseEvent mouseEvent;
-      initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio(),
-                     m_isBusyOnTabletMove);
+    TMouseEvent mouseEvent;
+    initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio(),
+                   m_isBusyOnTabletMove);
+
+    // Position alone is not an input identity: stationary pressure changes and
+    // elapsed time still matter to drawing tools.
+    const bool sameSample =
+        m_hasLastTabletSample && mouseEvent.sourceTimestamp() > 0 &&
+        mouseEvent.sourceTimestamp() == m_lastTabletSample.sourceTimestamp() &&
+        mouseEvent.mousePos() == m_lastTabletSample.mousePos() &&
+        mouseEvent.m_pressure == m_lastTabletSample.m_pressure &&
+        mouseEvent.buttons() == m_lastTabletSample.buttons() &&
+        mouseEvent.getModifiersMask() ==
+            m_lastTabletSample.getModifiersMask() &&
+        e->uniqueId() == m_lastTabletDevice &&
+        int(e->pointerType()) == m_lastTabletPointerType;
+
+    if (!sameSample) {
+      // Expensive tools can ignore high-frequency moves without discarding
+      // drawing samples at the viewer boundary on any platform.
       if (!m_isBusyOnTabletMove) {
         m_isBusyOnTabletMove = true;
         QTimer::singleShot(20, this, SLOT(releaseBusyOnTabletMove()));
       }
-#else
-    // It seems that the tabletEvent is called more often than mouseMoveEvent.
-    // So I fire the interval timer in order to limit the following process
-    // to be called in 50fps in maximum.
-    if (curPos != m_lastMousePos && !m_isBusyOnTabletMove) {
-      m_isBusyOnTabletMove = true;
-      TMouseEvent mouseEvent;
-      initToonzEvent(mouseEvent, e, height(), m_pressure, getDevPixRatio());
-      QTimer::singleShot(20, this, SLOT(releaseBusyOnTabletMove()));
-#endif
+      setTabletSampleTime(mouseEvent, m_tabletSampleClock);
+      m_lastTabletSample      = mouseEvent;
+      m_lastTabletDevice      = e->uniqueId();
+      m_lastTabletPointerType = int(e->pointerType());
+      m_hasLastTabletSample   = true;
 
       // cancel stroke to prevent drawing while floating
       // 23/1/2018 There is a case that the pressure becomes zero at the start
@@ -400,9 +440,14 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
       if (m_tabletState == OnStroke && m_pressure == 0.0) {
         m_tabletState       = Released;
         mouseEvent.m_button = Qt::LeftButton;
+        StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                                 "release");
         onRelease(mouseEvent);
+        StrokeSmoothnessDiagnostics::endRawStroke();
       } else {
         m_tabletMove = true;
+        StrokeSmoothnessDiagnostics::recordDispatchedTabletEvent(mouseEvent,
+                                                                 "move");
         onMove(mouseEvent);  // m_tabletState is set to OnStrole here
       }
     }
@@ -414,6 +459,8 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
   default:
     break;
   }
+  if (e->type() == QEvent::TabletRelease || m_tabletState == Released)
+    StrokeSmoothnessDiagnostics::endRawStroke();
 }
 
 //-----------------------------------------------------------------------------
@@ -1899,3 +1946,4 @@ void SceneViewer::mouseScrub(const TMouseEvent &e) {
 
   m_oldPos = e.m_pos;
 }
+
