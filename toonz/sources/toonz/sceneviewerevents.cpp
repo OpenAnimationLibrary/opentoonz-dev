@@ -281,6 +281,9 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
   switch (e->type()) {
   case QEvent::TabletPress: {
 #ifdef MACOSX
+    // Handle the tablet event here, including its context menu, so Qt must not
+    // synthesize another mouse press after the full-screen transition.
+    e->accept();
     // In OSX tablet action may cause only tabletEvent, not followed by
     // mousePressEvent.
     // So call onPress here in order to enable processing.
@@ -329,6 +332,7 @@ void SceneViewer::tabletEvent(QTabletEvent *e) {
   } break;
   case QEvent::TabletRelease: {
 #ifdef MACOSX
+    e->accept();
     if (m_tabletState == StartStroke || m_tabletState == OnStroke)
       m_tabletState = Released;
 
@@ -886,9 +890,15 @@ void SceneViewer::mouseReleaseEvent(QMouseEvent *event) {
     // mouseRelease should not clear flag if we are starting or in middle of
     // stroke
     // initiated by tableEvent. All other cases, it's ok to clear flag
+#ifdef MACOSX
+    // Allow a pending mouse action to finish once the tablet stroke has ended.
+    if (m_tabletState != Released && m_tabletState != None) return;
+    m_tabletEvent = false;
+#else
     if (m_tabletState == Released || m_tabletState == None)
       m_tabletEvent = false;
     return;
+#endif
   }
   // for touchscreens but not touchpads...
   if (m_gestureActive && m_touchDevice == QTouchDevice::TouchScreen) {
@@ -1763,7 +1773,16 @@ using namespace ImageUtils;
 //-----------------------------------------------------------------------------
 
 void SceneViewer::contextMenuEvent(QContextMenuEvent *e) {
+#ifdef MACOSX
+  // The tablet handler opens its own menu. Consume duplicate context events so
+  // they cannot propagate to the parent panel during a full-screen transition.
+  if (m_tabletEvent || m_tabletState != None) {
+    e->accept();
+    return;
+  }
+#else
   if (m_tabletEvent) return;
+#endif
 #ifndef _WIN32
   /* On windows the widget receive the release event before the menu
      is shown, on linux and osx the release event is lost, never
