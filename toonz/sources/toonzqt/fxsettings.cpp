@@ -301,6 +301,8 @@ void ParamsPage::setPageField(TIStream &is, const TFxP &fx, bool isVertical) {
             stringField->enableExrChoiceControls(TFxAovChoiceKind::Channel);
         }
         if (field) {
+          if (fx->requiresFullPrecisionSerialization())
+            field->setProperty("preserveColorPrecision", true);
           if (decimals >= 0) field->setPrecision(decimals);
           m_fields.push_back(field);
           registerPageParam(field, name);
@@ -689,6 +691,8 @@ void ParamsPage::addWidget(QWidget *field, bool isVertical) {
         QString::fromStdString(fx->getFxType() + "." + name);                  \
     ParamField *field = MAKE(this, paramName, param);                          \
     if (!field) return NULL;                                                   \
+    if (fx->requiresFullPrecisionSerialization())                              \
+      field->setProperty("preserveColorPrecision", true);                      \
     m_fields.push_back(field);                                                 \
     registerPageParam(field, name);                                            \
     connect(field, SIGNAL(currentParamChanged()), m_paramViewer,               \
@@ -811,6 +815,8 @@ void ParamsPage::addExposedParam(int fxIndex, const TFxP& fx,
       QString::fromStdWString(TStringTable::translate(translationKey));
   ParamField* field = ParamField::create(this, label, param);
   if (!field) return;
+  if (fx->requiresFullPrecisionSerialization())
+    field->setProperty("preserveColorPrecision", true);
 
   m_fields.push_back(field);
   m_exposedParamTargets[field] = {fxIndex, paramName};

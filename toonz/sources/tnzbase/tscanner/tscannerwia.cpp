@@ -9,7 +9,7 @@
 #include <QDir>
 #include <QFile>
 #include <QImage>
-#include <QStandardPaths>
+#include <QTemporaryDir>
 
 namespace {
 
@@ -24,9 +24,7 @@ public:
   ~ScopedCom() {
     if (m_uninit) CoUninitialize();
   }
-  bool isReady() const {
-    return SUCCEEDED(m_hr) || m_hr == RPC_E_CHANGED_MODE;
-  }
+  bool isReady() const { return SUCCEEDED(m_hr) || m_hr == RPC_E_CHANGED_MODE; }
 };
 
 class ScopedBusy {
@@ -55,8 +53,8 @@ TRasterImageP loadRasterImage(const QString &path) {
     const QRgb *src = reinterpret_cast<const QRgb *>(image.constScanLine(y));
     TPixel32 *dst   = raster->pixels(image.height() - 1 - y);
     for (int x = 0; x < image.width(); ++x)
-      dst[x] = TPixel32(qRed(src[x]), qGreen(src[x]), qBlue(src[x]),
-                        qAlpha(src[x]));
+      dst[x] =
+          TPixel32(qRed(src[x]), qGreen(src[x]), qBlue(src[x]), qAlpha(src[x]));
   }
   raster->unlock();
 
@@ -99,12 +97,17 @@ void TScannerWia::selectDevice() {
   if (!manager) return;
 
   BSTR deviceId = nullptr;
-  HRESULT hr = manager->SelectDeviceDlgID(nullptr, StiDeviceTypeScanner,
-                                          WIA_SELECT_DEVICE_NODEFAULT,
-                                          &deviceId);
+  HRESULT hr    = manager->SelectDeviceDlgID(
+         nullptr, StiDeviceTypeScanner, WIA_SELECT_DEVICE_NODEFAULT, &deviceId);
   if (SUCCEEDED(hr) && deviceId) {
-    m_deviceId.assign(deviceId, SysStringLen(deviceId));
-    setName(QString::fromWCharArray(deviceId));
+    try {
+      m_deviceId.assign(deviceId, SysStringLen(deviceId));
+      setName(QString::fromWCharArray(deviceId));
+    } catch (...) {
+      SysFreeString(deviceId);
+      manager->Release();
+      throw;
+    }
   }
 
   if (deviceId) SysFreeString(deviceId);
@@ -115,7 +118,7 @@ void TScannerWia::updateParameters(TScannerParameters &parameters) {
   // The first WIA implementation intentionally lets the Windows/vendor dialog
   // own scanner settings. Keep OpenToonz scan controls non-authoritative until
   // acquisition is proven across real WIA devices.
-  parameters.setSupportedTypes(true, true, true);
+  parameters.setSupportedTypes(false, false, true);
   parameters.setMaxPaperSize(1000.0, 1000.0);
 }
 
@@ -132,23 +135,25 @@ void TScannerWia::acquire(const TScannerParameters &, int paperCount) {
     return;
   }
 
-  IWiaDevMgr2 *manager = createWiaManager();
+  QTemporaryDir tempDir(QDir::tempPath() +
+                        QStringLiteral("/opentoonz-wia-XXXXXX"));
+  if (!tempDir.isValid()) {
+    notifyError();
+    return;
+  }
+
+  const QString tempPath = tempDir.path();
+  IWiaDevMgr2 *manager   = createWiaManager();
   if (!manager) {
     notifyError();
     return;
   }
 
-  QString tempDir =
-      QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-  if (tempDir.isEmpty()) tempDir = QDir::tempPath();
-  tempDir = QDir(tempDir).filePath(QStringLiteral("opentoonz-wia"));
-  QDir().mkpath(tempDir);
-
   BSTR deviceId = SysAllocString(m_deviceId.c_str());
   BSTR folder =
-      SysAllocString(reinterpret_cast<const wchar_t *>(tempDir.utf16()));
-  BSTR filename = SysAllocString(L"scan");
-  LONG fileCount = 0;
+      SysAllocString(reinterpret_cast<const wchar_t *>(tempPath.utf16()));
+  BSTR filename   = SysAllocString(L"scan");
+  LONG fileCount  = 0;
   BSTR *filePaths = nullptr;
   IWiaItem2 *item = nullptr;
 
@@ -189,17 +194,22 @@ void TScannerWia::acquire(const TScannerParameters &, int paperCount) {
     return;
   }
 
-  HRESULT hr = manager->GetImageDlg(
-      WIA_DEVICE_DIALOG_USE_COMMON_UI, deviceId, nullptr, folder, filename,
-      &fileCount, &filePaths, &item);
+  HRESULT hr =
+      manager->GetImageDlg(WIA_DEVICE_DIALOG_USE_COMMON_UI, deviceId, nullptr,
+                           folder, filename, &fileCount, &filePaths, &item);
 
   bool delivered = false;
+  bool canceled  = false;
   try {
-    if ((SUCCEEDED(hr) || hr == S_FALSE) && fileCount > 0 && filePaths) {
+    if (SUCCEEDED(hr) && fileCount > 0 && filePaths) {
       setPaperLeftCount(paperCount > 0 ? paperCount : fileCount);
-      for (LONG i = 0; i < fileCount; ++i) {
+      for (LONG i = 0; i < fileCount && getPaperLeftCount() > 0; ++i) {
+        if (isScanningCanceled()) {
+          canceled = true;
+          break;
+        }
         if (!filePaths[i]) continue;
-        QString path = QString::fromWCharArray(filePaths[i]);
+        QString path        = QString::fromWCharArray(filePaths[i]);
         TRasterImageP image = loadRasterImage(path);
         if (image) {
           notifyImageDone(image);
@@ -214,7 +224,7 @@ void TScannerWia::acquire(const TScannerParameters &, int paperCount) {
   }
 
   cleanup();
-  if (FAILED(hr) || (!delivered && hr != S_FALSE)) notifyError();
+  if (FAILED(hr) || (!delivered && !canceled && hr != S_FALSE)) notifyError();
 }
 
 #endif

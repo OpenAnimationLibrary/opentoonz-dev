@@ -14,6 +14,7 @@ set(HEADERS
     stdfx.h
     t3dsource.h
     ../include/tfxaovsource.h
+    shadowbevelutils.h
     texturefxP.h
     warp.h
     motionawarebasefx.h
@@ -118,6 +119,7 @@ set(SOURCES
     despecklefx.cpp
     diamondgradientfx.cpp
     dissolvefx.cpp
+    dropshadowfx.cpp
     embossfx.cpp
     erodilatefx.cpp
     externalpalettefx.cpp
