@@ -547,17 +547,17 @@ static std::pair<int, int> generateMovie(ToonzScene *scene, const TFilePath &fp,
       TFxPair fx;
       if (rs.m_stereoscopic) scene->shiftCameraX(-rs.m_stereoscopicShift / 2);
 
-      fx.m_frameA = (TRasterFxP)buildSceneFx(scene, scene->getXsheet(), r,
-                                             which, shrink, false);
+      fx.m_frameA = (TRasterFxP)buildRenderSceneFx(scene, scene->getXsheet(), r,
+                                                   which, shrink);
 
       if (rs.m_fieldPrevalence != TRenderSettings::NoField)
-        fx.m_frameB = (TRasterFxP)buildSceneFx(scene, scene->getXsheet(),
-                                               r + 0.5 * timeStretchFactor,
-                                               which, shrink, false);
+        fx.m_frameB = (TRasterFxP)buildRenderSceneFx(
+            scene, scene->getXsheet(), r + 0.5 * timeStretchFactor, which,
+            shrink);
       else if (rs.m_stereoscopic) {
         scene->shiftCameraX(rs.m_stereoscopicShift);
-        fx.m_frameB = (TRasterFxP)buildSceneFx(scene, scene->getXsheet(), r,
-                                               which, shrink, false);
+        fx.m_frameB = (TRasterFxP)buildRenderSceneFx(scene, scene->getXsheet(),
+                                                     r, which, shrink);
         scene->shiftCameraX(-rs.m_stereoscopicShift / 2);
       } else
         fx.m_frameB = TRasterFxP();

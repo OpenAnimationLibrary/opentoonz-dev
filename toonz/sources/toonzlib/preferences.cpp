@@ -673,6 +673,11 @@ void Preferences::definePreferenceItems() {
   define(generatedMovieViewEnabled, "generatedMovieViewEnabled",
          QMetaType::Bool, true);
 
+  define(adjacentFrameBlendEnabled, "adjacentFrameBlendEnabled",
+         QMetaType::Bool, false);
+  define(adjacentFrameBlendAmount, "adjacentFrameBlendAmount", QMetaType::Int,
+         50, 0, 100);
+
   // Onion Skin
   define(onionSkinEnabled, "onionSkinEnabled", QMetaType::Bool, true);
   define(onionPaperThickness, "onionPaperThickness", QMetaType::Int, 50, 0,

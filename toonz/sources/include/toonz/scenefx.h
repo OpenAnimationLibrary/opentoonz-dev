@@ -75,6 +75,12 @@ DVAPI TFxP buildSceneFx(ToonzScene *scene, double frame, TXsheet *xsh = 0,
                         bool isPreview = false, int whichLevels = -1,
                         int shrink = 1);
 
+// Final rendering uses these entry points to honor the local adjacent-frame
+// blending preference. Preview and FX swatches keep using buildSceneFx.
+DVAPI TFxP buildRenderSceneFx(ToonzScene *scene, TXsheet *xsh, double frame,
+                              int whichLevels, int shrink);
+DVAPI TFxP buildRenderSceneFx(ToonzScene *scene, double frame, int shrink);
+
 // temo non debba andare qui
 // in ogni caso gestisce anche lo zdepth
 // (utilizzando la camera corrente, il che forse non e' una buona idea)

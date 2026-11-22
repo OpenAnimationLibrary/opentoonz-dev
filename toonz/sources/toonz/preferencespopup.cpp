@@ -1479,6 +1479,10 @@ QString PreferencesPopup::getUIString(PreferencesItemId id) {
       {fitToFlipbookWhenPreview,
        tr("Fit to Flipbook when Flipbook Window Open")},
 
+      {adjacentFrameBlendEnabled,
+       tr("Blend Adjacent Frames in Final Render (Experimental)")},
+      {adjacentFrameBlendAmount, tr("Previous Frame Contribution (%):")},
+
       // Onion Skin
       {onionSkinEnabled, tr("Onion Skin ON")},
       {onionPaperThickness, tr("Paper Thickness:")},
@@ -2512,6 +2516,25 @@ QWidget* PreferencesPopup::createPreviewPage() {
   {
     insertUI(sceneNumberingEnabled, renderLay);
     insertUI(taskchunksize, renderLay);
+    insertUI(adjacentFrameBlendEnabled, renderLay);
+    insertUI(adjacentFrameBlendAmount, renderLay);
+    QCheckBox* blendCheck = getUI<QCheckBox*>(adjacentFrameBlendEnabled);
+    QWidget* blendAmount  = getUI<QWidget*>(adjacentFrameBlendAmount);
+    blendAmount->setEnabled(blendCheck->isChecked());
+    connect(blendCheck, &QCheckBox::toggled, blendAmount, &QWidget::setEnabled);
+    blendCheck->setToolTip(
+        tr("Blend each final-render frame with the preceding scene frame.\n"
+           "The first scene frame is unchanged. Timing and frame count are "
+           "preserved.\n"
+           "Applies to standard movies and image sequences, including Task "
+           "Rendering with these preferences. Preview and "
+           "separate-column/layer renders "
+           "are unaffected.\n"
+           "Blending also crosses cuts and can increase render time."));
+    blendAmount->setToolTip(
+        tr("0% keeps the current frame, 50% mixes both frames equally, and "
+           "100% uses the preceding scene frame.\n"
+           "This is a local preference, not a setting saved in the scene."));
     renderLay->addWidget(
         new QLabel(tr("Please indicate where you would like exports from Fast "
                       "Render (MP4) to go."),

@@ -6,6 +6,7 @@
 #include "tmacrofx.h"
 #include "toutputproperties.h"
 #include "tparamcontainer.h"
+#include "tpixelutils.h"
 
 // TnzLib includes
 #include "toonz/txsheet.h"
@@ -157,6 +158,160 @@ private:
 };
 
 FX_IDENTIFIER_IS_HIDDEN(TimeShuffleFx, "timeShuffleFx")
+
+namespace {
+
+// Blend premultiplied RGB and alpha together, retaining the rendering depth.
+template <class Pixel>
+void blendFrameRasters(const TRasterPT<Pixel> &current,
+                       const TRasterPT<Pixel> &previous, double amount) {
+  current->lock();
+  previous->lock();
+  for (int y = 0; y < current->getLy(); ++y) {
+    Pixel *out      = current->pixels(y);
+    const Pixel *in = previous->pixels(y);
+    for (int x = 0; x < current->getLx(); ++x)
+      out[x] = blend(out[x], in[x], amount);
+  }
+  previous->unlock();
+  current->unlock();
+}
+
+}  // namespace
+
+// The two input trees are expanded independently at their respective times.
+// No saved output or worker completion order is used as blending history.
+class AdjacentFrameBlendFx final : public TRasterFx {
+  FX_DECLARATION(AdjacentFrameBlendFx)
+
+  TRasterFxPort m_current, m_previous;
+  double m_frame = 0.0, m_previousFrame = 0.0;
+  int m_amount = 50;
+
+public:
+  AdjacentFrameBlendFx() {
+    addInputPort("current", m_current);
+    addInputPort("previous", m_previous);
+    enableComputeInFloat(true);
+  }
+
+  void configure(double frame, double previousFrame, int amount) {
+    m_frame         = frame;
+    m_previousFrame = previousFrame;
+    m_amount        = amount;
+  }
+
+  TFx *clone(bool recursive = true) const override {
+    auto *fx = dynamic_cast<AdjacentFrameBlendFx *>(TFx::clone(recursive));
+    assert(fx);
+    fx->configure(m_frame, m_previousFrame, m_amount);
+    return fx;
+  }
+
+  std::string getPluginId() const override { return std::string(); }
+
+  bool canHandle(const TRenderSettings &, double) override { return true; }
+
+  bool toBeComputedInLinearColorSpace(bool settingsIsLinear,
+                                      bool) const override {
+    return settingsIsLinear;
+  }
+
+  int getMemoryRequirement(const TRectD &rect, double,
+                           const TRenderSettings &info) override {
+    return TRasterFx::memorySize(rect, info.m_bpp);
+  }
+
+  bool doGetBBox(double, TRectD &bbox, const TRenderSettings &info) override {
+    bbox = TRectD();
+    TRectD inputBBox;
+    if (m_current.isConnected() &&
+        m_current->doGetBBox(m_frame, inputBBox, info))
+      bbox += inputBBox;
+    if (m_previous.isConnected() &&
+        m_previous->doGetBBox(m_previousFrame, inputBBox, info))
+      bbox += inputBBox;
+    return !bbox.isEmpty();
+  }
+
+  void doDryCompute(TRectD &rect, double,
+                    const TRenderSettings &info) override {
+    TRectD currentRect(rect), previousRect(rect);
+    if (m_current.isConnected())
+      m_current->dryCompute(currentRect, m_frame, info);
+    if (m_previous.isConnected())
+      m_previous->dryCompute(previousRect, m_previousFrame, info);
+  }
+
+  std::string getAlias(double, const TRenderSettings &info) const override {
+    // Include BOTH samples and the amount so held-frame equivalence clusters
+    // and persistent render caches cannot reuse a differently blended frame.
+    return getFxType() + "[" + std::to_string(m_amount) + "][" +
+           (m_current.isConnected()
+                ? TRasterFxP(m_current.getFx())->getAlias(m_frame, info)
+                : "") +
+           "][" +
+           (m_previous.isConnected() ? TRasterFxP(m_previous.getFx())
+                                           ->getAlias(m_previousFrame, info)
+                                     : "") +
+           "]";
+  }
+
+  void doCompute(TTile &tile, double, const TRenderSettings &info) override {
+    if (m_current.isConnected())
+      m_current->compute(tile, m_frame, info);
+    else
+      tile.getRaster()->clear();
+
+    TTile previous;
+    if (m_previous.isConnected()) {
+      m_previous->allocateAndCompute(previous, tile.m_pos,
+                                     tile.getRaster()->getSize(),
+                                     tile.getRaster(), m_previousFrame, info);
+    } else {
+      previous.m_pos = tile.m_pos;
+      previous.setRaster(tile.getRaster()->create());
+      previous.getRaster()->clear();
+    }
+
+    const double amount = m_amount / 100.0;
+    if (TRaster32P current = tile.getRaster())
+      blendFrameRasters<TPixel32>(current, previous.getRaster(), amount);
+    else if (TRaster64P current = tile.getRaster())
+      blendFrameRasters<TPixel64>(current, previous.getRaster(), amount);
+    else if (TRasterFP current = tile.getRaster())
+      blendFrameRasters<TPixelF>(current, previous.getRaster(), amount);
+    else
+      throw TException("Adjacent frame blending: unsupported raster type");
+  }
+};
+
+FX_IDENTIFIER_IS_HIDDEN(AdjacentFrameBlendFx, "adjacentFrameBlendFx")
+
+namespace {
+
+template <class BuildFx>
+TFxP buildWithFrameBlending(double frame, BuildFx build) {
+  TFxP current             = build(frame);
+  const Preferences *prefs = Preferences::instance();
+  const int amount =
+      tcrop(prefs->getIntValue(adjacentFrameBlendAmount), 0, 100);
+  if (frame <= 0.0 || amount <= 0 ||
+      !prefs->getBoolValue(adjacentFrameBlendEnabled))
+    return current;
+
+  const double previousFrame = std::max(0.0, frame - 1.0);
+  TFxP previous              = build(previousFrame);
+  if (!current && !previous) return current;
+
+  auto *fx = new AdjacentFrameBlendFx;
+  fx->configure(frame, previousFrame, amount);
+  fx->connect("current", current.getPointer());
+  fx->connect("previous", previous.getPointer());
+  return fx;
+}
+
+}  // namespace
 
 //***************************************************************************************************
 //    AffineFx  definition
@@ -1532,4 +1687,22 @@ DVAPI TFxP buildSceneFx(ToonzScene *scene, double frame, TXsheet *xsh,
   if (!aff.isIdentity()) fx = TFxUtil::makeAffine(fx, aff);
 
   return fx;
+}
+
+//===================================================================
+// Final-render entry points. Keep blending out of buildSceneFx itself: some
+// Previewer and FX-swatch callers use isPreview=false for camera selection.
+
+TFxP buildRenderSceneFx(ToonzScene *scene, TXsheet *xsh, double frame,
+                        int whichLevels, int shrink) {
+  return buildWithFrameBlending(frame, [&](double sample) {
+    return buildSceneFx(scene, xsh, sample, whichLevels, shrink, false);
+  });
+}
+
+TFxP buildRenderSceneFx(ToonzScene *scene, double frame, int shrink) {
+  const int whichLevels =
+      scene->getProperties()->getOutputProperties()->getWhichLevels();
+  return buildRenderSceneFx(scene, scene->getXsheet(), frame, whichLevels,
+                            shrink);
 }

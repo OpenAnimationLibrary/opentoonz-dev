@@ -565,15 +565,19 @@ void RenderCommand::rasterRender(bool isPreview) {
 
     if (rs.m_stereoscopic) scene->shiftCameraX(-rs.m_stereoscopicShift / 2);
     TFxPair fx;
-    fx.m_frameA = buildSceneFx(scene, m_r, rs.m_shrinkX, isPreview);
+    fx.m_frameA = isPreview ? buildSceneFx(scene, m_r, rs.m_shrinkX, true)
+                            : buildRenderSceneFx(scene, m_r, rs.m_shrinkX);
 
     if (fieldRendering && !isPreview)
-      fx.m_frameB = buildSceneFx(scene, m_r + 0.5 / m_timeStretchFactor,
-                                 rs.m_shrinkX, isPreview);
+      fx.m_frameB = buildRenderSceneFx(scene, m_r + 0.5 / m_timeStretchFactor,
+                                       rs.m_shrinkX);
     else if (rs.m_stereoscopic) {
       scene->shiftCameraX(rs.m_stereoscopicShift);
-      fx.m_frameB = buildSceneFx(scene, m_r + 0.5 / m_timeStretchFactor,
-                                 rs.m_shrinkX, isPreview);
+      fx.m_frameB =
+          isPreview ? buildSceneFx(scene, m_r + 0.5 / m_timeStretchFactor,
+                                   rs.m_shrinkX, true)
+                    : buildRenderSceneFx(scene, m_r + 0.5 / m_timeStretchFactor,
+                                         rs.m_shrinkX);
       scene->shiftCameraX(-rs.m_stereoscopicShift / 2);
     } else
       fx.m_frameB = TRasterFxP();
