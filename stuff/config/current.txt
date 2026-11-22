@@ -1,4 +1,16 @@
 <stringtable>
+  <item>"STD_hdrGainMapFx" "HDR Gain Map"</item>
+  <item>"STD_hdrGainMapFx.mode" "Mode"</item>
+  <item>"STD_hdrGainMapFx.minStops" "Minimum Gain (stops)"</item>
+  <item>"STD_hdrGainMapFx.maxStops" "Maximum Gain (stops)"</item>
+  <item>"STD_hdrGainMapFx.mapGamma" "Map Encoding Gamma"</item>
+  <item>"STD_hdrGainMapFx.blackOffset" "Black Offset"</item>
+  <item>"STD_applyHDRGainMapFx" "Apply HDR Gain Map"</item>
+  <item>"STD_applyHDRGainMapFx.strength" "Strength (%)"</item>
+  <item>"STD_applyHDRGainMapFx.minStops" "Minimum Gain (stops)"</item>
+  <item>"STD_applyHDRGainMapFx.maxStops" "Maximum Gain (stops)"</item>
+  <item>"STD_applyHDRGainMapFx.mapGamma" "Map Encoding Gamma"</item>
+  <item>"STD_applyHDRGainMapFx.blackOffset" "Black Offset"</item>
 <!------------------------------ FX ------------------------------------------->
 
   <item>"addFx"			"Add"			</item>

@@ -12,6 +12,7 @@ set(HEADERS
     perlinnoise.h
     pins.h
     stdfx.h
+    hdrgainmapmath.h
     shadowbevelutils.h
     texturefxP.h
     warp.h
@@ -260,6 +261,7 @@ set(SOURCES
     ino_spin_blur.cpp
     ino_warp_hv.cpp
     iwa_adjustexposurefx.cpp
+    hdrgainmapfx.cpp
     iwa_directionalblurfx.cpp
     iwa_gradientwarpfx.cpp
     iwa_motionblurfx.cpp

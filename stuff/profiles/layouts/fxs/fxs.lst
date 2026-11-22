@@ -51,6 +51,8 @@
     STD_iwa_SpinGradientFx 
   </Gradient>
   <Image_Adjust>
+    STD_hdrGainMapFx
+    STD_applyHDRGainMapFx
     STD_iwa_AdjustExposureFx
     STD_adjustLevelsFx 
     STD_brightContFx 
