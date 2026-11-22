@@ -1,4 +1,4 @@
-name: Windows Build
+name: Diagnose PR 7292 Windows drawing crash
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -7,32 +7,34 @@ concurrency:
 on:
   push:
     branches:
-      - master  # Specify branches where the workflow should run
-    paths:
-      - '**/*'                                    # Include all files in the repository
-      - '!appveyor.yml'                           # Ignore changes in AppVeyor
-      - '!README.md'                              # Exclude README
-      - '!doc/**'                                 # Exclude documentation
-      - '!**/.github/**'                          # Exclude everything in .github folder
-      - '.github/workflows/workflow_windows.yml'  # Include Windows workflow file
-  pull_request:
-    paths:
-      - '**/*'
-      - '!appveyor.yml'
-      - '!README.md'
-      - '!doc/**'
-      - '!**/.github/**'
-      - '.github/workflows/workflow_windows.yml'
+      - diagnostics/pr7292-windows-drawing
 
 jobs:
   Windows:
-    runs-on: windows-2025
+    name: ${{ matrix.variant }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: v142-optimized
+            runner: windows-2022
+            generator: Visual Studio 17 2022
+            toolset: v142
+            no_optimization: 'false'
+          - variant: current-msvc-unoptimized
+            runner: windows-2025
+            generator: Visual Studio 18 2026
+            toolset: default
+            no_optimization: 'true'
+    runs-on: ${{ matrix.runner }}
     env:
       # QT related variable
       QT_PATH: ${{ github.workspace }}\thirdparty\qt\5.15.2_wintab\msvc2019_64  # Path to custom Qt
 
       # Visual Studio related variables
-      MSVCVERSION: "Visual Studio 18 2026"  # Visual Studio version
+      MSVCVERSION: ${{ matrix.generator }}
+      DIAGNOSTIC_TOOLSET: ${{ matrix.toolset }}
+      DIAGNOSTIC_NO_OPTIMIZATION: ${{ matrix.no_optimization }}
       
       # Boost-related variables      
       BOOST_TOOLSET: "14.3"                 # Boost MSVC Toolset version
@@ -104,7 +106,11 @@ jobs:
           mkdir build
           cd build
 
-          cmake ..\sources -G "%MSVCVERSION%" -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y
+          set "DIAGNOSTIC_TOOLSET_FLAGS="
+          if not "%DIAGNOSTIC_TOOLSET%"=="default" set "DIAGNOSTIC_TOOLSET_FLAGS=-T %DIAGNOSTIC_TOOLSET%"
+          set "DIAGNOSTIC_OPTIMIZATION_FLAGS="
+          if "%DIAGNOSTIC_NO_OPTIMIZATION%"=="true" set DIAGNOSTIC_OPTIMIZATION_FLAGS=-DCMAKE_C_FLAGS_RELWITHDEBINFO="/MD /Zi /Od /Ob0 /DNDEBUG" -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="/MD /Zi /Od /Ob0 /DNDEBUG"
+          cmake ..\sources -G "%MSVCVERSION%" %DIAGNOSTIC_TOOLSET_FLAGS% -Ax64 -DQT_PATH="%QT_PATH%" -DBOOST_ROOT="%BOOST_ROOT%" -DOpenCV_DIR="%OpenCV_DIR%" -DWITH_WINTAB=Y %DIAGNOSTIC_OPTIMIZATION_FLAGS% || exit /b 1
         shell: cmd
 
       # Build Opentoonz using MSBuild
@@ -112,7 +118,7 @@ jobs:
         run: |
           @echo on
           cd toonz\build
-          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal ALL_BUILD.vcxproj
+          msbuild /p:Configuration=RelWithDebInfo /m /verbosity:minimal ALL_BUILD.vcxproj || exit /b 1
         shell: cmd
 
       # Create the package
@@ -157,5 +163,13 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v6
         with:
-          name: Opentoonz-${{ runner.os }}-${{ github.sha }}
+          name: Opentoonz-${{ matrix.variant }}-${{ github.sha }}
           path: artifact
+
+      - name: Upload matching debug symbols
+        uses: actions/upload-artifact@v6
+        with:
+          name: Symbols-${{ matrix.variant }}-${{ github.sha }}
+          path: toonz/build/RelWithDebInfo/*.pdb
+          if-no-files-found: error
+          retention-days: 14
