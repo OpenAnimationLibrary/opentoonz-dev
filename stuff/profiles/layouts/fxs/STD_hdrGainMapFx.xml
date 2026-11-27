@@ -1,0 +1,10 @@
+<fxlayout>
+  <page name="HDR Gain Map">
+    <control>mode</control>
+    <separator label="Map Encoding - Match in Apply HDR Gain Map"/>
+    <control>minStops</control>
+    <control>maxStops</control>
+    <control>mapGamma</control>
+    <control>blackOffset</control>
+  </page>
+</fxlayout>
